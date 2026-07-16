@@ -22,6 +22,14 @@ KML (6) depends on geometry; the GUI (7) depends on the analysis and geometry.
 Item 8 is placed by priority just before the mapping items it feeds, even though
 its stable ID is higher.
 
+**Status (2026-07-16):** the initial build — the full compute core plus the Dash
+explorer — is **complete (Items 1–9, all boxes checked; see DESIGN_HISTORY
+Sessions 0–9)**. Items 1–9 below are kept as the build record. **Items 10+ are a
+new batch of owner-requested refinements** scoped on 2026-07-16 (DESIGN_HISTORY
+Session 10); they build on the finished app rather than adding to the core
+pipeline. The completed items read top-to-bottom first, then the new batch, then
+Future.
+
 ---
 
 ## 1 — Data I/O core (`io.py`) (Target: Opus)
@@ -284,6 +292,261 @@ Suggested prompt:
 > a KML-export button. Decide the map framework (dash-leaflet vs Plotly maps)
 > at the top of the session and record it. README run steps + a headless layout
 > smoke test.
+
+---
+
+## 9 — Time-of-day analysis window (`timebins.filter_time_window` + GUI slider) (Target: Opus) — needs Items 2, 4, 5, 7
+
+Restrict every calculation to a chosen time of day (e.g. the 4–6PM peak) so a
+study can be scoped to when an intervention actually bites, without a separate
+export. A **pure-core row filter** feeding the existing panels — *not* a new
+statistic. The subtlety, confirmed against the `traffic_anomaly` source, is that
+its rolling-window sample guard assumes a full day is present, so a narrow window
+must relax that guard or the decomposition returns empty (see DESIGN_HISTORY /
+DATA_FORMAT).
+
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 9):
+- [x] `timebins.filter_time_window(df, window)` — overnight-safe half-open
+      `[start, end)` filter on local wall-clock time; accepts a `"4:00PM-6:00PM"`
+      string or an hour-number/`time`/clock-string `(start, end)` pair; full-day
+      window is a no-op; records the window on `attrs`.
+- [x] `decompose_segments` auto-scales `min_rolling_window_samples` to the data's
+      time-of-day coverage (full day → unchanged 480; a 2-hour window → ~40), so
+      **filter-first-then-decompose** doesn't come back empty. Value used is
+      recorded on `attrs`; existing full-day results are byte-for-byte unchanged.
+- [x] GUI `dcc.RangeSlider` (0–24h) pre-filters **every** panel and the map
+      colouring (mean + before/after Δ) and KML export, consistently; a
+      plain-language status line under the slider. Filter-first-then-decompose is
+      the chosen semantics — trend/changepoints describe the selected window.
+- [x] pytest coverage: window filtering (half-open/overnight/no-op/attrs),
+      auto-scaling (full-day unchanged, narrow-window non-empty), and an
+      end-to-end "filter to 4–6PM → decompose → changepoint recovers a PM-only
+      step" test. GUI wiring + real-export windowed path. 12 tests (115 total).
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 9 of ROADMAP.md: add a time-of-day analysis window.
+> Pure-core `timebins.filter_time_window` (overnight-safe, half-open) + auto-scale
+> `decompose_segments`' rolling-window sample guard so a narrow window still
+> decomposes; wire a `dcc.RangeSlider` in `gui/app.py` that pre-filters every
+> panel/map/KML. Check the `traffic_anomaly` source first so changepoint/decompose
+> don't break. Tests + docs.
+
+---
+
+# New batch — refinements on the finished app (Items 10+, scoped 2026-07-16)
+
+These are owner-requested refinements to the working explorer, grouped into
+session-sized items (small related requests merged). File order is priority
+order; each is independent of the others unless noted. Owner decisions behind the
+scoping are recorded in DESIGN_HISTORY Session 10.
+
+**Item 14 (the Fable review) is placed first by owner priority** — its findings
+are expected to reshape the scope/order of 10–13 before effort goes into them —
+even though its stable ID is higher.
+
+---
+
+## 14 — Targeted app review by Fable (Target: Fable) — needs Item 7 (review-only)
+
+A focused review pass over the explorer, **not** a re-read of the whole codebase —
+skip the simple app wiring and the already-tested compute core; concentrate tokens
+on where bugs and improvements actually live. Produces a written findings report
+(and, if the owner acts on it, feeds new ROADMAP items) — this item ships analysis,
+not code. **Run this before Items 10–13** so its findings can reshape them.
+
+Scope:
+- [ ] **Bug hunt** in the interactive layer: `gui/app.py` callbacks (selection/
+      cache/period-clamp edge cases, the `_compare_cache` keying, ToD/date
+      interactions), `gui/figures.py` (empty-selection / NaN / single-point paths),
+      and the thin adapter seams (`decompose`/`beforeafter`/`changepoint` inputs).
+      Flag concrete failure scenarios, not style nits.
+- [ ] **Optimizations** where they matter: the ~2M-row load, repeated groupby/mean
+      passes, the decomposition cost per panel, cache hit rates — cheap wins that
+      keep the single-user localhost app responsive.
+- [ ] **Broad / creative suggestions**: what a user of a traffic before/after
+      explorer would also plausibly want to explore (generalisations of the current
+      panels, comparisons, exports, interactions) — framed as candidate ROADMAP
+      items, prioritised, not implemented here.
+- [ ] **Statistical rigor of the before/after analysis**: review `beforeafter`
+      (decomposition-adjusted effect + Welch CI as primary, t-test baseline) and the
+      decomposition/changepoint use for soundness and honest uncertainty — e.g.
+      multiple-comparisons handling across segments, autocorrelation in the CI,
+      whether the seasonally-adjusted comparison is the right estimand, and whether
+      difference-in-differences (a Future item) should be promoted. Concrete,
+      cited-to-code recommendations.
+- [ ] Deliverable: a prioritised findings report (bugs → quick wins → broader
+      ideas → stats recommendations). Confirmed bugs and accepted ideas become new
+      ROADMAP items (continuing the ID sequence); record the review in DESIGN_HISTORY.
+
+Suggested prompt:
+> [Fable] In Inrix/, do Item 14 of ROADMAP.md: a targeted review of the Dash app —
+> read `gui/app.py`, `gui/figures.py`, and the `beforeafter`/`decompose`/
+> `changepoint` adapters (skip the simple wiring and well-tested io/geometry/kml).
+> Report, in priority order: concrete bugs with failure scenarios, worthwhile
+> optimizations for the ~2M-row single-user app, creative "what else would a user
+> want to explore" generalisations as candidate ROADMAP items, and an assessment of
+> the before/after statistical rigor (multiple comparisons, autocorrelation, the
+> chosen estimand, difference-in-differences). Don't implement — deliver a
+> prioritised findings report.
+
+---
+
+## 10 — Friendly segment names (`names.py` + config CSV) (Target: Opus) — needs Item 1
+
+Segments are currently labelled by the raw `Combined` string (Road + Direction +
+Intersection, e.g. `N 9th St S 9th St / Idaho St`) everywhere they appear — the
+dropdown, map hover, forest rows, panel titles. The owner wants a **readable,
+user-controlled name per segment**, driven by a config file rather than an opaque
+auto-ID. **Decision (owner): a user-editable CSV of names, seeded automatically by
+simplifying the existing INRIX labels** (e.g. `9th St & Idaho St`), not a bare
+truncated-ID scheme — the seed gives a good starting point the user then hand-edits.
+
+Scope:
+- [ ] `src/inrix_tools/names.py` (pure): `seed_names(metadata) -> DataFrame`
+      (`Segment ID`, `inrix_label`, `name`) where `name` is a simplified label
+      derived from `Road`/`Direction`/`Intersection` — collapse the repeated
+      road token and reduce `A / B` intersections to the cross street
+      (`N 9th St S 9th St / Idaho St` → `9th St & Idaho St`). Heuristic, not
+      perfect; the point is a good hand-edit starting point.
+- [ ] `write_names_template(metadata, path)` / `load_names(path)` — round-trip the
+      CSV (stable `Segment ID` key, `name` column authoritative, unknown/blank
+      rows fall back to the seed or `Segment ID`). No hardcoded paths.
+- [ ] `apply_names(...)` helper returning the `Segment ID → name` mapping the GUI
+      labels read from (single source of truth, replacing the ad-hoc `_labels`
+      dict in `gui/app.py`). Keep the raw `Combined` available for the hover
+      second line so nothing is lost.
+- [ ] GUI wiring: an optional "names CSV" path in the Data controls; when set,
+      the dropdown, map hover, forest, and titles use the friendly name. A button
+      to write the seed template to `out/segment_names.csv` for editing.
+- [ ] pytest: seed simplification on representative Myrtle labels (the 9th/Idaho
+      case + a few more), CSV round-trip, fallback for missing/blank rows, and the
+      GUI label path uses the mapping. DESIGN_HISTORY entry.
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 10 of ROADMAP.md: add `src/inrix_tools/names.py` —
+> seed a simplified friendly-name per segment from the INRIX labels, round-trip a
+> user-editable names CSV, and expose one `Segment ID → name` mapping the GUI uses
+> for the dropdown/hover/forest/titles (with a "write template" button). Keep the
+> raw `Combined` for the hover subtitle. pytest the simplifier + round-trip.
+
+---
+
+## 11 — Session date-subset on load (`io.filter_dates` + GUI) (Target: Opus, Sonnet-eligible) — needs Items 1, 7
+
+The Myrtle export is ~2M rows; an analysis often only cares about a few weeks. Let
+the user **pick a date range on/after load and discard the rest for the session**,
+so every downstream compute (map, panels, decomposition) runs on the smaller frame
+and stays snappy. A **pure-core row filter** feeding the existing `Dataset`, not a
+new statistic — the same architectural shape as the Item 9 time-of-day window, but
+on calendar date rather than time-of-day.
+
+Scope:
+- [ ] `timebins.filter_date_range(df, start, end)` (or `io.filter_dates`) — keep
+      rows whose local `Date Time` date is in `[start, end]` (inclusive calendar
+      days, tz-aware, half-open at the next midnight like `parse_period`); records
+      the retained span on `attrs`. Empty/None bound = open on that side.
+- [ ] GUI: a "Restrict dates" `DatePickerRange` (defaulting to the full export
+      span) applied **at load / on an Apply button**, shrinking the cached
+      `Dataset.df` so the reduction is real (memory + speed), not just a display
+      filter. The before/after and time-of-day controls then operate within the
+      retained span (clamp their allowed range to it).
+- [ ] Confirm the before/after default windows and the map/panels recompute
+      correctly against the trimmed `span`; invalidate the `_compare_cache`.
+- [ ] pytest: date filter (inclusive edges, open bound, tz/attrs, immutability)
+      + a GUI test that a trimmed dataset carries fewer rows and the panels drive.
+      DESIGN_HISTORY entry.
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 11 of ROADMAP.md: add a session date-subset. Pure-core
+> `filter_date_range` (inclusive local calendar days, tz-aware, attrs-recorded) +
+> a GUI "Restrict dates" range that actually shrinks the cached `Dataset.df` on
+> Apply so downstream compute runs on fewer rows. Clamp the before/after + ToD
+> controls to the retained span and invalidate the compare cache. Tests + docs.
+
+---
+
+## 12 — Corridor & network travel-time analysis (`speed` + GUI scope) (Target: Opus) — needs Items 3, 4, 7
+
+Analyse aggregate travel time, not just single segments: a **corridor** (a
+`Corridor/Region Name` group) and the **network** (sum of *all* segments). The
+compute half largely exists — `speed.corridor_travel_time` already sums member
+segments per timestamp under the complete-set rule — so this item is a small core
+addition (a network total) plus wiring an **analysis-scope selector** so the
+time-series / before-after / decomposition panels can run on the aggregate series.
+**Decision (owner): travel time only** — summing travel time across segments is
+well-defined; there is no good segment-weighting for speed, so the corridor/network
+scope offers travel time exclusively (speed stays segment-level).
+
+Scope:
+- [ ] `speed.network_travel_time(df, ...)` — the corridor sum with **all segments
+      as one group** (reuse `corridor_travel_time`'s complete-set machinery with a
+      synthetic single-group key), returning the per-timestamp network total.
+      Optionally add corridor length/space-mean speed when metadata is supplied,
+      mirroring `corridor_travel_time`.
+- [ ] GUI: an **analysis-scope selector** — *Segment* (current) / *Corridor*
+      (`Corridor/Region Name` picker) / *Network*. In corridor/network scope the
+      metric is forced to travel time; the time-series, before/after, and
+      decomposition panels run on the aggregate per-timestamp series (which is
+      already the `[Date Time, Travel Time, Segment ID-less]` shape `decompose`
+      wants once given a single entity id). The day×time summary + map stay
+      segment-level (or grey out) as appropriate.
+- [ ] Feed the aggregate series into `beforeafter.compare_periods` /
+      `decompose_segments` with a single synthetic `Segment ID` so the existing
+      adapters work unchanged; confirm the complete-set drop doesn't starve
+      decomposition (document if the window guard interacts, cf. Item 9).
+- [ ] pytest: known network sum on a synthetic multi-segment fixture (complete-set
+      drop applied), before/after + decomposition run on the aggregate, GUI scope
+      wiring. DESIGN_HISTORY entry; DATA_FORMAT note if the aggregate path teaches
+      anything about the complete-set rule at network scale.
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 12 of ROADMAP.md: corridor + network (all-segments)
+> travel-time analysis. Add `speed.network_travel_time` (corridor sum over one
+> all-segments group, complete-set rule) and a GUI analysis-scope selector
+> (Segment / Corridor / Network) that runs the time-series, before/after, and
+> decomposition panels on the aggregate per-timestamp series via a synthetic
+> single entity id. Travel time only (no speed weighting). Tests + docs.
+
+---
+
+## 13 — Before/after summary + GUI display polish (Target: Opus) — needs Item 7
+
+A GUI-display session bundling one small feature and three cosmetic tweaks — all
+in `gui/figures.py` / `gui/app.py`, no new statistics.
+
+Scope:
+- [ ] **Before/after day×time summary (the feature).** `summary_bars` /
+      `_fig_summary` gain a before/after mode: compute `speed.segment_summary` on
+      the before-subset and the after-subset separately and render them **side by
+      side (left/right)** — either paired facets or before/after as an extra bar
+      grouping — so the day-group×time-bin means are directly comparable across the
+      intervention. Reuse the existing before/after date ranges; fall back to the
+      single-period view when periods aren't set.
+- [ ] **Compact KML export.** Demote the full-width "Export KML of current view"
+      button to a small **icon button next to the map** (the owner rarely needs
+      KML now; keep the capability, shrink the footprint). Status/errors surface in
+      a tooltip or a small inline note rather than a dedicated block.
+- [ ] **Shrink the map midpoint markers.** The midpoint dots are the click target,
+      hover anchor, *and* colour-bar carrier (see `figures.segment_map`), so they
+      can't just be removed — reduce them to small/near-transparent marks (or move
+      the colour scale onto the line traces) while **keeping click + hover working**.
+      Verify selection still fires after the change.
+- [ ] **Time-formatted ToD slider tooltip.** The `dcc.RangeSlider` tooltip shows
+      the raw hour (`13.5`); make it read as a clock time (`1:30 PM` / `13:30`) via
+      a Dash `tooltip.transform` client-side JS formatter (mirrors the existing
+      Python `_hour_label`). Keep `always_visible` off.
+- [ ] pytest: `summary_bars` before/after mode (trace/facet structure, single-period
+      fallback), and the layout smoke test still finds the (now-iconified) export
+      control + slider. Manual/preview check the marker click still selects.
+      DESIGN_HISTORY entry.
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 13 of ROADMAP.md: GUI display work — (1) a before/after
+> side-by-side mode for the day×time summary panel (compute `segment_summary` per
+> period, render left/right), (2) demote the KML button to a compact icon by the
+> map, (3) shrink the map midpoint markers while keeping click+hover, (4) format the
+> ToD slider tooltip as a clock time via `tooltip.transform`. Tests + a preview
+> check that selection still works. Docs.
 
 ---
 
