@@ -344,6 +344,13 @@ scoping are recorded in DESIGN_HISTORY Session 10.
 are expected to reshape the scope/order of 10–13 before effort goes into them —
 even though its stable ID is higher.
 
+**Post-review (2026-07-16):** Item 14 is done ([REVIEW_ITEM14.md](REVIEW_ITEM14.md));
+its confirmed findings became **Items 15–16**, placed right after it. The review's
+recommended order is **15 → 16 → 11 → 10 → 12 → 13** (stats validity first — it
+changes every number the app shows — then responsiveness, then the owner batch);
+owner to confirm before the next session. Item 13 gained one bullet (the forest
+hover fix); the review's §3 ideas await owner acceptance before becoming items.
+
 ---
 
 ## 14 — Targeted app review by Fable (Target: Fable) — needs Item 7 (review-only)
@@ -354,29 +361,32 @@ on where bugs and improvements actually live. Produces a written findings report
 (and, if the owner acts on it, feeds new ROADMAP items) — this item ships analysis,
 not code. **Run this before Items 10–13** so its findings can reshape them.
 
-Scope:
-- [ ] **Bug hunt** in the interactive layer: `gui/app.py` callbacks (selection/
+Scope (done 2026-07-16 — see [REVIEW_ITEM14.md](REVIEW_ITEM14.md) and
+DESIGN_HISTORY.md Session 11):
+- [x] **Bug hunt** in the interactive layer: `gui/app.py` callbacks (selection/
       cache/period-clamp edge cases, the `_compare_cache` keying, ToD/date
       interactions), `gui/figures.py` (empty-selection / NaN / single-point paths),
       and the thin adapter seams (`decompose`/`beforeafter`/`changepoint` inputs).
-      Flag concrete failure scenarios, not style nits.
-- [ ] **Optimizations** where they matter: the ~2M-row load, repeated groupby/mean
+      Flag concrete failure scenarios, not style nits. → 6 findings (2 verified by
+      running them), plus a verified-sound list; the feared short-series
+      decompose→changepoint crash path was attacked and holds.
+- [x] **Optimizations** where they matter: the ~2M-row load, repeated groupby/mean
       passes, the decomposition cost per panel, cache hit rates — cheap wins that
-      keep the single-user localhost app responsive.
-- [ ] **Broad / creative suggestions**: what a user of a traffic before/after
-      explorer would also plausibly want to explore (generalisations of the current
-      panels, comparisons, exports, interactions) — framed as candidate ROADMAP
-      items, prioritised, not implemented here.
-- [ ] **Statistical rigor of the before/after analysis**: review `beforeafter`
-      (decomposition-adjusted effect + Welch CI as primary, t-test baseline) and the
-      decomposition/changepoint use for soundness and honest uncertainty — e.g.
-      multiple-comparisons handling across segments, autocorrelation in the CI,
-      whether the seasonally-adjusted comparison is the right estimand, and whether
-      difference-in-differences (a Future item) should be promoted. Concrete,
-      cited-to-code recommendations.
-- [ ] Deliverable: a prioritised findings report (bugs → quick wins → broader
-      ideas → stats recommendations). Confirmed bugs and accepted ideas become new
-      ROADMAP items (continuing the ID sequence); record the review in DESIGN_HISTORY.
+      keep the single-user localhost app responsive. → one real win (split the
+      compare cache so period changes stop re-decomposing: 8.2 s → sub-second,
+      measured); groupby/scan passes measured cheap and left alone.
+- [x] **Broad / creative suggestions**: 7 candidate items, prioritised (results
+      export, day-of-week filter + holidays, coverage panel, reliability
+      percentiles, map-as-answer-surface, congestion-relative views, DiD).
+- [x] **Statistical rigor of the before/after analysis** → the headline finding:
+      the Welch CI treats 5-min samples as independent; simulated null coverage is
+      25–50% at realistic autocorrelation (nominal 95%). Day-mean aggregation
+      restores ~96%. Plus BH-FDR across segments, period-overlap validation, and
+      two estimand caveats (drift → DiD; profile-shape absorption → ToD window).
+- [x] Deliverable: [REVIEW_ITEM14.md](REVIEW_ITEM14.md) (bugs → quick wins →
+      broader ideas → stats recommendations). Confirmed bugs/fixes became Items
+      15–16 below; the hover fix was folded into Item 13; creative ideas await
+      owner acceptance in the report §3. DESIGN_HISTORY Session 11 records it.
 
 Suggested prompt:
 > [Fable] In Inrix/, do Item 14 of ROADMAP.md: a targeted review of the Dash app —
@@ -388,6 +398,84 @@ Suggested prompt:
 > the before/after statistical rigor (multiple comparisons, autocorrelation, the
 > chosen estimand, difference-in-differences). Don't implement — deliver a
 > prioritised findings report.
+
+---
+
+## 15 — Before/after statistical validity (Target: Opus) — needs Item 4; from the Item 14 review
+
+The Item 14 review's headline: the numbers the forest plot shows are
+overconfident. The Welch CI in `beforeafter._compare_stats` treats ~6,000
+autocorrelated 5-min samples per period as independent — simulated null coverage
+is 25–50% at traffic-realistic AR(1) ρ (nominal 95%), restored to ~96% by
+aggregating the seasonally-adjusted series to daily means first (see
+REVIEW_ITEM14.md §4.1). Bundled with the other validity fixes in the same file:
+multiple comparisons, period validation, and the GUI's overlapping default
+windows (review B1, verified).
+
+Scope:
+- [ ] `compare_periods`: aggregate the adjusted series to **daily means per
+      segment** (per by-group) before `_compare_stats`; report `n_days` as the
+      headline n. Keep a `unit='sample'` escape hatch for the old behavior,
+      labeled non-robust.
+- [ ] Benjamini–Hochberg `q_value` column across the segment family (pure core);
+      `beforeafter_forest` de-emphasises rows with q above the cutoff and captions
+      the family size.
+- [ ] Period validation: raise on overlapping before/after periods; warn on attrs
+      (and surface in the GUI) when a period is truncated by the decomposition
+      warm-up (`drop_days`) and report the effective days used.
+- [ ] Fix the GUI default windows (`gui/app.py` `_load`): disjoint halves of the
+      span, after the warm-up, clamped to `[lo, hi]` — no overlap at any span
+      (review B1's table is the test fixture).
+- [ ] Docstring note in `beforeafter.py`: profile-shape effects partially absorb
+      into `season_day` — recommend the Item 9 ToD window and/or
+      `by=['Day Group','Time Bin']` when the effect is time-of-day-specific.
+- [ ] pytest: null-coverage regression (daily-mean CI covers 0 at ~nominal rate on
+      an AR(1) synthetic; the old path demonstrably doesn't), BH monotonicity,
+      overlap raise, warm-up warning, default-window disjointness across spans.
+      DESIGN_HISTORY entry.
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 15 of ROADMAP.md: make the before/after CIs honest —
+> aggregate the seasonally-adjusted series to daily means before the Welch CI
+> (report n_days), add BH-FDR q-values across segments, validate periods
+> (overlap raise + warm-up truncation warning), and fix the GUI's overlapping
+> default windows. See REVIEW_ITEM14.md §1-B1 and §4. Tests + docs.
+
+---
+
+## 16 — Compare-cache split + GUI hardening (Target: Opus) — needs Item 7; from the Item 14 review
+
+The review's performance win plus the confirmed wiring bugs, all in
+`gui/app.py` (see REVIEW_ITEM14.md §1–§2). One session.
+
+Scope:
+- [ ] **Split the compare cache (review O1, measured 8.2 s/miss).** Cache the
+      seasonally-adjusted full-export frame per `(metric, ToD-window)` (cap ~2
+      entries) and compute per-period Welch stats from it on demand, so
+      date-picker changes stop re-decomposing. Reuse the per-segment slice for
+      the decomposition tab.
+- [ ] **Evict old datasets (review B2, 2.3 GB/load).** `_DATASETS` keeps only the
+      latest load (size-1 LRU); invalidate dependent caches.
+- [ ] **Metric guard (review B3).** Speed-only or travel-time-only exports:
+      disable the missing metric's radio option and pick the present one; no
+      `KeyError` from `_metric_col` returning `None`.
+- [ ] **Selection/viewport staleness (review B5).** Reset `segment.value` on
+      load when the segment set changes; key the map `uirevision` on the data
+      token so a new export recenters.
+- [ ] Nits (review B6): default a cleared CValue input instead of `int(None)`;
+      decomposition empty-state message mentions the 7-day warm-up; decide and
+      document the ToD slider's equal-handles semantics.
+- [ ] pytest: cache-split hit behavior (period change = no re-decompose —
+      assert via a counter/monkeypatch), dataset eviction, metric-guard on a
+      speed-only fixture, selection reset. DESIGN_HISTORY entry.
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 16 of ROADMAP.md: GUI hardening from the Item 14
+> review — cache the adjusted decomposition per (metric, ToD-window) so
+> before/after date changes stop re-decomposing (8.2 s → sub-second), evict old
+> datasets (2.3 GB each), guard missing metric columns, fix stale
+> selection/viewport across loads, plus the review's B6 nits. See
+> REVIEW_ITEM14.md §1–§2. Tests + docs.
 
 ---
 
@@ -535,6 +623,10 @@ Scope:
       the raw hour (`13.5`); make it read as a clock time (`1:30 PM` / `13:30`) via
       a Dash `tooltip.transform` client-side JS formatter (mirrors the existing
       Python `_hour_label`). Keep `always_visible` off.
+- [ ] **Forest hover fix (from the Item 14 review, B4).** `beforeafter_forest`'s
+      hovertemplate uses `%{y}` with a numeric y, so hover shows the row index
+      instead of the segment name — move the name into `customdata`/`text`
+      (`gui/figures.py:282-291`).
 - [ ] pytest: `summary_bars` before/after mode (trace/facet structure, single-period
       fallback), and the layout smoke test still finds the (now-iconified) export
       control + slider. Manual/preview check the marker click still selects.
@@ -557,6 +649,9 @@ Suggested prompt:
   and unusual days. Deferred from the initial analysis scope.
 - **Difference-in-differences before/after** — when an unaffected control
   corridor exists, the gold-standard intervention estimate; builds on Item 4.
+  The Item 14 review recommends promoting this once an export carries a
+  plausible control (secular drift is otherwise attributed to the intervention
+  — REVIEW_ITEM14.md §4.4); the compute slots onto Item 15's day-mean machinery.
 - **Packaging / deployment** — entry-point console script; hosting the Dash app
   (multi-user state, project/file management) if it moves off localhost.
 - **Origin/connectivity-aware anomalies** — use `anomaly()`'s

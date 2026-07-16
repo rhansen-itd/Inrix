@@ -723,3 +723,58 @@ same convention used for Item 8 earlier).
 
 Next: Item 14 (the targeted Fable review), then re-prioritise 10–13 against its
 findings.
+
+## Session 11 — Targeted app review (ROADMAP Item 14) (2026-07-16)
+
+Review-only session (Target: Fable): a focused pass over `gui/app.py`,
+`gui/figures.py`, and the `beforeafter`/`decompose`/`changepoint` adapters —
+deliberately skipping the well-tested io/geometry/kml core. Deliverable is
+**[REVIEW_ITEM14.md](REVIEW_ITEM14.md)** (bugs → quick wins → broader ideas →
+stats recommendations); no code changed.
+
+**Method note:** candidate findings were *verified by running them*, not just
+read off the code — synthetic-data probes for the crash paths, timings on the
+real 1.87M-row Myrtle export for the performance claims, and a 300-replicate
+null-coverage simulation for the statistical claim. Two suspected findings were
+**disproven** and recorded as such (the short-series decompose→changepoint path
+degrades gracefully; the per-redraw groupby/scan passes cost ≤0.02 s and are not
+worth caching) — the report separates verified findings from inspection-level
+ones.
+
+**Headline findings:**
+
+- **Stats (the big one):** `beforeafter._compare_stats` computes the Welch CI
+  over raw 5-min samples as if independent. Simulated null coverage at nominal
+  95%: 79.7% (AR(1) ρ=0.5), 50.0% (ρ=0.8), 25.3% (ρ=0.95). Aggregating the
+  seasonally-adjusted series to **daily means** first restores ~96% at every ρ.
+  Also: no multiple-comparisons handling across the 46-segment forest (BH-FDR
+  recommended), no period-overlap/warm-up validation, and two estimand caveats
+  (secular drift → promote DiD when a control exists; daily-profile-shape
+  effects partially absorb into `season_day` — mitigate with the Item 9 ToD
+  window).
+- **Verified GUI bug:** the `_load` default before/after windows **overlap for
+  any export span < 60 days** (and leave the allowed range < ~30 days), biasing
+  default effects toward 0 (`gui/app.py:280-285`).
+- **Performance:** `_compare_all`'s cache key includes the period dates, so any
+  date-picker change re-decomposes the full export — measured **8.2 s/miss**
+  (~90% decomposition). Splitting the cache — adjusted frame per
+  (metric, ToD-window), periods sliced on demand — makes date changes
+  sub-second. Also measured: 2.3 GB RSS per load with `_DATASETS` never
+  evicting; 10.4 s load. Checked-and-fine: `_segment_means` (0.02 s),
+  `_segment_df` (<0.01 s), map trace rebuild.
+- **Inspection-level bugs:** speed-only export crashes every panel
+  (`_metric_col` → `None` → `KeyError`); forest hover shows the row index
+  (`%{y}` with numeric y) instead of the segment name; stale segment selection
+  + map viewport across export loads; three nits (cleared-CValue `int(None)`,
+  equal-handles ToD slider semantics, warm-up-blind empty-state message).
+
+**Outcome / scoping:** confirmed bugs and accepted fixes became **Item 15**
+(before/after statistical validity: day-mean CI + BH-FDR + period validation +
+default-window fix) and **Item 16** (compare-cache split + dataset eviction +
+metric guard + staleness fixes + nits); the forest hover fix was folded into
+Item 13's display scope. The seven §3 ideas (results export, day-of-week filter
++ holidays, coverage panel, reliability percentiles, map-as-answer-surface,
+congestion-relative views, DiD promotion) stay in the report pending owner
+acceptance. Recommended order: **15 → 16 → 11 → 10 → 12 → 13** — validity
+first, since it changes every number the app shows; owner to confirm. No
+DATA_FORMAT change (nothing new learned about the export itself).
