@@ -422,7 +422,32 @@ def _write_kml(ds, metric, mode, before, after) -> Path:
                                label_segments=True, document_name="INRIX segments")
 
 
+def _free_port(host: str, start: int, tries: int = 20) -> int:
+    """The first free port at/after ``start`` (so a stale server on the default
+    doesn't block startup). Falls back to ``start`` if none of the range is free."""
+    import socket
+
+    for port in range(start, start + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if s.connect_ex((host, port)) != 0:  # nothing listening -> free
+                return port
+    return start
+
+
 app = build_app()  # module-level for `python gui/app.py` and WSGI servers
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="INRIX segment explorer (Dash).")
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8050)),
+                        help="preferred port; the next free one is used if it's taken")
+    parser.add_argument("--debug", action="store_true", default=bool(os.environ.get("DEBUG")))
+    args = parser.parse_args()
+
+    port = _free_port(args.host, args.port)
+    if port != args.port:
+        print(f"Port {args.port} is in use — serving on {port} instead.")
+    app.run(host=args.host, port=port, debug=args.debug)
