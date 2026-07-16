@@ -137,6 +137,45 @@ def test_dst_spring_forward_gap_hour_bins_normally():
     assert (out["Time Bin"] == "12:00AM-6:00AM").all()
 
 
+# --- time-of-day window filtering -------------------------------------------
+def test_filter_time_window_half_open_string():
+    """String form keeps [start, end): the start edge is in, the end edge is out."""
+    df = _df(["2026-01-12 15:59", "2026-01-12 16:00", "2026-01-12 17:30",
+              "2026-01-12 18:00", "2026-01-12 18:01"])
+    out = tb.filter_time_window(df, "4:00PM-6:00PM")
+    assert list(out["Date Time"].dt.strftime("%H:%M")) == ["16:00", "17:30"]
+
+
+def test_filter_time_window_hour_number_pair():
+    """The GUI-slider form: an (hour, hour) numeric pair, fractional hours ok."""
+    df = _df(["2026-01-12 16:00", "2026-01-12 16:14", "2026-01-12 16:15",
+              "2026-01-12 17:00"])
+    out = tb.filter_time_window(df, (16, 16.25))     # 4:00–4:15PM
+    assert list(out["Date Time"].dt.strftime("%H:%M")) == ["16:00", "16:14"]
+
+
+def test_filter_time_window_overnight_wrap():
+    df = _df(["2026-01-12 22:00", "2026-01-12 03:00", "2026-01-12 06:00",
+              "2026-01-12 12:00"])
+    out = tb.filter_time_window(df, (21, 6))          # 9PM–6AM, wraps midnight
+    assert list(out["Date Time"].dt.strftime("%H:%M")) == ["22:00", "03:00"]
+
+
+def test_filter_time_window_full_day_is_noop():
+    df = _df(["2026-01-12 00:00", "2026-01-12 12:00", "2026-01-12 23:55"])
+    assert len(tb.filter_time_window(df, (0, 24))) == 3      # 24 == end of day
+    assert len(tb.filter_time_window(df, (0, 0))) == 3       # equal bounds = whole day
+
+
+def test_filter_time_window_attrs_and_input_unmutated():
+    df = _df(["2026-01-12 16:00", "2026-01-12 20:00"])
+    df.attrs["units"] = {"speed": "miles/hour"}
+    out = tb.filter_time_window(df, "4:00PM-6:00PM")
+    assert out.attrs["units"] == {"speed": "miles/hour"}
+    assert out.attrs["time_window"] == "4:00PM-6:00PM"
+    assert len(df) == 2  # original untouched
+
+
 # --- group label composition ------------------------------------------------
 def test_group_label_composition():
     df = _df(["2026-01-12 08:00", "2026-01-17 14:00", "2026-01-12 11:00"])

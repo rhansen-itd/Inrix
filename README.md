@@ -79,7 +79,10 @@ map is the primary selector — click a segment to drive the panels below (raw t
 series, day-group × time-bin summary, before/after effect + CI, and decomposition
 + changepoints). Set the **before**/**after** date ranges to run the comparison;
 switch the map colouring between segment mean and the before/after Δ; and **Export
-KML** writes the current colouring to `out/segments.kml`.
+KML** writes the current colouring to `out/segments.kml`. The **time-of-day
+window** slider restricts every panel, the map, and the export to a chosen part of
+the day (e.g. the 4–6PM peak) — the decomposition/changepoint runs on that window
+on its own terms; leave it at the full 0–24h span for no filter.
 
 The map uses **Plotly native maps** (MapLibre `open-street-map`, no Mapbox token).
 The GUI is a thin shell: `gui/figures.py` turns compute-core DataFrames into

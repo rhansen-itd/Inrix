@@ -41,6 +41,7 @@ from inrix_tools.io import DATETIME_COL, SEGMENT_COL  # noqa: E402
 from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
     assign_time_bins,
+    filter_time_window,
     DAY_GROUP_COL,
     TIME_BIN_COL,
 )
@@ -120,17 +121,31 @@ def _metric_col(ds: Dataset, metric_key: str) -> str | None:
     return ds.metric_cols.get(_METRICS[metric_key])
 
 
-def _segment_means(ds: Dataset, col: str) -> pd.Series:
-    """Per-segment mean of a metric column (map colouring)."""
-    return ds.df.groupby(SEGMENT_COL, observed=True)[col].mean()
+def _apply_tod(df: pd.DataFrame, window) -> pd.DataFrame:
+    """Restrict rows to the time-of-day slider window ``[h0, h1)`` (hours). A
+    full-day window (``[0, 24]``, the default) is a no-op, so the unfiltered path
+    is unchanged. Filtering *here*, before any compute, is what makes every panel
+    describe the selected period (see ``timebins.filter_time_window``)."""
+    if not window:
+        return df
+    h0, h1 = float(window[0]), float(window[1])
+    if h0 <= 0 and h1 >= 24:
+        return df
+    return filter_time_window(df, (h0, h1))
 
 
-def _compare_all(ds: Dataset, col: str, before, after) -> pd.DataFrame:
-    """Corridor-wide before/after (decomposition primary), cached per (metric, periods)."""
-    key = (col, str(before), str(after))
+def _segment_means(ds: Dataset, col: str, window=None) -> pd.Series:
+    """Per-segment mean of a metric column (map colouring), within the window."""
+    return _apply_tod(ds.df, window).groupby(SEGMENT_COL, observed=True)[col].mean()
+
+
+def _compare_all(ds: Dataset, col: str, before, after, window=None) -> pd.DataFrame:
+    """Corridor-wide before/after (decomposition primary), cached per
+    (metric, periods, time-window)."""
+    key = (col, str(before), str(after), str(window))
     if key not in ds._compare_cache:
         ds._compare_cache[key] = beforeafter.compare_periods(
-            ds.df, before=before, after=after, value=col
+            _apply_tod(ds.df, window), before=before, after=after, value=col
         )
     return ds._compare_cache[key]
 
@@ -166,6 +181,15 @@ def _controls() -> dbc.Card:
         dcc.Dropdown(id="map-mode", clearable=False, value="mean",
                      options=[{"label": "Segment mean", "value": "mean"},
                               {"label": "Before/after Δ", "value": "delta"}]),
+        html.Hr(),
+        html.H6("Time-of-day window", className="text-muted"),
+        dcc.RangeSlider(
+            id="tod-window", min=0, max=24, step=0.25, value=[0, 24],
+            allowCross=False,
+            marks={0: "12a", 6: "6a", 12: "12p", 18: "6p", 24: "12a"},
+            tooltip={"placement": "bottom", "always_visible": False},
+        ),
+        html.Div(id="tod-status", className="small text-muted mt-1"),
         html.Hr(),
         html.H6("Before / after periods", className="text-muted"),
         dbc.Label("Before"),
@@ -287,19 +311,20 @@ def _register_callbacks(app: Dash) -> None:
         Input("before-range", "end_date"),
         Input("after-range", "start_date"),
         Input("after-range", "end_date"),
+        Input("tod-window", "value"),
     )
-    def _map(token, metric, mode, selected, b0, b1, a0, a1):
+    def _map(token, metric, mode, selected, b0, b1, a0, a1, window):
         ds = _get(token)
         if ds is None:
             return figures.segment_map(_empty_geo())
         col = _metric_col(ds, metric)
         label = figures._unit_label(col)
         if mode == "delta" and all([b0, b1, a0, a1]):
-            comp = _compare_all(ds, col, (b0, b1), (a0, a1))
+            comp = _compare_all(ds, col, (b0, b1), (a0, a1), window)
             values = comp.set_index(SEGMENT_COL)["effect"] if not comp.empty else None
             label = f"Δ {label}"
         else:
-            values = _segment_means(ds, col)
+            values = _segment_means(ds, col, window)
         return figures.segment_map(ds.geo, values, value_label=label,
                                    selected_id=selected)
 
@@ -317,8 +342,9 @@ def _register_callbacks(app: Dash) -> None:
         Input("before-range", "end_date"),
         Input("after-range", "start_date"),
         Input("after-range", "end_date"),
+        Input("tod-window", "value"),
     )
-    def _panels(tab, token, selected, metric, b0, b1, a0, a1):
+    def _panels(tab, token, selected, metric, b0, b1, a0, a1, window):
         ds = _get(token)
         blank = figures._blank("Load an export to begin.")
         if ds is None:
@@ -330,13 +356,13 @@ def _register_callbacks(app: Dash) -> None:
         out = {"ts": no_update, "summary": no_update, "ba": no_update, "decomp": no_update}
 
         if tab == "ts":
-            out["ts"] = _fig_timeseries(ds, selected, col, before, after, name)
+            out["ts"] = _fig_timeseries(ds, selected, col, before, after, name, window)
         elif tab == "summary":
-            out["summary"] = _fig_summary(ds, selected, col, name)
+            out["summary"] = _fig_summary(ds, selected, col, name, window)
         elif tab == "ba":
-            out["ba"] = _fig_beforeafter(ds, selected, col, before, after, have_periods)
+            out["ba"] = _fig_beforeafter(ds, selected, col, before, after, have_periods, window)
         elif tab == "decomp":
-            out["decomp"] = _fig_decomp(ds, selected, col, name)
+            out["decomp"] = _fig_decomp(ds, selected, col, name, window)
         return out["ts"], out["summary"], out["ba"], out["decomp"]
 
     @app.callback(
@@ -349,35 +375,57 @@ def _register_callbacks(app: Dash) -> None:
         State("before-range", "end_date"),
         State("after-range", "start_date"),
         State("after-range", "end_date"),
+        State("tod-window", "value"),
         prevent_initial_call=True,
     )
-    def _export(_n, token, metric, mode, b0, b1, a0, a1):
+    def _export(_n, token, metric, mode, b0, b1, a0, a1, window):
         ds = _get(token)
         if ds is None:
             return "Load an export first."
         try:
-            path = _write_kml(ds, metric, mode, (b0, b1), (a0, a1))
+            path = _write_kml(ds, metric, mode, (b0, b1), (a0, a1), window)
         except Exception as exc:
             return f"⚠ Export failed: {exc}"
         return f"✓ Wrote {path}"
 
+    # Time-of-day window: a plain-language status line under the slider.
+    @app.callback(
+        Output("tod-status", "children"),
+        Input("tod-window", "value"),
+    )
+    def _tod_label(window):
+        if not window or (float(window[0]) <= 0 and float(window[1]) >= 24):
+            return "Whole day — no time-of-day filter."
+        return f"Analysing {_hour_label(window[0])} – {_hour_label(window[1])} only."
+
 
 # --- panel builders (subset -> compute-core call -> figure) -----------------
-def _segment_df(ds: Dataset, selected) -> pd.DataFrame:
+def _hour_label(h) -> str:
+    """A slider hour (``16``, ``17.5``, ``24``) as a 12-hour clock label."""
+    from datetime import time as _time
+
+    h = float(h)
+    if h >= 24:
+        return "12:00 AM"
+    return _time(int(h), int(round((h - int(h)) * 60))).strftime("%I:%M %p").lstrip("0")
+
+
+def _segment_df(ds: Dataset, selected, window=None) -> pd.DataFrame:
     if selected is None:
         return ds.df.iloc[0:0]
-    return ds.df[ds.df[SEGMENT_COL] == int(selected)]
+    sub = ds.df[ds.df[SEGMENT_COL] == int(selected)]
+    return _apply_tod(sub, window)
 
 
-def _fig_timeseries(ds, selected, col, before, after, name):
-    sub = _segment_df(ds, selected)
+def _fig_timeseries(ds, selected, col, before, after, name, window=None):
+    sub = _segment_df(ds, selected, window)
     if sub.empty:
         return figures._blank("Pick or click a segment.")
     return figures.time_series(sub, col, title=name, before=before, after=after)
 
 
-def _fig_summary(ds, selected, col, name):
-    sub = _segment_df(ds, selected)
+def _fig_summary(ds, selected, col, name, window=None):
+    sub = _segment_df(ds, selected, window)
     if sub.empty:
         return figures._blank("Pick or click a segment.")
     binned = assign_time_bins(assign_day_group(sub), DEFAULT_TIME_BINS)
@@ -386,18 +434,21 @@ def _fig_summary(ds, selected, col, name):
     return figures.summary_bars(summary, col, title=name)
 
 
-def _fig_beforeafter(ds, selected, col, before, after, have_periods):
+def _fig_beforeafter(ds, selected, col, before, after, have_periods, window=None):
     if not have_periods:
         return figures._blank("Set before and after date ranges.")
-    comp = _compare_all(ds, col, before, after)
+    comp = _compare_all(ds, col, before, after, window)
     return figures.beforeafter_forest(comp, labels=_labels(ds), selected_id=selected,
                                       value_label=figures._unit_label(col))
 
 
-def _fig_decomp(ds, selected, col, name):
-    sub = _segment_df(ds, selected)
+def _fig_decomp(ds, selected, col, name, window=None):
+    sub = _segment_df(ds, selected, window)
     if sub.empty:
         return figures._blank("Pick or click a segment.")
+    # Filter first, then decompose: the trend/changepoints describe the selected
+    # window on its own terms. decompose_segments auto-scales its rolling-window
+    # sample guard so a narrow window doesn't come back empty (see decompose.py).
     decomposed = decompose.decompose_segments(sub, value=col)
     adj = decompose.seasonally_adjust(decomposed, col)
     work = decomposed.copy()
@@ -406,15 +457,15 @@ def _fig_decomp(ds, selected, col, name):
     return figures.decomposition(decomposed, col, changepoints=cps, title=name)
 
 
-def _write_kml(ds, metric, mode, before, after) -> Path:
+def _write_kml(ds, metric, mode, before, after, window=None) -> Path:
     col = _metric_col(ds, metric)
     geo = ds.geo.copy()
     if mode == "delta" and all(before) and all(after):
-        comp = _compare_all(ds, col, before, after)
+        comp = _compare_all(ds, col, before, after, window)
         geo["metric"] = comp.set_index(SEGMENT_COL)["effect"].reindex(geo.index)
         color_by = "metric"
     else:
-        geo["metric"] = _segment_means(ds, col).reindex(geo.index)
+        geo["metric"] = _segment_means(ds, col, window).reindex(geo.index)
         color_by = "metric"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / "segments.kml"

@@ -49,6 +49,33 @@ def default_value_column(df: pd.DataFrame) -> str:
     return value
 
 
+# traffic_anomaly's default rolling-window sample guard (96 samples/day * 5),
+# sized for a *full* day. See ``_auto_min_rolling_samples``.
+_UPSTREAM_MIN_ROLLING_SAMPLES = 96 * 5
+
+
+def _auto_min_rolling_samples(
+    df: pd.DataFrame, datetime_col: str, freq_minutes: int
+) -> int:
+    """Scale ``traffic_anomaly``'s ``min_rolling_window_samples`` guard to the
+    data's actual time-of-day coverage.
+
+    That guard drops any row whose preceding rolling window holds fewer than N
+    samples; the upstream default (``480 = 96*5``) assumes a **whole day** is
+    present. A time-of-day-filtered series (e.g. only 4–6PM via
+    ``timebins.filter_time_window``) has far fewer samples per window and would be
+    filtered out **entirely** — an empty decomposition. Scaling by the fraction of
+    the day's freq-grid slots that actually appear fixes that: full-day data is
+    unchanged (ratio == 1 → 480), while a 2-hour window relaxes to ~40 so it still
+    decomposes. This is exactly what lets "decompose the PM peak only" work without
+    breaking the changepoint/decomposition path.
+    """
+    full_day_slots = max(1, round(1440 / freq_minutes))
+    observed = int(df[datetime_col].dt.floor(f"{freq_minutes}min").dt.time.nunique())
+    ratio = min(1.0, observed / full_day_slots)
+    return max(1, round(_UPSTREAM_MIN_ROLLING_SAMPLES * ratio))
+
+
 def decompose_segments(
     df: pd.DataFrame,
     value: str | None = None,
@@ -58,6 +85,7 @@ def decompose_segments(
     rolling_window_days: int = 7,
     drop_days: int = 7,
     keep_components: bool = True,
+    min_rolling_window_samples: int | None = None,
     **decompose_kwargs,
 ) -> pd.DataFrame:
     """Decompose each segment's series into trend / daily+weekly season / residual.
@@ -79,6 +107,13 @@ def decompose_segments(
             series carry no output — size the before period accordingly.
         keep_components: keep the trend/season columns (``drop_extras=False``).
             When ``False`` only ``resid``/``prediction`` are returned.
+        min_rolling_window_samples: minimum samples a row's rolling window must
+            hold to survive (``traffic_anomaly`` drops the rest). ``None``
+            (default) **auto-scales** it to the data's time-of-day coverage via
+            ``_auto_min_rolling_samples`` — 480 for a full day, proportionally
+            less for a time-of-day-filtered series so a windowed series (e.g. only
+            4–6PM) still decomposes instead of coming back empty. The value used is
+            recorded on ``attrs['min_rolling_window_samples']``.
         **decompose_kwargs: forwarded to ``traffic_anomaly.decompose``
             (e.g. ``min_rolling_window_samples``, ``rolling_window_enable``,
             ``min_time_of_day_samples``).
@@ -98,6 +133,11 @@ def decompose_segments(
     if value is None:
         value = default_value_column(df)
 
+    if min_rolling_window_samples is None:
+        min_rolling_window_samples = _auto_min_rolling_samples(
+            df, datetime_col, freq_minutes
+        )
+
     out = decompose(
         df,
         datetime_column=datetime_col,
@@ -107,10 +147,12 @@ def decompose_segments(
         rolling_window_days=rolling_window_days,
         drop_days=drop_days,
         drop_extras=not keep_components,
+        min_rolling_window_samples=min_rolling_window_samples,
         **decompose_kwargs,
     )
     out.attrs = dict(df.attrs)
     out.attrs["decompose_value"] = value
+    out.attrs["min_rolling_window_samples"] = min_rolling_window_samples
     return out
 
 

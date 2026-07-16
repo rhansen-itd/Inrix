@@ -162,4 +162,15 @@ not redistributed.
   correct, not a parsing miss.
 - **Zip member names collide on suffix:** `"metadata.csv".endswith("data.csv")`
   is `True`, so member lookup must match the **basename exactly** (`io` does).
+- **Time-of-day filtering vs the decomposition sample guard.**
+  `traffic_anomaly.decompose` uses **time-based** rolling windows (`preceding=N
+  days`), so restricting rows to a time-of-day window (e.g. 4–6PM) preserves the
+  day-to-day spacing and yields a coherent within-window trend. But its
+  `min_rolling_window_samples` guard (default `96*5 = 480`) assumes a **full
+  day** of 5-min samples is present; a 2-hour window's ~24 samples/day fall below
+  it and the decomposition returns **empty**. `decompose.decompose_segments`
+  auto-scales the guard by the fraction of the day's freq-grid slots actually
+  present (full day → unchanged 480; 4–6PM → ~40) — the reason "decompose the PM
+  peak only" works. `changepoint` uses the same time-based windowing, so it
+  tolerates the sparser filtered series too.
 - *(add findings here as sessions learn them)*

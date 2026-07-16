@@ -91,6 +91,23 @@ def parse_time_bin(bin_str: str) -> tuple[str, int, int, bool]:
     return bin_str, start, end, start > end
 
 
+def _clock_seconds(x) -> int:
+    """Seconds since local midnight for a single clock spec.
+
+    Accepts a ``datetime.time``, a 12-hour clock string (``"4:00PM"``), or an
+    hour **number** (``16``, ``17.5``; ``24`` = end of day). The numeric form is
+    what a GUI hour slider passes.
+    """
+    if isinstance(x, time):
+        return _secs(x)
+    if isinstance(x, str):
+        return _secs(parse_clock(x))
+    h = float(x)
+    if not 0 <= h <= 24:
+        raise ValueError(f"Hour {x!r} out of range 0..24.")
+    return int(round(h * 3600))
+
+
 def _normalize_day_scheme(scheme) -> dict[int, str]:
     """Turn a day-group ``scheme`` into a ``{dow: label}`` dict.
 
@@ -183,6 +200,56 @@ def assign_time_bins(
 
     out[out_col] = labels
     out.attrs = dict(df.attrs)
+    return out
+
+
+def filter_time_window(
+    df: pd.DataFrame,
+    window: str | tuple,
+    datetime_col: str = DATETIME_COL,
+) -> pd.DataFrame:
+    """Keep only rows whose **local wall-clock** time falls in a half-open window.
+
+    The primitive behind "run the analysis on a specific time of day only" (e.g.
+    the 4–6PM peak). Restricting rows here, *before* decomposition / changepoint /
+    before-after, is what makes those calculations describe the chosen period —
+    the trend and detected shifts then reflect that window on its own terms. Run
+    ``io.to_local`` first so the timestamp is tz-aware local (binning off UTC would
+    land the window at the wrong hour — see the module docstring).
+
+    Args:
+        df: rows with a tz-aware local ``datetime_col``.
+        window: either a ``"6:30AM-9:00AM"``-style range string (as accepted by
+            ``assign_time_bins``) or a ``(start, end)`` pair, where each bound is a
+            clock string (``"4:00PM"``), a ``datetime.time``, or an hour number
+            (``16``, ``17.5``; ``24`` = end of day). **Half-open** ``[start, end)``.
+            Overnight windows (``start > end``, e.g. ``9:00PM-6:00AM``) wrap past
+            midnight. A full-day window (``start == end``, or ``0``–``24``) keeps
+            every row (a no-op).
+        datetime_col: the timestamp column.
+
+    Returns:
+        A filtered copy; ``df.attrs`` is preserved and the applied window is
+        recorded on ``attrs['time_window']`` for reproducibility.
+    """
+    if isinstance(window, str):
+        _, start, end, _ = parse_time_bin(window)
+    else:
+        start_spec, end_spec = window
+        start, end = _clock_seconds(start_spec), _clock_seconds(end_spec)
+
+    tod = df[datetime_col].dt.hour * 3600 + df[datetime_col].dt.minute * 60 \
+        + df[datetime_col].dt.second
+    if start == end:                       # whole day
+        mask = pd.Series(True, index=df.index)
+    elif start < end:
+        mask = (tod >= start) & (tod < end)
+    else:                                  # overnight wrap
+        mask = (tod >= start) | (tod < end)
+
+    out = df[mask].copy()
+    out.attrs = dict(df.attrs)
+    out.attrs["time_window"] = window
     return out
 
 

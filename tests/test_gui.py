@@ -67,7 +67,8 @@ def test_build_app_layout_headless():
     # every dcc.Graph / control referenced by a callback exists in the layout tree
     ids = {c.id for c in app.layout._traverse() if getattr(c, "id", None)}
     for needed in ("map", "segment", "fig-ts", "fig-summary", "fig-ba", "fig-decomp",
-                   "load", "before-range", "after-range", "export-kml", "data-token"):
+                   "load", "before-range", "after-range", "export-kml", "data-token",
+                   "tod-window"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
@@ -224,6 +225,13 @@ def test_end_to_end_real_export():
     assert gapp._fig_beforeafter(ds, sid, col, before, after, True).data
     assert gapp._fig_decomp(ds, sid, col, "seg").data
 
+    # a 4–6PM time-of-day window drives every panel too (filter-first path)
+    pm = [16, 18]
+    assert gapp._fig_timeseries(ds, sid, col, before, after, "seg", pm).data
+    assert gapp._fig_decomp(ds, sid, col, "seg", pm).data
+    comp_pm = gapp._compare_all(ds, col, before, after, pm)
+    assert len(comp_pm) and "effect" in comp_pm.columns
+
     out = gapp._write_kml(ds, "tt", "mean", before, after)
     assert out.exists() and out.stat().st_size > 0
 
@@ -237,3 +245,20 @@ def test_metric_col_and_segment_means(series_df):
     assert gapp._metric_col(ds, "speed") == SPEED_COL
     means = gapp._segment_means(ds, SPEED_COL)
     assert 101 in means.index
+
+
+def test_apply_tod_window_filters_and_full_day_is_noop(series_df):
+    """The slider-window pre-filter: [0,24] passes everything through, a 4–6PM
+    window keeps only in-window rows and only that segment's mean is over them."""
+    assert len(gapp._apply_tod(series_df, [0, 24])) == len(series_df)      # no-op
+    assert len(gapp._apply_tod(series_df, None)) == len(series_df)
+    pm = gapp._apply_tod(series_df, [16, 18])
+    hrs = pm[DATETIME_COL].dt.hour
+    assert set(hrs.unique()) == {16, 17} and len(pm) < len(series_df)
+
+
+def test_hour_label_formats_slider_values():
+    assert gapp._hour_label(16) == "4:00 PM"
+    assert gapp._hour_label(17.5) == "5:30 PM"
+    assert gapp._hour_label(0) == "12:00 AM"
+    assert gapp._hour_label(24) == "12:00 AM"     # slider max = end of day
