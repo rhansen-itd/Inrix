@@ -159,15 +159,21 @@ Suggested prompt:
 Locate *when* a persistent shift occurred, without hand-specifying the
 before/after boundary — complements Item 4 for finding intervention dates.
 
-Scope:
-- [ ] Thin adapter over `traffic_anomaly.changepoint` for INRIX segments
-      (`entity_grouping_column='Segment ID'`, value selectable); surface
-      `score / avg_before / avg_after / avg_diff`.
-- [ ] `changepoints_near(dates, ...)` helper — relate detected changepoints to
-      known intervention dates (nearest changepoint within a window).
-- [ ] pytest: a synthetic series with a step change is detected at the right
-      time; a stationary series yields none.
-- [ ] DESIGN_HISTORY entry.
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 6):
+- [x] Thin adapter over `traffic_anomaly.changepoint` for INRIX segments
+      (`entity_grouping_column='Segment ID'`, value selectable, defaults to the
+      detected `Travel Time(...)`); surfaces `score / avg_before / avg_after /
+      avg_diff / pct_change`, tz + attrs preserved. Docstring recommends running
+      on the seasonally-adjusted series (from `decompose`).
+- [x] `changepoints_near(known_dates, window_days=7)` helper — per (segment,
+      known date) the nearest detected changepoint with signed `days_off` and a
+      `within_window` flag (nearest always reported, non-matches visible).
+- [x] pytest: synthetic step change detected at the right date with the right
+      sign/magnitude; stationary series yields none; only shifted segments
+      appear; `changepoints_near` matches/flags/multi-date/empty cases. 8 tests
+      (77 total). Verified on the Myrtle export (corroborates the Item 4
+      before/after result on the same segment).
+- [x] DESIGN_HISTORY entry.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 5 of ROADMAP.md: `changepoint.py` — thin

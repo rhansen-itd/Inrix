@@ -381,3 +381,63 @@ about the export format.
 Next: Item 5 (`changepoint.py`) — the sibling `traffic-anomaly` adapter, deps now
 installed. Then the mapping/GUI items (6, 7) and the KML export.
 
+---
+
+## Session 6 — Changepoint detection `changepoint.py` (ROADMAP Item 5) (2026-07-16)
+
+The sibling `traffic-anomaly` adapter to Item 4 — locates *when* a persistent
+shift happened without hand-specifying the boundary. Continued in-session off
+Item 4 (dep installed, `traffic_anomaly` schema + INRIX adapter pattern + the
+synthetic-fixture test approach all warm) rather than a cold restart.
+
+Built (`src/inrix_tools/changepoint.py`) — thin, no vendoring:
+- `detect_changepoints(df, value=None, rolling_window_days=14, score_threshold=5.0,
+  ...)` — wraps `traffic_anomaly.changepoint` with INRIX defaults
+  (`entity_grouping_column='Segment ID'`, `Date Time`, value defaults to the
+  detected `Travel Time(...)` via `decompose.default_value_column`). Surfaces one
+  row per detected shift: `score / avg_before / avg_after / avg_diff / pct_change`,
+  input column names + tz + `df.attrs` preserved. `attrs['changepoint_value']`
+  records the metric.
+- `changepoints_near(changepoints, known_dates, window_days=7)` — relates
+  detections to known intervention dates. For each (segment, known date) it
+  reports that segment's **nearest** changepoint with a signed `days_off` and a
+  `within_window` flag; the nearest is always reported (non-matches visible as
+  `within_window=False`, not dropped — same "make partials visible" stance as the
+  corridor complete-set rule). Accepts a scalar or an iterable of dates; naive
+  dates are localized to the changepoints' tz.
+
+Design decisions:
+- **Recommend the seasonally-adjusted series, don't force it.** Running
+  changepoint on raw travel time leaves daily/weekly seasonality in the signal,
+  which can register as spurious shifts. Rather than couple this module to
+  `decompose` (scope creep — Item 5 is "thin adapter, value selectable"), the
+  docstring tells the caller to decompose + `seasonally_adjust` and pass that
+  column as `value=`. Keeps the adapter one job.
+- **Nearest-always over match-only** in `changepoints_near`, mirroring the
+  project's preference for surfacing partials/near-misses instead of silently
+  filtering — a segment that shifted nowhere near the date is informative.
+- **Heavy imports stay function-local** (`traffic_anomaly` inside the function);
+  module import stays clean for the scaffold test.
+- **numpy 2.5 / pandas 2.3.3 skew:** `Timedelta` division tripped a numpy
+  generic-unit `DeprecationWarning`; compute `days_off` via `.total_seconds()/86400`
+  to stay clean (tests pass under `-W error::DeprecationWarning`).
+
+Verified on the real Myrtle export: scanning six segments' travel time surfaced a
+changepoint on segment **119036672 at 2026-03-31** (−27.8%) — the *same* segment
+that carried the strongest before/after effect in Item 4, so the two independent
+methods corroborate. `changepoints_near('2026-04-15', window_days=14)` correctly
+flags it as 14.4 days off → `within_window=False`.
+
+Tests: `tests/test_changepoint.py` — synthetic 5-min step series: detection at the
+right date with right sign/magnitude, stationary → none (empty frame keeps its
+columns), travel-time default, only-shifted-segments-appear, and
+`changepoints_near` match / far-date-flag / multi-date / empty-input. **8 pass, 77
+total.**
+
+No `DATA_FORMAT.md` change — analysis logic; nothing new learned about the export.
+
+With Items 4 and 5 done, the whole analysis core (io, timebins, speed,
+decompose/beforeafter, changepoint) and the geometry layer are built. Remaining:
+Item 6 (`kml.py`, Sonnet-eligible) and Item 7 (the Dash explorer + embedded map),
+which consume the geometry layer and this analysis core.
+
