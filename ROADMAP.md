@@ -118,24 +118,32 @@ Suggested prompt:
 The robust upgrade to the seed's t-test. A thin adapter over
 `traffic_anomaly.decompose` plus a decomposition-based before/after comparison.
 
-Scope:
-- [ ] `decompose.py`: thin adapter mapping INRIX columns onto
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 5):
+- [x] `decompose.py`: thin adapter mapping INRIX columns onto
       `traffic_anomaly.decompose` (defaults `freq_minutes=5`,
       `entity_grouping_columns=['Segment ID']`, `value_column` selectable =
       travel time or speed). Returns the decomposed frame (trend/season/resid).
-      Attribution note in the module docstring; **no vendoring**.
-- [ ] `beforeafter.py`:
-  - [ ] `compare_periods(...)` — the **primary** method: compare
-        seasonally-adjusted values / residuals between a before and after date
-        range, per segment (and optionally per day-group×time-bin). Report
-        **effect size + confidence interval** and n, not just a p-value.
-  - [ ] `ttest_baseline(...)` — the seed's one-sample/paired t-test kept as a
-        labeled, interpretable **baseline**, with an explicit note in the
-        docstring about autocorrelation + multiple-comparisons caveats.
-- [ ] pytest: synthetic series with a known injected before/after shift — the
-      decomposition method recovers it; the two methods agree in the easy case
-      and the decomposition method is more robust under seasonality.
-- [ ] DESIGN_HISTORY entry; note the analysis rationale.
+      Attribution note in the module docstring; **no vendoring**. Adds
+      `seasonally_adjust` (= value − season_day − season_week = median + resid,
+      retains the level so a step change survives).
+- [x] `beforeafter.py`:
+  - [x] `compare_periods(...)` — the **primary** method: compare
+        seasonally-adjusted values between a before and after date range, per
+        segment (and optionally per day-group×time-bin). Reports **effect size
+        (mean diff + Cohen's d) + Welch confidence interval** and n, with the
+        p-value labeled secondary. `use_decomposition=False` gives the raw
+        cross-check.
+  - [x] `ttest_baseline(...)` — the seed's paired t-test (across time-of-day
+        bins) kept as a labeled, interpretable **baseline**, with the
+        autocorrelation + multiple-comparisons caveats in the docstring.
+  - [x] `parse_period` — accepts `(start, end)` or the seed's
+        `"YYYYMMDD-YYYYMMDD"`; date-only end covers the whole calendar day.
+- [x] pytest: synthetic series with a known injected +2 shift — decomposition
+      recovers it (CI excludes 0); null case CI straddles 0; the two methods
+      agree in the easy case; decomposition is more robust than raw under a
+      weekly-seasonality confound. 14 tests (69 total). Verified end-to-end on
+      the 46-segment Myrtle export.
+- [x] DESIGN_HISTORY entry; analysis rationale recorded.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 4 of ROADMAP.md: `decompose.py` (thin

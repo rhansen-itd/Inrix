@@ -304,3 +304,80 @@ Next: Items 4 (`decompose.py`/`beforeafter.py`) and 5 (`changepoint.py`) — the
 `traffic-anomaly` adapters — are the remaining analysis core; both need the
 `traffic-anomaly` dep installed into `.venv` (deferred since Session 1).
 
+---
+
+## Session 5 — Decomposition + before/after `decompose.py` / `beforeafter.py` (ROADMAP Item 4) (2026-07-16)
+
+The robust upgrade to the seed's t-test — the first `traffic-anomaly` adapters.
+Installed the dep deferred since Session 1 (`traffic-anomaly` 2.5.4, pulling
+`ibis-framework` 11 + `duckdb` + `scipy`).
+
+Built (`src/inrix_tools/decompose.py`) — a **thin** adapter, no vendoring:
+- `decompose_segments(df, value=None, freq_minutes=5, ...)` — wraps
+  `traffic_anomaly.decompose` with INRIX defaults (`entity_grouping_columns=
+  ['Segment ID']`, `Date Time` datetime, 5-min freq). `value` defaults to the
+  detected `Travel Time(...)` column (then `Speed(...)`), unit-agnostic via
+  `speed.metric_columns`. Returns trend (`median`) / `season_day` / `season_week`
+  / `resid` / `prediction`; `attrs['decompose_value']` records the metric.
+- `seasonally_adjust(decomposed)` — `value − season_day − season_week`
+  (≡ `median + resid`): strips daily/weekly seasonality but **retains the
+  level/trend** so a genuine intervention step change survives. This, not the raw
+  residual, is what before/after compares — the residual's rolling median would
+  partly absorb a persistent shift.
+
+Built (`src/inrix_tools/beforeafter.py`):
+- `compare_periods(...)` — **primary**. Decompose once, take the
+  seasonally-adjusted series, split into before/after periods, and report a
+  difference-in-means **effect size** with a **Welch (unequal-variance) CI**,
+  Cohen's d, n per side, and a secondary Welch p-value. `by=` adds day-group ×
+  time-bin grouping on top of per-segment; `use_decomposition=False` gives a raw
+  (non-robust) cross-check labeled `method="raw"`.
+- `ttest_baseline(...)` — the seed's `analyze_travel_time` ported faithfully: a
+  **paired** t-test across time-of-day bins (default 15-min) per (segment, group).
+  Kept only as a labeled baseline; docstring states the two reasons it isn't
+  primary (5-min autocorrelation → overstated p-values; many segments×groups →
+  multiple comparisons).
+- `parse_period(period, tz)` — normalizes `(start, end)` or the seed's compact
+  `"YYYYMMDD-YYYYMMDD"` into half-open tz-aware bounds; a **date-only end covers
+  the whole calendar day** (rolls to next midnight via a DST-safe `DateOffset`).
+
+Design decisions:
+- **Seasonally-adjusted, not residual, for the level comparison.** The residual
+  has the rolling median removed, which absorbs a step change over ~`drop_days`;
+  comparing `median + resid` keeps the level so the intervention is visible.
+  Verified on synthetic data that this recovers a known +2-min injected step.
+- **Effect size + CI as the headline, p-value demoted.** Per CLAUDE.md/Session 0:
+  report a difference in means with a CI and a standardized Cohen's d; the Welch
+  form handles unequal before/after variance and sample sizes. The p-value is
+  emitted but explicitly secondary.
+- **Robustness demonstrated, not just asserted.** A test builds a weekly-season
+  confound (before period includes a weekend, after is weekdays-only) and shows
+  the raw comparison is biased while the decomposition recovers the true +2 —
+  the concrete reason the decomposition method is primary.
+- **`traffic_anomaly` passthrough quirks verified.** tz-aware timestamps survive
+  decompose unchanged; extra columns (day-group/time-bin labels) are carried
+  through so `by=` grouping works after decomposition; `drop_extras=False` is
+  required to keep the season components (mapped to `keep_components=True`).
+- **Heavy imports stay function-local.** `traffic_anomaly` and `scipy` import
+  inside the functions (module import stays clean for the scaffold test); only
+  `.io`/`.speed`/`.decompose` are imported at module scope.
+
+Environment note: installing `traffic-anomaly` **downgraded pandas 3.0.3 → 2.3.3**
+(`ibis-framework` 11 requires pandas <3). Within the `pandas>=2.0` pin and
+harmless — full suite green on 2.3.3.
+
+Tests: `tests/test_beforeafter.py` — synthetic 5-min series with daily+weekly
+seasonality and an injected step: component/tz/adjust identities, period parsing
+(date-only day, seed string, bad order), shift recovery with CI excluding 0, null
+case CI straddling 0, `by`/multi-segment, thin-group skip, the seed t-test's
+direction, method agreement in the easy case, and decomposition-beats-raw under
+the seasonal confound. **14 pass, 69 total.** Also run end-to-end on the real
+46-segment Myrtle export (both methods agree in sign/magnitude across an
+MST→MDT-spanning window).
+
+No `DATA_FORMAT.md` change — this item is analysis logic; nothing new learned
+about the export format.
+
+Next: Item 5 (`changepoint.py`) — the sibling `traffic-anomaly` adapter, deps now
+installed. Then the mapping/GUI items (6, 7) and the KML export.
+
