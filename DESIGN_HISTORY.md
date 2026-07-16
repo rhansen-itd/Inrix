@@ -441,3 +441,70 @@ decompose/beforeafter, changepoint) and the geometry layer are built. Remaining:
 Item 6 (`kml.py`, Sonnet-eligible) and Item 7 (the Dash explorer + embedded map),
 which consume the geometry layer and this analysis core.
 
+---
+
+## Session 7 — KML export `kml.py` (ROADMAP Item 6) (2026-07-16)
+
+Ported `_metadata KML.ipynb` into one clean export, drawing the **real
+road-following polylines** from the Item 8 geometry layer instead of the seed's
+straight endpoint-to-endpoint lines. The notebook had **two** near-duplicate
+`csv_to_kml` functions (cell 0 used a plain LineString + a separate label
+Placemark; cell 1 wrapped LineString + hidden-pin Point in a `MultiGeometry` and
+added a `base_dir` scatter-plot link) — this consolidates the better parts:
+MultiGeometry + hidden pin, always-on-label toggle, shared per-colour styles.
+
+Built (`src/inrix_tools/kml.py`):
+- `geometry_to_kml(geo, out_path, *, label_segments=False, name_col=None,
+  color_by=None, default_color='blue', palette=None, ramp=None,
+  document_name=...)` — consumes a `geometry.segment_geometry` GeoDataFrame
+  (indexed by `Segment ID`, shapely `geometry`, plus any joined attribute cols)
+  and writes KML. Each segment is a `MultiGeometry` of its full polyline
+  (`_coord_string` emits every vertex as `lon,lat,0`) + a midpoint `Point`
+  (`interpolate(0.5, normalized=True)`) that anchors an optional always-on label;
+  the pushpin icon is scaled to 0 (empty `<Icon>`), the seed's text-only trick.
+- **`color_by` generalises the seed's blue=N/E / red=S/W direction colouring.**
+  `None` → single `default_color`; a non-numeric column → categorical palette
+  (one colour per distinct value, or a `{value: colour}` / list override); a
+  numeric column → a continuous `ramp` over min..max (the color-by-metric case).
+  `_resolve_color` accepts named colours, `#rrggbb`, `(r,g,b[,a])`, or a raw KML
+  `aabbggrr` string; one shared `<Style>` per distinct colour is emitted and
+  referenced by `styleUrl`. A text-only `ScreenOverlay` legend is added when
+  `color_by` is set.
+
+Design decisions:
+- **Real geometry, fallback for free.** Because the layer already substitutes a
+  straight endpoint line for any segment missing from the XD shapefile (flagged
+  `source='fallback'`), the KML gets that automatically — no re-read of
+  `metadata.csv`, no offset hacks. Segments with `geometry is None`
+  (`source='missing'`) are skipped rather than emitted empty.
+- **Dropped the seed's ~10 ft directional line offset.** It existed to separate
+  overlapping opposing-direction straight lines drawn from the same endpoints;
+  with real road-following polylines the two directions already trace distinct
+  paths, so the offset (and its `lat_per_ft`/`lon_per_ft` fudge at 44°N) is
+  unnecessary. Colour still distinguishes direction when `color_by='Direction'`.
+- **KML colour is `aabbggrr`, not `#rrggbb`.** Centralised the byte-swap in
+  `_rgb_to_kml`; the legend swatch reverses it back to CSS for the HTML overlay.
+- **Pure export, no plotting.** Only `xml.etree` + `pathlib` at module scope;
+  `pandas` imported inside `_segment_colors` for the numeric-dtype check. Matches
+  the pure-core rule (though this is an export module, it stays plotting-free).
+
+One scaffold-test change: `tests/test_scaffold.py` dropped its
+`test_stub_raises_not_implemented` — `kml` was the last stub, so no
+`NotImplementedError` module remains.
+
+Tests: `tests/test_kml.py` — synthetic 2-segment GeoDataFrame (one 3-vertex
+polyline + one straight fallback): parses back as valid KML, the multi-vertex
+polyline survives with all 3 vertices, coords are lon,lat, labels hidden by
+default / visible on request, pins scaled to 0, `name_col` and default
+(segment-id) naming, categorical two-colour + palette override, numeric ramp
+endpoints, missing-geometry skip, `Segment ID`-as-column input, `_resolve_color`
+forms — plus a real Myrtle roundtrip (all 46 segments, multi-vertex confirmed).
+**13 tests, 89 total.**
+
+No `DATA_FORMAT.md` change — this is a pure export over the already-documented
+geometry layer; nothing new learned about the INRIX format.
+
+Next: Item 7 — the Dash explorer + embedded map — the last item. It consumes the
+geometry layer (map), the analysis core (panels), and this `geometry_to_kml`
+(export button).
+

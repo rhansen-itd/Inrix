@@ -18,14 +18,7 @@ MODULES = [
 
 @pytest.mark.parametrize("name", MODULES)
 def test_module_imports(name):
-    """Every module imports without third-party deps installed (stubs are
-    import-clean; heavy imports happen inside functions)."""
+    """Every module imports without third-party deps installed (heavy imports
+    happen inside functions). All ROADMAP compute/export modules are now built —
+    no stubs remain."""
     importlib.import_module(name)
-
-
-def test_stub_raises_not_implemented():
-    # a module still awaiting its ROADMAP item raises a clear NotImplementedError
-    from inrix_tools import kml
-
-    with pytest.raises(NotImplementedError):
-        kml.metadata_to_kml(None, None)

@@ -225,17 +225,19 @@ Port `_metadata KML.ipynb`, but draw the **real segment geometry** from the
 geometry layer (Item 8) instead of straight endpoint-to-endpoint lines. KML
 stays as an *export*; the embedded app map (Item 7) is the primary view.
 
-Scope:
-- [ ] `geometry_to_kml(geo, out_path, label_segments=False, color_by=None, ...)`
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 7):
+- [x] `geometry_to_kml(geo, out_path, label_segments=False, color_by=None, ...)`
       — draw each segment as its road-following polyline (from Item 8), optional
       always-visible label, hidden pin icons, optional color-by-metric. One
       clean function consolidated from the two near-duplicate `csv_to_kml`
-      versions in the seed notebook.
-- [ ] Consume the geometry layer / typed metadata, not a re-read CSV; fall back
-      to the straight-line geometry the layer already provides.
-- [ ] pytest: valid KML XML out for a 2-segment fixture (parse it back), with a
-      multi-vertex polyline present.
-- [ ] DESIGN_HISTORY entry.
+      versions in the seed notebook. `color_by` handles both categorical
+      (Direction) and numeric-metric (ramp) columns; optional legend overlay.
+- [x] Consume the geometry layer / typed metadata, not a re-read CSV; fall back
+      to the straight-line geometry the layer already provides (missing geometry
+      skipped).
+- [x] pytest: valid KML XML out for a 2-segment fixture (parse it back), with a
+      multi-vertex polyline present. 13 tests (89 total); real Myrtle roundtrip.
+- [x] DESIGN_HISTORY entry.
 
 Suggested prompt:
 > [Sonnet] In Inrix/, do Item 6 of ROADMAP.md: `kml.py` — one clean
