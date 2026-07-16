@@ -508,3 +508,86 @@ Next: Item 7 — the Dash explorer + embedded map — the last item. It consumes
 geometry layer (map), the analysis core (panels), and this `geometry_to_kml`
 (export button).
 
+
+---
+
+## Session 8 — Dash explorer + embedded map `gui/` (ROADMAP Item 7) (2026-07-16)
+
+The last ROADMAP item: the interactive explorer, a **thin shell** over the compute
+core. Split into two files so the pure-core/thin-shell rule holds visibly:
+`gui/figures.py` (compute-core DataFrame → Plotly figure; no statistics) and
+`gui/app.py` (Dash layout + callbacks; wiring only — every callback calls
+`inrix_tools.*` and hands the result to `figures.*`).
+
+**Map framework decision: Plotly native maps** (`go.Scattermap`, MapLibre, the
+token-free `open-street-map` style), *not* dash-leaflet. Rationale: the whole GUI
+is then one rendering stack — the map, like every panel, is a Plotly figure in a
+`dcc.Graph`, and map clicks arrive through the ordinary Dash `clickData` path with
+no second component/event model. dash-leaflet would buy nicer built-in draw tools,
+but corridor-draw isn't in this item's scope and the single-stack simplicity is
+worth more here. Both would have consumed the same geometry layer, so the choice
+is reversible if draw tools are needed later.
+
+Built:
+- `gui/figures.py` — `segment_map` (per-segment polyline traces coloured from a
+  metric + a clickable midpoint-marker layer carrying the colour bar, hover, and
+  `customdata=Segment ID`; a highlight ring on the selection), `time_series`
+  (WebGL `Scattergl` — a segment is tens of thousands of 5-min points — with the
+  before/after windows shaded), `summary_bars` (day-group×time-bin grouped bars
+  ±1 SD from `speed.segment_summary`), `beforeafter_forest` (per-segment effect +
+  Welch CI from `beforeafter.compare_periods`, dashed rule at 0, selection
+  highlighted), and `decomposition` (stacked observed+trend / seasonal / residual
+  with changepoint markers). A `_blank` placeholder covers empty selections.
+- `gui/app.py` — `build_app()` constructs layout + callbacks without loading data
+  (data loads on the *Load* button). Controls: export path, timezone, CValue
+  threshold, metric (travel time / speed), map colour mode (segment mean /
+  before-after Δ), before + after `DatePickerRange`s, and a KML-export button.
+  Five callbacks: load (→ server-side dataset cache), map-click→dropdown,
+  map figure, the four panels (keyed on the active tab so only the visible one
+  computes), and KML export to `out/segments.kml`.
+
+Design decisions:
+- **Server-side dataset cache, not `dcc.Store`.** The Myrtle export is ~1.9M
+  filtered rows — far too big to shuttle through a `dcc.Store` on every callback.
+  Loaded frames (+ the joined geometry, per-metric columns, and a compare-periods
+  cache) live in a module-level `dict[int, Dataset]`; a lightweight token in a
+  `dcc.Store` passes the handle between callbacks. This suits the current
+  single-user localhost scope (multi-user state is a Future item).
+- **Dropdown is the single selection source.** Map click writes `segment.value`
+  (`allow_duplicate`), which drives panels + the map highlight; no click→store→
+  dropdown loop. Thin polylines are hard to click, so the click target is the
+  midpoint marker, not the line.
+- **Corridor-wide before/after is computed once and cached** per (metric, before,
+  after) on the `Dataset` — it backs both the "before/after Δ" map colouring and
+  the forest panel, so selecting the delta metric and opening the forest tab share
+  one ~12 s decomposition pass instead of two.
+- **Panels compute lazily per active tab**, and the per-segment panels
+  (time series / summary / decomposition) run on a single-segment subset, so
+  decomposition/changepoint stay responsive (~2 s) instead of decomposing all 46.
+
+Bug found + fixed via a live browser run (the *Load* click 500'd): the default
+before/after windows added a `pd.Timedelta` to a `datetime.date` and then called
+`.date()` on the result — which is already a `date`, raising `AttributeError` and
+failing the callback. Switched to `datetime.timedelta` and dropped the `.date()`
+calls (also clears a NumPy generic-unit deprecation warning).
+
+Packaging: `pip install -e .[gui]` already declared `dash` +
+`dash-bootstrap-components` + `inrix_tools[geo]`; no map dependency needed on top
+of Plotly since we went native. Added `.claude/launch.json` for the preview
+runner and `README` run steps.
+
+Tests (`tests/test_gui.py`, 14): headless `build_app()` layout smoke test (every
+callback-referenced component present); a real Dash/Flask **HTTP** round-trip
+(index + `_dash-layout` + `_dash-dependencies` respond, callbacks registered); the
+`figures.*` builders on synthetic frames (trace counts, click `customdata`,
+period shading, the x=0 rule, subplot count); and a **self-skipping real-export
+end-to-end** test that runs the exact functions the callbacks call (load → map
+values → all four panels → corridor before/after → KML) on the Myrtle fixture,
+auto-skipping in CI where the licensed fixture is absent. **103 tests total.**
+
+No `DATA_FORMAT.md` change — nothing new learned about the export format; this
+item consumes the already-documented I/O, analysis, and geometry layers.
+
+This completes the scoped ROADMAP (Items 1–8). Remaining work is the Future
+section (anomaly flagging, difference-in-differences, corridor assembly,
+deployment/multi-user state), which needs a planning pass before it's actionable.

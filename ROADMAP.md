@@ -256,21 +256,25 @@ to drive the analysis panels. Map framework (dash-leaflet vs Plotly native
 maps) is **decided at build time** — pick per the interaction needs then; both
 consume the same GeoJSON from the geometry layer.
 
-Scope:
-- [ ] **Embedded map**: render the geometry layer (Item 8) as clickable segment
-      polylines over an OSM basemap; click/select a segment (or a drawn
-      corridor) to drive every other panel; color segments by a chosen metric
-      (mean speed, before/after delta, anomaly count).
-- [ ] Load an export (path/upload) → map + segment picker stay in sync.
-- [ ] Views: raw speed/travel-time time series; day-group×time-bin summary
-      (Item 3); before/after comparison (Item 4); decomposition components and
-      changepoints (Items 4/5) overlaid on the series.
-- [ ] Date-range pickers for the before/after periods; CValue threshold control.
-- [ ] KML export button (Item 6) from the current selection.
-- [ ] Every figure built from a compute-core DataFrame — callbacks call
-      `inrix_tools.*` and render; they don't compute inline.
-- [ ] Run instructions in README; a smoke test that the app builds its layout
-      headless. Record the map-framework choice in DESIGN_HISTORY.
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 8):
+- [x] **Embedded map**: renders the geometry layer (Item 8) as clickable segment
+      polylines over an OSM basemap; clicking a midpoint marker (the robust click
+      target — thin lines are hard to hit) selects a segment and drives every
+      panel; segments coloured by a chosen metric (segment mean, or before/after Δ)
+      via a Plotly colour bar.
+- [x] Load an export (path + CValue + tz) → map + segment picker stay in sync
+      (map click → dropdown → panels; the dropdown is the single selection source).
+- [x] Views: raw speed/travel-time time series (with before/after windows shaded);
+      day-group×time-bin summary (Item 3); before/after effect + CI forest (Item 4,
+      decomposition primary); decomposition components + changepoints (Items 4/5).
+- [x] Date-range pickers for the before/after periods; CValue threshold control.
+- [x] KML export button (Item 6) — writes the current metric colouring to `out/`.
+- [x] Every figure built from a compute-core DataFrame — callbacks call
+      `inrix_tools.*` and hand the result to `gui/figures.py`; no stats inline.
+- [x] Run instructions in README; headless layout + HTTP smoke tests, plus a
+      self-skipping real-export end-to-end test. **Map framework: Plotly native
+      maps** (`go.Scattermap`, MapLibre, token-free `open-street-map`) — recorded
+      in DESIGN_HISTORY. 14 tests (103 total).
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 7 of ROADMAP.md: build the Dash explorer in

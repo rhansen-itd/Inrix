@@ -66,6 +66,26 @@ pip install -e .          # compute core
 pip install -e .[gui,dev] # + Dash explorer + test tooling
 ```
 
+## Run the explorer
+
+```bash
+pip install -e .[gui]
+python gui/app.py         # serves http://127.0.0.1:8050
+```
+
+Then, in the browser: set the **export** path (defaults to the Myrtle sample
+`.zip`), timezone, and CValue threshold, and click **Load export**. The embedded
+map is the primary selector — click a segment to drive the panels below (raw time
+series, day-group × time-bin summary, before/after effect + CI, and decomposition
++ changepoints). Set the **before**/**after** date ranges to run the comparison;
+switch the map colouring between segment mean and the before/after Δ; and **Export
+KML** writes the current colouring to `out/segments.kml`.
+
+The map uses **Plotly native maps** (MapLibre `open-street-map`, no Mapbox token).
+The GUI is a thin shell: `gui/figures.py` turns compute-core DataFrames into
+figures and `gui/app.py` only wires inputs to them — all statistics stay in
+`src/inrix_tools/` (see [CLAUDE.md](CLAUDE.md)).
+
 ## Documents
 
 - [ROADMAP.md](ROADMAP.md) — planned work as named, numbered, session-sized
@@ -93,5 +113,16 @@ pushed-down WHERE, EPSG:4326, optional GeoParquet cache), `segment_geometry`
 (`Segment ID → LINESTRING` with a flagged straight-line fallback),
 `connectivity_table` (`next_id` from the XD topology), and `to_geojson`. All 46
 real Myrtle segments resolve to road-following polylines. **23 tests pass**
-(`.venv/bin/pytest`). Next up: Item 6 (`kml.py`) and Item 7 (Dash app + embedded
-map) both consume this layer; Item 2 (`timebins.py`) is the other independent thread.
+(`.venv/bin/pytest`).
+
+**Sessions 3–7 (2026-07-16) — the compute core.** `timebins.py` (Item 2),
+`speed.py` (Item 3), `decompose.py` + `beforeafter.py` (Item 4), `changepoint.py`
+(Item 5), and `kml.py` (Item 6) — see [DESIGN_HISTORY.md](DESIGN_HISTORY.md).
+
+**Session 8 (2026-07-16) — Dash explorer + embedded map (Item 7) done.** The
+interactive explorer under `gui/` as a thin shell over the compute core: a
+Plotly-native OSM map of real segment polylines as the primary selector driving
+time-series / day×time summary / before-after (effect + CI) / decomposition +
+changepoint panels, before/after date pickers, CValue control, and a KML export
+button. **103 tests pass.** This completes the scoped ROADMAP (Items 1–8);
+remaining work is the Future section.
