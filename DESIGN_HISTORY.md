@@ -196,3 +196,111 @@ Next: Item 6 (`kml.py`) now draws real polylines from this layer; Item 7 (the
 Dash app + embedded map) consumes it. Item 2 (`timebins.py`) is the other
 independent thread.
 
+---
+
+## Session 3 — Time binning `timebins.py` (ROADMAP Item 2) (2026-07-16)
+
+Ported the day-group / time-of-day binning — the reusable heart of the seed —
+out of `_Plot Speed.ipynb` into pure, vectorized functions. The notebook had
+**two** copies: the inline binning in `process_and_plot_*` and the later
+`map_day_group` / `assign_time_chunks`. They disagreed, so this consolidates the
+better parts of each.
+
+Built (`src/inrix_tools/timebins.py`):
+- `assign_day_group(df, scheme=None)` — local day-of-week → group label via a
+  vectorized `.map`. `scheme` is a `{dayofweek: label}` dict (fully explicit) or
+  a list of `"Monday-Thursday"`-style weekday range specs (parsed, wrap-around
+  allowed) — no hardcoded scheme. Default `DEFAULT_DAY_GROUPS` = Mon–Thu / Fri /
+  Sat / Sun. Unmapped days → `pd.NA`.
+- `assign_time_bins(df, bins)` — clock ranges like `"6:30AM-9:00AM"`, wrapping
+  overnight (`"9:00PM-6:00AM"`). Reduces time-of-day to seconds-since-midnight
+  once, then assigns each bin with a boolean mask (no per-row `.apply`).
+- `assign_group_label(df)` — composes `"Mon–Thu, 2:00PM-7:00PM"`; NA in either
+  part → NA label (matches the seed's `dropna(subset=['Group'])`).
+- `parse_clock` / `parse_time_bin` helpers — robust `%I:%M%p` (spaces, case,
+  minutes-optional `"9PM"`, `12:00AM`=midnight / `12:00PM`=noon).
+
+Two deliberate fixes to the seed:
+1. **Half-open bins `[start, end)`.** `process_and_plot_*` used `start <= t <=
+   end`, so a boundary timestamp (`2:00PM`) fell in *both* contiguous bins and
+   was double-counted. The later `assign_time_chunks` already used half-open; we
+   standardize on it. Bins are assumed non-overlapping; on overlap the
+   first-listed bin wins (documented, tested).
+2. **Vectorized, not `.apply`.** The seed mapped a Python function over every
+   row; here it's array masks over an integer seconds-of-day vector.
+
+Binning reads the **local wall clock** (`.dt.hour` on the tz-aware local
+timestamp), so it's DST-correct for free once `io.to_local` has run — an 08:00
+row bins to the morning slot on both sides of the MST/MDT switch. Tests assert
+this across the 2026-03-08 spring-forward, including that the non-existent
+02:00–03:00 gap hour doesn't break neighboring rows.
+
+Tests: `tests/test_timebins.py` — purely synthetic (no export needed): clock/bin
+parsing, half-open edge inclusivity, overnight wrap, unassigned → NA,
+first-listed-wins on overlap, end-at-midnight, configurable dict + range-spec
+day schemes, DST wall-clock binning, group-label composition, attrs preserved /
+input unmutated. **16 pass, 39 total.**
+
+No `io.py` / `DATA_FORMAT.md` change — this item is pure binning logic and
+learned nothing new about the export format.
+
+Next: Item 3 (`speed.py`) — segment / daily-timebin / corridor aggregation —
+now has both its dependencies (Items 1, 2) and consumes these bins directly.
+
+---
+
+## Session 4 — Speed / travel-time aggregation `speed.py` (ROADMAP Item 3) (2026-07-16)
+
+The core "undo the compute+plot fusion" item. Continued in-session off Item 2
+(io + timebins context warm; the seed's `process_and_plot_*` functions already
+read in full) — the dependency overlap made a warm continuation the right call
+over a cold restart.
+
+Built (`src/inrix_tools/speed.py`) — the **compute halves** of the seed's
+`process_and_plot_*`, each returning a typed DataFrame, **no plotting imports**:
+- `segment_summary(df, values=None, group_cols=None)` — per (segment, day-group,
+  time-bin) `count/mean/std/median` for each metric, flattened to
+  `"<value>_<stat>"` columns. Value columns auto-detected by prefix
+  (`metric_columns`) so the unit isn't hard-coded. `dropna=True` drops
+  unassigned bins (the seed's `dropna(subset=['Group'])`).
+- `daily_timebin_summary(df, value=None, ...)` — per-date `Mean/Std` with
+  `Upper/Lower = Mean ± Std` bands per (segment, group), the
+  `process_and_plot_timebin_daily_summary` payload minus the figure.
+- `corridor_travel_time(df, metadata=None, require_complete=True)` — segment→
+  corridor travel-time sum under the **complete-set rule**, delegating to Item 1's
+  `io.mark_complete_timestamps` rather than re-deriving it. `require_complete=
+  False` keeps partial timestamps with a `complete` flag instead of dropping
+  them. When `metadata` is supplied it adds corridor `Length(Miles)` and, for
+  miles/minutes units, a space-mean `Corridor Speed(miles/hour)`.
+- `rolling_average(df, value, window, group_cols, direction)` — the seed's
+  rolling means pulled **out** of the summary into an explicit opt-in transform
+  (trailing/leading/centered; grouped so it never rolls across a segment/day
+  boundary).
+
+Design notes:
+- **Corridor label comes from the data, not metadata.** Grouping is on
+  `Corridor/Region Name` (a `data.csv` column); `metadata` is optional and only
+  used for length/speed — consistent with the Session-1 finding that raw
+  `metadata.csv` has no corridor column.
+- **Complete-set rule reuses the Item 1 helper** instead of the seed's inline
+  `count == count.max()` merge — one source of truth for "did every segment
+  report."
+- **`metric_columns` prefix detection** keeps the module unit-agnostic (mph/kmh),
+  matching `io.detect_units`.
+
+One scaffold-test fix: `tests/test_scaffold.py`'s stub check moved off `speed`
+(now built) onto `kml` (still a stub).
+
+Tests: `tests/test_speed.py` — synthetic fixture with hand-computed aggregates:
+segment stats (incl. singleton-group `std` NaN), daily mean±SD bands, corridor
+complete-set drop + partial visibility + length/space-mean speed, rolling
+trailing/leading + no-cross-boundary, and a guard that no plotting library is
+imported. **16 pass, 55 total.**
+
+No `DATA_FORMAT.md` change — pure aggregation, nothing new learned about the
+export.
+
+Next: Items 4 (`decompose.py`/`beforeafter.py`) and 5 (`changepoint.py`) — the
+`traffic-anomaly` adapters — are the remaining analysis core; both need the
+`traffic-anomaly` dep installed into `.venv` (deferred since Session 1).
+

@@ -63,15 +63,18 @@ Port and harden the day-group / time-of-day binning from `_Plot Speed.ipynb`
 (`map_day_group`, `assign_time_chunks`), which is the reusable heart of the
 seed. Pure functions over a DataFrame.
 
-Scope:
-- [ ] `assign_day_group(df, scheme)` — configurable day grouping (default
-      Mon–Thu / Fri / Sat / Sun); no hardcoded scheme.
-- [ ] `assign_time_bins(df, bins)` — arbitrary bin edges like
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 3):
+- [x] `assign_day_group(df, scheme)` — configurable day grouping (default
+      Mon–Thu / Fri / Sat / Sun); no hardcoded scheme. Scheme is a `{dow: label}`
+      dict *or* a list of `"Monday-Thursday"`-style range specs.
+- [x] `assign_time_bins(df, bins)` — arbitrary bin edges like
       `"6:30AM-9:00AM"`, including **overnight** bins (e.g. `9:00PM-6:00AM`);
-      vectorized, not per-row `.apply`. Robust `%I:%M%p` parsing.
-- [ ] `group_label` composition (`"Mon–Thu, 2:00PM-7:00PM"`).
-- [ ] pytest: bin-edge inclusivity, overnight wrap, unassigned handling, DST day.
-- [ ] DESIGN_HISTORY entry.
+      vectorized, not per-row `.apply`. Robust `%I:%M%p` parsing. Half-open
+      `[start, end)` (fixes the seed's `<= <=` double-count at shared edges).
+- [x] `assign_group_label` composition (`"Mon–Thu, 2:00PM-7:00PM"`).
+- [x] pytest: bin-edge inclusivity, overnight wrap, unassigned handling, DST day
+      (spring-forward + non-existent gap hour). 16 pass (39 total).
+- [x] DESIGN_HISTORY entry.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 2 of ROADMAP.md: build `src/inrix_tools/timebins.py`
@@ -86,17 +89,21 @@ Split the seed's `process_and_plot_*` functions into **compute only** — the
 plotting moves out (to the GUI / notebooks). This is the core "undo the
 compute+plot fusion" item.
 
-Scope:
-- [ ] `segment_summary(df, ...)` — per (segment, day-group, time-bin) stats
-      (count, mean, std, median of speed and travel time), tz-aware.
-- [ ] `daily_timebin_summary(df, ...)` — the daily mean ± SD per time-bin series
-      that `process_and_plot_timebin_daily_summary` produced, as a DataFrame.
-- [ ] `corridor_travel_time(df, metadata, ...)` — segment→corridor summation
-      with the complete-set rule (Item 1 helper).
-- [ ] Optional rolling averages as an explicit, testable transform (not baked
-      into the summary).
-- [ ] Return typed DataFrames; **no plotting imports in this module**.
-- [ ] pytest on a synthetic fixture with known aggregates; DESIGN_HISTORY entry.
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 4):
+- [x] `segment_summary(df, ...)` — per (segment, day-group, time-bin) stats
+      (count, mean, std, median of speed and travel time), tz-aware. Value cols
+      auto-detected by prefix; unassigned bins dropped.
+- [x] `daily_timebin_summary(df, ...)` — the daily mean ± SD per time-bin series
+      that `process_and_plot_timebin_daily_summary` produced, as a DataFrame
+      (Count/Mean/Std/Upper/Lower).
+- [x] `corridor_travel_time(df, metadata, ...)` — segment→corridor summation
+      with the complete-set rule (Item 1 helper `mark_complete_timestamps`).
+      Optional `metadata` adds corridor length + space-mean speed.
+- [x] Optional rolling averages as an explicit, testable transform
+      (`rolling_average`, trailing/leading/centered) — not baked into the summary.
+- [x] Return typed DataFrames; **no plotting imports in this module** (asserted).
+- [x] pytest on a synthetic fixture with known aggregates (16 tests, 55 total);
+      DESIGN_HISTORY entry.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 3 of ROADMAP.md: build `src/inrix_tools/speed.py` —

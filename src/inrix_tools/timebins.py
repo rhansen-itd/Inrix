@@ -1,24 +1,211 @@
-"""Day-group and time-of-day binning.  (ROADMAP Item 2 — stub)
+"""Day-group and time-of-day binning.  (ROADMAP Item 2)
 
-Ports ``map_day_group`` / ``assign_time_chunks`` from ``_Plot Speed.ipynb`` as
-pure, vectorized, overnight-safe functions. Binning is done in local time.
+Ports ``map_day_group`` / ``assign_time_chunks`` (and the inline binning inside
+``process_and_plot_*``) from ``_Plot Speed.ipynb`` as pure, vectorized,
+overnight-safe functions. Binning is done in **local wall-clock time**, so run
+``io.to_local`` first (the timestamp column must be tz-aware local, not UTC) —
+otherwise morning/evening bins land at the wrong hour.
+
+What this fixes vs. the seed notebook:
+- **Half-open bins ``[start, end)``.** The ``process_and_plot_*`` variants used
+  ``start <= t <= end`` (both ends inclusive), so contiguous bins double-count
+  the shared edge (``2:00PM`` fell in both ``"9:00AM-2:00PM"`` and
+  ``"2:00PM-7:00PM"``). The later ``assign_time_chunks`` already used half-open;
+  we standardize on it. Bins are assumed non-overlapping; on overlap the
+  first-listed bin wins.
+- **Vectorized**, not per-row ``.apply`` — time-of-day is reduced to
+  seconds-since-midnight once and compared with array masks.
+- **Overnight bins** (``"9:00PM-6:00AM"``) wrap correctly via ``t >= start | t <
+  end`` instead of silently matching nothing.
+- **Configurable day scheme** — no hardcoded Mon–Thu/Fri/Sat/Sun; the default is
+  provided but any ``{dow: label}`` mapping (or ``"Monday-Thursday"``-style range
+  specs) works.
+
+All three functions return a copy with the new column added; ``df.attrs`` is
+preserved. Unassigned rows get ``pd.NA`` in the new column (drop them downstream
+with ``df.dropna(subset=[...])``), matching the seed's ``dropna(subset=['Group'])``.
 """
 from __future__ import annotations
 
-_ITEM = "ROADMAP Item 2 (timebins.py)"
+from datetime import datetime, time
+from typing import Iterable, Mapping
 
-DEFAULT_DAY_GROUPS = {  # day-of-week (0=Mon) -> group label
+import pandas as pd
+
+from .io import DATETIME_COL
+
+# day-of-week is 0=Mon .. 6=Sun (pandas ``.dt.dayofweek`` convention)
+DEFAULT_DAY_GROUPS: dict[int, str] = {
     0: "Mon–Thu", 1: "Mon–Thu", 2: "Mon–Thu", 3: "Mon–Thu",
     4: "Fri", 5: "Sat", 6: "Sun",
 }
 
+DAY_GROUP_COL = "Day Group"
+TIME_BIN_COL = "Time Bin"
+GROUP_LABEL_COL = "Group Label"
 
-def assign_day_group(df, scheme=None):
-    """Add a ``Day Group`` column from local day-of-week (configurable scheme)."""
-    raise NotImplementedError(f"Not built yet — see {_ITEM}.")
+# full weekday names -> dayofweek int, for parsing ``"Monday-Thursday"`` specs.
+_DAY_NAME_TO_DOW = {
+    "MONDAY": 0, "TUESDAY": 1, "WEDNESDAY": 2, "THURSDAY": 3,
+    "FRIDAY": 4, "SATURDAY": 5, "SUNDAY": 6,
+}
 
 
-def assign_time_bins(df, bins):
-    """Add a ``Time Bin`` column from bin edges like ``"6:30AM-9:00AM"``,
-    including overnight bins (e.g. ``"9:00PM-6:00AM"``). Vectorized."""
-    raise NotImplementedError(f"Not built yet — see {_ITEM}.")
+# ---------------------------------------------------------------------------
+# Parsing helpers
+# ---------------------------------------------------------------------------
+def parse_clock(t_str: str) -> time:
+    """Parse a 12-hour clock string (``"6:30AM"``, ``"12:00 am"``, ``"9PM"``) into
+    a ``datetime.time``. Robust to surrounding whitespace, internal spaces, and
+    case. ``12:00AM`` -> midnight, ``12:00PM`` -> noon."""
+    s = t_str.strip().upper().replace(" ", "")
+    for fmt in ("%I:%M%p", "%I%p"):  # allow the minutes to be omitted (``"6AM"``)
+        try:
+            return datetime.strptime(s, fmt).time()
+        except ValueError:
+            continue
+    raise ValueError(f"Could not parse clock time {t_str!r} (expected e.g. '6:30AM').")
+
+
+def _secs(t: time) -> int:
+    """Seconds since local midnight for a ``datetime.time``."""
+    return t.hour * 3600 + t.minute * 60 + t.second
+
+
+def parse_time_bin(bin_str: str) -> tuple[str, int, int, bool]:
+    """Parse ``"6:30AM-9:00AM"`` into ``(label, start_sec, end_sec, overnight)``.
+
+    ``label`` is the original string (used as the bin label). ``overnight`` is
+    True when the end wraps past midnight (``start_sec > end_sec``), e.g.
+    ``"9:00PM-6:00AM"``. An end of ``"12:00AM"`` is midnight = 0 s, which makes a
+    late-evening bin like ``"10:00PM-12:00AM"`` overnight and stop exactly at
+    midnight — the intended behavior.
+    """
+    try:
+        start_str, end_str = bin_str.split("-")
+    except ValueError:
+        raise ValueError(
+            f"Time bin {bin_str!r} must be 'START-END' (e.g. '6:30AM-9:00AM')."
+        )
+    start, end = _secs(parse_clock(start_str)), _secs(parse_clock(end_str))
+    return bin_str, start, end, start > end
+
+
+def _normalize_day_scheme(scheme) -> dict[int, str]:
+    """Turn a day-group ``scheme`` into a ``{dow: label}`` dict.
+
+    Accepts either that dict directly, or a list of range specs like
+    ``["Monday-Thursday", "Friday", "Saturday", "Sunday"]`` (weekday names,
+    inclusive, wrap-around such as ``"Friday-Monday"`` allowed). The spec string
+    is used verbatim as the label. ``None`` -> ``DEFAULT_DAY_GROUPS``.
+    """
+    if scheme is None:
+        return dict(DEFAULT_DAY_GROUPS)
+    if isinstance(scheme, Mapping):
+        return {int(k): str(v) for k, v in scheme.items()}
+
+    mapping: dict[int, str] = {}
+    for spec in scheme:
+        if "-" in spec:
+            start_name, end_name = (p.strip().upper() for p in spec.split("-"))
+            start_idx, end_idx = _DAY_NAME_TO_DOW[start_name], _DAY_NAME_TO_DOW[end_name]
+            if start_idx <= end_idx:
+                days = range(start_idx, end_idx + 1)
+            else:  # wrap-around, e.g. "Friday-Monday"
+                days = [*range(start_idx, 7), *range(0, end_idx + 1)]
+        else:
+            days = [_DAY_NAME_TO_DOW[spec.strip().upper()]]
+        for d in days:
+            mapping[d] = spec
+    return mapping
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+def assign_day_group(
+    df: pd.DataFrame,
+    scheme: Mapping[int, str] | Iterable[str] | None = None,
+    datetime_col: str = DATETIME_COL,
+    out_col: str = DAY_GROUP_COL,
+) -> pd.DataFrame:
+    """Add a day-group column from the local day-of-week.
+
+    Args:
+        df: rows with a tz-aware local ``datetime_col`` (run ``io.to_local`` first).
+        scheme: a ``{dayofweek: label}`` dict (0=Mon) or a list of weekday range
+            specs (``["Monday-Thursday", "Friday", ...]``). Defaults to
+            ``DEFAULT_DAY_GROUPS`` (Mon–Thu / Fri / Sat / Sun).
+        out_col: name of the added column.
+
+    Days absent from the scheme get ``pd.NA``.
+    """
+    mapping = _normalize_day_scheme(scheme)
+    out = df.copy()
+    dow = out[datetime_col].dt.dayofweek
+    out[out_col] = dow.map(mapping).astype("string")
+    out.attrs = dict(df.attrs)
+    return out
+
+
+def assign_time_bins(
+    df: pd.DataFrame,
+    bins: Iterable[str],
+    datetime_col: str = DATETIME_COL,
+    out_col: str = TIME_BIN_COL,
+) -> pd.DataFrame:
+    """Add a time-of-day bin column from clock-range edges.
+
+    Args:
+        df: rows with a tz-aware local ``datetime_col`` (run ``io.to_local`` first).
+        bins: clock ranges like ``["6:30AM-9:00AM", "9:00AM-2:00PM"]``. Bins are
+            **half-open** ``[start, end)`` and may wrap past midnight
+            (``"9:00PM-6:00AM"``). Assumed non-overlapping; the first listed bin
+            wins on any overlap. The range string is the bin's label.
+        out_col: name of the added column.
+
+    Rows outside every bin get ``pd.NA``. Fully vectorized (no per-row ``apply``).
+    """
+    parsed = [parse_time_bin(b) for b in bins]
+    out = df.copy()
+    local = out[datetime_col]
+    # seconds since local midnight — one vector, reused for every bin comparison.
+    tod = local.dt.hour * 3600 + local.dt.minute * 60 + local.dt.second
+
+    labels = pd.Series(pd.NA, index=out.index, dtype="string")
+    for label, start, end, overnight in parsed:
+        if overnight:
+            mask = (tod >= start) | (tod < end)
+        else:
+            mask = (tod >= start) & (tod < end)
+        # first-listed-bin-wins: only fill rows still unassigned.
+        labels = labels.mask(mask & labels.isna(), label)
+
+    out[out_col] = labels
+    out.attrs = dict(df.attrs)
+    return out
+
+
+def assign_group_label(
+    df: pd.DataFrame,
+    day_col: str = DAY_GROUP_COL,
+    time_col: str = TIME_BIN_COL,
+    out_col: str = GROUP_LABEL_COL,
+    sep: str = ", ",
+) -> pd.DataFrame:
+    """Compose the combined ``"Mon–Thu, 2:00PM-7:00PM"`` label from an existing
+    day-group and time-bin column.
+
+    A row is labeled only when **both** parts are present; if either is ``pd.NA``
+    (unassigned day or time), the label is ``pd.NA`` too. Run ``assign_day_group``
+    and ``assign_time_bins`` first.
+    """
+    out = df.copy()
+    day = out[day_col].astype("string")
+    tod = out[time_col].astype("string")
+    both = day.notna() & tod.notna()
+    label = pd.Series(pd.NA, index=out.index, dtype="string")
+    label = label.mask(both, day.str.cat(tod, sep=sep))
+    out[out_col] = label
+    out.attrs = dict(df.attrs)
+    return out

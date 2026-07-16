@@ -25,7 +25,7 @@ def test_module_imports(name):
 
 def test_stub_raises_not_implemented():
     # a module still awaiting its ROADMAP item raises a clear NotImplementedError
-    from inrix_tools import speed
+    from inrix_tools import kml
 
     with pytest.raises(NotImplementedError):
-        speed.segment_summary(None)
+        kml.metadata_to_kml(None, None)
