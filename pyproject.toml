@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inrix_tools"
+version = "0.1.0"
+description = "Tools for loading, exploring, and before/after analysis of INRIX segment travel-time data."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Ryan Hansen" }]
+
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "plotly>=5.20",
+    "scipy>=1.11",
+    # Robust decomposition / changepoint on multi-entity time series.
+    # Depended on, not vendored (MIT, PyPI, CI-tested). See CLAUDE.md.
+    "traffic-anomaly>=2.5.0",
+]
+
+[project.optional-dependencies]
+# Segment geometry layer (geometry.py, kml.py): read/subset the INRIX XD
+# network shapefile. Kept optional so the pure stats core installs without a
+# geo stack.
+geo = [
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "pyogrio>=0.7",   # fast shapefile IO backend for geopandas
+]
+# Plotly Dash data explorer (gui/). Kept optional so the compute core installs
+# without the web stack. Map framework (dash-leaflet vs Plotly native maps) is
+# decided when Item 7 is built; add it here then.
+gui = [
+    "dash>=2.16",
+    "dash-bootstrap-components>=1.5",
+    "inrix_tools[geo]",  # the map consumes the geometry layer
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

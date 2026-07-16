@@ -3,3 +3,42 @@
 /franklin rd
 /processed_data.csv
 /sh-69
+
+# --- data (large / vendor-provided, not committed) ---
+# Raw INRIX downloads and unpacked data. Keep these out of git; they are large
+# and license-restricted (see the EULA.txt inside each download).
+/data/
+*.zip
+Myrtle_*/
+# Raw INRIX 5-min exports (the report .csv is hundreds of MB); small derived
+# summaries live under a committed results/ dir instead.
+data.csv
+# INRIX XD network shapefile (licensed geometry) + any extracted components.
+*_shapefile.zip
+*.shp
+*.dbf
+*.shx
+*.prj
+*.cpg
+# Cached geometry subsets are regenerated from the shapefile.
+*.geoparquet
+/geometry_cache/
+
+# --- Python / packaging ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# --- tooling caches ---
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- generated exploration output (kept out of git; regenerate from tools) ---
+*.kml
+/out/
