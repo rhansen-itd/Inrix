@@ -36,7 +36,7 @@ import figures  # noqa: E402
 import dash_bootstrap_components as dbc  # noqa: E402
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update  # noqa: E402
 
-from inrix_tools import beforeafter, changepoint, geometry, io, kml, speed  # noqa: E402
+from inrix_tools import beforeafter, changepoint, geometry, io, kml, names, speed  # noqa: E402
 from inrix_tools.io import DATETIME_COL, SEGMENT_COL  # noqa: E402
 from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
@@ -75,6 +75,7 @@ class Dataset:
     metric_cols: dict                # {"speed": col, "travel_time": col}
     tz: str
     span: tuple                      # (min_date, max_date) local dates
+    labels: dict = field(default_factory=dict)   # Segment ID -> friendly name (Item 10)
     # Seasonally-adjusted full-export frames, keyed by (metric col, ToD-window):
     # the expensive decomposition, cached independently of the before/after dates
     # so moving a date picker doesn't re-decompose (Item 14 review O1). Capped
@@ -109,8 +110,14 @@ def _get(token) -> Dataset | None:
 # ---------------------------------------------------------------------------
 # Compute wiring — thin calls into inrix_tools (no statistics defined here).
 # ---------------------------------------------------------------------------
-def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHAPEFILE) -> Dataset:
-    """Load + localize + CValue-filter an export, join its segment geometry."""
+def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHAPEFILE,
+                 names_path: str | None = None) -> Dataset:
+    """Load + localize + CValue-filter an export, join its segment geometry.
+
+    ``names_path`` (optional) points at a user-edited names CSV
+    (``names.load_names``); the resolved ``Segment ID -> friendly name`` mapping
+    is stored on the ``Dataset`` and used everywhere a segment is labelled.
+    """
     raw = io.load_data(source)
     local = io.to_local(raw, tz)
     filt = io.filter_cvalue(local, cvalue)
@@ -123,11 +130,19 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     if "Combined" in meta.columns:
         geo["Combined"] = meta["Combined"].reindex(geo.index)
 
+    # Friendly names (Item 10): seed from the INRIX labels, overlaid by the user's
+    # CSV when supplied. A single mapping is the source of truth for the dropdown,
+    # map hover title, forest rows, and panel titles; the raw Combined stays on
+    # ``geo`` for the hover subtitle so nothing is lost.
+    names_df = names.load_names(names_path) if names_path else None
+    labels = names.apply_names(meta, names_df)
+    geo["name"] = geo.index.map(lambda s: labels.get(int(s), f"Segment {int(s)}"))
+
     dates = filt[DATETIME_COL].dt.date
     return Dataset(
         df=filt, metadata=meta, geo=geo,
         metric_cols=speed.metric_columns(filt), tz=tz,
-        span=(dates.min(), dates.max()),
+        span=(dates.min(), dates.max()), labels=labels,
     )
 
 
@@ -217,9 +232,11 @@ def _compare_all(ds: Dataset, col: str, before, after, window=None) -> pd.DataFr
 
 
 def _labels(ds: Dataset) -> dict:
-    if "Combined" in ds.metadata.columns:
-        return {int(k): str(v) for k, v in ds.metadata["Combined"].items()}
-    return {}
+    """The single ``Segment ID -> friendly name`` mapping (Item 10) driving the
+    dropdown, map hover, forest rows, and panel titles. Resolved at load time by
+    ``names.apply_names`` (seed simplified from the INRIX labels, overlaid by the
+    user's names CSV)."""
+    return ds.labels
 
 
 DECOMP_WARMUP_DAYS = 7  # decompose_segments' drop_days default (see decompose.py)
@@ -263,8 +280,14 @@ def _controls() -> dbc.Card:
             dbc.Col([dbc.Label("CValue >"),
                      dbc.Input(id="cvalue", type="number", value=DEFAULT_CVALUE, size="sm")], width=5),
         ], className="mt-2"),
+        dbc.Label("Names CSV (optional)", className="mt-2"),
+        dbc.Input(id="names-path", value="", size="sm", debounce=True,
+                  placeholder="path to an edited segment_names.csv"),
         dbc.Button("Load export", id="load", color="primary", size="sm", className="mt-2 w-100"),
         html.Div(id="load-status", className="small text-muted mt-1"),
+        dbc.Button("Write name template", id="write-names", color="link", size="sm",
+                   className="p-0 mt-1"),
+        html.Div(id="names-status", className="small text-muted"),
         html.Hr(),
         html.H6("Metric", className="text-muted"),
         dbc.RadioItems(id="metric", value="tt", inline=True,
@@ -361,14 +384,16 @@ def _register_callbacks(app: Dash) -> None:
         State("tz", "value"),
         State("cvalue", "value"),
         State("metric", "value"),
+        State("names-path", "value"),
         prevent_initial_call=True,
     )
-    def _load(_n, source, tz, cvalue, metric):
+    def _load(_n, source, tz, cvalue, metric, names_path):
         # A cleared CValue input arrives as None/"" — default it rather than let
         # int(None) blow up with a cryptic message (Item 14 review B6).
         cv = DEFAULT_CVALUE if cvalue in (None, "") else int(cvalue)
         try:
-            ds = load_dataset(source, tz or DEFAULT_TZ, cv)
+            ds = load_dataset(source, tz or DEFAULT_TZ, cv,
+                              names_path=names_path or None)
         except Exception as exc:  # surface the failure in the UI, don't crash
             return (no_update, f"⚠ Load failed: {exc}", no_update, no_update,
                     no_update, no_update, *[no_update] * 8)
@@ -422,7 +447,8 @@ def _register_callbacks(app: Dash) -> None:
             return figures.segment_map(_empty_geo())
         col = _metric_col(ds, metric)
         if col is None:  # metric absent (mid-load transition) — draw a bare map
-            return figures.segment_map(ds.geo, uirevision=f"data-{token}")
+            return figures.segment_map(ds.geo, label_col="name",
+                                       sublabel_col="Combined", uirevision=f"data-{token}")
         label = figures._unit_label(col)
         if mode == "delta" and all([b0, b1, a0, a1]):
             try:
@@ -439,7 +465,8 @@ def _register_callbacks(app: Dash) -> None:
         # Key uirevision on the data token so loading a *different* export
         # recenters the map instead of keeping the old city's pan/zoom (review B5).
         return figures.segment_map(ds.geo, values, value_label=label,
-                                   selected_id=selected, uirevision=f"data-{token}")
+                                   selected_id=selected, label_col="name",
+                                   sublabel_col="Combined", uirevision=f"data-{token}")
 
     # Panels, keyed on the active tab so only the visible one computes.
     @app.callback(
@@ -503,6 +530,26 @@ def _register_callbacks(app: Dash) -> None:
         except Exception as exc:
             return f"⚠ Export failed: {exc}"
         return f"✓ Wrote {path}"
+
+    # Write a friendly-name template CSV from the loaded metadata (Item 10). The
+    # user edits it, then puts its path in "Names CSV" and reloads.
+    @app.callback(
+        Output("names-status", "children"),
+        Input("write-names", "n_clicks"),
+        State("data-token", "data"),
+        prevent_initial_call=True,
+    )
+    def _write_names(_n, token):
+        ds = _get(token)
+        if ds is None:
+            return "Load an export first."
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        out = OUTPUT_DIR / "segment_names.csv"
+        try:
+            path = names.write_names_template(ds.metadata, out)
+        except Exception as exc:
+            return f"⚠ Failed: {exc}"
+        return f"✓ Wrote {path} — edit it, then set Names CSV and reload."
 
     # Time-of-day window: a plain-language status line under the slider.
     @app.callback(

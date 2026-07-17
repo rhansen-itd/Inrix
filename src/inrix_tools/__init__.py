@@ -12,6 +12,7 @@ Modules are scaffolded as stubs until built per ROADMAP.md:
     changepoint — thin adapter over traffic_anomaly.changepoint (Item 5)
     geometry    — segment polylines from the INRIX XD shapefile (Item 8)
     kml         — segment geometry -> KML (Item 6)
+    names       — friendly, user-editable segment names (Item 10)
 """
 
 __version__ = "0.1.0"

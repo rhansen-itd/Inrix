@@ -68,7 +68,7 @@ def test_build_app_layout_headless():
     ids = {c.id for c in app.layout._traverse() if getattr(c, "id", None)}
     for needed in ("map", "segment", "fig-ts", "fig-summary", "fig-ba", "fig-decomp",
                    "load", "before-range", "after-range", "export-kml", "data-token",
-                   "tod-window"):
+                   "tod-window", "names-path", "write-names"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
@@ -122,6 +122,24 @@ def test_segment_map_empty_geo_is_safe():
     empty = gpd.GeoDataFrame({"geometry": []}, geometry="geometry")
     fig = figures.segment_map(empty)
     assert isinstance(fig, go.Figure)
+
+
+def test_segment_map_hover_uses_friendly_name_and_subtitle(geo_two):
+    """The friendly name is the bold hover title; the raw Combined is the italic
+    subtitle underneath (Item 10)."""
+    g = geo_two.copy()
+    g["name"] = ["Main & 1st", "Main & 2nd"]
+    fig = figures.segment_map(g, label_col="name", sublabel_col="Combined")
+    hover = list(fig.data[2].text)
+    assert hover[0].startswith("<b>Main & 1st</b>")
+    assert "<i>Main St NB</i>" in hover[0]  # raw label kept as subtitle
+
+
+def test_segment_map_subtitle_omitted_when_equal_to_name(geo_two):
+    g = geo_two.copy()
+    g["name"] = g["Combined"]  # friendly == raw -> no redundant subtitle
+    fig = figures.segment_map(g, label_col="name", sublabel_col="Combined")
+    assert "<i>" not in list(fig.data[2].text)[0]
 
 
 def test_time_series_shades_periods(series_df):
@@ -269,6 +287,13 @@ def test_end_to_end_real_export():
     ds = gapp.load_dataset(gapp.DEFAULT_SOURCE, gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE)
     assert len(ds.metadata) == 46
     assert ds.metric_cols["travel_time"] and ds.metric_cols["speed"]
+
+    # friendly names (Item 10): the label mapping covers every segment, the geo
+    # carries both the friendly name and the raw Combined, and _labels reads it.
+    assert set(ds.labels) == {int(s) for s in ds.metadata.index}
+    assert gapp._labels(ds) is ds.labels
+    assert ds.geo.loc[440882720, "name"] == "9th St & Idaho St"
+    assert "Combined" in ds.geo.columns
 
     col = gapp._metric_col(ds, "tt")
     sid = int(ds.metadata.index[5])

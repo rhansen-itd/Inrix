@@ -65,6 +65,7 @@ def segment_map(
     value_label: str = "",
     selected_id: int | None = None,
     label_col: str = "Combined",
+    sublabel_col: str | None = None,
     colorscale: str = _MAP_COLORSCALE,
     height: int = 620,
     uirevision: str = "segment-map",
@@ -84,6 +85,10 @@ def segment_map(
         values: ``Segment ID -> metric`` used to colour segments (mean speed,
             before/after delta, ...). ``None`` draws every segment one neutral colour.
         value_label: colour-bar / hover title for ``values``.
+        label_col: geo column used as the bold hover title (e.g. a friendly name).
+        sublabel_col: optional geo column shown as an italic hover subtitle under
+            the title (e.g. the raw INRIX ``Combined`` label); skipped when it
+            equals the title or is missing.
         selected_id: segment to highlight (ring + thick white-edged line).
         uirevision: Plotly ``uirevision`` token — pan/zoom is preserved while it
             is unchanged, so key it on the loaded dataset to recenter on a new
@@ -114,8 +119,15 @@ def segment_map(
         cvals.append(values.get(sid, np.nan) if values is not None else 0)
         label = str(row[label_col]) if label_col in geo.columns else f"Segment {sid}"
         custom.append(int(sid))
+        # optional raw-label subtitle (e.g. the INRIX Combined string under a
+        # friendly name), shown only when it differs from the primary label.
+        sub = ""
+        if sublabel_col and sublabel_col in geo.columns:
+            subtxt = str(row[sublabel_col])
+            if subtxt and subtxt != label and subtxt.lower() != "nan":
+                sub = f"<br><i>{subtxt}</i>"
         vtxt = "" if values is None else f"<br>{value_label}: {values.get(sid, float('nan')):.2f}"
-        texts.append(f"<b>{label}</b><br>Segment {sid}{vtxt}")
+        texts.append(f"<b>{label}</b>{sub}<br>Segment {sid}{vtxt}")
 
     marker = dict(size=10, color=cvals, colorscale=colorscale,
                   showscale=values is not None,

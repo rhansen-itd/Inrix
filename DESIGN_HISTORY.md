@@ -924,3 +924,50 @@ period changes + the decomposition tab now trigger **exactly one** decomposition
 
 11 new tests (135 total, incl. the real-export end-to-end, all pass). No
 DATA_FORMAT change.
+
+---
+
+## Session 14 — Friendly segment names `names.py` (ROADMAP Item 10) (2026-07-16)
+
+Segments were labelled everywhere by the raw INRIX `Combined` string (Road +
+Direction + Intersection, e.g. `N 9th St S 9th St / Idaho St`) — accurate but
+noisy. The owner wanted a readable, user-controlled name per segment, seeded by
+simplifying the existing labels rather than a bare truncated ID. Target Opus per
+the batch's model rule.
+
+**The simplifier (`names.simplify_label`).** Reduces a `(Road, Direction,
+Intersection)` triple to `<road core> & <cross street> [& <cross>...]`:
+- **Road core** — drop a leading/trailing cardinal direction token, and for a
+  `"<route#> / <name>"` road keep the descriptive tail: `N 9th St` → `9th St`,
+  `20 / W Myrtle St` → `Myrtle St`, `184 / I-184 E` → `I-184`.
+- **Cross streets** — split the `Intersection` on ` / `, route-prefix-strip each
+  token (`US-20 Myrtle St` → `Myrtle St`), drop the token that merely repeats the
+  road (equal, or the road name contained in it), and join the rest with ` & `.
+- The bare `Direction` letter is intentionally dropped, so two opposite-direction
+  segments at one corner collapse to the same seed name — the user disambiguates
+  by hand-editing the CSV. Verified against all 46 Myrtle labels; the ROADMAP's
+  worked example `N 9th St S 9th St / Idaho St` → `9th St & Idaho St` holds, and
+  no seed leaks a `US-<n>` prefix.
+
+**Round-trip.** `seed_names(metadata)` → a `(Segment ID, inrix_label, name)`
+DataFrame (`inrix_label` keeps the raw `Combined` for reference; `name` falls
+back to the label then the Segment ID when nothing is recoverable).
+`write_names_template` writes it to a CSV; `load_names` reads it back (validates
+the `Segment ID`/`name` columns, types the key, blanks whitespace names).
+`apply_names(metadata, names=None)` resolves the single `Segment ID → name`
+mapping, layering the user CSV over the seed (per-segment: **non-blank user name
+→ seed → Combined → Segment ID**; unknown-segment rows in the CSV ignored).
+
+**GUI wiring (`gui/app.py`, `gui/figures.py`).** `Dataset` gained a `labels`
+dict, resolved once at load by `apply_names`; `_labels(ds)` now returns it (the
+ad-hoc `Combined` dict is gone) so the dropdown, forest rows, and panel titles
+all read the friendly name. `load_dataset` grew an optional `names_path`, adds a
+`name` column to `geo`, and the map is drawn with `label_col="name"` +
+`sublabel_col="Combined"` — `segment_map` gained `sublabel_col` to show the raw
+label as an italic hover subtitle (omitted when it equals the friendly name).
+Controls: an optional "Names CSV" input (applied at load) and a "Write name
+template" button that writes `out/segment_names.csv` from the loaded metadata.
+
+Kept KML export on `Combined` (out of Item 10's listed surfaces). 18 new tests
+(153 total, incl. the real-export end-to-end and an owner-workflow override check,
+all pass). No DATA_FORMAT change — the label structure was already documented.

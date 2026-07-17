@@ -514,26 +514,34 @@ auto-ID. **Decision (owner): a user-editable CSV of names, seeded automatically 
 simplifying the existing INRIX labels** (e.g. `9th St & Idaho St`), not a bare
 truncated-ID scheme — the seed gives a good starting point the user then hand-edits.
 
-Scope:
-- [ ] `src/inrix_tools/names.py` (pure): `seed_names(metadata) -> DataFrame`
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 14):
+- [x] `src/inrix_tools/names.py` (pure): `seed_names(metadata) -> DataFrame`
       (`Segment ID`, `inrix_label`, `name`) where `name` is a simplified label
       derived from `Road`/`Direction`/`Intersection` — collapse the repeated
       road token and reduce `A / B` intersections to the cross street
-      (`N 9th St S 9th St / Idaho St` → `9th St & Idaho St`). Heuristic, not
-      perfect; the point is a good hand-edit starting point.
-- [ ] `write_names_template(metadata, path)` / `load_names(path)` — round-trip the
+      (`N 9th St S 9th St / Idaho St` → `9th St & Idaho St`). `simplify_label`
+      strips the leading/trailing cardinal direction, keeps the descriptive tail
+      of a `"<route#> / <name>"` road, and route-prefix-strips (`US-20 Myrtle St`
+      → `Myrtle St`) each cross token before de-duping the road. Heuristic; a
+      good hand-edit starting point (verified on all 46 Myrtle labels).
+- [x] `write_names_template(metadata, path)` / `load_names(path)` — round-trip the
       CSV (stable `Segment ID` key, `name` column authoritative, unknown/blank
-      rows fall back to the seed or `Segment ID`). No hardcoded paths.
-- [ ] `apply_names(...)` helper returning the `Segment ID → name` mapping the GUI
+      rows fall back to the seed or `Segment ID`). No hardcoded paths; `load_names`
+      validates the required columns.
+- [x] `apply_names(...)` helper returning the `Segment ID → name` mapping the GUI
       labels read from (single source of truth, replacing the ad-hoc `_labels`
       dict in `gui/app.py`). Keep the raw `Combined` available for the hover
       second line so nothing is lost.
-- [ ] GUI wiring: an optional "names CSV" path in the Data controls; when set,
-      the dropdown, map hover, forest, and titles use the friendly name. A button
-      to write the seed template to `out/segment_names.csv` for editing.
-- [ ] pytest: seed simplification on representative Myrtle labels (the 9th/Idaho
-      case + a few more), CSV round-trip, fallback for missing/blank rows, and the
-      GUI label path uses the mapping. DESIGN_HISTORY entry.
+- [x] GUI wiring: an optional "Names CSV" path in the Data controls; when set,
+      the dropdown, map hover, forest, and titles use the friendly name (stored on
+      `Dataset.labels` at load, `geo["name"]` for the map title with `Combined` as
+      the italic hover subtitle). A "Write name template" button writes the seed to
+      `out/segment_names.csv` for editing.
+- [x] pytest: seed simplification on representative Myrtle labels (the 9th/Idaho
+      case + a few more), CSV round-trip, required-column validation, fallback for
+      missing/blank/unknown rows, `apply_names` override precedence, the map hover
+      title/subtitle, and the real-export label path. 18 new tests (153 total).
+      DESIGN_HISTORY entry.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 10 of ROADMAP.md: add `src/inrix_tools/names.py` —
