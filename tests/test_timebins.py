@@ -228,6 +228,60 @@ def test_filter_date_range_start_after_end_is_empty():
     assert len(tb.filter_date_range(df, "2026-03-03", "2026-03-01")) == 0
 
 
+# --- day-of-week filtering (Item 13) ----------------------------------------
+def test_parse_day_of_week_forms():
+    assert tb.parse_day_of_week("Monday") == 0
+    assert tb.parse_day_of_week("mon") == 0
+    assert tb.parse_day_of_week("SUN") == 6
+    assert tb.parse_day_of_week(4) == 4
+    assert tb.parse_day_of_week("3") == 3
+    with pytest.raises(ValueError):
+        tb.parse_day_of_week(7)
+    with pytest.raises(ValueError):
+        tb.parse_day_of_week("someday")
+
+
+def test_filter_day_of_week_keeps_selected_days():
+    # 2026-01-12 = Mon .. 2026-01-18 = Sun (one noon sample per day)
+    df = _days([f"2026-01-{d}" for d in range(12, 19)])
+    out = tb.filter_day_of_week(df, [5, 6])                 # Sat + Sun
+    assert list(out["Date Time"].dt.dayofweek) == [5, 6]
+    # names + abbrevs resolve to the same rows
+    assert list(tb.filter_day_of_week(df, ["Saturday", "Sun"])["Date Time"].dt.dayofweek) \
+        == [5, 6]
+
+
+def test_filter_day_of_week_noop_and_attrs():
+    df = _days([f"2026-01-{d}" for d in range(12, 19)])
+    assert len(tb.filter_day_of_week(df, None)) == 7        # None = no-op
+    assert len(tb.filter_day_of_week(df, [])) == 7          # empty = no-op
+    assert len(tb.filter_day_of_week(df, list(range(7)))) == 7  # all seven = no-op
+    assert tb.filter_day_of_week(df, list(range(7))).attrs["days_of_week"] is None
+    weekdays = tb.filter_day_of_week(df, [0, 1, 2, 3, 4])
+    assert weekdays.attrs["days_of_week"] == [0, 1, 2, 3, 4]
+    assert len(weekdays) == 5
+
+
+def test_filter_day_of_week_preserves_input_and_attrs():
+    df = _days(["2026-01-12", "2026-01-17"])               # Mon, Sat
+    df.attrs["units"] = {"speed": "miles/hour"}
+    out = tb.filter_day_of_week(df, ["Sat"])
+    assert out.attrs["units"] == {"speed": "miles/hour"}
+    assert len(df) == 2                                    # original untouched
+
+
+def test_filter_day_of_week_composes_with_time_window():
+    """DOW and ToD compose: apply both, order-independent (whole-day filters)."""
+    rows = [f"2026-01-{d} {h}:00" for d in range(12, 19) for h in (8, 17)]
+    df = _df(rows)
+    both = tb.filter_time_window(tb.filter_day_of_week(df, [5, 6]), "4:00PM-6:00PM")
+    assert set(both["Date Time"].dt.dayofweek) == {5, 6}
+    assert set(both["Date Time"].dt.hour) == {17}          # only the 5PM rows
+    # composition is commutative on whole days
+    other = tb.filter_day_of_week(tb.filter_time_window(df, "4:00PM-6:00PM"), [5, 6])
+    assert len(both) == len(other) == 2
+
+
 # --- group label composition ------------------------------------------------
 def test_group_label_composition():
     df = _df(["2026-01-12 08:00", "2026-01-17 14:00", "2026-01-12 11:00"])

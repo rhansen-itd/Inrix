@@ -129,13 +129,17 @@ def segment_map(
         vtxt = "" if values is None else f"<br>{value_label}: {values.get(sid, float('nan')):.2f}"
         texts.append(f"<b>{label}</b>{sub}<br>Segment {sid}{vtxt}")
 
-    marker = dict(size=10, color=cvals, colorscale=colorscale,
+    # The midpoint markers are the click target, hover anchor, and colour-bar
+    # carrier (Item 13) — the segment *lines* already carry the metric colour
+    # (``_line_colors``), so these are shrunk to small, semi-transparent dots that
+    # stay hittable/hoverable without cluttering the map.
+    marker = dict(size=6, color=cvals, colorscale=colorscale,
                   showscale=values is not None,
                   colorbar=dict(title=value_label, thickness=14) if values is not None else None)
     if values is None:
-        marker = dict(size=9, color="#2b83ba")
+        marker = dict(size=5, color="#2b83ba")
     fig.add_trace(go.Scattermap(
-        lon=lons, lat=lats, mode="markers", marker=marker,
+        lon=lons, lat=lats, mode="markers", marker=marker, opacity=0.6,
         customdata=custom, text=texts, hovertemplate="%{text}<extra></extra>",
         showlegend=False, name="segments",
     ))
@@ -237,6 +241,8 @@ def summary_bars(
     summary: pd.DataFrame,
     value: str,
     *,
+    summary_after: pd.DataFrame | None = None,
+    period_labels: tuple[str, str] = ("Before", "After"),
     day_col: str = "Day Group",
     time_col: str = "Time Bin",
     title: str = "",
@@ -244,8 +250,19 @@ def summary_bars(
 ) -> go.Figure:
     """Grouped bars of mean ``value`` per day-group x time-bin (from
     ``speed.segment_summary``), with the ±1 SD std as error bars. Bars are grouped
-    by time-bin along x and coloured by day-group."""
+    by time-bin along x and coloured by day-group.
+
+    When ``summary_after`` is given (Item 13), the two summaries are drawn as
+    **side-by-side facets** (``summary`` = before on the left, ``summary_after`` =
+    after on the right) sharing a y-axis, so the day-group x time-bin means are
+    directly comparable across the intervention. One legend (one entry per
+    day-group) spans both facets. ``summary_after=None`` keeps the single-panel view.
+    """
     mean_col, std_col = f"{value}_mean", f"{value}_std"
+    if summary_after is not None:
+        return _summary_bars_beforeafter(
+            summary, summary_after, value, period_labels=period_labels,
+            day_col=day_col, time_col=time_col, title=title, height=height)
     if summary.empty or mean_col not in summary.columns:
         return _blank("No summary for this selection.", height=height)
 
@@ -265,6 +282,65 @@ def summary_bars(
         xaxis_title="Time of day", yaxis_title=f"Mean {_unit_label(value)}",
         legend_title="Day group", margin=dict(l=10, r=10, t=40, b=10),
     )
+    return fig
+
+
+def _summary_bars_beforeafter(
+    before: pd.DataFrame,
+    after: pd.DataFrame,
+    value: str,
+    *,
+    period_labels: tuple[str, str],
+    day_col: str,
+    time_col: str,
+    title: str,
+    height: int,
+) -> go.Figure:
+    """Two ``summary_bars`` panels side by side (before | after), shared y-axis and
+    a single day-group legend, for a directly-comparable before/after read."""
+    from plotly.subplots import make_subplots
+
+    mean_col, std_col = f"{value}_mean", f"{value}_std"
+    have = [not s.empty and mean_col in s.columns for s in (before, after)]
+    if not any(have):
+        return _blank("No summary for this selection.", height=height)
+
+    fig = make_subplots(rows=1, cols=2, shared_yaxes=True,
+                        subplot_titles=period_labels, horizontal_spacing=0.07)
+    palette = pcolors.qualitative.Safe
+    # A stable day-group -> colour map across both facets (so "Fri" is one colour
+    # left and right) and one legend entry per group.
+    days_seen: list = []
+    for summ in (before, after):
+        if day_col in summ:
+            for d in summ[day_col]:
+                if d not in days_seen:
+                    days_seen.append(d)
+    color_of = {d: palette[i % len(palette)] for i, d in enumerate(days_seen)}
+
+    shown: set = set()
+    for col_i, summ in enumerate((before, after), start=1):
+        if summ.empty or mean_col not in summ.columns:
+            continue
+        day_order = list(dict.fromkeys(summ[day_col])) if day_col in summ else [None]
+        for day in day_order:
+            sub = summ[summ[day_col] == day] if day_col in summ else summ
+            key = str(day)
+            fig.add_trace(go.Bar(
+                x=sub[time_col] if time_col in sub else sub.index,
+                y=sub[mean_col],
+                error_y=dict(type="data", array=sub.get(std_col), visible=True, thickness=1),
+                name=key, legendgroup=key, showlegend=key not in shown,
+                marker_color=color_of.get(day, palette[0]),
+            ), row=1, col=col_i)
+            shown.add(key)
+
+    fig.update_layout(
+        template=TEMPLATE, height=height, title=title, barmode="group",
+        legend_title="Day group", margin=dict(l=10, r=10, t=60, b=10),
+    )
+    fig.update_xaxes(title_text="Time of day")
+    fig.update_yaxes(title_text=f"Mean {_unit_label(value)}", row=1, col=1)
     return fig
 
 
@@ -322,9 +398,13 @@ def beforeafter_forest(
                      arrayminus=d["effect"] - d["ci_low"], thickness=1.2,
                      color="#9aa5b1"),
         customdata=d[SEGMENT_COL],
-        text=[f"effect {e:+.3f} [{lo:+.3f}, {hi:+.3f}]{q}"
-              for e, lo, hi, q in zip(d["effect"], d["ci_low"], d["ci_high"], qtxt)],
-        hovertemplate="%{y}<br>%{text}<extra></extra>",
+        # The name goes in ``text`` (not the hovertemplate's ``%{y}``, which is the
+        # numeric row index and used to show that index instead of the segment —
+        # Item 14 review B4).
+        text=[f"<b>{name}</b><br>effect {e:+.3f} [{lo:+.3f}, {hi:+.3f}]{q}"
+              for name, e, lo, hi, q in
+              zip(ytext, d["effect"], d["ci_low"], d["ci_high"], qtxt)],
+        hovertemplate="%{text}<extra></extra>",
     ))
     fig.add_vline(x=0, line_dash="dash", line_color="#888")
 

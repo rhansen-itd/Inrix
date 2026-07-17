@@ -49,6 +49,8 @@ _DAY_NAME_TO_DOW = {
     "MONDAY": 0, "TUESDAY": 1, "WEDNESDAY": 2, "THURSDAY": 3,
     "FRIDAY": 4, "SATURDAY": 5, "SUNDAY": 6,
 }
+# 3-letter abbreviations, for ``filter_day_of_week`` (``"Mon"``, ``"Sun"``).
+_DAY_ABBR_TO_DOW = {name[:3]: dow for name, dow in _DAY_NAME_TO_DOW.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +252,75 @@ def filter_time_window(
     out = df[mask].copy()
     out.attrs = dict(df.attrs)
     out.attrs["time_window"] = window
+    return out
+
+
+def parse_day_of_week(day) -> int:
+    """Parse one day-of-week spec into a ``dayofweek`` int (``0``=Mon .. ``6``=Sun,
+    the pandas ``.dt.dayofweek`` convention).
+
+    Accepts an int (or int-valued float / numeric string) ``0``–``6``, a full
+    weekday name (``"Monday"``), or a 3-letter abbreviation (``"Mon"``);
+    case-insensitive and whitespace-tolerant. Raises ``ValueError`` on anything
+    else or an out-of-range int.
+    """
+    if isinstance(day, str):
+        s = day.strip().upper()
+        if s in _DAY_NAME_TO_DOW:
+            return _DAY_NAME_TO_DOW[s]
+        if s[:3] in _DAY_ABBR_TO_DOW:
+            return _DAY_ABBR_TO_DOW[s[:3]]
+        if s.lstrip("-").isdigit():
+            return parse_day_of_week(int(s))
+        raise ValueError(f"Unrecognized day-of-week {day!r} (name, abbrev, or 0–6).")
+    d = int(day)
+    if not 0 <= d <= 6:
+        raise ValueError(f"Day-of-week int {day!r} out of range 0..6 (0=Mon).")
+    return d
+
+
+def filter_day_of_week(
+    df: pd.DataFrame,
+    days,
+    datetime_col: str = DATETIME_COL,
+) -> pd.DataFrame:
+    """Keep only rows whose **local day-of-week** is in the selected set.
+
+    The day-of-week companion to ``filter_time_window`` (time-of-day): restrict a
+    session to, say, weekdays only, so every downstream compute (map, panels,
+    decomposition) describes those days. Like the other filters this works on the
+    **local wall-clock** date, so run ``io.to_local`` first (the day-of-week is
+    taken from ``datetime_col`` directly, not a precomputed column, so it is
+    correct even across a DST switch).
+
+    Because it keeps *whole days*, the Item 9 rolling-window sample guard in
+    ``decompose_segments`` is unaffected (the per-day sample coverage is unchanged);
+    but restricting to too few distinct weekdays weakens ``decompose``'s
+    **weekly-seasonal** fit — the daily component and residuals still carry the
+    before/after signal, so this stays useful, just prefer keeping several weekdays
+    when the weekly cycle matters.
+
+    Args:
+        df: rows with a tz-aware local ``datetime_col``.
+        days: an iterable of day specs, each an int ``0``–``6`` (0=Mon), a weekday
+            name (``"Monday"``), or a 3-letter abbreviation (``"Mon"``) — see
+            ``parse_day_of_week``. ``None``, an empty set, or all seven days is a
+            **no-op** (keeps every row).
+        datetime_col: the timestamp column.
+
+    Returns:
+        A filtered copy; ``df.attrs`` is preserved and the applied set is recorded
+        on ``attrs['days_of_week']`` as a sorted list of ints (``None`` when the
+        filter was a no-op) for reproducibility.
+    """
+    wanted = set() if days is None else {parse_day_of_week(d) for d in days}
+    noop = (not wanted) or wanted == set(range(7))
+    if noop:
+        out = df.copy()
+    else:
+        out = df[df[datetime_col].dt.dayofweek.isin(wanted)].copy()
+    out.attrs = dict(df.attrs)
+    out.attrs["days_of_week"] = None if noop else sorted(wanted)
     return out
 
 

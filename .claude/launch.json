@@ -5,7 +5,8 @@
       "name": "inrix-explorer",
       "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["gui/app.py"],
-      "port": 8050
+      "port": 8050,
+      "autoPort": true
     }
   ]
 }

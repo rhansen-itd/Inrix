@@ -69,7 +69,7 @@ def test_build_app_layout_headless():
     for needed in ("map", "segment", "fig-ts", "fig-summary", "fig-ba", "fig-decomp",
                    "load", "before-range", "after-range", "export-kml", "data-token",
                    "tod-window", "names-path", "write-names", "restrict-range",
-                   "scope", "corridor"):
+                   "scope", "corridor", "dow-days", "dow-status"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
@@ -643,7 +643,106 @@ def test_scope_keys_the_adjusted_cache(scope_ds):
     seg = gapp._adjusted_frame(scope_ds, col)                          # segment scope
     net = gapp._adjusted_frame(scope_ds, col, scope=gapp.SCOPE_NETWORK)
     keys = set(scope_ds._adjusted_cache)
-    assert (col, "full", gapp.SCOPE_SEGMENT, None) in keys
-    assert (col, "full", gapp.SCOPE_NETWORK, None) in keys
+    # the key gained a trailing DOW element ("all" = no day-of-week filter, Item 13)
+    assert (col, "full", gapp.SCOPE_SEGMENT, None, "all") in keys
+    assert (col, "full", gapp.SCOPE_NETWORK, None, "all") in keys
     assert set(seg[SEGMENT_COL].unique()) == {101, 202}
     assert set(net[SEGMENT_COL].unique()) == {gapp._AGG_SEGMENT_ID}
+
+
+# ---------------------------------------------------------------------------
+# Item 13 — day-of-week filter, before/after + corridor summaries, hover fix
+# ---------------------------------------------------------------------------
+def test_days_key_collapses_noop_spellings():
+    for d in (None, [], list(range(7)), [0, 1, 2, 3, 4, 5, 6]):
+        assert gapp._days_key(d) == "all"
+    assert gapp._days_key([5, 6]) == (5, 6)
+    assert gapp._days_key([6, 5]) == (5, 6)        # order-independent
+
+
+def test_apply_tod_day_of_week_filter(series_df):
+    """The DOW arg to _apply_tod keeps only the selected weekdays; all/empty no-op.
+    series_df spans 2026-03-02 (Mon) .. 2026-03-03 (Tue)."""
+    mon = gapp._apply_tod(series_df, None, days=[0])           # Monday only
+    assert set(mon[DATETIME_COL].dt.dayofweek) == {0}
+    assert len(gapp._apply_tod(series_df, None, days=list(range(7)))) == len(series_df)
+    assert len(gapp._apply_tod(series_df, None, days=[])) == len(series_df)
+    # composes with the ToD window: Monday 4–6PM only
+    both = gapp._apply_tod(series_df, [16, 18], days=[0])
+    assert set(both[DATETIME_COL].dt.dayofweek) == {0}
+    assert set(both[DATETIME_COL].dt.hour) <= {16, 17}
+
+
+def test_summary_bars_beforeafter_facets(series_df):
+    """summary_bars gains a side-by-side before/after mode (two facets, one shared
+    day-group legend); summary_after=None keeps the single panel."""
+    from inrix_tools import speed
+    from inrix_tools.timebins import (assign_day_group, assign_time_bins,
+                                      DAY_GROUP_COL, TIME_BIN_COL)
+    binned = assign_time_bins(assign_day_group(series_df),
+                              ["6:00AM-12:00PM", "12:00PM-6:00PM"])
+    summ = speed.segment_summary(binned, values=[SPEED_COL],
+                                 group_cols=[DAY_GROUP_COL, TIME_BIN_COL])
+    fac = figures.summary_bars(summ, SPEED_COL, summary_after=summ)
+    assert "xaxis2" in fac.layout.to_plotly_json()        # a second facet exists
+    assert any(t.legendgroup for t in fac.data)           # legend spans both facets
+    # only one legend entry per day-group (deduped across facets)
+    assert sum(bool(t.showlegend) for t in fac.data) < len(fac.data)
+    single = figures.summary_bars(summ, SPEED_COL)
+    assert "xaxis2" not in single.layout.to_plotly_json()
+
+
+def test_fig_summary_beforeafter_and_fallback(series_df):
+    """_fig_summary renders two facets when disjoint periods are set, and falls back
+    to the single-period view when periods are unset or overlap."""
+    from inrix_tools import speed
+    ds = gapp.Dataset(df=series_df,
+                      metadata=pd.DataFrame(index=pd.Index([101], name=SEGMENT_COL)),
+                      geo=None, metric_cols=speed.metric_columns(series_df),
+                      tz="America/Denver", span=(None, None))
+    col = gapp._metric_col(ds, "tt")
+    fac = gapp._fig_summary(ds, 101, col, "seg",
+                            before=("2026-03-02", "2026-03-02"),
+                            after=("2026-03-03", "2026-03-03"))
+    assert "xaxis2" in fac.layout.to_plotly_json()
+    single = gapp._fig_summary(ds, 101, col, "seg")       # no periods
+    assert "xaxis2" not in single.layout.to_plotly_json()
+    overlap = gapp._fig_summary(ds, 101, col, "seg",
+                                before=("2026-03-02", "2026-03-03"),
+                                after=("2026-03-02", "2026-03-03"))
+    assert "xaxis2" not in overlap.layout.to_plotly_json()  # falls back, no crash
+
+
+def test_fig_summary_corridor_is_sum_not_mean_of_means():
+    """Item 13 part 3: the corridor/network day×time summary bars are the SUMMED
+    corridor travel time (sum across segments, mean over time), not the mean of
+    per-segment means."""
+    from inrix_tools import speed
+    from inrix_tools.io import CORRIDOR_COL
+    TZ = "America/Denver"
+    ts = pd.date_range("2026-03-02 00:00", "2026-03-05 23:55", freq="5min", tz=TZ)
+    # two segments at constant TT 10 and 20 -> network sum is exactly 30 every ts
+    frames = [pd.DataFrame({DATETIME_COL: ts, SEGMENT_COL: np.int64(s), TT_COL: tt,
+                            CORRIDOR_COL: "Main"})
+              for s, tt in ((101, 10.0), (202, 20.0))]
+    df = pd.concat(frames, ignore_index=True)
+    ds = gapp.Dataset(df=df,
+                      metadata=pd.DataFrame(index=pd.Index([101, 202], name=SEGMENT_COL)),
+                      geo=None, metric_cols=speed.metric_columns(df), tz=TZ,
+                      span=(None, None))
+    col = gapp._metric_col(ds, "tt")
+    fig = gapp._fig_summary(ds, None, col, "", scope=gapp.SCOPE_NETWORK)
+    ys = [v for tr in fig.data for v in tr.y]
+    assert ys and all(abs(v - 30.0) < 1e-6 for v in ys)   # the sum, not mean-of-means (15)
+
+
+def test_beforeafter_forest_hover_shows_name_not_index():
+    """Review B4: the hover shows the segment name (in text), not the numeric row
+    index — the hovertemplate no longer references %{y}."""
+    compare = pd.DataFrame({SEGMENT_COL: [101, 202], "effect": [0.5, -0.3],
+                            "ci_low": [0.2, -0.6], "ci_high": [0.8, 0.0]})
+    compare.attrs["method"] = "decomposition"
+    fig = figures.beforeafter_forest(compare,
+                                     labels={101: "Main & 1st", 202: "Main & 2nd"})
+    assert "%{y}" not in fig.data[0].hovertemplate
+    assert any("Main &" in t for t in fig.data[0].text)

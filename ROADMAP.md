@@ -348,9 +348,20 @@ even though its stable ID is higher.
 its confirmed findings became **Items 15–16**, placed right after it. The review's
 recommended order is **15 → 16 → 11 → 10 → 12 → 13** (stats validity first — it
 changes every number the app shows — then responsiveness, then the owner batch).
-**Items 15, 16, 10, 11 and 12 are now done** (DESIGN_HISTORY Sessions 12–16); the
-remaining item is **13**. Item 13 gained one bullet (the forest hover fix);
-the review's §3 ideas await owner acceptance before becoming items.
+**Items 15, 16, 10, 11, 12 and 13 are now done** (DESIGN_HISTORY Sessions 12–17);
+Item 13 gained one bullet (the forest hover fix) before it landed. The remaining
+batch items are **17–18** (delay metric + AADT weighting); the review's §3 ideas
+await owner acceptance before becoming items.
+
+**Appended 2026-07-16 (new owner request):** **Items 17–18** — a delay metric
+(travel time vs free-flow) with before/after delta, and an AADT GIS layer for
+volume-weighting delay/speed (the ITD layer is now in-repo as
+`Cumulative_AADT.zip`; use only the 2024 `Year` rows). Placed at the end of the
+batch by arrival; Item 18 depends on Item 17. Both Opus (data plumbing + weighted
+aggregation, not statistics-heavy). Same day, **Item 13 absorbed two more owner
+requests** — a day-of-week checkbox filter (ToD-slider sibling) and a
+corridor-sum day×time summary — and Item 18 was corrected so **corridor travel
+time stays a sum, never AADT-re-weighted**.
 
 **Model assignment (owner, 2026-07-16):** **Item 15 is reassigned to Fable**,
 overriding CLAUDE.md's Opus-end-to-end default — it is the batch's one
@@ -640,46 +651,202 @@ Suggested prompt:
 
 ## 13 — Before/after summary + GUI display polish (Target: Opus) — needs Item 7
 
-A GUI-display session bundling one small feature and three cosmetic tweaks — all
-in `gui/figures.py` / `gui/app.py`, no new statistics.
+A GUI session bundling a few small features with cosmetic tweaks. Mostly
+`gui/figures.py` / `gui/app.py` with no new statistics — **plus one pure-core row
+filter** (`timebins.filter_day_of_week`), architecturally parallel to the Item 9
+time-of-day window. (Grew from the original 5 tweaks with the owner's day-of-week
+selector and corridor day×time summary requests, 2026-07-16; if a session runs
+long, the day-of-week filter is the clean split-off point.)
 
 Scope:
-- [ ] **Before/after day×time summary (the feature).** `summary_bars` /
+- [x] **Day-of-week selector (the ToD slider's DOW sibling).** Pure-core
+      `timebins.filter_day_of_week(df, days)` — keep rows whose local `day_of_week`
+      is in a selected set (accepts names/abbrevs/0–6; empty or all-seven = no-op;
+      records the applied set on `attrs`), same overnight-safe local-wall-clock
+      basis as `filter_time_window`. GUI: a row of **weekday checkboxes**
+      (`dcc.Checklist`, Mon–Sun, all checked by default) that pre-filters **every**
+      panel, the map colouring, and KML export exactly like the Item 9 slider,
+      composing with it (ToD **and** DOW both applied) — a plain-language status
+      line states the active days. Subtlety to note: the filter keeps *whole days*,
+      so the Item 9 rolling-window sample guard is unaffected; but restricting to
+      too few distinct weekdays weakens `decompose`'s weekly-seasonal fit — document
+      it (the daily component + residuals still carry the before/after signal), and
+      the day-group scheme (Item 2) is unchanged.
+- [x] **Before/after day×time summary (the feature).** `summary_bars` /
       `_fig_summary` gain a before/after mode: compute `speed.segment_summary` on
       the before-subset and the after-subset separately and render them **side by
       side (left/right)** — either paired facets or before/after as an extra bar
       grouping — so the day-group×time-bin means are directly comparable across the
       intervention. Reuse the existing before/after date ranges; fall back to the
       single-period view when periods aren't set.
-- [ ] **Compact KML export.** Demote the full-width "Export KML of current view"
+- [x] **Corridor/network day×time summary (revisits the Item 12 decision).** Item 12
+      kept the day×time summary panel segment-level in every scope; the owner now
+      wants it available for the **corridor sum**. In corridor/network scope, build
+      the day×time summary on the **aggregate per-timestamp travel-time series**
+      (`speed.corridor_travel_time` / `network_travel_time`, complete-set rule) so
+      the bars show the **summed** corridor travel time per day-group×time-bin —
+      **sum across member segments, not the mean of segment means** (matches the
+      "corridor travel time is a sum" rule; the panel still means *over time* within
+      each bin). Travel time only, mirroring the Item 12 scope; segment scope is
+      unchanged. Composes with the before/after side-by-side mode above.
+- [x] **Compact KML export.** Demote the full-width "Export KML of current view"
       button to a small **icon button next to the map** (the owner rarely needs
       KML now; keep the capability, shrink the footprint). Status/errors surface in
       a tooltip or a small inline note rather than a dedicated block.
-- [ ] **Shrink the map midpoint markers.** The midpoint dots are the click target,
+- [x] **Shrink the map midpoint markers.** The midpoint dots are the click target,
       hover anchor, *and* colour-bar carrier (see `figures.segment_map`), so they
       can't just be removed — reduce them to small/near-transparent marks (or move
       the colour scale onto the line traces) while **keeping click + hover working**.
       Verify selection still fires after the change.
-- [ ] **Time-formatted ToD slider tooltip.** The `dcc.RangeSlider` tooltip shows
+- [x] **Time-formatted ToD slider tooltip.** The `dcc.RangeSlider` tooltip shows
       the raw hour (`13.5`); make it read as a clock time (`1:30 PM` / `13:30`) via
       a Dash `tooltip.transform` client-side JS formatter (mirrors the existing
       Python `_hour_label`). Keep `always_visible` off.
-- [ ] **Forest hover fix (from the Item 14 review, B4).** `beforeafter_forest`'s
+- [x] **Forest hover fix (from the Item 14 review, B4).** `beforeafter_forest`'s
       hovertemplate uses `%{y}` with a numeric y, so hover shows the row index
       instead of the segment name — move the name into `customdata`/`text`
       (`gui/figures.py:282-291`).
-- [ ] pytest: `summary_bars` before/after mode (trace/facet structure, single-period
-      fallback), and the layout smoke test still finds the (now-iconified) export
-      control + slider. Manual/preview check the marker click still selects.
+- [x] pytest: `filter_day_of_week` (subset/no-op/attrs/immutability, name+index
+      forms, composes with `filter_time_window`); `summary_bars` before/after mode
+      (trace/facet structure, single-period fallback) and corridor-sum mode (bars =
+      summed corridor travel time, sum-not-mean verified on a synthetic fixture);
+      the layout smoke test still finds the (now-iconified) export control + slider
+      + the new DOW checklist. Manual/preview check the marker click still selects.
       DESIGN_HISTORY entry.
 
 Suggested prompt:
-> [Opus] In Inrix/, do Item 13 of ROADMAP.md: GUI display work — (1) a before/after
+> [Opus] In Inrix/, do Item 13 of ROADMAP.md: GUI work — (1) a pure-core
+> `timebins.filter_day_of_week` + a weekday-checkbox row that pre-filters every
+> panel/map/KML like the Item 9 ToD slider (composes with it); (2) a before/after
 > side-by-side mode for the day×time summary panel (compute `segment_summary` per
-> period, render left/right), (2) demote the KML button to a compact icon by the
-> map, (3) shrink the map midpoint markers while keeping click+hover, (4) format the
-> ToD slider tooltip as a clock time via `tooltip.transform`. Tests + a preview
+> period, render left/right); (3) a corridor/network day×time summary built on the
+> **summed** `corridor_travel_time` series (sum across segments, not mean of means);
+> (4) demote the KML button to a compact icon by the map; (5) shrink the map
+> midpoint markers while keeping click+hover; (6) format the ToD slider tooltip as a
+> clock time via `tooltip.transform`; (7) the B4 forest hover fix. Tests + a preview
 > check that selection still works. Docs.
+
+---
+
+## 17 — Delay vs free-flow travel time + before/after delay increase (`speed.segment_delay`) (Target: Opus) — needs Items 3, 4, 8
+
+Add **delay** as a first-class metric: the excess travel time a segment carries
+over its free-flow (open-road) travel time. INRIX already supplies free-flow
+speed per row (`Ref Speed(miles/hour)`, DATA_FORMAT.md — the open-road reference,
+**not** the posted limit) and observed `Travel Time(Minutes)`, and the geometry
+layer supplies segment length (`Miles`), so delay is a pure-core derivation, not a
+new data source. The owner's framing — *"approximate delay increase as delta of
+travel time vs free-flow TT in before and after period"* — is then just the
+existing before/after machinery (Item 4/15) run on the delay column: the reported
+effect is the change in delay across the intervention.
+
+Scope:
+- [ ] `speed.segment_delay(df, geo_or_metadata=None, free_flow='ref', floor=True)`
+      — add a per-row `Delay(Minutes)` column = observed `Travel Time(Minutes)` −
+      free-flow travel time, where free-flow TT = `Miles / free_flow_speed × 60`.
+      `free_flow` selectable: `'ref'` (the per-row `Ref Speed` column, default),
+      or a per-segment high percentile of observed speed (e.g. `('pXX', 95)`) for
+      exports/segments where `Ref Speed` is missing or suspect. `floor=True`
+      clamps negatives (probe noise faster than free-flow) to 0; record the source
+      + floor on `attrs`. Pure — no plotting. Degrade gracefully when length is
+      unavailable (fall back to speed-based delay: `Miles·(1/v − 1/v_ff)·60`,
+      which cancels the length dependence into the same value).
+- [ ] Delay flows through the existing aggregation and before/after paths as
+      another value column: `segment_summary` / `daily_timebin_summary` pick it up
+      by prefix, and `beforeafter.compare_periods` on `value_column='Delay(Minutes)'`
+      gives the **delay increase (Δ delay + CI)** the owner asked for. Confirm the
+      Item 15 day-mean aggregation + BH-FDR apply unchanged (delay is just another
+      seasonally-adjustable series). Corridor/network scope (Item 12): delay sums
+      across member segments exactly like travel time (same complete-set rule).
+- [ ] GUI: add **Delay** as a metric option alongside Speed / Travel time (map
+      colouring, time series, summary, before/after forest, decomposition). The
+      metric radio + `_scope_metric` / `_metric_choices` guards learn the new
+      column; a segment with no resolvable free-flow speed is disabled like a
+      missing metric (Item 16 B3 pattern). Free-flow source is a small control
+      (default `Ref Speed`).
+- [ ] pytest: known delay on a synthetic fixture (observed TT − length/RefSpeed·60,
+      floor behaviour, the speed-based fallback equals the length-based value),
+      `attrs` recording, before/after Δ-delay recovers an injected free-flow-gap
+      shift with a CI excluding 0, corridor delay = sum of member delays under the
+      complete-set rule, GUI metric wiring, and the real-export delay path.
+      DESIGN_HISTORY entry; DATA_FORMAT delay-definition note.
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 17 of ROADMAP.md: add a delay metric —
+> `speed.segment_delay` = observed `Travel Time(Minutes)` − free-flow TT
+> (`Miles / Ref Speed × 60`, floor at 0, percentile-speed fallback), pure-core.
+> Wire it through `segment_summary`/`compare_periods` so the before/after forest
+> reports the **change in delay**, and add Delay as a GUI metric (map/panels).
+> pytest the delay math + an injected before/after shift. Docs.
+
+---
+
+## 18 — AADT weighting layer (`aadt.py` + GIS join + GUI) (Target: Opus) — needs Items 8, 12, 17
+
+Weight the segment metrics by traffic **volume**. A segment carrying 40k
+vehicles/day and one carrying 2k should not count equally when you summarize
+speed across a corridor, and the impact of delay is really **vehicle-hours**, not
+per-vehicle minutes. AADT (Annual Average Daily Traffic) is **not** in the INRIX
+export — the owner has added the ITD layer as **`Cumulative_AADT.zip`** in the
+repo root (a gitignored fixture, like the Myrtle export). Confirmed schema
+(2026-07-16): 251k `LineString Z` features in **EPSG:8826** (reproject to 4326);
+a **`Year`** field (the layer is cumulative across years — **use only 2024**, the
+most recent, per owner); an `AADT` value column; route-measure identity
+(`RouteID` / `Route` / `FromMeasur` / `ToMeasure` / milepost); and extras
+(`PassengerA`, `Commercial`, `MADT1..12`). **There is no `XDSegID`**, so the join
+to our `Segment ID` is necessarily **spatial** (nearest-line + bearing) — that
+decision is now made, not deferred.
+
+Scope:
+- [ ] `src/inrix_tools/aadt.py` (pure): `load_aadt(source, year=2024, bbox=None, ...)`
+      — read `Cumulative_AADT.zip` via GDAL `/vsizip/` (like
+      `geometry.load_xd_network`), **filter to `Year == year` (default 2024)**,
+      reproject **EPSG:8826 → EPSG:4326**, cast to real types, keep `AADT` + route
+      identity (`RouteID`/`Route`/measures) and optionally the class split
+      (`Commercial` for a future truck view). Optional `bbox`/`segment_ids`
+      pushdown so we don't hold all 251k statewide features. No hardcoded paths.
+      `join_aadt(geo, aadt, ...)` — attach an `AADT` value per `Segment ID` by
+      spatial match to the Item 8 segment geometry (buffered nearest-line with a
+      bearing check to reject the opposing/cross-street line), flagged via an
+      `aadt_source` column (`matched` / `nearest` / `missing`) with the match
+      distance, so a bad join is visible not silent.
+- [ ] `weighted_metric(...)` helpers (pure). **Corridor/network travel time stays a
+      pure sum across segments (Item 12) — AADT does *not* re-weight it.** Volume
+      weighting applies where a *mean across segments* is what's summarized:
+      (a) **vehicle-hours of delay** = `Delay(Minutes)/60 × AADT` per segment (the
+      headline volume-aware impact number, using Item 17's delay; summable to a
+      corridor/network total), and (b) an **AADT-weighted mean speed** across member
+      segments (Σ w·x / Σ w, weights = AADT) so a corridor speed reflects where the
+      vehicles actually are. Return typed DataFrames; document the AADT-as-daily-total
+      vs analysis-window caveat (it's a relative weight, not an absolute VMT unless
+      the window is scaled — note it, don't silently scale).
+- [ ] GUI: an optional **"AADT layer"** path in the Data controls (like the Item 10
+      names CSV; defaults to the repo `Cumulative_AADT.zip`). When set: a
+      **vehicle-hours-of-delay** map colouring option (Item 17 delay × AADT) and, in
+      corridor/network scope, an **AADT-weighted mean speed** toggle — travel time
+      stays the sum. Segments with no AADT match are shown/flagged, not dropped.
+      Unset AADT → the extra options hidden, behaviour unchanged. Show the `AADT`
+      value (and match quality) in the segment hover.
+- [ ] pytest: `load_aadt` year filter (only 2024 rows) + reprojection to 4326;
+      `join_aadt` on a synthetic geometry+AADT fixture (correct nearest match,
+      cross-street rejected by the bearing check, missing flagged); `weighted_metric`
+      known vehicle-hours and weighted-mean-speed values (weights sum, a
+      zero/missing-AADT segment handled); GUI wiring (options appear only with a
+      layer, weighted speed differs from unweighted, travel time unchanged); and a
+      **real Myrtle-bbox join** against `Cumulative_AADT.zip` (self-skip if absent,
+      like the real-export tests). DESIGN_HISTORY entry; DATA_FORMAT.md gains an
+      AADT-source section (fields, EPSG:8826, `Year`/2024, spatial-join key).
+
+Suggested prompt:
+> [Opus] In Inrix/, do Item 18 of ROADMAP.md: add an AADT volume-weighting layer.
+> `src/inrix_tools/aadt.py` — `load_aadt` reads the repo `Cumulative_AADT.zip`
+> (filter `Year==2024`, reproject EPSG:8826→4326, keep `AADT` + route identity) and
+> `join_aadt` spatially attaches AADT to each `Segment ID` against the Item 8
+> geometry (nearest-line + bearing check, match flagged). `weighted_metric` helpers:
+> vehicle-hours of delay (Item 17 delay × AADT) and AADT-weighted mean speed across
+> a corridor — **corridor travel time stays a sum, not re-weighted**. GUI: optional
+> AADT path → vehicle-hours map colouring + a weighted-speed toggle. pytest the year
+> filter, spatial join, and weighted math against a Myrtle-bbox slice. Docs.
 
 ---
 

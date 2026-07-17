@@ -1078,3 +1078,66 @@ scope-option disabling (speed-only + no-corridor exports), aggregate-frame colla
 to the synthetic id, network time-series/before-after/decomposition drive, the
 "pick a corridor" guard, and scope cache-keying. DATA_FORMAT complete-set section
 gained a network-scale note.
+
+---
+
+## Session 17 — Before/after summary + GUI display polish (ROADMAP Item 13) (2026-07-17)
+
+A GUI-heavy session bundling one pure-core row filter with six display features,
+mostly in `gui/app.py` / `gui/figures.py` and one client-side JS asset. No new
+statistics.
+
+**Day-of-week filter (`timebins.filter_day_of_week`).** The ToD slider's DOW
+sibling: keep rows whose **local** day-of-week (taken from `Date Time` directly,
+not a precomputed column, so it is DST-correct) is in a selected set. `None` /
+empty / all-seven is a no-op; the applied set is recorded on
+`attrs['days_of_week']`. A `parse_day_of_week` accepts an int 0–6, a full name
+(`"Monday"`), or a 3-letter abbrev (`"Mon"`). Because it keeps *whole days*, the
+Item 9 rolling-window sample guard is unaffected — documented (with the caveat that
+too few distinct weekdays weakens `decompose`'s weekly-seasonal fit; the daily
+component + residuals still carry the signal).
+
+**GUI DOW wiring.** A `dbc.Checklist` (Mon–Sun, all checked) whose selection
+pre-filters **every** panel, the map colouring, and KML export, composing with the
+Item 9 ToD window (both applied). Rather than a new plumbing path, `_apply_tod`
+grew a `days` arg (window then DOW, each a no-op when unrestricted) and `days`
+threads through the same functions the ToD `window` already did; a new `_days_key`
+joins `_window_key` in the adjusted/compare **cache keys** so a DOW change gets its
+own cached decomposition. A plain-language status line states the active days.
+
+**Before/after day×time summary.** `summary_bars` gained a `summary_after` mode
+that draws the two periods as **side-by-side facets** (before | after, shared
+y-axis, one deduped day-group legend) via `make_subplots`. `_fig_summary` computes
+`segment_summary` on the before-subset and after-subset separately (reusing the
+existing date pickers) and falls back to the single panel when periods are unset or
+overlap (`check_periods` guards; overlap → single view, no crash).
+
+**Corridor/network day×time summary (revisits the Item 12 decision).** Item 12 kept
+the summary segment-level; the owner now wants it for the corridor **sum**. In
+aggregate scope `_fig_summary` builds the summary from `_analysis_frame` (the
+per-timestamp summed travel time, complete-set rule) so the bars are the **summed**
+corridor travel time meaned over time within each day×time bin — a *sum across
+segments*, not a mean of segment means (verified on a constant-TT fixture: two
+segments at 10 and 20 → bars at 30, not 15). Travel time only, mirroring Item 12.
+
+**Display polish.** (a) The KML button is demoted from a full-width control-panel
+button to a compact `⤓ KML` link icon beside the map, status inline. (b) The map
+midpoint markers shrank to size 6 / opacity 0.6 — the segment *lines* already carry
+the metric colour, so the markers only need to stay the click/hover/colour-bar
+carrier; verified in-browser that a marker click still selects (emitted
+`plotly_click` → dropdown updated). (c) The ToD RangeSlider tooltip now reads as a
+clock time (`1:30 PM`) via a `tooltip.transform="hourToClock"` client-side
+formatter in a new `gui/assets/tooltip.js` (mirrors the Python `_hour_label`;
+`assets_folder` set explicitly so it resolves whether the app runs as a script or
+is imported). (d) Forest hover fix (review B4): the hovertemplate used `%{y}` (the
+numeric row index), so hover showed the index, not the segment — the name now lives
+in `text` and the template is `%{text}`.
+
+11 new tests (184 total, all pass): `filter_day_of_week`
+(subset/no-op/attrs/immutability, name+index forms, composes with the ToD window)
+and `parse_day_of_week`; `_days_key` / `_apply_tod` DOW filtering; `summary_bars`
+and `_fig_summary` before/after facets + single-period fallback + overlap fallback;
+the corridor sum-not-mean check; the forest hover fix; the layout smoke test now
+requires the DOW checklist + status. Verified end-to-end in the browser on the real
+1.87M-row Myrtle export (marker click, DOW filter + status, side-by-side summary
+facets, tooltip formatter, no console errors).

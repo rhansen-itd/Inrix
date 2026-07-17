@@ -42,6 +42,7 @@ from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
     assign_time_bins,
     filter_date_range,
+    filter_day_of_week,
     filter_time_window,
     DAY_GROUP_COL,
     TIME_BIN_COL,
@@ -228,22 +229,32 @@ def _scope_options(ds: Dataset):
     return corr_opts, corr_val, scope_opts
 
 
-def _apply_tod(df: pd.DataFrame, window) -> pd.DataFrame:
-    """Restrict rows to the time-of-day slider window ``[h0, h1)`` (hours). A
-    full-day window (``[0, 24]``, the default) is a no-op, so the unfiltered path
-    is unchanged. Filtering *here*, before any compute, is what makes every panel
-    describe the selected period (see ``timebins.filter_time_window``)."""
-    if not window:
-        return df
-    h0, h1 = float(window[0]), float(window[1])
-    if h0 <= 0 and h1 >= 24:
-        return df
-    return filter_time_window(df, (h0, h1))
+ALL_DAYS = list(range(7))  # DOW checklist value = every weekday selected (a no-op)
 
 
-def _segment_means(ds: Dataset, col: str, window=None) -> pd.Series:
-    """Per-segment mean of a metric column (map colouring), within the window."""
-    return _apply_tod(ds.df, window).groupby(SEGMENT_COL, observed=True)[col].mean()
+def _apply_tod(df: pd.DataFrame, window, days=None) -> pd.DataFrame:
+    """Restrict rows to the time-of-day slider window ``[h0, h1)`` (hours) **and**
+    the selected weekdays (``days`` = a set of ``0``–``6`` day-of-week ints, Item 13).
+    A full-day window (``[0, 24]``, the default) and an empty / all-seven ``days``
+    set are each no-ops, so the unfiltered path is unchanged; both filters compose
+    (ToD **and** DOW). Filtering *here*, before any compute, is what makes every
+    panel describe the selected period (see ``timebins.filter_time_window`` /
+    ``filter_day_of_week``)."""
+    out = df
+    if window:
+        h0, h1 = float(window[0]), float(window[1])
+        if not (h0 <= 0 and h1 >= 24):
+            out = filter_time_window(out, (h0, h1))
+    if days is not None:
+        dset = {int(d) for d in days}
+        if 0 < len(dset) < 7:           # proper subset -> a real filter
+            out = filter_day_of_week(out, dset)
+    return out
+
+
+def _segment_means(ds: Dataset, col: str, window=None, days=None) -> pd.Series:
+    """Per-segment mean of a metric column (map colouring), within the window/days."""
+    return _apply_tod(ds.df, window, days).groupby(SEGMENT_COL, observed=True)[col].mean()
 
 
 def _window_key(window):
@@ -258,6 +269,16 @@ def _window_key(window):
     return (h0, h1)
 
 
+def _days_key(days):
+    """A canonical cache key for the DOW selection, collapsing every no-op spelling
+    (``None`` / empty / all-seven) to one ``"all"`` bucket so they share a cached
+    decomposition (mirrors ``_window_key``)."""
+    if not days:
+        return "all"
+    dset = {int(d) for d in days}
+    return "all" if len(dset) >= 7 else tuple(sorted(dset))
+
+
 def _scope_label(ds: Dataset, scope: str, corridor) -> str:
     """The friendly name shown for a corridor/network aggregate entity."""
     if scope == SCOPE_CORRIDOR:
@@ -265,8 +286,9 @@ def _scope_label(ds: Dataset, scope: str, corridor) -> str:
     return "Network (all segments)"
 
 
-def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None) -> pd.DataFrame:
-    """The tz-aware, ToD-filtered rows the analysis panels decompose/compare (Item 12).
+def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None,
+                    days=None) -> pd.DataFrame:
+    """The tz-aware, ToD/DOW-filtered rows the analysis panels decompose/compare (Item 12).
 
     *Segment* scope returns ``ds.df`` (real Segment IDs). *Corridor* / *Network*
     scope returns the per-timestamp travel-time total
@@ -275,7 +297,7 @@ def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None) ->
     decompose/compare adapters that group by Segment ID run on the aggregate series
     unchanged. ``col`` must be the travel-time column in the aggregate scopes (the
     GUI forces the metric there)."""
-    df = _apply_tod(ds.df, window)
+    df = _apply_tod(ds.df, window, days)
     if scope == SCOPE_SEGMENT:
         return df
     if scope == SCOPE_CORRIDOR:
@@ -290,19 +312,20 @@ def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None) ->
 
 
 def _adjusted_frame(ds: Dataset, col: str, window=None, *,
-                    scope: str = SCOPE_SEGMENT, corridor=None) -> pd.DataFrame:
-    """The seasonally-adjusted frame for ``(col, window, scope, corridor)`` — the
-    expensive decomposition, computed once and cached (cap ``_ADJ_CACHE_CAP``,
+                    scope: str = SCOPE_SEGMENT, corridor=None, days=None) -> pd.DataFrame:
+    """The seasonally-adjusted frame for ``(col, window, days, scope, corridor)`` —
+    the expensive decomposition, computed once and cached (cap ``_ADJ_CACHE_CAP``,
     LRU) so before/after date changes reuse it instead of re-decomposing
     (Item 14 review O1: 8.2 s/miss). Feeds both the before/after stats
-    (``_compare_all``) and the decomposition tab (``_fig_decomp``). The scope keys
-    the cache so segment vs corridor vs network don't collide (Item 12)."""
-    key = (col, _window_key(window), scope, corridor)
+    (``_compare_all``) and the decomposition tab (``_fig_decomp``). The scope + the
+    ToD window + the DOW selection all key the cache so distinct filters don't
+    collide (Items 12/13)."""
+    key = (col, _window_key(window), scope, corridor, _days_key(days))
     cache = ds._adjusted_cache
     if key in cache:
         cache[key] = cache.pop(key)  # touch -> most-recently-used
         return cache[key]
-    frame = _analysis_frame(ds, col, scope, corridor, window)
+    frame = _analysis_frame(ds, col, scope, corridor, window, days)
     adjusted = beforeafter.adjust_for_periods(frame, value=col)
     cache[key] = adjusted
     while len(cache) > _ADJ_CACHE_CAP:
@@ -311,19 +334,20 @@ def _adjusted_frame(ds: Dataset, col: str, window=None, *,
 
 
 def _compare_all(ds: Dataset, col: str, before, after, window=None, *,
-                 scope: str = SCOPE_SEGMENT, corridor=None) -> pd.DataFrame:
+                 scope: str = SCOPE_SEGMENT, corridor=None, days=None) -> pd.DataFrame:
     """Before/after (decomposition primary) at the chosen scope. Segment scope
     returns one row per segment; corridor/network scope returns a single aggregate
     row. The costly decomposition is cached in ``_adjusted_frame``; here we only
     run the cheap per-period Welch stats off it, so a date-picker change is
     sub-second. Overlapping/invalid periods raise *before* any decomposition."""
     beforeafter.check_periods(before, after, ds.df[DATETIME_COL].dt.tz)  # fast-fail
-    key = (col, str(before), str(after), _window_key(window), scope, corridor)
+    key = (col, str(before), str(after), _window_key(window), scope, corridor,
+           _days_key(days))
     cache = ds._compare_cache
     if key in cache:
         cache[key] = cache.pop(key)  # touch -> MRU
         return cache[key]
-    adjusted = _adjusted_frame(ds, col, window, scope=scope, corridor=corridor)
+    adjusted = _adjusted_frame(ds, col, window, scope=scope, corridor=corridor, days=days)
     cache[key] = beforeafter.compare_adjusted(adjusted, before=before, after=after)
     while len(cache) > _COMPARE_CACHE_CAP:
         cache.pop(next(iter(cache)))
@@ -419,24 +443,33 @@ def _controls() -> dbc.Card:
         html.Hr(),
         html.H6("Time-of-day window", className="text-muted"),
         # Equal handles (start == end) mean *whole day*, not an empty window —
-        # matching timebins.filter_time_window; the status line below says so.
+        # matching timebins.filter_time_window; the status line below says so. The
+        # tooltip's ``transform`` names a client-side JS formatter (assets/tooltip.js)
+        # so the handle reads as a clock time (``1:30 PM``), not the raw hour (Item 13).
         dcc.RangeSlider(
             id="tod-window", min=0, max=24, step=0.25, value=[0, 24],
             allowCross=False,
             marks={0: "12a", 6: "6a", 12: "12p", 18: "6p", 24: "12a"},
-            tooltip={"placement": "bottom", "always_visible": False},
+            tooltip={"placement": "bottom", "always_visible": False,
+                     "transform": "hourToClock"},
         ),
         html.Div(id="tod-status", className="small text-muted mt-1"),
+        # Day-of-week filter (Item 13): the ToD slider's DOW sibling. All checked =
+        # no filter; composes with the ToD window (both applied). Pre-filters every
+        # panel, the map colouring, and KML export.
+        dbc.Label("Days of week", className="mt-2"),
+        dbc.Checklist(
+            id="dow-days", inline=True, value=list(ALL_DAYS),
+            options=[{"label": f" {lbl}", "value": i} for i, lbl in
+                     enumerate(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))],
+        ),
+        html.Div(id="dow-status", className="small text-muted mt-1"),
         html.Hr(),
         html.H6("Before / after periods", className="text-muted"),
         dbc.Label("Before"),
         dcc.DatePickerRange(id="before-range", className="d-block", display_format="YYYY-MM-DD"),
         dbc.Label("After", className="mt-2"),
         dcc.DatePickerRange(id="after-range", className="d-block", display_format="YYYY-MM-DD"),
-        html.Hr(),
-        dbc.Button("Export KML of current view", id="export-kml", color="secondary",
-                   size="sm", className="w-100"),
-        html.Div(id="kml-status", className="small text-muted mt-1"),
     ]), className="mb-2")
 
 
@@ -447,7 +480,18 @@ def _layout() -> dbc.Container:
         dbc.Row([
             dbc.Col(_controls(), width=3),
             dbc.Col(dbc.Card(dbc.CardBody([
-                dbc.Label("Segment"),
+                # Segment picker + a compact KML export icon (Item 13: demoted from
+                # the full-width control panel button — KML is now a rare export, so
+                # it lives here as a small icon with its status inline).
+                dbc.Row([
+                    dbc.Col(dbc.Label("Segment", className="mb-0"), className="me-auto"),
+                    dbc.Col(html.Span(id="kml-status", className="small text-muted me-2"),
+                            width="auto", className="text-end"),
+                    dbc.Col(dbc.Button("⤓ KML", id="export-kml", color="link", size="sm",
+                                       className="p-0",
+                                       title="Export KML of the current map colouring"),
+                            width="auto"),
+                ], className="align-items-center g-1"),
                 dcc.Dropdown(id="segment", placeholder="Load an export, then pick or click a segment"),
                 dcc.Graph(id="map", style={"height": "620px"}),
             ])), width=9),
@@ -475,7 +519,10 @@ def build_app() -> Dash:
     Builds its full layout without loading any data (data loads on the *Load*
     button), so the layout is constructible headless for the smoke test."""
     app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP],
-               title="INRIX segment explorer", suppress_callback_exceptions=True)
+               title="INRIX segment explorer", suppress_callback_exceptions=True,
+               # Explicit so the ToD-tooltip JS formatter (assets/tooltip.js) is
+               # found whether the app runs as a script or is imported as gui.app.
+               assets_folder=str(Path(__file__).resolve().parent / "assets"))
     app.layout = _layout()
     _register_callbacks(app)
     return app
@@ -607,8 +654,9 @@ def _register_callbacks(app: Dash) -> None:
         Input("after-range", "end_date"),
         Input("tod-window", "value"),
         Input("scope", "value"),
+        Input("dow-days", "value"),
     )
-    def _map(token, metric, mode, selected, b0, b1, a0, a1, window, scope):
+    def _map(token, metric, mode, selected, b0, b1, a0, a1, window, scope, days):
         ds = _get(token)
         if ds is None:
             return figures.segment_map(_empty_geo())
@@ -621,16 +669,16 @@ def _register_callbacks(app: Dash) -> None:
         label = figures._unit_label(col)
         if mode == "delta" and all([b0, b1, a0, a1]):
             try:
-                comp = _compare_all(ds, col, (b0, b1), (a0, a1), window)
+                comp = _compare_all(ds, col, (b0, b1), (a0, a1), window, days=days)
             except ValueError:  # e.g. overlapping periods — fall back to means
                 comp = None
             if comp is not None and not comp.empty:
                 values = comp.set_index(SEGMENT_COL)["effect"]
                 label = f"Δ {label}"
             else:
-                values = _segment_means(ds, col, window)
+                values = _segment_means(ds, col, window, days)
         else:
-            values = _segment_means(ds, col, window)
+            values = _segment_means(ds, col, window, days)
         # Key uirevision on the data token so loading a *different* export
         # recenters the map instead of keeping the old city's pan/zoom (review B5).
         return figures.segment_map(ds.geo, values, value_label=label,
@@ -654,8 +702,9 @@ def _register_callbacks(app: Dash) -> None:
         Input("tod-window", "value"),
         Input("scope", "value"),
         Input("corridor", "value"),
+        Input("dow-days", "value"),
     )
-    def _panels(tab, token, selected, metric, b0, b1, a0, a1, window, scope, corridor):
+    def _panels(tab, token, selected, metric, b0, b1, a0, a1, window, scope, corridor, days):
         ds = _get(token)
         blank = figures._blank("Load an export to begin.")
         if ds is None:
@@ -673,16 +722,19 @@ def _register_callbacks(app: Dash) -> None:
 
         if tab == "ts":
             out["ts"] = _fig_timeseries(ds, selected, col, before, after, name, window,
-                                        scope=scope, corridor=corridor)
+                                        days, scope=scope, corridor=corridor)
         elif tab == "summary":
-            # The day×time summary stays segment-level in every scope (a segment
-            # sum has no day-group×time-bin decomposition of its own here).
-            out["summary"] = _fig_summary(ds, selected, col, name, window)
+            # The day×time summary means over the segment's rows (Segment scope) or
+            # the per-timestamp summed travel time (Corridor/Network, Item 13). With
+            # before/after periods set it renders the two periods side by side.
+            out["summary"] = _fig_summary(ds, selected, col, name, window, days,
+                                          before=before, after=after,
+                                          scope=scope, corridor=corridor)
         elif tab == "ba":
             out["ba"] = _fig_beforeafter(ds, selected, col, before, after, have_periods,
-                                         window, scope=scope, corridor=corridor)
+                                         window, days, scope=scope, corridor=corridor)
         elif tab == "decomp":
-            out["decomp"] = _fig_decomp(ds, selected, col, name, window,
+            out["decomp"] = _fig_decomp(ds, selected, col, name, window, days,
                                         scope=scope, corridor=corridor)
         return out["ts"], out["summary"], out["ba"], out["decomp"]
 
@@ -697,14 +749,15 @@ def _register_callbacks(app: Dash) -> None:
         State("after-range", "start_date"),
         State("after-range", "end_date"),
         State("tod-window", "value"),
+        State("dow-days", "value"),
         prevent_initial_call=True,
     )
-    def _export(_n, token, metric, mode, b0, b1, a0, a1, window):
+    def _export(_n, token, metric, mode, b0, b1, a0, a1, window, days):
         ds = _get(token)
         if ds is None:
             return "Load an export first."
         try:
-            path = _write_kml(ds, metric, mode, (b0, b1), (a0, a1), window)
+            path = _write_kml(ds, metric, mode, (b0, b1), (a0, a1), window, days)
         except Exception as exc:
             return f"⚠ Export failed: {exc}"
         return f"✓ Wrote {path}"
@@ -745,6 +798,18 @@ def _register_callbacks(app: Dash) -> None:
             return "Whole day — no time-of-day filter."
         return f"Analysing {_hour_label(h0)} – {_hour_label(h1)} only."
 
+    # Day-of-week filter: a plain-language status line under the checklist (Item 13).
+    @app.callback(
+        Output("dow-status", "children"),
+        Input("dow-days", "value"),
+    )
+    def _dow_label(days):
+        if not days or len(set(days)) >= 7:
+            return "All days — no day-of-week filter."
+        names = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+        picked = [names[int(d)] for d in sorted(set(int(x) for x in days))]
+        return "Analysing " + ", ".join(picked) + " only."
+
 
 # --- panel builders (subset -> compute-core call -> figure) -----------------
 def _hour_label(h) -> str:
@@ -757,11 +822,11 @@ def _hour_label(h) -> str:
     return _time(int(h), int(round((h - int(h)) * 60))).strftime("%I:%M %p").lstrip("0")
 
 
-def _segment_df(ds: Dataset, selected, window=None) -> pd.DataFrame:
+def _segment_df(ds: Dataset, selected, window=None, days=None) -> pd.DataFrame:
     if selected is None:
         return ds.df.iloc[0:0]
     sub = ds.df[ds.df[SEGMENT_COL] == int(selected)]
-    return _apply_tod(sub, window)
+    return _apply_tod(sub, window, days)
 
 
 def _agg_guard(scope, corridor):
@@ -772,40 +837,79 @@ def _agg_guard(scope, corridor):
     return None
 
 
-def _fig_timeseries(ds, selected, col, before, after, name, window=None, *,
+def _fig_timeseries(ds, selected, col, before, after, name, window=None, days=None, *,
                     scope=SCOPE_SEGMENT, corridor=None):
     if scope in _AGG_SCOPES:
         if (g := _agg_guard(scope, corridor)) is not None:
             return g
-        sub = _analysis_frame(ds, col, scope, corridor, window)
+        sub = _analysis_frame(ds, col, scope, corridor, window, days)
         name = _scope_label(ds, scope, corridor)
         empty_msg = "No complete-set timestamps in this range."
     else:
-        sub = _segment_df(ds, selected, window)
+        sub = _segment_df(ds, selected, window, days)
         empty_msg = "Pick or click a segment."
     if sub.empty:
         return figures._blank(empty_msg)
     return figures.time_series(sub, col, title=name, before=before, after=after)
 
 
-def _fig_summary(ds, selected, col, name, window=None):
-    sub = _segment_df(ds, selected, window)
-    if sub.empty:
-        return figures._blank("Pick or click a segment.")
-    binned = assign_time_bins(assign_day_group(sub), DEFAULT_TIME_BINS)
-    summary = speed.segment_summary(binned, values=[col],
-                                    group_cols=[DAY_GROUP_COL, TIME_BIN_COL])
-    return figures.summary_bars(summary, col, title=name)
+def _daytime_summary(frame: pd.DataFrame, col: str) -> pd.DataFrame:
+    """Bin ``frame`` by day-group x time-bin and mean ``col`` over time within each
+    bin (``speed.segment_summary``). For a corridor/network aggregate frame the
+    rows are already the per-timestamp **summed** travel time, so the bars read as
+    the summed corridor travel time (mean over time), not a mean of segment means."""
+    binned = assign_time_bins(assign_day_group(frame), DEFAULT_TIME_BINS)
+    return speed.segment_summary(binned, values=[col],
+                                 group_cols=[DAY_GROUP_COL, TIME_BIN_COL])
 
 
-def _fig_beforeafter(ds, selected, col, before, after, have_periods, window=None, *,
-                     scope=SCOPE_SEGMENT, corridor=None):
+def _period_subset(df: pd.DataFrame, period) -> pd.DataFrame:
+    """Rows whose timestamp is in the half-open ``[start, end)`` of a period spec."""
+    start, end = beforeafter.parse_period(period, df[DATETIME_COL].dt.tz)
+    return df[(df[DATETIME_COL] >= start) & (df[DATETIME_COL] < end)]
+
+
+def _fig_summary(ds, selected, col, name, window=None, days=None, *,
+                 before=None, after=None, scope=SCOPE_SEGMENT, corridor=None):
+    """The day-group x time-bin summary. Segment scope means over the segment's
+    rows; corridor/network scope means over the per-timestamp **summed** travel
+    time (Item 13, revisiting the Item 12 segment-only decision). When before/after
+    periods are set, the two periods are computed separately and drawn side by
+    side; otherwise the single-period view."""
+    if scope in _AGG_SCOPES:
+        if (g := _agg_guard(scope, corridor)) is not None:
+            return g
+        frame = _analysis_frame(ds, col, scope, corridor, window, days)
+        name = _scope_label(ds, scope, corridor)
+        empty_msg = "No complete-set timestamps in this range."
+    else:
+        frame = _segment_df(ds, selected, window, days)
+        empty_msg = "Pick or click a segment."
+    if frame.empty:
+        return figures._blank(empty_msg)
+
+    have_periods = all([before, after]) and all(before) and all(after)
+    if have_periods:
+        try:  # disjoint/valid periods only — else fall back to the single view
+            beforeafter.check_periods(before, after, ds.df[DATETIME_COL].dt.tz)
+        except ValueError:
+            have_periods = False
+    if have_periods:
+        b_sum = _daytime_summary(_period_subset(frame, before), col)
+        a_sum = _daytime_summary(_period_subset(frame, after), col)
+        return figures.summary_bars(b_sum, col, summary_after=a_sum, title=name)
+    return figures.summary_bars(_daytime_summary(frame, col), col, title=name)
+
+
+def _fig_beforeafter(ds, selected, col, before, after, have_periods, window=None,
+                     days=None, *, scope=SCOPE_SEGMENT, corridor=None):
     if not have_periods:
         return figures._blank("Set before and after date ranges.")
     if (g := _agg_guard(scope, corridor)) is not None:
         return g
     try:
-        comp = _compare_all(ds, col, before, after, window, scope=scope, corridor=corridor)
+        comp = _compare_all(ds, col, before, after, window, scope=scope,
+                            corridor=corridor, days=days)
     except ValueError as exc:  # e.g. overlapping periods — validation, not a crash
         return figures._blank(f"⚠ {exc}")
     if scope in _AGG_SCOPES:
@@ -817,7 +921,7 @@ def _fig_beforeafter(ds, selected, col, before, after, have_periods, window=None
                                       value_label=figures._unit_label(col))
 
 
-def _fig_decomp(ds, selected, col, name, window=None, *,
+def _fig_decomp(ds, selected, col, name, window=None, days=None, *,
                 scope=SCOPE_SEGMENT, corridor=None):
     if scope in _AGG_SCOPES:
         if (g := _agg_guard(scope, corridor)) is not None:
@@ -829,11 +933,11 @@ def _fig_decomp(ds, selected, col, name, window=None, *,
         entity = int(selected)
     # Reuse the cached decomposition and slice to this entity: the decomposition
     # groups by Segment ID, so one entity's rows are identical whether the frame
-    # held it alone or with others. Filter-first (via the window key) means the
-    # trend/changepoints describe the selected window; decompose_segments
+    # held it alone or with others. Filter-first (via the window/days keys) means
+    # the trend/changepoints describe the selected window/weekdays; decompose_segments
     # auto-scales its rolling-window sample guard so a narrow window doesn't come
     # back empty (see decompose.py).
-    adjusted = _adjusted_frame(ds, col, window, scope=scope, corridor=corridor)
+    adjusted = _adjusted_frame(ds, col, window, scope=scope, corridor=corridor, days=days)
     seg = adjusted[adjusted[SEGMENT_COL] == entity]
     if seg.empty or col not in seg.columns:
         return figures._blank(
@@ -844,15 +948,15 @@ def _fig_decomp(ds, selected, col, name, window=None, *,
     return figures.decomposition(seg, col, changepoints=cps, title=name)
 
 
-def _write_kml(ds, metric, mode, before, after, window=None) -> Path:
+def _write_kml(ds, metric, mode, before, after, window=None, days=None) -> Path:
     col = _metric_col(ds, metric)
     geo = ds.geo.copy()
     if mode == "delta" and all(before) and all(after):
-        comp = _compare_all(ds, col, before, after, window)
+        comp = _compare_all(ds, col, before, after, window, days=days)
         geo["metric"] = comp.set_index(SEGMENT_COL)["effect"].reindex(geo.index)
         color_by = "metric"
     else:
-        geo["metric"] = _segment_means(ds, col, window).reindex(geo.index)
+        geo["metric"] = _segment_means(ds, col, window, days).reindex(geo.index)
         color_by = "metric"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / "segments.kml"
