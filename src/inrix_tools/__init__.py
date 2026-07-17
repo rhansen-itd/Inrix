@@ -13,6 +13,7 @@ Modules are scaffolded as stubs until built per ROADMAP.md:
     geometry    — segment polylines from the INRIX XD shapefile (Item 8)
     kml         — segment geometry -> KML (Item 6)
     names       — friendly, user-editable segment names (Item 10)
+    aadt        — AADT volume layer + volume weighting (Item 18)
 """
 
 __version__ = "0.1.0"

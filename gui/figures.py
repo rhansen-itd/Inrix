@@ -127,7 +127,17 @@ def segment_map(
             if subtxt and subtxt != label and subtxt.lower() != "nan":
                 sub = f"<br><i>{subtxt}</i>"
         vtxt = "" if values is None else f"<br>{value_label}: {values.get(sid, float('nan')):.2f}"
-        texts.append(f"<b>{label}</b>{sub}<br>Segment {sid}{vtxt}")
+        # AADT (Item 18): show the joined daily volume + match quality when present,
+        # so a "nearest"/"missing" join is visible in the hover rather than silent.
+        atxt = ""
+        if "AADT" in geo.columns:
+            av = row.get("AADT")
+            if pd.notna(av):
+                src = str(row.get("aadt_source", "")) if "aadt_source" in geo.columns else ""
+                atxt = f"<br>AADT: {av:,.0f}" + (f" ({src})" if src else "")
+            elif "aadt_source" in geo.columns:
+                atxt = "<br>AADT: none"
+        texts.append(f"<b>{label}</b>{sub}<br>Segment {sid}{vtxt}{atxt}")
 
     # The midpoint markers are the click target, hover anchor, and colour-bar
     # carrier (Item 13) — the segment *lines* already carry the metric colour

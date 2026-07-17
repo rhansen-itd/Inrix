@@ -36,7 +36,7 @@ import figures  # noqa: E402
 import dash_bootstrap_components as dbc  # noqa: E402
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update  # noqa: E402
 
-from inrix_tools import beforeafter, changepoint, geometry, io, kml, names, speed  # noqa: E402
+from inrix_tools import aadt, beforeafter, changepoint, geometry, io, kml, names, speed  # noqa: E402
 from inrix_tools.io import CORRIDOR_COL, DATETIME_COL, SEGMENT_COL  # noqa: E402
 from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
@@ -52,6 +52,11 @@ from inrix_tools.timebins import (  # noqa: E402
 _REPO = Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE = str(_REPO / "Myrtle_2026-02-01_to_2026-07-16_5_min_part_1.zip")
 DEFAULT_SHAPEFILE = str(_REPO / "USA_Idaho_shapefile.zip")
+# AADT volume layer (Item 18): defaults to the in-repo ITD layer when present, so
+# the volume-weighting features (vehicle-hours map colouring, corridor weighted
+# speed) are on out of the box; blank the field to turn them off.
+_AADT_ZIP = _REPO / "Cumulative_AADT.zip"
+DEFAULT_AADT = str(_AADT_ZIP) if _AADT_ZIP.exists() else ""
 DEFAULT_TZ = io.DEFAULT_TZ
 DEFAULT_CVALUE = io.DEFAULT_CVALUE_THRESHOLD
 OUTPUT_DIR = _REPO / "out"
@@ -71,6 +76,38 @@ def _agg_metric_key(metric: str) -> str:
     """The metric key an aggregate (corridor/network) scope runs on: keep travel
     time or delay (both sum across segments); anything else falls back to tt."""
     return metric if metric in _AGG_METRICS else "tt"
+
+
+# Map colour modes: segment mean, before/after Δ, and (Item 18) per-segment
+# vehicle-hours of delay (delay × AADT — the volume-aware impact number).
+MAP_MODE_VHD = "vhd"
+
+
+def _has_aadt(ds) -> bool:
+    return ds is not None and getattr(ds, "aadt", None) is not None
+
+
+def _wspeed_col(ds) -> str | None:
+    """The per-timestamp AADT-weighted mean-speed column name for a scope
+    aggregate (``"Weighted Speed(miles/hour)"``), or ``None`` when the export has
+    no speed column."""
+    sp = _metric_col(ds, "speed")
+    return f"Weighted {sp}" if sp else None
+
+
+def _wspeed_on(ds, wspeed) -> bool:
+    """True when the corridor/network AADT-weighted-speed toggle is on *and* the
+    data supports it (AADT joined + a speed column present)."""
+    return _has_aadt(ds) and _wspeed_col(ds) is not None and bool(wspeed) and "on" in set(wspeed)
+
+
+def _resolve_col(ds, metric, scope, wspeed=None) -> str | None:
+    """The value column the map/panels run on. In an aggregate scope with the AADT
+    weighted-speed toggle on, that's the per-timestamp weighted-speed column;
+    otherwise travel time / delay (aggregate) or the plain metric (segment)."""
+    if scope in _AGG_SCOPES and _wspeed_on(ds, wspeed):
+        return _wspeed_col(ds)
+    return _metric_col(ds, _agg_metric_key(metric) if scope in _AGG_SCOPES else metric)
 
 # Analysis scope (Item 12): the entity the time-series / before-after /
 # decomposition panels run on. *Segment* = the map-selected segment. *Corridor* /
@@ -101,6 +138,7 @@ class Dataset:
     span: tuple                      # (min_date, max_date) local dates — after any date restriction
     full_span: tuple = None          # the untrimmed export span, for the "Restrict dates" picker bounds (Item 11)
     labels: dict = field(default_factory=dict)   # Segment ID -> friendly name (Item 10)
+    aadt: object = None              # Segment ID -> AADT Series (Item 18); None when no AADT layer
     # Seasonally-adjusted full-export frames, keyed by (metric col, ToD-window):
     # the expensive decomposition, cached independently of the before/after dates
     # so moving a date picker doesn't re-decompose (Item 14 review O1). Capped
@@ -150,7 +188,8 @@ def _parse_freeflow(freeflow):
 
 def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHAPEFILE,
                  names_path: str | None = None,
-                 date_start=None, date_end=None, freeflow="ref") -> Dataset:
+                 date_start=None, date_end=None, freeflow="ref",
+                 aadt_path: str | None = None) -> Dataset:
     """Load + localize + CValue-filter an export, join its segment geometry.
 
     ``names_path`` (optional) points at a user-edited names CSV
@@ -163,6 +202,14 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     a display filter. The **trimmed** span is recorded on ``span`` (the
     before/after and time-of-day controls clamp to it); the untrimmed export span
     is kept on ``full_span`` so the "Restrict dates" picker can widen again.
+
+    ``aadt_path`` (optional, Item 18) points at the ITD AADT layer
+    (``Cumulative_AADT.zip``); when given, ``aadt.load_aadt`` reads the 2024 rows
+    within the export's geometry bounds and ``aadt.join_aadt`` spatially attaches a
+    volume per ``Segment ID`` (flagged ``matched`` / ``nearest`` / ``missing``).
+    The per-segment AADT lands on ``Dataset.aadt`` and on ``geo`` (for the hover
+    and the volume-weighted map/scope options). A load/join failure degrades
+    quietly to no-AADT (the extra options stay hidden).
     """
     raw = io.load_data(source)
     local = io.to_local(raw, tz)
@@ -203,6 +250,21 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     except ValueError:
         pass  # no Delay column -> metric option stays disabled
 
+    # AADT volume layer (Item 18): a spatial join of the 2024 AADT lines (within the
+    # export's geometry bounds) onto each Segment ID. Optional and best-effort — a
+    # missing file or a join error just leaves the volume features off.
+    aadt_series = None
+    if aadt_path:
+        try:
+            b = geo.total_bounds
+            pad = 0.01  # ~1 km — cover AADT lines just outside the segment envelope
+            bbox = (b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad)
+            aadt_layer = aadt.load_aadt(aadt_path, year=aadt.DEFAULT_YEAR, bbox=bbox)
+            geo = aadt.join_aadt(geo, aadt_layer)
+            aadt_series = geo[aadt.AADT_COL]
+        except Exception:
+            aadt_series = None  # degrade to no-AADT
+
     dates = filt[DATETIME_COL].dt.date
     # An over-narrow restriction can empty the frame; fall back to the full span
     # for display bounds rather than a NaN span (the panels handle an empty df).
@@ -210,7 +272,7 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     return Dataset(
         df=filt, metadata=meta, geo=geo,
         metric_cols=speed.metric_columns(filt), tz=tz,
-        span=span, full_span=full_span, labels=labels,
+        span=span, full_span=full_span, labels=labels, aadt=aadt_series,
     )
 
 
@@ -258,6 +320,24 @@ def _scope_options(ds: Dataset):
          "disabled": not have_tt},
     ]
     return corr_opts, corr_val, scope_opts
+
+
+def _map_mode_options(ds):
+    """Map colour-mode options for the loaded export (Item 18): the vehicle-hours
+    of delay option is added only when an AADT layer joined *and* the delay metric
+    is available (delay × volume)."""
+    opts = [{"label": "Segment mean", "value": "mean"},
+            {"label": "Before/after Δ", "value": "delta"}]
+    if _has_aadt(ds) and _metric_col(ds, "delay") is not None:
+        opts.append({"label": "Vehicle-hours of delay", "value": MAP_MODE_VHD})
+    return opts
+
+
+def _wspeed_options(ds):
+    """The AADT-weighted-speed toggle option, disabled when no AADT layer joined /
+    no speed column (so it's inert without the data behind it)."""
+    ok = _has_aadt(ds) and _wspeed_col(ds) is not None
+    return [{"label": " AADT-weighted mean speed", "value": "on", "disabled": not ok}]
 
 
 ALL_DAYS = list(range(7))  # DOW checklist value = every weekday selected (a no-op)
@@ -331,7 +411,16 @@ def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None,
     df = _apply_tod(ds.df, window, days)
     if scope == SCOPE_SEGMENT:
         return df
-    if scope == SCOPE_CORRIDOR:
+    if col == _wspeed_col(ds):
+        # AADT-weighted mean speed (Item 18): a per-timestamp Σ(w·v)/Σw across the
+        # corridor/network members (weights = AADT). Unlike the travel-time sum this
+        # is a *mean*, so it tolerates a missing segment rather than dropping the
+        # timestamp — corridor travel time stays a sum, this is the volume-weighted
+        # speed companion.
+        members = df if scope == SCOPE_NETWORK else df[df[CORRIDOR_COL] == corridor]
+        base = _metric_col(ds, "speed")
+        agg = aadt.weighted_speed_by_time(members, ds.aadt, speed_col=base, out_col=col)
+    elif scope == SCOPE_CORRIDOR:
         agg = speed.corridor_travel_time(df, value=col)  # length/speed not needed here
         agg = agg[agg[CORRIDOR_COL] == corridor]
     else:  # network
@@ -437,6 +526,13 @@ def _controls() -> dbc.Card:
         dbc.Label("Names CSV (optional)", className="mt-2"),
         dbc.Input(id="names-path", value="", size="sm", debounce=True,
                   placeholder="path to an edited segment_names.csv"),
+        # AADT volume layer (Item 18): points at the ITD Cumulative_AADT.zip;
+        # defaults to the in-repo copy. Applied at Load — enables the vehicle-hours
+        # map colouring and the corridor AADT-weighted-speed toggle. Blank it to
+        # turn the volume features off.
+        dbc.Label("AADT layer (optional)", className="mt-2"),
+        dbc.Input(id="aadt-path", value=DEFAULT_AADT, size="sm", debounce=True,
+                  placeholder="path to Cumulative_AADT.zip"),
         # Restrict-dates (Item 11): trim the session to a calendar sub-range on
         # Load so every downstream compute runs on the smaller frame. Defaults to
         # the full export span (a no-op) once loaded; narrow it and re-Load to trim.
@@ -462,6 +558,8 @@ def _controls() -> dbc.Card:
                      options=[{"label": "Ref Speed (open road)", "value": "ref"},
                               {"label": "Observed 95th pct", "value": "p95"}]),
         dbc.Label("Colour map by", className="mt-2"),
+        # The vehicle-hours-of-delay option (Item 18, delay × AADT) is added to
+        # these options at Load only when an AADT layer resolved (else hidden).
         dcc.Dropdown(id="map-mode", clearable=False, value="mean",
                      options=[{"label": "Segment mean", "value": "mean"},
                               {"label": "Before/after Δ", "value": "delta"}]),
@@ -479,6 +577,12 @@ def _controls() -> dbc.Card:
         dcc.Dropdown(id="corridor", clearable=False, placeholder="Load an export"),
         html.Div("Corridor / Network analyse summed travel time (travel time only).",
                  className="small text-muted mt-1"),
+        # AADT-weighted mean speed (Item 18): in corridor/network scope, run the
+        # panels on the per-timestamp Σ(AADT·speed)/ΣAADT across member segments
+        # instead of summed travel time — travel time stays a sum, this is the
+        # volume-weighted speed companion. Only meaningful with an AADT layer loaded.
+        dbc.Checklist(id="wspeed", className="mt-1", switch=True,
+                      value=[], options=[{"label": " AADT-weighted mean speed", "value": "on"}]),
         html.Hr(),
         html.H6("Time-of-day window", className="text-muted"),
         # Equal handles (start == end) mean *whole day*, not an empty window —
@@ -591,6 +695,8 @@ def _register_callbacks(app: Dash) -> None:
         Output("corridor", "options"),
         Output("corridor", "value"),
         Output("scope", "options"),
+        Output("map-mode", "options"),
+        Output("wspeed", "options"),
         Input("load", "n_clicks"),
         State("source", "value"),
         State("tz", "value"),
@@ -600,9 +706,11 @@ def _register_callbacks(app: Dash) -> None:
         State("restrict-range", "start_date"),
         State("restrict-range", "end_date"),
         State("freeflow", "value"),
+        State("aadt-path", "value"),
         prevent_initial_call=True,
     )
-    def _load(_n, source, tz, cvalue, metric, names_path, date_start, date_end, freeflow):
+    def _load(_n, source, tz, cvalue, metric, names_path, date_start, date_end,
+              freeflow, aadt_path):
         # A cleared CValue input arrives as None/"" — default it rather than let
         # int(None) blow up with a cryptic message (Item 14 review B6).
         cv = DEFAULT_CVALUE if cvalue in (None, "") else int(cvalue)
@@ -614,9 +722,9 @@ def _register_callbacks(app: Dash) -> None:
             ds = load_dataset(source, tz or DEFAULT_TZ, cv,
                               names_path=names_path or None,
                               date_start=date_start, date_end=date_end,
-                              freeflow=freeflow)
+                              freeflow=freeflow, aadt_path=aadt_path or None)
         except Exception as exc:  # surface the failure in the UI, don't crash
-            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 19)
+            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 21)
         token = _store(ds)
         labels = _labels(ds)
         options = [{"label": labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
@@ -641,12 +749,17 @@ def _register_callbacks(app: Dash) -> None:
         # Analysis-scope options (Item 12): corridor needs the Corridor/Region Name
         # column; both aggregate scopes need a travel-time column (travel-time only).
         corr_opts, corr_val, scope_opts = _scope_options(ds)
+        # AADT-dependent options (Item 18): the vehicle-hours map colouring and the
+        # corridor weighted-speed toggle appear/enable only when an AADT layer
+        # resolved on this load.
+        map_mode_opts = _map_mode_options(ds)
+        wspeed_opts = _wspeed_options(ds)
         # Reset the segment selection: a new export's ids differ, so keeping the
         # old value would leave every panel on a stale/blank segment (review B5).
         return (token, status, options, None, metric_options, metric_value,
                 lo, hi, b_start, b_end, lo, hi, a_start, a_end,
                 full_lo, full_hi, r_start, r_end,
-                corr_opts, corr_val, scope_opts)
+                corr_opts, corr_val, scope_opts, map_mode_opts, wspeed_opts)
 
     # Map click -> segment dropdown (the dropdown is the single selection source).
     @app.callback(
@@ -715,7 +828,13 @@ def _register_callbacks(app: Dash) -> None:
             return figures.segment_map(ds.geo, label_col="name",
                                        sublabel_col="Combined", uirevision=f"data-{token}")
         label = figures._unit_label(col)
-        if mode == "delta" and all([b0, b1, a0, a1]):
+        if mode == MAP_MODE_VHD and _has_aadt(ds) and _metric_col(ds, "delay") is not None:
+            # Vehicle-hours of delay (Item 18): per-segment mean delay (hours) × AADT.
+            delay_col = _metric_col(ds, "delay")
+            mean_delay = _segment_means(ds, delay_col, window, days)
+            values = aadt.vehicle_hours_of_delay(mean_delay, ds.aadt)["vehicle_hours"]
+            label = "Vehicle-hours of delay / day"
+        elif mode == "delta" and all([b0, b1, a0, a1]):
             try:
                 comp = _compare_all(ds, col, (b0, b1), (a0, a1), window, days=days)
             except ValueError:  # e.g. overlapping periods — fall back to means
@@ -751,15 +870,18 @@ def _register_callbacks(app: Dash) -> None:
         Input("scope", "value"),
         Input("corridor", "value"),
         Input("dow-days", "value"),
+        Input("wspeed", "value"),
     )
-    def _panels(tab, token, selected, metric, b0, b1, a0, a1, window, scope, corridor, days):
+    def _panels(tab, token, selected, metric, b0, b1, a0, a1, window, scope, corridor,
+                days, wspeed):
         ds = _get(token)
         blank = figures._blank("Load an export to begin.")
         if ds is None:
             return blank, blank, blank, blank
         # Corridor/Network scope analyses summed travel time or delay (both sum
-        # across segments; speed has no meaningful weighting), so restrict there.
-        col = _metric_col(ds, _agg_metric_key(metric) if scope in _AGG_SCOPES else metric)
+        # across segments; speed has no meaningful weighting) — or, with the AADT
+        # weighted-speed toggle on, the per-timestamp volume-weighted mean speed.
+        col = _resolve_col(ds, metric, scope, wspeed)
         if col is None:  # metric absent (mid-load transition) — nothing to plot yet
             miss = figures._blank("This export doesn't carry the selected metric.")
             return miss, miss, miss, miss

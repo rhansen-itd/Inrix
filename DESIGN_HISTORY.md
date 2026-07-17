@@ -1193,3 +1193,66 @@ recovery, GUI metric wiring (segment + aggregate scope, `_agg_metric_key`,
 network-scope before/after) folded into the end-to-end test. Note: the full suite's
 real-export tests exceed this box's ~2.6 GB free RAM when run together (a
 pre-existing environment limit, not a regression) — run the heavy tests per-module.
+
+---
+
+## Session 19 — AADT volume-weighting layer (ROADMAP Item 18) (2026-07-17)
+
+Added traffic **volume** as a weighting layer. A segment carrying 40k vehicles/day
+and one carrying 2k shouldn't count equally in a corridor summary, and the impact
+of delay is really **vehicle-hours**, not per-vehicle minutes. AADT is **not** in
+the INRIX export — it comes from the ITD `Cumulative_AADT` GIS layer (in-repo as
+`Cumulative_AADT.zip`, a gitignored fixture), which has **no `XDSegID`**, so the
+join to our `Segment ID` is necessarily **spatial**.
+
+**`src/inrix_tools/aadt.py` (pure).** `load_aadt(source, year=2024, bbox=None, ...)`
+reads the layer via GDAL `/vsizip/` (reusing `geometry._resolve_shp_path`),
+**filters `Year == 2024`** with a pushed-down WHERE (the layer is cumulative
+1999–2024 — an unfiltered read double-counts every road), and reprojects
+**EPSG:8826 → 4326**. The AADT `.dbf` carries real numeric types already, so no
+`C(255)` casting is needed (unlike the XD shapefile). A WGS84 `bbox` is reprojected
+to the layer CRS for the spatial pushdown so we don't hold all 251k statewide
+features; there's no `segment_ids` pushdown because the layer has no join key.
+`join_aadt(geo, aadt, max_distance_m=35, bearing_tol_deg=45)` attaches a volume per
+`Segment ID` by an **STRtree nearest-line within a metre buffer + an
+endpoint-bearing check (mod 180°)** that rejects the opposing-direction split line
+and perpendicular cross-streets; the pick is flagged `matched` / `nearest` /
+`missing` with the match distance so a marginal join is **visible, not silent**.
+Verified on Myrtle: **45/46 segments match at ~0 m** (the AADT and XD centerlines
+coincide), the 46th flagged `nearest` at 0.13 m (its short near-intersection
+geometry failed the bearing gate — the fallback still gives a sane value).
+
+**Weighting helpers (pure, typed).** The two named in the item, kept **separate
+from the corridor sum**: `vehicle_hours_of_delay(mean_delay, aadt)` = delay(hrs) ×
+AADT per segment (the headline impact number, summable to a corridor/network
+total), and `aadt_weighted_mean_speed(mean_speed, aadt)` = Σ(w·x)/Σw so a corridor
+speed reflects where the vehicles are. Plus `weighted_speed_by_time` — the
+per-timestamp weighted mean, the **series** form the GUI toggle runs on (a mean, so
+it tolerates a missing segment, unlike the complete-set-gated travel-time sum).
+Missing/≤0 AADT drops from the speed weighting and contributes 0 vehicle-hours
+(row kept). **Corridor/network travel time stays a pure sum — AADT does not
+re-weight it** (Item 12 rule); the daily-total-vs-window caveat is recorded on
+`attrs['aadt_caveat']`, not silently scaled.
+
+**GUI.** An optional **"AADT layer"** path in the Data controls (defaults to the
+in-repo `Cumulative_AADT.zip`); `load_dataset` reads the 2024 rows within the
+export's geometry bounds and joins them onto `geo` + `Dataset.aadt` at load. When a
+layer resolves: a **Vehicle-hours of delay** map-colour mode (delay × AADT, added to
+the mode dropdown only when AADT + the delay metric are present) and, in
+corridor/network scope, an **AADT-weighted mean speed** switch that runs the
+time-series / before-after / decomposition panels on the per-timestamp weighted-speed
+series (`_resolve_col` → `_wspeed_col`; `_analysis_frame` builds it via
+`weighted_speed_by_time`). Travel time stays the sum. The segment hover shows the
+joined `AADT` value + match quality (`matched`/`nearest`/`none`) so a marginal join
+is visible. No layer → the extra options are hidden/disabled and behaviour is
+unchanged. On the real export the weighting is meaningful: plain mean speed 20.0 vs
+**AADT-weighted 23.6** mph, and ~630 vehicle-hours of delay/day across the corridor.
+
+16 new tests (11 `test_aadt.py` + 5 `test_gui.py`, all pass): the join
+(match/reject-crossing/far-nearest/missing/empty + `_line_bearing`), the weighting
+math (weighted mean speed, vehicle-hours, zero/missing-AADT, `weighted_speed_by_time`
+re-normalizing on a missing segment), GUI wiring (options gate on the layer,
+`_resolve_col`, weighted speed ≠ unweighted while travel time stays the sum, vhd
+colouring, AADT hover), and the real Myrtle-bbox `load_aadt`/`join_aadt` path (year
+filter + reprojection + ≥80% matched). DATA_FORMAT.md gained the AADT-source section
+(EPSG:8826, `Year`/2024, spatial-join key, daily-total caveat).

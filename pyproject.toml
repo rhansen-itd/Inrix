@@ -21,9 +21,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Segment geometry layer (geometry.py, kml.py): read/subset the INRIX XD
-# network shapefile. Kept optional so the pure stats core installs without a
-# geo stack.
+# Segment geometry layer (geometry.py, kml.py, aadt.py): read/subset the INRIX
+# XD network shapefile + the ITD AADT layer, and spatial-join them. Kept optional
+# so the pure stats core installs without a geo stack.
 geo = [
     "geopandas>=0.14",
     "shapely>=2.0",

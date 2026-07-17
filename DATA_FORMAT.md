@@ -179,6 +179,44 @@ free-flow travel time = Miles / free_flow_speed × 60
 - **Corridor/network delay is a sum** across member segments, exactly like travel
   time, under the same complete-set rule (`corridor_travel_time(..., value='Delay(Minutes)')`).
 
+## AADT volume layer (ITD `Cumulative_AADT`)
+
+Annual Average Daily Traffic (traffic **volume**) is **not** in the INRIX export —
+it comes from the ITD `Cumulative_AADT` GIS layer, added to the repo root as
+`Cumulative_AADT.zip` (a gitignored fixture, like the Myrtle export). `aadt.py`
+(ROADMAP Item 18) is the code contract; it powers volume weighting (vehicle-hours
+of delay, AADT-weighted corridor speed).
+
+- **Format:** a shapefile inside the zip — **251,310 `LineString Z` features in
+  EPSG:8826** (Idaho state plane; `aadt.load_aadt` reprojects to EPSG:4326).
+  Unlike the XD shapefile, the `.dbf` carries **real numeric types**, so no
+  `C(255)` casting is needed.
+- **`Year` is cumulative.** The layer stacks 1999–2024 (~8–11k features per year);
+  an unfiltered read double-counts every road. **Use only 2024** (the latest) —
+  `load_aadt` filters `Year == year` (default 2024) with a pushed-down WHERE.
+- **No `XDSegID`.** There is no INRIX join key, so the join to our `Segment ID` is
+  necessarily **spatial**: `aadt.join_aadt` matches each Item 8 segment polyline to
+  the nearest AADT line within a metre buffer, gated by an **endpoint-bearing check
+  (mod 180°)** that rejects the opposing-direction split and perpendicular
+  cross-streets. The result is flagged `matched` / `nearest` / `missing` with the
+  match distance, so a marginal join is visible, not silent. On the Myrtle export
+  the AADT centerlines coincide with the XD segments — 45/46 match at ~0 m.
+
+Fields kept (`_KEEP_COLS`): `Year`, `RouteID`, `Route`, `FromMeasur`, `ToMeasure`,
+`AADT`, `PassengerA`, `Commercial` (the truck split, for a future truck view).
+Route-measure identity (`RouteID`/`Route`/mileposts) is the layer's own linear
+reference; extras (`DHV`, `MADT1..12`) are dropped.
+
+**AADT is a daily total.** Vehicle-hours of delay (`Delay/60 × AADT`) and the
+AADT-weighted mean speed use it as a **relative** weight, not an absolute VMT: the
+per-window impact figure is scaled to an average day at the window's mean delay,
+not the window's own duration — the code records the caveat
+(`attrs['aadt_caveat']`) and does **not** silently rescale. **Corridor/network
+travel time stays a pure sum** across segments (Item 12); AADT does not re-weight
+it — volume weighting only applies where a *mean across segments* is summarized.
+
+**License:** treat like the data exports — gitignored, not redistributed.
+
 ## Known quirks / open questions
 
 - **Missing intervals**: segments do not always report every 5 minutes;

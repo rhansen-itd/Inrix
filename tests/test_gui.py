@@ -805,3 +805,98 @@ def test_beforeafter_forest_hover_shows_name_not_index():
                                      labels={101: "Main & 1st", 202: "Main & 2nd"})
     assert "%{y}" not in fig.data[0].hovertemplate
     assert any("Main &" in t for t in fig.data[0].text)
+
+
+# ---------------------------------------------------------------------------
+# AADT volume weighting (Item 18)
+# ---------------------------------------------------------------------------
+def _aadt_scope_ds():
+    """A 30-day, 2-segment corridor dataset with an AADT series attached — seg 101
+    fast/low-volume, seg 202 slow/high-volume, so weighted != unweighted."""
+    from inrix_tools import speed
+    from inrix_tools.io import CORRIDOR_COL
+    TZ = "America/Denver"
+    idx = pd.date_range("2026-02-02", periods=30 * 288, freq="5min", tz=TZ)
+    rng = np.random.default_rng(2)
+    frames = [pd.DataFrame({DATETIME_COL: idx, SEGMENT_COL: np.int64(s),
+                            TT_COL: 10 + rng.normal(0, 0.3, len(idx)),
+                            SPEED_COL: (50 if s == 101 else 20) + rng.normal(0, 1, len(idx)),
+                            "Delay(Minutes)": (1.0 if s == 101 else 4.0)})
+              for s in (101, 202)]
+    df = pd.concat(frames, ignore_index=True)
+    df[CORRIDOR_COL] = "Main"
+    return gapp.Dataset(
+        df=df, metadata=pd.DataFrame(index=pd.Index([101, 202], name=SEGMENT_COL)),
+        geo=None, metric_cols=speed.metric_columns(df), tz=TZ, span=(None, None),
+        aadt=pd.Series({101: 1000.0, 202: 9000.0}))
+
+
+def test_aadt_options_gate_on_layer_presence(scope_ds):
+    """The vehicle-hours map mode + weighted-speed toggle are exposed/enabled only
+    when a layer is loaded; without one they're hidden/disabled."""
+    ds_no = scope_ds                              # no aadt on this fixture
+    modes = [o["value"] for o in gapp._map_mode_options(ds_no)]
+    assert gapp.MAP_MODE_VHD not in modes
+    assert gapp._wspeed_options(ds_no)[0]["disabled"] is True
+
+    ds_yes = _aadt_scope_ds()
+    modes = [o["value"] for o in gapp._map_mode_options(ds_yes)]
+    assert gapp.MAP_MODE_VHD in modes             # delay + AADT present
+    assert gapp._wspeed_options(ds_yes)[0]["disabled"] is False
+
+
+def test_resolve_col_weighted_speed_only_in_aggregate_with_toggle():
+    ds = _aadt_scope_ds()
+    wcol = gapp._wspeed_col(ds)
+    # segment scope: toggle ignored -> the plain metric column
+    assert gapp._resolve_col(ds, "tt", gapp.SCOPE_SEGMENT, ["on"]) == gapp._metric_col(ds, "tt")
+    # aggregate scope, toggle off -> travel time; on -> weighted speed
+    assert gapp._resolve_col(ds, "tt", gapp.SCOPE_NETWORK, []) == gapp._metric_col(ds, "tt")
+    assert gapp._resolve_col(ds, "tt", gapp.SCOPE_NETWORK, ["on"]) == wcol
+
+
+def test_weighted_speed_frame_differs_and_tt_stays_a_sum():
+    """The weighted-speed aggregate reflects the high-volume slow segment; the
+    corridor travel-time sum is untouched by AADT (stays the pure sum, Item 12)."""
+    from inrix_tools import speed
+    from inrix_tools.io import CORRIDOR_COL
+    ds = _aadt_scope_ds()
+    wcol = gapp._wspeed_col(ds)
+    wframe = gapp._analysis_frame(ds, wcol, gapp.SCOPE_NETWORK, None)
+    # Σ(w·v)/Σw = (50·1000 + 20·9000)/10000 = 23 — much nearer the slow, busy segment
+    # than the plain average of 35.
+    assert wframe[wcol].mean() == pytest.approx(23, abs=0.5)
+
+    tt_col = gapp._metric_col(ds, "tt")
+    tframe = gapp._analysis_frame(ds, tt_col, gapp.SCOPE_NETWORK, None)
+    net = speed.network_travel_time(ds.df, value=tt_col)   # AADT plays no part
+    assert tframe[tt_col].mean() == pytest.approx(net[tt_col].mean())
+    assert tframe[tt_col].mean() == pytest.approx(20, abs=0.5)   # 10 + 10, a sum
+
+
+def test_vhd_map_colouring_produces_vehicle_hours():
+    """The vehicle-hours map mode colours segments by mean-delay(hrs)×AADT."""
+    from inrix_tools import aadt as aadtmod
+    ds = _aadt_scope_ds()
+    md = gapp._segment_means(ds, gapp._metric_col(ds, "delay"), None, None)
+    vh = aadtmod.vehicle_hours_of_delay(md, ds.aadt)["vehicle_hours"]
+    # seg202: 4 min delay × 9000 veh = 600 veh-hr/day dominates seg101 (1×1000/60).
+    assert vh.loc[202] == pytest.approx(4 / 60 * 9000, rel=0.05)
+    assert vh.loc[202] > 30 * vh.loc[101]
+
+
+def test_segment_map_hover_shows_aadt():
+    """When geo carries AADT + a source flag, the hover surfaces both (a marginal
+    'nearest' join is visible, not silent)."""
+    gpd = pytest.importorskip("geopandas")
+    from shapely.geometry import LineString
+    geo = gpd.GeoDataFrame(
+        {"Segment ID": [101, 202], "Combined": ["A", "B"],
+         "AADT": [12000.0, np.nan], "aadt_source": ["matched", "missing"],
+         "geometry": [LineString([(-116.2, 43.6), (-116.19, 43.61)]),
+                      LineString([(-116.18, 43.62), (-116.19, 43.61)])]},
+        geometry="geometry", crs="EPSG:4326").set_index("Segment ID")
+    fig = figures.segment_map(geo)
+    txt = "".join(t for tr in fig.data for t in (tr.text or []) if tr.text is not None)
+    assert "AADT: 12,000 (matched)" in txt
+    assert "AADT: none" in txt
