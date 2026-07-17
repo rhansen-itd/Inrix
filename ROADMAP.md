@@ -26,7 +26,8 @@ on open work — a one-line index below points each one at its DESIGN_HISTORY
 session so nothing is orphaned. **Items 19+ are a new owner-requested batch**
 scoped 2026-07-17 (DESIGN_HISTORY Session 23); they refine the working explorer
 rather than adding to the core pipeline. **Item 19 (the interactive segment table)
-is now done** (Session 24); **Items 20–21 remain open.**
+is now done** (Session 24) and **Item 20 (GUI map & layout display polish) is now
+done** (Session 25); **Item 21 remains open.**
 
 ---
 
@@ -58,6 +59,10 @@ sessions.
 - **19** — Interactive segment table: editable names + corridor selection +
   completeness (`speed.segment_coverage`, `members=` on corridor/network,
   `names.write_names`, `dash_table` + map link) — DESIGN_HISTORY Session 24
+- **20** — GUI map & layout display polish: layout reflow (charts below the map,
+  right of the settings column) + directional segment display (`geometry`
+  direction/sign helpers + perpendicular display offset + compass toggles) —
+  DESIGN_HISTORY Session 25
 
 Post-batch correctness review of Items 15–18 and its fixes: Sessions 20–22.
 
@@ -101,86 +106,20 @@ scope cleared from this file per the Completed-index convention.
 
 ---
 
-## 20 — GUI map & layout display polish: layout reflow + directional segment display (Target: Opus) — needs Items 7, 8
+## 20 — (done 2026-07-17 — GUI map & layout display polish) — see Completed index + DESIGN_HISTORY Session 25
 
-Two GUI-display fixes that live in the **same region** of the code — `gui/app.py`'s
-layout tree and the map container / `figures.segment_map` — bundled into one
-session (they were separately scoped as Items 20 and 22 on 2026-07-17, then merged:
-running them together loads the GUI context once and places the new map controls
-against the final layout in a single coherent pass, rather than reflowing the map
-container and then squeezing controls into it a session later). No new statistics.
-
-**(A) Layout reflow.** Today there is **awkward whitespace between the map and the
-charts**. Restructure the layout so the chart panels sit **below the map and to
-the right of the settings/controls column**, closing the gap.
-
-**(B) Directional segment display.** The map draws each segment as its XD polyline,
-but **co-located opposing-direction segments overlap** — only the one plotted on
-top is visible, so the other direction is hidden and unclickable (which also makes
-the Item 19 map-click-to-row selection ambiguous on those pairs). Make both
-directions visible and selectable. Two mechanisms the owner floated — **decide at
-the top of the session whether to ship toggles, the offset, or both** (recommend
-both: the toggle declutters, the offset lets you see both directions at once);
-record it.
-
-1. **Direction display toggles** — show/hide segments by direction, by compass
-   (N/E/S/W) or by a **positive/negative** convention (**N & E = `+`, S & W =
-   `−`**); the control filters which segments render on the map and are click/hover
-   targets.
-2. **Minor geometry offset** — nudge co-located segments a small amount
-   perpendicular to their bearing so opposing pairs draw side-by-side instead of on
-   top of each other. A pure-core helper on the **display** geometry; the analytic
-   geometry stays untouched.
-
-Direction comes from metadata `Direction` (DATA_FORMAT) / the XD segment bearing
-(Item 8). The `+`/`−` compass convention here is the same one the Future
-**directional-AADT** item would reuse — factor it so both can share it.
-
-Scope:
-- [ ] **(A)** Reflow the `gui/app.py` layout tree (+ any `gui/` styling):
-      settings/controls in a left column; the map top-right; the chart panels
-      directly **below the map** in the same right column (or a responsive grid),
-      removing the map↔charts whitespace. Every existing control and panel stays
-      wired — no callback changes beyond layout; keep it responsive (narrower-width
-      check).
-- [ ] **(B)** Pure-core direction helper in `geometry.py`: map `Direction` →
-      compass group and → `+`/`−` (N/E = `+`, S/W = `−`), and (if offset is chosen)
-      an **offset helper** that shifts co-located/overlapping opposing segments
-      perpendicular to their bearing by a small map-appropriate amount, exposed as a
-      `display_offset` column or a separate display GeoDataFrame so the analytic
-      geometry is untouched and the shift is visible-not-silent. Typed; no plotting.
-- [ ] **(B)** GUI: a direction-display control (compass multiselect and/or a `+`/`−`
-      toggle) that filters which segment directions render and stay selectable; the
-      offset applied to the **display** geometry so overlapping pairs separate.
-      Toggle + offset compose (a hidden direction needn't be offset). Selection and
-      hover still fire on the visible segments; the map colour-bar/metric colouring
-      is unaffected.
-- [ ] The headless layout smoke test still finds every control/panel it asserts on
-      (update the structural assertions for the reflowed tree + the new direction
-      control). Preview-verify **both**: the closed map↔charts gap (screenshot +
-      responsive resize) and a previously-hidden opposing segment now **visible and
-      clickable**.
-- [ ] pytest: the direction→compass/`±` mapping; the offset helper (a co-located
-      opposing pair separates, a non-co-located segment is untouched, the analytic
-      geometry is byte-for-byte unchanged); GUI wiring (toggle filters the rendered
-      directions; both directions selectable). DESIGN_HISTORY entry; a DATA_FORMAT
-      note if the direction convention is codified.
-- [ ] **Split point if the session runs long:** land the pure-core `geometry`
-      direction/offset helper + its tests first; the layout reflow and the GUI
-      toggles are the clean follow-on (both GUI-only).
-
-Suggested prompt:
-> [Opus] In Inrix/, do Item 20 of ROADMAP.md: GUI map & layout display polish, two
-> fixes in the same map/layout region — (A) reflow the layout so the charts sit
-> below the map and right of the settings column, killing the map↔charts
-> whitespace; (B) fix directional segment display so co-located opposing segments
-> stop hiding each other, via a pure-core `geometry` direction helper (Direction →
-> compass and → `+`/`−`, N/E positive) + optional perpendicular display-offset
-> (analytic geometry untouched) and GUI direction toggles that filter which
-> directions render. Decide toggles-vs-offset-vs-both at the top and record it.
-> Keep every control wired + the layout smoke test green; pytest the mapping + the
-> offset (co-located pair separates, analytic geometry unchanged); preview-verify
-> the closed gap and a previously-hidden segment now clickable. Docs.
+Delivered **both** fixes in one pass (decision recorded in Session 25: ship toggles
+*and* offset). **(A)** Layout reflow — the chart tabs moved into the right column
+below the map + segment table (settings stay left), columns made responsive
+(`xs=12/lg=3` · `lg=9`), map↔charts gap closed. **(B)** Directional display — pure
+`geometry` helpers `direction_group` / `direction_sign` (N/E = `+`, S/W = `−`, shared
+with the Future directional-AADT item), `attach_directions`, and
+`offset_overlapping_segments` (display-only perpendicular nudge for co-located
+opposing pairs; analytic geometry untouched); GUI `dir-compass` multiselect +
+`dir-offset` switch driving a `_display_geo` render frame. 250 tests pass incl. the
+real-export path; preview-verified the closed gap and a previously-hidden opposing
+segment now offset + clickable (N filter → 23 of 46). Full scope cleared per the
+Completed-index convention.
 
 ---
 

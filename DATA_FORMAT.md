@@ -253,6 +253,34 @@ it — volume weighting only applies where a *mean across segments* is summarize
 
 **License:** treat like the data exports — gitignored, not redistributed.
 
+## Direction convention & directional map display (Item 20)
+
+Segment direction comes from `metadata.Direction` (`N/S/E/W`, sometimes `NB` /
+`Northbound` / a compound `NE`). `geometry.py` (ROADMAP Item 20) codifies one
+signed compass convention, shared with the Future *directional-AADT* item so both
+read direction the same way:
+
+- **`direction_group(d)` → `N/E/S/W`** — the primary cardinal. Compound labels fold
+  to their **first** cardinal letter (`NE` → `N`, `SW` → `S`); spelling-tolerant
+  (`nb`, `Northbound`, `E` all resolve). Unrecognizable → `None`.
+- **`direction_sign(d)` → `+1 / −1 / 0`** — **N & E are positive (`+`), S & W are
+  negative (`−`)**; unknown → `0`. This is the `+`/`−` convention the direction
+  toggles show (`N (+)`, `S (−)`) and the one the directional-AADT volume split will
+  reuse.
+
+**Co-located opposing segments overlap on the map.** A road's two directions are
+two XD segments sharing (nearly) the same polyline, so only the one drawn last is
+visible/clickable. `geometry.offset_overlapping_segments(geo)` detects such pairs
+(anti-parallel bearing within ~35° **and** geometries within ~20 m) and nudges each
+one a few metres **perpendicular to travel, to the right-hand side of its bearing**
+— so a NB/SB pair separates east/west and both draw side-by-side. It returns a
+**display copy** (with an `offset_applied` bool column); the analytic geometry from
+`segment_geometry` is never mutated. Isolated segments are left byte-for-byte. On
+the Myrtle export exactly one opposing pair (2 of 46 segments) overlaps and is
+offset; the other 44 are untouched. The GUI applies this on a per-render display
+frame keyed off the direction toggles — the metric/coverage compute all stay on the
+un-offset `ds.geo`.
+
 ## Known quirks / open questions
 
 - **Missing intervals**: segments do not always report every 5 minutes;

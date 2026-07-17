@@ -99,6 +99,17 @@ complete aggregate series (`speed.segment_coverage`; see
 [DATA_FORMAT.md](DATA_FORMAT.md)). Clicking a segment on the map highlights and
 scrolls to its table row; clicking a row selects that segment for the panels.
 
+Above the map, the **Show directions** control declutters a road's two directions:
+a co-located opposing pair (e.g. NB/SB) shares nearly the same polyline, so by
+default both are drawn with a small perpendicular **offset** (toggle *Offset
+overlapping*) that separates them side-by-side and keeps both clickable. The
+compass multiselect (**N (+) / E (+) / S (−) / W (−)** — N & E positive, S & W
+negative) filters which directions render; leave it empty to show every direction.
+Direction comes from the metadata `Direction` field via `geometry.direction_group`
+/ `direction_sign` and the display-only `geometry.offset_overlapping_segments`
+(the analytic geometry is never moved). The settings sit in the left column with
+the map, segment table, and chart panels stacked in the right column.
+
 The map uses **Plotly native maps** (MapLibre `open-street-map`, no Mapbox token).
 The GUI is a thin shell: `gui/figures.py` turns compute-core DataFrames into
 figures and `gui/app.py` only wires inputs to them — all statistics stay in
