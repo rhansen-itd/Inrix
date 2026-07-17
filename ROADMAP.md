@@ -347,9 +347,10 @@ even though its stable ID is higher.
 **Post-review (2026-07-16):** Item 14 is done ([REVIEW_ITEM14.md](REVIEW_ITEM14.md));
 its confirmed findings became **Items 15–16**, placed right after it. The review's
 recommended order is **15 → 16 → 11 → 10 → 12 → 13** (stats validity first — it
-changes every number the app shows — then responsiveness, then the owner batch);
-owner to confirm before the next session. Item 13 gained one bullet (the forest
-hover fix); the review's §3 ideas await owner acceptance before becoming items.
+changes every number the app shows — then responsiveness, then the owner batch).
+**Items 15 and 16 are now done** (DESIGN_HISTORY Sessions 12–13); the remaining
+order is **11 → 10 → 12 → 13**. Item 13 gained one bullet (the forest hover fix);
+the review's §3 ideas await owner acceptance before becoming items.
 
 **Model assignment (owner, 2026-07-16):** **Item 15 is reassigned to Fable**,
 overriding CLAUDE.md's Opus-end-to-end default — it is the batch's one
@@ -469,26 +470,29 @@ Suggested prompt:
 The review's performance win plus the confirmed wiring bugs, all in
 `gui/app.py` (see REVIEW_ITEM14.md §1–§2). One session.
 
-Scope:
-- [ ] **Split the compare cache (review O1, measured 8.2 s/miss).** Cache the
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 13):
+- [x] **Split the compare cache (review O1, measured 8.2 s/miss).** Cache the
       seasonally-adjusted full-export frame per `(metric, ToD-window)` (cap ~2
       entries) and compute per-period Welch stats from it on demand, so
       date-picker changes stop re-decomposing. Reuse the per-segment slice for
-      the decomposition tab.
-- [ ] **Evict old datasets (review B2, 2.3 GB/load).** `_DATASETS` keeps only the
-      latest load (size-1 LRU); invalidate dependent caches.
-- [ ] **Metric guard (review B3).** Speed-only or travel-time-only exports:
-      disable the missing metric's radio option and pick the present one; no
-      `KeyError` from `_metric_col` returning `None`.
-- [ ] **Selection/viewport staleness (review B5).** Reset `segment.value` on
-      load when the segment set changes; key the map `uirevision` on the data
-      token so a new export recenters.
-- [ ] Nits (review B6): default a cleared CValue input instead of `int(None)`;
-      decomposition empty-state message mentions the 7-day warm-up; decide and
-      document the ToD slider's equal-handles semantics.
-- [ ] pytest: cache-split hit behavior (period change = no re-decompose —
-      assert via a counter/monkeypatch), dataset eviction, metric-guard on a
-      speed-only fixture, selection reset. DESIGN_HISTORY entry.
+      the decomposition tab. Compute core split into `adjust_for_periods` +
+      `compare_adjusted` (+ `check_periods`); `compare_periods` composes them,
+      behaviour byte-for-byte unchanged. Verified: 3 period changes + decomp tab
+      = one decomposition.
+- [x] **Evict old datasets (review B2, 2.3 GB/load).** `_DATASETS` keeps only the
+      latest load (size-1); dependent caches live on the Dataset so they drop with it.
+- [x] **Metric guard (review B3).** Speed-only or travel-time-only exports:
+      `_metric_choices` disables the missing metric's radio option and picks the
+      present one; `_map`/`_panels` guard `col is None`. No `KeyError`.
+- [x] **Selection/viewport staleness (review B5).** `_load` resets `segment.value`
+      to `None` on load; the map `uirevision` is keyed on the data token so a new
+      export recenters.
+- [x] Nits (review B6): a cleared CValue input defaults instead of `int(None)`;
+      the decomposition empty-state message names the 7-day warm-up; the ToD
+      slider's equal-handles case is documented as *whole day*.
+- [x] pytest: cache-split hit behavior (period change = no re-decompose, via a
+      monkeypatched counter), dataset eviction, metric-guard on a speed-only
+      fixture, selection reset. 11 new tests (135 total). DESIGN_HISTORY entry.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 16 of ROADMAP.md: GUI hardening from the Item 14

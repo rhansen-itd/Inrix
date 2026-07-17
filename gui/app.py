@@ -36,7 +36,7 @@ import figures  # noqa: E402
 import dash_bootstrap_components as dbc  # noqa: E402
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update  # noqa: E402
 
-from inrix_tools import beforeafter, changepoint, decompose, geometry, io, kml, speed  # noqa: E402
+from inrix_tools import beforeafter, changepoint, geometry, io, kml, speed  # noqa: E402
 from inrix_tools.io import DATETIME_COL, SEGMENT_COL  # noqa: E402
 from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
@@ -75,15 +75,29 @@ class Dataset:
     metric_cols: dict                # {"speed": col, "travel_time": col}
     tz: str
     span: tuple                      # (min_date, max_date) local dates
+    # Seasonally-adjusted full-export frames, keyed by (metric col, ToD-window):
+    # the expensive decomposition, cached independently of the before/after dates
+    # so moving a date picker doesn't re-decompose (Item 14 review O1). Capped
+    # (each entry is full-export sized). The per-period Welch stats computed off
+    # it are cheap and cached in _compare_cache.
+    _adjusted_cache: dict = field(default_factory=dict)
     _compare_cache: dict = field(default_factory=dict)
 
+
+_ADJ_CACHE_CAP = 2        # full-export sized frames — keep only a couple
+_COMPARE_CACHE_CAP = 16   # tiny per-segment result frames — cheap to keep more
 
 _DATASETS: dict[int, Dataset] = {}
 _TOKEN = {"n": 0}
 
 
 def _store(ds: Dataset) -> int:
+    # Single-user localhost: keep only the latest load. Each Myrtle dataset is
+    # ~2.3 GB (Item 14 review B2), so retaining every CValue tweak would OOM a
+    # laptop. Dropping the old Dataset frees it (and its caches) for GC; the
+    # client's data-token store is refreshed with the new token by _load.
     _TOKEN["n"] += 1
+    _DATASETS.clear()
     _DATASETS[_TOKEN["n"]] = ds
     return _TOKEN["n"]
 
@@ -121,6 +135,21 @@ def _metric_col(ds: Dataset, metric_key: str) -> str | None:
     return ds.metric_cols.get(_METRICS[metric_key])
 
 
+def _metric_choices(ds: Dataset, current: str | None):
+    """Radio options + a valid selection for the metric control, disabling any
+    metric the export doesn't carry (Item 14 review B3: a speed-only export would
+    otherwise ``KeyError`` on the default *Travel time*). Keeps ``current`` if it
+    is still present; else lands on the first present metric."""
+    have = {k: _metric_col(ds, k) is not None for k in _METRICS}
+    options = [{"label": f" {_METRIC_LABEL[k]}", "value": k, "disabled": not have[k]}
+               for k in ("tt", "speed")]
+    if current in have and have[current]:
+        value = current
+    else:
+        value = next((k for k in ("tt", "speed") if have[k]), current)
+    return options, value
+
+
 def _apply_tod(df: pd.DataFrame, window) -> pd.DataFrame:
     """Restrict rows to the time-of-day slider window ``[h0, h1)`` (hours). A
     full-day window (``[0, 24]``, the default) is a no-op, so the unfiltered path
@@ -139,15 +168,52 @@ def _segment_means(ds: Dataset, col: str, window=None) -> pd.Series:
     return _apply_tod(ds.df, window).groupby(SEGMENT_COL, observed=True)[col].mean()
 
 
+def _window_key(window):
+    """A canonical cache key for a ToD window, collapsing every whole-day
+    spelling (``None`` / ``[0, 24]`` / equal handles) to one ``"full"`` bucket so
+    they share a cached decomposition."""
+    if not window:
+        return "full"
+    h0, h1 = float(window[0]), float(window[1])
+    if (h0 <= 0 and h1 >= 24) or h0 == h1:  # equal handles read as whole day too
+        return "full"
+    return (h0, h1)
+
+
+def _adjusted_frame(ds: Dataset, col: str, window=None) -> pd.DataFrame:
+    """The seasonally-adjusted full-export frame for ``(col, window)`` — the
+    expensive decomposition, computed once and cached (cap ``_ADJ_CACHE_CAP``,
+    LRU) so before/after date changes reuse it instead of re-decomposing
+    (Item 14 review O1: 8.2 s/miss). Feeds both the before/after stats
+    (``_compare_all``) and the per-segment decomposition tab (``_fig_decomp``)."""
+    key = (col, _window_key(window))
+    cache = ds._adjusted_cache
+    if key in cache:
+        cache[key] = cache.pop(key)  # touch -> most-recently-used
+        return cache[key]
+    adjusted = beforeafter.adjust_for_periods(_apply_tod(ds.df, window), value=col)
+    cache[key] = adjusted
+    while len(cache) > _ADJ_CACHE_CAP:
+        cache.pop(next(iter(cache)))  # evict least-recently-used
+    return adjusted
+
+
 def _compare_all(ds: Dataset, col: str, before, after, window=None) -> pd.DataFrame:
-    """Corridor-wide before/after (decomposition primary), cached per
-    (metric, periods, time-window)."""
-    key = (col, str(before), str(after), str(window))
-    if key not in ds._compare_cache:
-        ds._compare_cache[key] = beforeafter.compare_periods(
-            _apply_tod(ds.df, window), before=before, after=after, value=col
-        )
-    return ds._compare_cache[key]
+    """Corridor-wide before/after (decomposition primary). The costly
+    decomposition is cached per (metric, window) in ``_adjusted_frame``; here we
+    only run the cheap per-period Welch stats off it, so a date-picker change is
+    sub-second. Overlapping/invalid periods raise *before* any decomposition."""
+    beforeafter.check_periods(before, after, ds.df[DATETIME_COL].dt.tz)  # fast-fail
+    key = (col, str(before), str(after), _window_key(window))
+    cache = ds._compare_cache
+    if key in cache:
+        cache[key] = cache.pop(key)  # touch -> MRU
+        return cache[key]
+    adjusted = _adjusted_frame(ds, col, window)
+    cache[key] = beforeafter.compare_adjusted(adjusted, before=before, after=after)
+    while len(cache) > _COMPARE_CACHE_CAP:
+        cache.pop(next(iter(cache)))
+    return cache[key]
 
 
 def _labels(ds: Dataset) -> dict:
@@ -210,6 +276,8 @@ def _controls() -> dbc.Card:
                               {"label": "Before/after Δ", "value": "delta"}]),
         html.Hr(),
         html.H6("Time-of-day window", className="text-muted"),
+        # Equal handles (start == end) mean *whole day*, not an empty window —
+        # matching timebins.filter_time_window; the status line below says so.
         dcc.RangeSlider(
             id="tod-window", min=0, max=24, step=0.25, value=[0, 24],
             allowCross=False,
@@ -278,6 +346,8 @@ def _register_callbacks(app: Dash) -> None:
         Output("load-status", "children"),
         Output("segment", "options"),
         Output("segment", "value"),
+        Output("metric", "options"),
+        Output("metric", "value"),
         Output("before-range", "min_date_allowed"),
         Output("before-range", "max_date_allowed"),
         Output("before-range", "start_date"),
@@ -290,25 +360,35 @@ def _register_callbacks(app: Dash) -> None:
         State("source", "value"),
         State("tz", "value"),
         State("cvalue", "value"),
+        State("metric", "value"),
         prevent_initial_call=True,
     )
-    def _load(_n, source, tz, cvalue):
+    def _load(_n, source, tz, cvalue, metric):
+        # A cleared CValue input arrives as None/"" — default it rather than let
+        # int(None) blow up with a cryptic message (Item 14 review B6).
+        cv = DEFAULT_CVALUE if cvalue in (None, "") else int(cvalue)
         try:
-            ds = load_dataset(source, tz or DEFAULT_TZ, int(cvalue))
+            ds = load_dataset(source, tz or DEFAULT_TZ, cv)
         except Exception as exc:  # surface the failure in the UI, don't crash
             return (no_update, f"⚠ Load failed: {exc}", no_update, no_update,
-                    *[no_update] * 8)
+                    no_update, no_update, *[no_update] * 8)
         token = _store(ds)
         labels = _labels(ds)
         options = [{"label": labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
                    for s in ds.metadata.index]
+        # Metric guard (Item 14 review B3): a speed-only or travel-time-only export
+        # would KeyError on the absent metric. Disable the missing radio option and
+        # land on a present metric.
+        metric_options, metric_value = _metric_choices(ds, metric)
         lo, hi = ds.span
         # Default windows: disjoint halves of the span after the decomposition
         # warm-up (overlap biases effects toward zero — Item 14 review B1).
         b_start, b_end, a_start, a_end = default_periods(lo, hi)
         status = (f"✓ {len(ds.df):,} rows · {len(ds.metadata)} segments · "
                   f"{lo}…{hi} · {ds.tz}")
-        return (token, status, options, no_update,
+        # Reset the segment selection: a new export's ids differ, so keeping the
+        # old value would leave every panel on a stale/blank segment (review B5).
+        return (token, status, options, None, metric_options, metric_value,
                 lo, hi, b_start, b_end, lo, hi, a_start, a_end)
 
     # Map click -> segment dropdown (the dropdown is the single selection source).
@@ -341,6 +421,8 @@ def _register_callbacks(app: Dash) -> None:
         if ds is None:
             return figures.segment_map(_empty_geo())
         col = _metric_col(ds, metric)
+        if col is None:  # metric absent (mid-load transition) — draw a bare map
+            return figures.segment_map(ds.geo, uirevision=f"data-{token}")
         label = figures._unit_label(col)
         if mode == "delta" and all([b0, b1, a0, a1]):
             try:
@@ -354,8 +436,10 @@ def _register_callbacks(app: Dash) -> None:
                 values = _segment_means(ds, col, window)
         else:
             values = _segment_means(ds, col, window)
+        # Key uirevision on the data token so loading a *different* export
+        # recenters the map instead of keeping the old city's pan/zoom (review B5).
         return figures.segment_map(ds.geo, values, value_label=label,
-                                   selected_id=selected)
+                                   selected_id=selected, uirevision=f"data-{token}")
 
     # Panels, keyed on the active tab so only the visible one computes.
     @app.callback(
@@ -379,6 +463,9 @@ def _register_callbacks(app: Dash) -> None:
         if ds is None:
             return blank, blank, blank, blank
         col = _metric_col(ds, metric)
+        if col is None:  # metric absent (mid-load transition) — nothing to plot yet
+            miss = figures._blank("This export doesn't carry the selected metric.")
+            return miss, miss, miss, miss
         before, after = (b0, b1), (a0, a1)
         have_periods = all([b0, b1, a0, a1])
         name = _labels(ds).get(int(selected), f"Segment {selected}") if selected is not None else ""
@@ -423,9 +510,15 @@ def _register_callbacks(app: Dash) -> None:
         Input("tod-window", "value"),
     )
     def _tod_label(window):
-        if not window or (float(window[0]) <= 0 and float(window[1]) >= 24):
+        if not window:
             return "Whole day — no time-of-day filter."
-        return f"Analysing {_hour_label(window[0])} – {_hour_label(window[1])} only."
+        h0, h1 = float(window[0]), float(window[1])
+        # Equal handles read as an empty window on the slider, but the core
+        # (timebins.filter_time_window) treats start == end as the *whole day*;
+        # say so rather than "Analysing 2:00 PM – 2:00 PM only" (review B6).
+        if (h0 <= 0 and h1 >= 24) or h0 == h1:
+            return "Whole day — no time-of-day filter."
+        return f"Analysing {_hour_label(h0)} – {_hour_label(h1)} only."
 
 
 # --- panel builders (subset -> compute-core call -> figure) -----------------
@@ -475,18 +568,23 @@ def _fig_beforeafter(ds, selected, col, before, after, have_periods, window=None
 
 
 def _fig_decomp(ds, selected, col, name, window=None):
-    sub = _segment_df(ds, selected, window)
-    if sub.empty:
+    if selected is None:
         return figures._blank("Pick or click a segment.")
-    # Filter first, then decompose: the trend/changepoints describe the selected
-    # window on its own terms. decompose_segments auto-scales its rolling-window
-    # sample guard so a narrow window doesn't come back empty (see decompose.py).
-    decomposed = decompose.decompose_segments(sub, value=col)
-    adj = decompose.seasonally_adjust(decomposed, col)
-    work = decomposed.copy()
-    work[adj.name] = adj.to_numpy()
-    cps = changepoint.detect_changepoints(work, value=adj.name)
-    return figures.decomposition(decomposed, col, changepoints=cps, title=name)
+    # Reuse the cached full-export decomposition and slice to this segment: the
+    # decomposition groups by Segment ID, so one segment's rows are identical
+    # whether the frame held that segment alone or all of them. Filter-first
+    # (via the window key) means the trend/changepoints describe the selected
+    # window; decompose_segments auto-scales its rolling-window sample guard so a
+    # narrow window doesn't come back empty (see decompose.py).
+    adjusted = _adjusted_frame(ds, col, window)
+    seg = adjusted[adjusted[SEGMENT_COL] == int(selected)]
+    if seg.empty or col not in seg.columns:
+        return figures._blank(
+            "No decomposition for this selection — a segment needs more than the "
+            "7-day rolling-window warm-up before any adjusted values remain."
+        )
+    cps = changepoint.detect_changepoints(seg, value=beforeafter.ADJUSTED_COL)
+    return figures.decomposition(seg, col, changepoints=cps, title=name)
 
 
 def _write_kml(ds, metric, mode, before, after, window=None) -> Path:

@@ -46,6 +46,11 @@ import pandas as pd
 from .decompose import decompose_segments, seasonally_adjust
 from .io import DATETIME_COL, SEGMENT_COL
 
+# The seasonally-adjusted value column that ``adjust_for_periods`` attaches and
+# ``compare_adjusted`` tests over (``value - season_day - season_week``; it
+# retains the level so a genuine step change survives adjustment).
+ADJUSTED_COL = "_adj"
+
 
 # ---------------------------------------------------------------------------
 # Period parsing
@@ -106,6 +111,22 @@ def _check_disjoint(before_bounds, after_bounds) -> None:
             "overlapping rows would appear in both samples and bias the effect "
             "toward zero. Choose disjoint periods."
         )
+
+
+def check_periods(before, after, tz=None):
+    """Parse and validate a before/after period pair, returning
+    ``(before_bounds, after_bounds)`` (each a half-open ``[start, end)``).
+
+    Raises on a bad end-before-start bound (via ``parse_period``) or on
+    **overlapping** periods (via ``_check_disjoint``). Exposed publicly so a
+    caller can reject invalid periods *before* paying for a decomposition — the
+    GUI validates the date pickers this way so an overlapping selection fails
+    fast instead of re-decomposing the whole export first.
+    """
+    before_bounds = parse_period(before, tz)
+    after_bounds = parse_period(after, tz)
+    _check_disjoint(before_bounds, after_bounds)
+    return before_bounds, after_bounds
 
 
 def _bh_qvalues(p) -> np.ndarray:
@@ -260,12 +281,136 @@ def compare_periods(
     """
     if unit not in ("day", "sample"):
         raise ValueError(f"unit must be 'day' or 'sample', got {unit!r}.")
+
+    if use_decomposition:
+        adjusted = adjust_for_periods(
+            df, value=value, datetime_col=datetime_col, segment_col=segment_col,
+            decompose_kwargs=decompose_kwargs,
+        )
+        return compare_adjusted(
+            adjusted, before, after, by=by, unit=unit, confidence=confidence,
+            min_samples=min_samples, datetime_col=datetime_col, segment_col=segment_col,
+        )
+
+    # Raw (non-robust) cross-check: no decomposition, no warm-up drop.
+    from .decompose import default_value_column
+
+    value = value or default_value_column(df)
+    return _compare_core(
+        df, target=value, value=value, method="raw", before=before, after=after,
+        by=by, unit=unit, confidence=confidence, min_samples=min_samples,
+        datetime_col=datetime_col, segment_col=segment_col,
+        series_start=(df[datetime_col].min() if len(df) else None), drop_days=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# The two halves of the decomposition path, exposed so an interactive caller
+# can cache the expensive one. ``adjust_for_periods`` decomposes the full export
+# (the ~8 s cost) independently of the before/after dates; ``compare_adjusted``
+# then computes the per-period Welch stats off that frame in sub-second time, so
+# moving a date picker no longer re-decomposes (Item 14 review O1 / Item 16).
+# ---------------------------------------------------------------------------
+def adjust_for_periods(
+    df: pd.DataFrame,
+    value: str | None = None,
+    *,
+    datetime_col: str = DATETIME_COL,
+    segment_col: str = SEGMENT_COL,
+    decompose_kwargs: dict | None = None,
+) -> pd.DataFrame:
+    """Decompose the full series once and attach its seasonally-adjusted value —
+    the **expensive, period-independent** half of ``compare_periods``.
+
+    Returns the decomposed frame (trend/season/resid components kept, plus the
+    original ``value`` column) with an extra ``ADJUSTED_COL`` (``_adj``) column
+    holding ``value - season_day - season_week`` (retains the level so a step
+    change survives). ``attrs`` carries ``decompose_value`` (the resolved metric
+    column), ``series_start`` (the first timestamp *before* the warm-up drop —
+    ``compare_adjusted`` needs it to flag warm-up truncation), and ``drop_days``
+    (the warm-up length). Filter the frame (e.g. ``timebins.filter_time_window``)
+    before calling if a time-of-day window is wanted — the decomposition then
+    describes that window.
+    """
+    decompose_kwargs = decompose_kwargs or {}
+    series_start = df[datetime_col].min() if len(df) else None
+    decomposed = decompose_segments(
+        df,
+        value=value,
+        entity_grouping_columns=(segment_col,),
+        datetime_col=datetime_col,
+        keep_components=True,
+        **decompose_kwargs,
+    )
+    resolved = decomposed.attrs["decompose_value"]
+    work = decomposed.copy()
+    work[ADJUSTED_COL] = seasonally_adjust(work, resolved).to_numpy()
+    work.attrs = dict(decomposed.attrs)
+    work.attrs["decompose_value"] = resolved
+    # Store as a string: the adjusted frame is fed back through ibis/duckdb by
+    # changepoint detection, which can't serialize a Timestamp in attrs.
+    work.attrs["series_start"] = None if series_start is None else str(series_start)
+    work.attrs["drop_days"] = int(decompose_kwargs.get("drop_days", 7))
+    return work
+
+
+def compare_adjusted(
+    adjusted: pd.DataFrame,
+    before,
+    after,
+    *,
+    by: Sequence[str] | None = None,
+    unit: str = "day",
+    confidence: float = 0.95,
+    min_samples: int = 2,
+    datetime_col: str = DATETIME_COL,
+    segment_col: str = SEGMENT_COL,
+) -> pd.DataFrame:
+    """Compare a before vs after period on an already seasonally-adjusted frame
+    (from ``adjust_for_periods``) — the **cheap, period-dependent** half of
+    ``compare_periods``. Same output contract and ``method='decomposition'``; see
+    ``compare_periods`` for the column/attrs documentation.
+    """
+    if unit not in ("day", "sample"):
+        raise ValueError(f"unit must be 'day' or 'sample', got {unit!r}.")
+    return _compare_core(
+        adjusted, target=ADJUSTED_COL, value=adjusted.attrs.get("decompose_value"),
+        method="decomposition", before=before, after=after, by=by, unit=unit,
+        confidence=confidence, min_samples=min_samples, datetime_col=datetime_col,
+        segment_col=segment_col, series_start=adjusted.attrs.get("series_start"),
+        drop_days=adjusted.attrs.get("drop_days", 7),
+    )
+
+
+def _compare_core(
+    work: pd.DataFrame,
+    *,
+    target: str,
+    value: str | None,
+    method: str,
+    before,
+    after,
+    by: Sequence[str] | None,
+    unit: str,
+    confidence: float,
+    min_samples: int,
+    datetime_col: str,
+    segment_col: str,
+    series_start,
+    drop_days: int | None,
+) -> pd.DataFrame:
+    """Shared before/after comparison over a prepared frame: validate the
+    periods, flag warm-up truncation, split ``target`` into the two periods,
+    optionally aggregate to daily means, and Welch-compare per (segment[, by]).
+
+    ``drop_days`` ``None`` means "no decomposition warm-up" (the raw path);
+    otherwise ``series_start + drop_days`` is the first usable timestamp and any
+    period reaching before it is truncated + flagged.
+    """
     by = list(by) if by else []
     group_cols = [segment_col, *by]
-    tz = df[datetime_col].dt.tz
-    before_bounds = parse_period(before, tz)
-    after_bounds = parse_period(after, tz)
-    _check_disjoint(before_bounds, after_bounds)
+    tz = work[datetime_col].dt.tz
+    before_bounds, after_bounds = check_periods(before, after, tz)
 
     # Effective spans: decomposition drops the leading ``drop_days`` while its
     # rolling window warms up, so a period reaching into that warm-up silently
@@ -280,13 +425,14 @@ def compare_periods(
     notes: list[str] = []
     effective_days = {}
     warmup_end = None
-    if use_decomposition and len(df):
-        drop_days = (decompose_kwargs or {}).get("drop_days", 7)
-        warmup_end = df[datetime_col].min() + pd.Timedelta(drop_days, "D")
+    if drop_days is not None and series_start is not None:
+        # series_start may arrive as a Timestamp (raw path) or an ISO string
+        # (adjust_for_periods stores it as text for ibis-serializable attrs).
+        warmup_end = pd.Timestamp(series_start) + pd.Timedelta(drop_days, "D")
     for name, (start, end) in (("before", before_bounds), ("after", after_bounds)):
         eff_start = max(start, warmup_end) if warmup_end is not None else start
         effective_days[name] = max(0.0, _wall_days(eff_start, end))
-        if eff_start > start:
+        if warmup_end is not None and eff_start > start:
             requested = _wall_days(start, end)
             notes.append(
                 f"{name} period truncated by the decomposition warm-up "
@@ -294,29 +440,7 @@ def compare_periods(
                 f"{effective_days[name]:g} of the requested {requested:g} days used."
             )
     for msg in notes:
-        warnings.warn(msg, UserWarning, stacklevel=2)
-
-    if use_decomposition:
-        decomposed = decompose_segments(
-            df,
-            value=value,
-            entity_grouping_columns=(segment_col,),
-            datetime_col=datetime_col,
-            keep_components=True,
-            **(decompose_kwargs or {}),
-        )
-        value = decomposed.attrs["decompose_value"]
-        work = decomposed.copy()
-        work["_adj"] = seasonally_adjust(work, value).to_numpy()
-        target = "_adj"
-        method = "decomposition"
-    else:
-        from .decompose import default_value_column
-
-        value = value or default_value_column(df)
-        work = df
-        target = value
-        method = "raw"
+        warnings.warn(msg, UserWarning, stacklevel=3)
 
     ts = work[datetime_col]
     in_before = _period_mask(ts, *before_bounds)
@@ -342,7 +466,7 @@ def compare_periods(
     out = pd.DataFrame(rows)
     if len(out):
         out["q_value"] = _bh_qvalues(out["p_value"])
-    out.attrs = dict(df.attrs)
+    out.attrs = dict(work.attrs)
     out.attrs.update(
         value=value,
         confidence=confidence,
@@ -407,9 +531,7 @@ def ttest_baseline(
     by = list(by) if by else []
     group_cols = [segment_col, *by]
     tz = df[datetime_col].dt.tz
-    before_bounds = parse_period(before, tz)
-    after_bounds = parse_period(after, tz)
-    _check_disjoint(before_bounds, after_bounds)
+    before_bounds, after_bounds = check_periods(before, after, tz)
 
     ts = df[datetime_col]
     work = df.copy()

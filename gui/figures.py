@@ -67,6 +67,7 @@ def segment_map(
     label_col: str = "Combined",
     colorscale: str = _MAP_COLORSCALE,
     height: int = 620,
+    uirevision: str = "segment-map",
 ) -> go.Figure:
     """Render the geometry layer as clickable segment polylines over an OSM basemap.
 
@@ -84,6 +85,9 @@ def segment_map(
             before/after delta, ...). ``None`` draws every segment one neutral colour.
         value_label: colour-bar / hover title for ``values``.
         selected_id: segment to highlight (ring + thick white-edged line).
+        uirevision: Plotly ``uirevision`` token — pan/zoom is preserved while it
+            is unchanged, so key it on the loaded dataset to recenter on a new
+            export but hold the view across metric/selection updates.
     """
     if values is not None and not isinstance(values, pd.Series):
         values = pd.Series(values)
@@ -136,7 +140,7 @@ def segment_map(
     fig.update_layout(
         map=dict(style="open-street-map", center=center, zoom=zoom),
         margin=dict(l=0, r=0, t=0, b=0), height=height,
-        uirevision="segment-map",  # keep pan/zoom across metric/selection updates
+        uirevision=uirevision,  # keep pan/zoom across metric/selection updates
     )
     return fig
 

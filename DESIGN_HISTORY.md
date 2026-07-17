@@ -864,3 +864,63 @@ throughout the new code.
 
 9 new tests (124 total, incl. the real-export end-to-end, all pass). No
 DATA_FORMAT change (nothing new about the export itself).
+
+---
+
+## Session 13 — Compare-cache split + GUI hardening (ROADMAP Item 16) (2026-07-16)
+
+The Item 14 review's performance win (O1) plus its confirmed wiring bugs (B2, B3,
+B5, B6), all in the interactive layer. Target Opus per the batch's model rule.
+
+**The win — decompose once per (metric, window), not per (metric, window,
+periods).** `compare_periods` did everything in one pass: it re-decomposed the
+**full export** on every before/after date change (measured 8.2 s/miss), even
+though the periods only *slice* the adjusted series after the fact. Split the
+compute core into two exposed halves in `beforeafter.py`:
+- `adjust_for_periods(df, value, ...)` — the expensive, **period-independent**
+  half: decompose the series once and attach the seasonally-adjusted column
+  (`ADJUSTED_COL = "_adj"`). Records `decompose_value` / `series_start` /
+  `drop_days` on `attrs` (`series_start` stored as a **string** — the frame is
+  fed back through ibis/duckdb by changepoint detection, which can't serialize a
+  Timestamp in attrs; a Timestamp there silently blanked all attrs).
+- `compare_adjusted(adjusted, before, after, ...)` — the cheap, period-dependent
+  half: period masking → daily-mean aggregation → Welch stats → BH q-values,
+  reading the warm-up metadata off the adjusted frame's attrs.
+
+`compare_periods` is now a thin composition of the two (decomposition path) or
+the shared `_compare_core` (raw path) — **behaviour is byte-for-byte identical**
+(all Item 4/15 tests pass unchanged; a new equivalence test asserts it column by
+column). Also extracted `check_periods()` (parse + disjoint-raise) so a caller
+can reject overlapping periods *before* paying for a decomposition.
+
+**GUI wiring (`gui/app.py`).** `Dataset` gained an `_adjusted_cache` keyed on
+`(metric col, ToD-window)` — cap 2, LRU (full-export-sized entries) — populated
+by `_adjusted_frame()`. `_compare_all` validates periods (fast-fail on overlap),
+then runs only the cheap `compare_adjusted` off the cached frame; `_compare_cache`
+now holds the tiny per-period result frames (cap 16). `_fig_decomp` **reuses the
+same cached frame** and slices to the selected segment (the decomposition groups
+by Segment ID, so a segment's rows are identical whether decomposed alone or with
+the fleet) instead of decomposing the per-segment slice separately. Verified: 3
+period changes + the decomposition tab now trigger **exactly one** decomposition
+(monkeypatched counter test).
+
+**Confirmed bugs fixed.**
+- **B2 — unbounded `_DATASETS` (2.3 GB/load).** `_store` now clears before
+  inserting (single-user, size-1). Old Dataset (and its caches) become
+  collectable; the client's data token is refreshed by `_load`.
+- **B3 — speed-only / tt-only export crash.** New `_metric_choices` disables the
+  absent metric's radio option and lands the selection on a present one; `_load`
+  outputs `metric.options`/`metric.value`. `_map`/`_panels` also guard
+  `col is None` (mid-load transitions) with a message instead of a KeyError.
+- **B5 — stale selection + viewport across loads.** `_load` resets
+  `segment.value` to `None` on every load (a new export's ids differ);
+  `segment_map` gained a `uirevision` param, keyed on the data token so loading a
+  different city recenters instead of holding the old pan/zoom.
+- **B6 nits.** Cleared CValue input defaults instead of `int(None)`-ing; the
+  decomposition empty-state message names the 7-day warm-up; the ToD slider's
+  equal-handles case is documented as *whole day* (matches
+  `timebins.filter_time_window`) in the status line, a slider comment, and
+  `_window_key` (which collapses it into the whole-day cache bucket).
+
+11 new tests (135 total, incl. the real-export end-to-end, all pass). No
+DATA_FORMAT change.

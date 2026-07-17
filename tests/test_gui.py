@@ -295,6 +295,117 @@ def test_end_to_end_real_export():
     assert out.exists() and out.stat().st_size > 0
 
 
+# ---------------------------------------------------------------------------
+# Item 16 — compare-cache split + GUI hardening
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def multi_day_ds():
+    """A 30-day, 2-segment dataset (long enough to decompose past the warm-up)."""
+    from inrix_tools import speed
+    TZ = "America/Denver"
+    idx = pd.date_range("2026-02-02", periods=30 * 288, freq="5min", tz=TZ)
+    rng = np.random.default_rng(1)
+    frames = [pd.DataFrame({DATETIME_COL: idx, SEGMENT_COL: np.int64(s),
+                            TT_COL: 10 + rng.normal(0, 0.3, len(idx)),
+                            SPEED_COL: 30 + rng.normal(0, 2, len(idx))})
+              for s in (101, 202)]
+    df = pd.concat(frames, ignore_index=True)
+    return gapp.Dataset(
+        df=df, metadata=pd.DataFrame(index=pd.Index([101, 202], name=SEGMENT_COL)),
+        geo=None, metric_cols=speed.metric_columns(df), tz=TZ, span=(None, None))
+
+
+def test_window_key_collapses_whole_day_spellings():
+    for w in (None, [], [0, 24], [0, 24.0], [10, 10]):  # equal handles = whole day
+        assert gapp._window_key(w) == "full"
+    assert gapp._window_key([16, 18]) == (16.0, 18.0)
+
+
+def test_compare_cache_split_reuses_decomposition(multi_day_ds, monkeypatch):
+    """The review-O1 win: changing the before/after dates (same metric+window)
+    must NOT re-decompose — it re-slices the cached adjusted frame. The
+    decomposition tab shares that same cache too."""
+    from inrix_tools import beforeafter
+    ds = multi_day_ds
+    col = gapp._metric_col(ds, "tt")
+
+    calls = {"n": 0}
+    real = beforeafter.adjust_for_periods
+    monkeypatch.setattr(gapp.beforeafter, "adjust_for_periods",
+                        lambda *a, **k: (calls.__setitem__("n", calls["n"] + 1) or real(*a, **k)))
+
+    pairs = [(("2026-02-10", "2026-02-16"), ("2026-03-01", "2026-03-03")),
+             (("2026-02-11", "2026-02-17"), ("2026-03-01", "2026-03-03")),
+             (("2026-02-12", "2026-02-18"), ("2026-03-01", "2026-03-03"))]
+    for before, after in pairs:
+        assert len(gapp._compare_all(ds, col, before, after)) == 2
+    gapp._fig_decomp(ds, 101, col, "seg")           # same (col, full-window) key
+    assert calls["n"] == 1                           # ONE decomposition, not four
+
+
+def test_adjusted_cache_evicts_lru(multi_day_ds):
+    """The adjusted cache is capped (each entry is full-export sized)."""
+    ds = multi_day_ds
+    col = gapp._metric_col(ds, "tt")
+    for w in ([0, 24], [6, 9], [16, 18]):            # 3 distinct windows, cap 2
+        gapp._adjusted_frame(ds, col, w)
+    assert len(ds._adjusted_cache) <= gapp._ADJ_CACHE_CAP
+
+
+def test_compare_all_rejects_overlap_before_decomposing(multi_day_ds, monkeypatch):
+    """Overlapping periods raise fast — no decomposition is paid for."""
+    ds = multi_day_ds
+    col = gapp._metric_col(ds, "tt")
+    monkeypatch.setattr(gapp.beforeafter, "adjust_for_periods",
+                        lambda *a, **k: pytest.fail("decomposed before validating"))
+    with pytest.raises(ValueError, match="overlap"):
+        gapp._compare_all(ds, col, ("2026-02-10", "2026-03-01"),
+                          ("2026-02-20", "2026-03-10"))
+
+
+def test_store_evicts_old_dataset(multi_day_ds):
+    """Single-user app keeps only the latest load (~2.3 GB each — review B2)."""
+    gapp._DATASETS.clear()
+    t1 = gapp._store(multi_day_ds)
+    t2 = gapp._store(multi_day_ds)
+    assert len(gapp._DATASETS) == 1
+    assert gapp._get(t1) is None and gapp._get(t2) is not None
+
+
+def test_metric_choices_disables_absent_metric(series_df):
+    """Speed-only export: Travel time is disabled and the selection lands on
+    Speed instead of KeyError-ing on the absent column (review B3)."""
+    from inrix_tools import speed
+    speed_only = series_df.drop(columns=[TT_COL])
+    ds = gapp.Dataset(df=speed_only,
+                      metadata=pd.DataFrame(index=pd.Index([101], name=SEGMENT_COL)),
+                      geo=None, metric_cols=speed.metric_columns(speed_only),
+                      tz="America/Denver", span=(None, None))
+    options, value = gapp._metric_choices(ds, "tt")   # user had tt selected
+    assert value == "speed"
+    by_val = {o["value"]: o["disabled"] for o in options}
+    assert by_val == {"tt": True, "speed": False}
+    # both present -> keep the current choice
+    both = gapp.Dataset(df=series_df, metadata=ds.metadata, geo=None,
+                        metric_cols=speed.metric_columns(series_df),
+                        tz="America/Denver", span=(None, None))
+    assert gapp._metric_choices(both, "speed")[1] == "speed"
+
+
+def test_fig_decomp_empty_selection_and_warmup_message(series_df):
+    """No selection -> pick-a-segment; a too-short series -> a message that names
+    the 7-day warm-up rather than a bare 'no decomposition' (review B6)."""
+    from inrix_tools import speed
+    ds = gapp.Dataset(df=series_df,
+                      metadata=pd.DataFrame(index=pd.Index([101], name=SEGMENT_COL)),
+                      geo=None, metric_cols=speed.metric_columns(series_df),
+                      tz="America/Denver", span=(None, None))
+    assert isinstance(gapp._fig_decomp(ds, None, TT_COL, ""), go.Figure)
+    fig = gapp._fig_decomp(ds, 101, TT_COL, "seg")    # 2 days < warm-up -> empty
+    text = " ".join(a.text for a in fig.layout.annotations)
+    assert "warm-up" in text
+
+
 def test_metric_col_and_segment_means(series_df):
     from inrix_tools import speed
     ds = gapp.Dataset(df=series_df, metadata=pd.DataFrame(index=pd.Index([101], name=SEGMENT_COL)),

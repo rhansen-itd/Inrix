@@ -290,6 +290,62 @@ def test_warmup_truncation_warns_and_records_effective_days():
 
 
 # ---------------------------------------------------------------------------
+# Item 16 — the cache-split halves (adjust_for_periods / compare_adjusted)
+# ---------------------------------------------------------------------------
+def test_adjust_then_compare_matches_compare_periods():
+    """compare_adjusted(adjust_for_periods(df), ...) is byte-for-byte the same as
+    compare_periods(df, ...) — the split just lets a caller reuse the (expensive)
+    adjusted frame across many period comparisons (Item 16 / review O1)."""
+    df = _make_series(weekend_bump=0.0, step_day=25, step_size=2.0, segments=(101, 202))
+    before, after = ("2026-02-16", "2026-02-22"), ("2026-03-09", "2026-03-15")
+
+    combined = ba.compare_periods(df, before, after, value=VALUE)
+    adjusted = ba.adjust_for_periods(df, value=VALUE)
+    split = ba.compare_adjusted(adjusted, before, after)
+
+    assert list(split.columns) == list(combined.columns)
+    for c in ("effect", "ci_low", "ci_high", "p_value", "q_value", "n_before"):
+        assert np.allclose(split[c].to_numpy(), combined[c].to_numpy())
+    assert (split["method"] == "decomposition").all()
+    # the adjusted frame carries what compare_adjusted needs, ibis-serializably
+    assert adjusted.attrs["decompose_value"] == VALUE
+    assert isinstance(adjusted.attrs["series_start"], str)
+    assert ba.ADJUSTED_COL in adjusted.columns
+
+
+def test_adjust_for_periods_reuse_across_periods():
+    """One adjusted frame drives several disjoint period pairs (the GUI caches it
+    once and re-slices per date-picker change)."""
+    df = _make_series(weekend_bump=0.0, step_day=25, step_size=2.0)
+    adjusted = ba.adjust_for_periods(df, value=VALUE)
+    for before, after in [(("2026-02-16", "2026-02-22"), ("2026-03-09", "2026-03-15")),
+                          (("2026-02-17", "2026-02-23"), ("2026-03-08", "2026-03-14"))]:
+        res = ba.compare_adjusted(adjusted, before, after)
+        assert len(res) == 1 and res.iloc[0]["effect"] == pytest.approx(2.0, abs=0.5)
+
+
+def test_compare_adjusted_carries_warmup_warning():
+    """The warm-up truncation flag rides on the adjusted frame's attrs, so
+    compare_adjusted reproduces compare_periods' warning without the original df."""
+    df = _make_series(n_days=40, weekend_bump=0.0, step_size=0.0)
+    adjusted = ba.adjust_for_periods(df, value=VALUE)
+    with pytest.warns(UserWarning, match="warm-up"):
+        res = ba.compare_adjusted(adjusted, ("2026-02-03", "2026-02-15"),
+                                  ("2026-03-01", "2026-03-10"))
+    assert res.attrs["before_days_effective"] == pytest.approx(7.0)
+
+
+def test_check_periods_parses_and_rejects_overlap():
+    (b0, b1), (a0, a1) = ba.check_periods(("2026-02-16", "2026-02-22"),
+                                          ("2026-02-23", "2026-03-01"), tz=TZ)
+    # half-open, so touching periods are disjoint: before ends where after starts
+    assert b0 == pd.Timestamp("2026-02-16", tz=TZ) and b1 == a0
+    with pytest.raises(ValueError, match="overlap"):
+        ba.check_periods(("2026-02-16", "2026-03-01"),
+                         ("2026-02-25", "2026-03-15"), tz=TZ)
+
+
+# ---------------------------------------------------------------------------
 # ttest_baseline — the seed's paired t-test
 # ---------------------------------------------------------------------------
 def test_ttest_baseline_columns_and_direction():
