@@ -95,6 +95,18 @@ undercounting when a segment is missing). `io.py` / `speed.py` should reproduce
 that "complete-set-only" rule and make partial timestamps visible rather than
 silently summing incomplete data.
 
+**At network scale (all segments as one group).** `speed.network_travel_time`
+reuses the same rule with a single synthetic all-segments group, so a network
+total requires **every** segment in the export to have reported at that
+timestamp. That is far stricter than a short corridor: with dozens of segments a
+sizeable fraction of 5-min timestamps are partial and drop, so the surviving
+network series is sparse (but each retained total is undercount-free, which is
+the point). Verified on the 46-segment Myrtle export: enough complete timestamps
+survive to decompose and run before/after on the aggregate. If a future export
+were sparse enough to starve the decomposition, the fix is the Item 9 window
+guard (already auto-scaled) or relaxing `require_complete`, not abandoning the
+rule.
+
 ## INRIX XD network shapefile (segment geometry)
 
 The official INRIX XD road network, delivered as a shapefile

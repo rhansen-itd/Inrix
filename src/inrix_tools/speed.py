@@ -23,6 +23,10 @@ from .timebins import DAY_GROUP_COL, GROUP_LABEL_COL, TIME_BIN_COL
 # aggregation statistics reported for every value column (pandas names).
 _STATS = ("count", "mean", "std", "median")
 
+# The synthetic corridor label used to sum *all* segments into one network total
+# (see ``network_travel_time``).
+NETWORK_LABEL = "Network"
+
 
 # ---------------------------------------------------------------------------
 # Column discovery
@@ -222,6 +226,58 @@ def _attach_corridor_length_speed(
         # space-mean speed: miles / (minutes / 60) = mph. NaN-safe on 0 travel time.
         hours = out[tt_col] / 60.0
         out["Corridor Speed(miles/hour)"] = out["Length(Miles)"] / hours.where(hours > 0)
+    return out
+
+
+def network_travel_time(
+    df: pd.DataFrame,
+    metadata: pd.DataFrame | None = None,
+    require_complete: bool = True,
+    datetime_col: str = DATETIME_COL,
+    corridor_col: str = CORRIDOR_COL,
+    label: str = NETWORK_LABEL,
+) -> pd.DataFrame:
+    """Sum **every** segment's travel time to a single network total per timestamp
+    — the corridor sum (``corridor_travel_time``) over one synthetic all-segments
+    group, under the same **complete-set rule** (only timestamps where every
+    segment in the export reported are summed).
+
+    This is ``corridor_travel_time`` with the corridor label collapsed to a single
+    value, so the output shape is identical (``corridor_col`` carries ``label``,
+    ``"Network"`` by default). The complete-set rule is *stricter* here than for a
+    short corridor: the network total requires **all** segments present at a
+    timestamp, so with many segments a sizeable fraction of timestamps drop as
+    partial. That is the correct, undercount-free behaviour (a missing segment
+    would otherwise silently shrink the total); it does mean the network series can
+    be sparse — feed it through ``decompose_segments`` with the same auto-scaled
+    window guard as any other series (see DATA_FORMAT.md's complete-set note).
+
+    Args:
+        df: local rows with ``Travel Time(...)`` and ``Segment ID`` (a corridor
+            column is *not* required — every segment is one group here).
+        metadata: optional ``Segment ID``-indexed metadata; when given, the summed
+            network length + space-mean speed are attached exactly as for
+            ``corridor_travel_time``.
+        require_complete: keep only complete timestamps (default). ``False`` keeps
+            partial timestamps with the ``complete`` flag so gaps are visible.
+        label: the single-group label written into ``corridor_col``.
+
+    Returns:
+        One row per timestamp (same columns as ``corridor_travel_time``), with
+        ``corridor_col`` == ``label`` throughout.
+    """
+    tt = metric_columns(df)["travel_time"]
+    if tt is None:
+        raise ValueError("No 'Travel Time(...)' column found.")
+    work = df.copy()
+    # Collapse to one all-segments group (overwrites any real corridor label): the
+    # complete-set machinery then treats the whole export as a single corridor.
+    work[corridor_col] = label
+    out = corridor_travel_time(
+        work, metadata=metadata, corridor_col=corridor_col,
+        require_complete=require_complete, datetime_col=datetime_col,
+    )
+    out.attrs = dict(df.attrs)
     return out
 
 

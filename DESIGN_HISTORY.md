@@ -1021,3 +1021,60 @@ panels drive): pure-core inclusive edges / whole-end-day / open bounds / attrs /
 immutability / DST day / start>end, plus GUI `full_span` defaulting, a trimmed-frame
 shrink+drive check, and default-period clamping to the trimmed span. No DATA_FORMAT
 change — date filtering uses the already-documented tz-aware local timestamp.
+
+---
+
+## Session 16 — Corridor & network travel-time analysis (ROADMAP Item 12) (2026-07-16)
+
+Extended the explorer from single-segment analysis to **aggregate travel time** —
+a corridor (`Corridor/Region Name` group) or the whole network (all segments) —
+without touching the compute adapters. Travel time only, per the owner decision:
+summing travel time across segments is well-defined; there is no good
+segment-weighting for speed, so speed stays segment-level.
+
+**Compute core (`speed.network_travel_time`).** A four-line function: overwrite
+the corridor label to one synthetic `"Network"` value, then delegate to the
+existing `corridor_travel_time`. That reuses the complete-set machinery verbatim,
+so the network total is the segment sum at only those timestamps where **every**
+segment reported (a missing segment drops the timestamp rather than silently
+undercounting). Output shape is identical to `corridor_travel_time` (so the GUI
+treats corridor and network uniformly), with `Corridor/Region Name == "Network"`
+throughout; metadata still attaches summed network length + space-mean speed.
+
+**Why no new decompose/beforeafter code.** The insight the item hinges on: the
+adapters group by `Segment ID`, so an aggregate series is just a one-entity
+series. Collapsing the per-timestamp total onto a single synthetic
+`Segment ID = -1` (`_AGG_SEGMENT_ID`) lets `adjust_for_periods` /
+`compare_adjusted` / `decompose_segments` / `detect_changepoints` all run
+**unchanged** — corridor/network before-after returns a single aggregate row, and
+the decomposition tab slices that one entity out of the cached adjusted frame
+exactly as it does for a segment.
+
+**GUI wiring (`gui/app.py`).** An *Analysis scope* dropdown (Segment / Corridor /
+Network) + a corridor picker. `_analysis_frame(ds, col, scope, corridor, window)`
+is the one new seam: segment scope returns `ds.df`; corridor/network scope returns
+the collapsed aggregate. `_adjusted_frame` / `_compare_all` grew scope+corridor
+into their cache keys so the three scopes don't read each other's decomposition
+(the Item 16 cache split still holds — a date change re-slices, doesn't
+re-decompose). The map and the day×time summary stay **segment-level** in every
+scope (a segment sum has no per-segment map colouring or day×time decomposition of
+its own); the map delta colouring keeps computing per-segment regardless of the
+panel scope. `_scope_metric` forces the metric radio to Travel time (disabling
+Speed) in the aggregate scopes so the control never lies about what the panels
+show, and `_scope_options` disables Corridor when the export has no corridor
+column and both aggregate scopes when it carries no travel time.
+
+**Complete-set at network scale.** Requiring all 46 Myrtle segments at a timestamp
+is much stricter than a 3-segment corridor, so many 5-min timestamps drop as
+partial — but enough complete ones survive to decompose and run before/after on
+the aggregate (verified on the real export). Documented in DATA_FORMAT.md; the
+auto-scaled Item 9 window guard is the escape hatch if a future export is sparse
+enough to starve the decomposition.
+
+11 new tests (173 total, all pass incl. the real-export end-to-end, now exercising
+the network aggregate + a corridor before/after): compute-core network sum with
+the complete-set drop, network length/space-mean speed, missing-travel-time raise,
+scope-option disabling (speed-only + no-corridor exports), aggregate-frame collapse
+to the synthetic id, network time-series/before-after/decomposition drive, the
+"pick a corridor" guard, and scope cache-keying. DATA_FORMAT complete-set section
+gained a network-scale note.

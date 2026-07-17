@@ -68,7 +68,8 @@ def test_build_app_layout_headless():
     ids = {c.id for c in app.layout._traverse() if getattr(c, "id", None)}
     for needed in ("map", "segment", "fig-ts", "fig-summary", "fig-ba", "fig-decomp",
                    "load", "before-range", "after-range", "export-kml", "data-token",
-                   "tod-window", "names-path", "write-names", "restrict-range"):
+                   "tod-window", "names-path", "write-names", "restrict-range",
+                   "scope", "corridor"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
@@ -319,6 +320,21 @@ def test_end_to_end_real_export():
     out = gapp._write_kml(ds, "tt", "mean", before, after)
     assert out.exists() and out.stat().st_size > 0
 
+    # Item 12: network scope aggregates all segments' travel time (complete-set
+    # rule) into one synthetic entity; before/after + decomposition run on it.
+    _, corr_val, scope_opts = gapp._scope_options(ds)
+    disabled = {o["value"]: o.get("disabled", False) for o in scope_opts}
+    assert not disabled[gapp.SCOPE_NETWORK]        # the export carries travel time
+    net = gapp._analysis_frame(ds, col, gapp.SCOPE_NETWORK, None)
+    assert set(net[SEGMENT_COL].unique()) == {gapp._AGG_SEGMENT_ID} and len(net)
+    comp_net = gapp._compare_all(ds, col, before, after, scope=gapp.SCOPE_NETWORK)
+    assert len(comp_net) == 1
+    assert gapp._fig_timeseries(ds, None, col, before, after, "", scope=gapp.SCOPE_NETWORK).data
+    assert gapp._fig_decomp(ds, None, col, "", scope=gapp.SCOPE_NETWORK).data
+    if corr_val and not disabled[gapp.SCOPE_CORRIDOR]:   # a corridor is present
+        assert gapp._fig_beforeafter(ds, None, col, before, after, True,
+                                     scope=gapp.SCOPE_CORRIDOR, corridor=corr_val).data
+
     # Item 11: a date restriction on load really shrinks the cached frame while the
     # full export span is preserved for the picker bounds, and panels still drive.
     ds_trim = gapp.load_dataset(gapp.DEFAULT_SOURCE, gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE,
@@ -519,3 +535,115 @@ def test_default_periods_clamp_to_trimmed_span():
     from datetime import date
     b0, b1, a0, a1 = gapp.default_periods(date(2026, 2, 10), date(2026, 2, 25))
     assert date(2026, 2, 10) <= b0 <= b1 < a0 <= a1 <= date(2026, 2, 25)
+
+
+# ---------------------------------------------------------------------------
+# Item 12 — corridor & network travel-time analysis scope
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def scope_ds(multi_day_ds):
+    """The 30-day, 2-segment dataset with a corridor column, so corridor + network
+    scope both resolve. Both segments report at every timestamp, so the
+    complete-set rule keeps every timestamp (the aggregate series isn't starved)."""
+    from inrix_tools import speed
+    from inrix_tools.io import CORRIDOR_COL
+    df = multi_day_ds.df.copy()
+    df[CORRIDOR_COL] = "Main"
+    return gapp.Dataset(df=df, metadata=multi_day_ds.metadata, geo=None,
+                        metric_cols=speed.metric_columns(df),
+                        tz=multi_day_ds.tz, span=(None, None))
+
+
+def test_scope_options_disable_when_data_absent(series_df, multi_day_ds):
+    """Corridor scope needs the corridor column; both aggregate scopes need a
+    travel-time column (they analyse summed travel time)."""
+    from inrix_tools import speed
+    # speed-only export: no travel time -> both aggregate scopes disabled, no corridors
+    speed_only = series_df.drop(columns=[TT_COL])
+    ds = gapp.Dataset(df=speed_only,
+                      metadata=pd.DataFrame(index=pd.Index([101], name=SEGMENT_COL)),
+                      geo=None, metric_cols=speed.metric_columns(speed_only),
+                      tz="America/Denver", span=(None, None))
+    corr_opts, corr_val, scope_opts = gapp._scope_options(ds)
+    disabled = {o["value"]: o.get("disabled", False) for o in scope_opts}
+    assert disabled[gapp.SCOPE_CORRIDOR] and disabled[gapp.SCOPE_NETWORK]
+    assert corr_opts == [] and corr_val is None
+    # travel time present but no corridor column -> network on, corridor off
+    _, _, scope_opts2 = gapp._scope_options(multi_day_ds)
+    disabled2 = {o["value"]: o.get("disabled", False) for o in scope_opts2}
+    assert not disabled2[gapp.SCOPE_NETWORK] and disabled2[gapp.SCOPE_CORRIDOR]
+
+
+def test_scope_options_list_corridors(scope_ds):
+    corr_opts, corr_val, scope_opts = gapp._scope_options(scope_ds)
+    assert [o["value"] for o in corr_opts] == ["Main"] and corr_val == "Main"
+    disabled = {o["value"]: o.get("disabled", False) for o in scope_opts}
+    assert not disabled[gapp.SCOPE_CORRIDOR] and not disabled[gapp.SCOPE_NETWORK]
+
+
+def test_analysis_frame_collapses_to_synthetic_entity(scope_ds):
+    """Corridor/Network scope build a per-timestamp aggregate collapsed to one
+    synthetic Segment ID so the decompose/compare adapters run unchanged."""
+    col = gapp._metric_col(scope_ds, "tt")
+    net = gapp._analysis_frame(scope_ds, col, gapp.SCOPE_NETWORK, None)
+    assert set(net[SEGMENT_COL].unique()) == {gapp._AGG_SEGMENT_ID}
+    # both segments present every timestamp -> one complete-set row per timestamp
+    assert len(net) == net[DATETIME_COL].nunique()
+    # the network total is the sum of the two segments at a timestamp
+    seg = scope_ds.df.groupby(DATETIME_COL, observed=True)[col].sum()
+    merged = net.set_index(DATETIME_COL)[col]
+    assert merged.iloc[0] == pytest.approx(seg.loc[merged.index[0]])
+    # corridor scope collapses the same way
+    corr = gapp._analysis_frame(scope_ds, col, gapp.SCOPE_CORRIDOR, "Main")
+    assert set(corr[SEGMENT_COL].unique()) == {gapp._AGG_SEGMENT_ID}
+
+
+def test_timeseries_network_scope_titles_and_drives(scope_ds):
+    col = gapp._metric_col(scope_ds, "tt")
+    fig = gapp._fig_timeseries(scope_ds, None, col, None, None, "seg",
+                               scope=gapp.SCOPE_NETWORK)
+    assert fig.data and fig.layout.title.text == "Network (all segments)"
+
+
+def test_corridor_scope_without_pick_prompts(scope_ds):
+    """Corridor scope with no corridor chosen yet shows a prompt, not a crash."""
+    col = gapp._metric_col(scope_ds, "tt")
+    for builder in (
+        lambda: gapp._fig_timeseries(scope_ds, None, col, None, None, "",
+                                     scope=gapp.SCOPE_CORRIDOR, corridor=None),
+        lambda: gapp._fig_decomp(scope_ds, None, col, "",
+                                 scope=gapp.SCOPE_CORRIDOR, corridor=None),
+    ):
+        fig = builder()
+        text = " ".join(a.text for a in fig.layout.annotations)
+        assert "corridor" in text.lower()
+
+
+def test_network_scope_beforeafter_and_decomp(scope_ds):
+    """The aggregate series feeds compare_periods / decompose via the synthetic
+    entity id: before/after returns a single aggregate row and the decomposition
+    tab renders (Item 12)."""
+    pytest.importorskip("traffic_anomaly")
+    col = gapp._metric_col(scope_ds, "tt")
+    before, after = ("2026-02-10", "2026-02-16"), ("2026-03-01", "2026-03-03")
+    comp = gapp._compare_all(scope_ds, col, before, after, scope=gapp.SCOPE_NETWORK)
+    assert len(comp) == 1 and int(comp[SEGMENT_COL].iloc[0]) == gapp._AGG_SEGMENT_ID
+    fig = gapp._fig_beforeafter(scope_ds, None, col, before, after, True,
+                                scope=gapp.SCOPE_NETWORK)
+    assert fig.data
+    dfig = gapp._fig_decomp(scope_ds, None, col, "", scope=gapp.SCOPE_NETWORK)
+    assert dfig.data
+
+
+def test_scope_keys_the_adjusted_cache(scope_ds):
+    """Segment vs network adjusted frames are cached under distinct keys (so a
+    scope switch doesn't read the wrong decomposition)."""
+    pytest.importorskip("traffic_anomaly")
+    col = gapp._metric_col(scope_ds, "tt")
+    seg = gapp._adjusted_frame(scope_ds, col)                          # segment scope
+    net = gapp._adjusted_frame(scope_ds, col, scope=gapp.SCOPE_NETWORK)
+    keys = set(scope_ds._adjusted_cache)
+    assert (col, "full", gapp.SCOPE_SEGMENT, None) in keys
+    assert (col, "full", gapp.SCOPE_NETWORK, None) in keys
+    assert set(seg[SEGMENT_COL].unique()) == {101, 202}
+    assert set(net[SEGMENT_COL].unique()) == {gapp._AGG_SEGMENT_ID}

@@ -348,8 +348,8 @@ even though its stable ID is higher.
 its confirmed findings became **Items 15–16**, placed right after it. The review's
 recommended order is **15 → 16 → 11 → 10 → 12 → 13** (stats validity first — it
 changes every number the app shows — then responsiveness, then the owner batch).
-**Items 15, 16, 10 and 11 are now done** (DESIGN_HISTORY Sessions 12–15); the
-remaining order is **12 → 13**. Item 13 gained one bullet (the forest hover fix);
+**Items 15, 16, 10, 11 and 12 are now done** (DESIGN_HISTORY Sessions 12–16); the
+remaining item is **13**. Item 13 gained one bullet (the forest hover fix);
 the review's §3 ideas await owner acceptance before becoming items.
 
 **Model assignment (owner, 2026-07-16):** **Item 15 is reassigned to Fable**,
@@ -603,27 +603,30 @@ time-series / before-after / decomposition panels can run on the aggregate serie
 well-defined; there is no good segment-weighting for speed, so the corridor/network
 scope offers travel time exclusively (speed stays segment-level).
 
-Scope:
-- [ ] `speed.network_travel_time(df, ...)` — the corridor sum with **all segments
-      as one group** (reuse `corridor_travel_time`'s complete-set machinery with a
-      synthetic single-group key), returning the per-timestamp network total.
-      Optionally add corridor length/space-mean speed when metadata is supplied,
-      mirroring `corridor_travel_time`.
-- [ ] GUI: an **analysis-scope selector** — *Segment* (current) / *Corridor*
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 16):
+- [x] `speed.network_travel_time(df, ...)` — the corridor sum with **all segments
+      as one group** (reuses `corridor_travel_time`'s complete-set machinery by
+      overwriting the corridor label to one synthetic `"Network"` value),
+      returning the per-timestamp network total. Attaches summed network length /
+      space-mean speed when metadata is supplied, mirroring `corridor_travel_time`.
+- [x] GUI: an **analysis-scope selector** — *Segment* (current) / *Corridor*
       (`Corridor/Region Name` picker) / *Network*. In corridor/network scope the
-      metric is forced to travel time; the time-series, before/after, and
-      decomposition panels run on the aggregate per-timestamp series (which is
-      already the `[Date Time, Travel Time, Segment ID-less]` shape `decompose`
-      wants once given a single entity id). The day×time summary + map stay
-      segment-level (or grey out) as appropriate.
-- [ ] Feed the aggregate series into `beforeafter.compare_periods` /
-      `decompose_segments` with a single synthetic `Segment ID` so the existing
-      adapters work unchanged; confirm the complete-set drop doesn't starve
-      decomposition (document if the window guard interacts, cf. Item 9).
-- [ ] pytest: known network sum on a synthetic multi-segment fixture (complete-set
-      drop applied), before/after + decomposition run on the aggregate, GUI scope
-      wiring. DESIGN_HISTORY entry; DATA_FORMAT note if the aggregate path teaches
-      anything about the complete-set rule at network scale.
+      metric is forced to travel time (`_scope_metric` disables Speed); the
+      time-series, before/after, and decomposition panels run on the aggregate
+      per-timestamp series. The day×time summary + map stay **segment-level** in
+      every scope. Scope options disable Corridor when the export has no corridor
+      column and both aggregate scopes when it carries no travel-time column.
+- [x] Feeds the aggregate series into `beforeafter.compare_periods` /
+      `decompose_segments` with a single synthetic `Segment ID` (`_AGG_SEGMENT_ID
+      = -1`) so the existing adapters work unchanged; the `_adjusted_cache` /
+      `_compare_cache` keys gained scope+corridor so scopes don't collide. The
+      complete-set drop doesn't starve decomposition on the Myrtle export (the
+      auto-scaled Item 9 window guard covers any future sparse case).
+- [x] pytest: known network sum on a synthetic multi-corridor fixture (complete-set
+      drop applied), length/space-mean speed, before/after + decomposition run on
+      the aggregate, scope-option disabling, aggregate-frame collapse, corridor
+      guard, cache-keying, and the real-export network path. 11 new tests (173
+      total). DESIGN_HISTORY entry + DATA_FORMAT complete-set-at-network-scale note.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 12 of ROADMAP.md: corridor + network (all-segments)

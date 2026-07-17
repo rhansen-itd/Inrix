@@ -158,6 +158,61 @@ def test_corridor_missing_column_raises():
         speed.corridor_travel_time(df)  # no corridor column
 
 
+# --- network_travel_time (Item 12) ------------------------------------------
+@pytest.fixture
+def multi_corridor():
+    """Three segments across two corridors. At 08:00 all three report (complete
+    network set); at 08:05 segment 3 is missing (partial network set)."""
+    rows = [
+        _row("2026-01-12 08:00", 1, 30, 1.0, corridor="A"),
+        _row("2026-01-12 08:00", 2, 40, 2.0, corridor="A"),
+        _row("2026-01-12 08:00", 3, 50, 3.0, corridor="B"),
+        _row("2026-01-12 08:05", 1, 31, 1.1, corridor="A"),
+        _row("2026-01-12 08:05", 2, 41, 2.1, corridor="A"),
+        # 08:05 missing segment 3 -> network set incomplete
+    ]
+    df = pd.DataFrame(rows)
+    df.attrs["units"] = {"speed": "miles/hour", "travel_time": "Minutes"}
+    return df
+
+
+def test_network_sums_all_segments_complete_set_only(multi_corridor):
+    out = speed.network_travel_time(multi_corridor)
+    # only 08:00 has all three segments -> the sole complete network timestamp
+    assert len(out) == 1
+    row = out.iloc[0]
+    assert row[TT] == pytest.approx(6.0)          # 1.0 + 2.0 + 3.0
+    assert row["n_segments"] == 3 and row["expected_segments"] == 3
+    # everything collapses to one "Network" group, regardless of corridor
+    assert set(out["Corridor/Region Name"]) == {speed.NETWORK_LABEL}
+
+
+def test_network_partials_visible_when_not_required(multi_corridor):
+    out = speed.network_travel_time(multi_corridor, require_complete=False)
+    partial = out[~out["complete"]]
+    assert len(partial) == 1                        # the 08:05 two-segment set
+    p = partial.iloc[0]
+    assert p[TT] == pytest.approx(3.2) and p["n_segments"] == 2  # 1.1 + 2.1
+
+
+def test_network_length_and_space_mean_speed(multi_corridor):
+    meta = (pd.DataFrame({"Segment ID": [1, 2, 3],
+                          "Segment Length(Miles)": [0.5, 1.0, 1.5]})
+            .set_index("Segment ID"))
+    out = speed.network_travel_time(multi_corridor, meta)
+    row = out.iloc[0]
+    assert row["Length(Miles)"] == pytest.approx(3.0)   # 0.5 + 1.0 + 1.5 (all segments)
+    # space-mean speed = 3.0 mi / (6.0 min / 60) = 30 mph
+    assert row["Corridor Speed(miles/hour)"] == pytest.approx(30.0)
+
+
+def test_network_missing_travel_time_raises():
+    df = pd.DataFrame([{"Date Time": pd.Timestamp("2026-01-12 08:00", tz=TZ),
+                        "Segment ID": 1, SPEED: 30}])
+    with pytest.raises(ValueError):
+        speed.network_travel_time(df)  # no travel-time column
+
+
 # --- rolling_average --------------------------------------------------------
 def test_rolling_trailing_known_values(binned):
     r = speed.rolling_average(binned, value=SPEED, window=2)
