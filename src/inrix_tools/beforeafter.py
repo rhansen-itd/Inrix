@@ -7,20 +7,40 @@ period", kept deliberately distinct (the seed notebook blurred them):
   seasonality with ``decompose`` (``decompose.py``), then compare the
   seasonally-adjusted values between the two periods per segment (and optionally
   per day-group x time-bin). Reports an **effect size + confidence interval**
-  and the sample sizes — not just a p-value.
+  and the sample sizes — not just a p-value. The comparison is made on **daily
+  means** by default (``unit='day'``): 5-min samples are strongly
+  autocorrelated, and treating them as independent shrinks the CI by roughly
+  ``sqrt((1+rho)/(1-rho))`` — the Item 14 review measured null coverage of a
+  nominal 95% CI at only 25–50% for traffic-realistic AR(1) rho, restored to
+  ~96% by day-mean aggregation (REVIEW_ITEM14.md §4.1). A Benjamini–Hochberg
+  ``q_value`` across the returned family handles the many-segments
+  multiple-comparisons problem.
 - ``ttest_baseline`` — the seed notebook's paired t-test, kept only as a
   labeled, interpretable **baseline**. See its docstring for the
   autocorrelation + multiple-comparisons caveats that are exactly why it is not
   the primary.
 
-Both take ``before`` / ``after`` period specs (see ``parse_period``) and return
-one tidy row per (segment [, by-group]).
+Both take ``before`` / ``after`` period specs (see ``parse_period``), **reject
+overlapping periods**, and return one tidy row per (segment [, by-group]).
+
+**Estimand caveat (profile-shape changes).** The seasonal components are
+estimated from the whole series, both periods included, so an intervention that
+reshapes the *daily profile* (e.g. only the PM peak moves) partially leaks into
+``season_day`` and the measured effect understates the true one. When the
+effect is expected to be time-of-day-specific, restrict the analysis window
+first (``timebins.filter_time_window``, ROADMAP Item 9) and/or compare per
+day-group x time-bin via ``by=['Day Group', 'Time Bin']``. Likewise, secular
+drift between the periods (seasonal demand, fuel prices) is attributed to the
+intervention — a difference-in-differences against a control corridor is the
+fix when one exists (Future ROADMAP item).
 """
 from __future__ import annotations
 
 import math
+import warnings
 from typing import Sequence
 
+import numpy as np
 import pandas as pd
 
 from .decompose import decompose_segments, seasonally_adjust
@@ -73,6 +93,42 @@ def parse_period(period, tz=None) -> tuple[pd.Timestamp, pd.Timestamp]:
 def _period_mask(series: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
     """Half-open ``[start, end)`` membership over a datetime Series."""
     return (series >= start) & (series < end)
+
+
+def _check_disjoint(before_bounds, after_bounds) -> None:
+    """Raise if the (half-open) before/after periods overlap — rows in the shared
+    span would sit in *both* samples and bias every effect toward zero (the Item 14
+    review found the GUI's old default windows doing exactly this)."""
+    (b0, b1), (a0, a1) = before_bounds, after_bounds
+    if b0 < a1 and a0 < b1:
+        raise ValueError(
+            f"Before period [{b0} .. {b1}) overlaps after period [{a0} .. {a1}); "
+            "overlapping rows would appear in both samples and bias the effect "
+            "toward zero. Choose disjoint periods."
+        )
+
+
+def _bh_qvalues(p) -> np.ndarray:
+    """Benjamini–Hochberg step-up q-values for a family of p-values.
+
+    ``q[i]`` is the smallest FDR level at which comparison ``i`` would be
+    declared significant. NaN p-values (degenerate groups) are excluded from the
+    family size and get NaN q. Monotone in p; clipped to [0, 1].
+    """
+    p = np.asarray(p, dtype=float)
+    q = np.full(p.shape, np.nan)
+    ok = np.isfinite(p)
+    m = int(ok.sum())
+    if m == 0:
+        return q
+    pv = p[ok]
+    order = np.argsort(pv, kind="stable")
+    ranked = pv[order] * m / np.arange(1, m + 1)
+    stepped = np.minimum.accumulate(ranked[::-1])[::-1]  # enforce monotonicity
+    qv = np.empty(m)
+    qv[order] = np.clip(stepped, 0.0, 1.0)
+    q[ok] = qv
+    return q
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +186,7 @@ def compare_periods(
     value: str | None = None,
     by: Sequence[str] | None = None,
     use_decomposition: bool = True,
+    unit: str = "day",
     confidence: float = 0.95,
     min_samples: int = 2,
     datetime_col: str = DATETIME_COL,
@@ -143,42 +200,101 @@ def compare_periods(
     Method: decompose the full series once (``decompose_segments``) to strip
     daily/weekly seasonality, take the seasonally-adjusted value
     (``value - season_day - season_week``, which retains the level so a genuine
-    step change survives), split it into the before/after periods, and compute a
-    difference-in-means effect size with a Welch CI. The p-value is reported as a
-    secondary quantity, not the headline.
+    step change survives), split it into the before/after periods, **aggregate
+    each period to daily means** (``unit='day'``), and compute a
+    difference-in-means effect size with a Welch CI across those days. The
+    p-value is reported as a secondary quantity, not the headline; a
+    Benjamini–Hochberg ``q_value`` across all returned rows is the
+    multiple-comparisons-aware version.
+
+    Why days: 5-min samples are strongly autocorrelated, so a CI computed over
+    raw samples is drastically too narrow — simulated null coverage of a nominal
+    95% CI is 25–50% at traffic-realistic AR(1) rho, vs ~96% for daily means
+    (REVIEW_ITEM14.md §4.1). A day is the honest unit of evidence here.
+
+    See the module docstring for the estimand caveats (profile-shape changes
+    partially absorb into ``season_day`` — use ``timebins.filter_time_window``
+    and/or ``by=['Day Group', 'Time Bin']`` when the effect is
+    time-of-day-specific; secular drift needs a difference-in-differences).
 
     Args:
         df: tz-aware local rows (post ``io.to_local``, CValue-filtered as desired).
             For a ``by`` grouping, the grouping columns (e.g. ``Day Group`` /
             ``Time Bin`` from ``timebins``) must already be assigned.
-        before, after: period specs — see ``parse_period``. Note decomposition
-            drops the first ``drop_days`` (default 7) of the series, so the before
-            period should start at least that far in.
+        before, after: period specs — see ``parse_period``. Must be **disjoint**
+            (overlap raises). Note decomposition drops the first ``drop_days``
+            (default 7) of the series while the rolling window warms up; a period
+            reaching into that warm-up is flagged on ``attrs['warnings']`` and the
+            effective day counts are recorded (see Returns).
         value: metric column; defaults to the detected ``Travel Time(...)``.
         by: extra grouping columns besides the segment (e.g.
             ``['Day Group', 'Time Bin']``). Default: segment only.
         use_decomposition: ``True`` (default) compares seasonally-adjusted values;
             ``False`` compares the **raw** value (a labeled non-robust fallback /
             cross-check that skips the decomposition).
+        unit: ``'day'`` (default) aggregates each group's values to **daily means**
+            (local calendar days) before the test, so n counts days.
+            ``'sample'`` is the pre-Item-15 behavior — Welch straight over the
+            5-min samples — kept only as an escape hatch for exploration; its CI
+            ignores autocorrelation and is **not robust** (see above).
         confidence: CI level (default 0.95).
         min_samples: skip a group unless both periods have at least this many
-            observations.
+            observations **in the chosen unit** (days by default).
         decompose_kwargs: forwarded to ``decompose_segments`` when
             ``use_decomposition`` (e.g. ``freq_minutes``, ``rolling_window_days``).
 
     Returns:
         One row per (segment[, by-group]) with columns: the group keys,
-        ``n_before`` / ``n_after``, ``mean_before`` / ``mean_after``, ``sd_before``
-        / ``sd_after``, ``effect`` (mean after - before, in the value's units),
-        ``ci_low`` / ``ci_high`` (Welch CI on the effect), ``cohens_d``,
-        ``t_stat``, ``p_value``, and ``method`` (``"decomposition"`` or ``"raw"``).
-        ``attrs`` records ``value``, ``confidence``, ``before``/``after`` bounds.
+        ``n_before`` / ``n_after`` (observations entering the test, in ``unit`` —
+        **days** by default), ``n_samples_before`` / ``n_samples_after`` (the
+        underlying 5-min sample counts), ``mean_before`` / ``mean_after``,
+        ``sd_before`` / ``sd_after`` (in ``unit``), ``effect`` (mean after -
+        before, in the value's units), ``ci_low`` / ``ci_high`` (Welch CI on the
+        effect), ``cohens_d``, ``t_stat``, ``p_value``, ``q_value``
+        (Benjamini–Hochberg across all returned rows), and ``method``
+        (``"decomposition"`` or ``"raw"``). ``attrs`` records ``value``,
+        ``confidence``, ``unit``, the ``before``/``after`` bounds, the effective
+        day counts ``before_days_effective`` / ``after_days_effective`` (after
+        warm-up clipping), and ``warnings`` (a list, present when a period was
+        truncated by the decomposition warm-up).
     """
+    if unit not in ("day", "sample"):
+        raise ValueError(f"unit must be 'day' or 'sample', got {unit!r}.")
     by = list(by) if by else []
     group_cols = [segment_col, *by]
     tz = df[datetime_col].dt.tz
     before_bounds = parse_period(before, tz)
     after_bounds = parse_period(after, tz)
+    _check_disjoint(before_bounds, after_bounds)
+
+    # Effective spans: decomposition drops the leading ``drop_days`` while its
+    # rolling window warms up, so a period reaching into that warm-up silently
+    # holds fewer days than requested — flag it rather than let the user read an
+    # effect off less evidence than they think they have.
+    def _wall_days(start, end) -> float:
+        # calendar days on the local wall clock (a DST-crossing period still
+        # counts whole days, not 23/25-hour fractions)
+        naive = [t.tz_localize(None) if t.tzinfo is not None else t for t in (start, end)]
+        return (naive[1] - naive[0]) / pd.Timedelta(1, "D")
+
+    notes: list[str] = []
+    effective_days = {}
+    warmup_end = None
+    if use_decomposition and len(df):
+        drop_days = (decompose_kwargs or {}).get("drop_days", 7)
+        warmup_end = df[datetime_col].min() + pd.Timedelta(drop_days, "D")
+    for name, (start, end) in (("before", before_bounds), ("after", after_bounds)):
+        eff_start = max(start, warmup_end) if warmup_end is not None else start
+        effective_days[name] = max(0.0, _wall_days(eff_start, end))
+        if eff_start > start:
+            requested = _wall_days(start, end)
+            notes.append(
+                f"{name} period truncated by the decomposition warm-up "
+                f"({drop_days}-day rolling window): effective start {eff_start} — "
+                f"{effective_days[name]:g} of the requested {requested:g} days used."
+            )
+    for msg in notes:
+        warnings.warn(msg, UserWarning, stacklevel=2)
 
     if use_decomposition:
         decomposed = decompose_segments(
@@ -205,26 +321,40 @@ def compare_periods(
     ts = work[datetime_col]
     in_before = _period_mask(ts, *before_bounds)
     in_after = _period_mask(ts, *after_bounds)
+    dates = ts.dt.date  # local calendar day, for unit='day' aggregation
 
     rows = []
     for keys, g in work.groupby(group_cols, dropna=True, observed=True):
         keys = keys if isinstance(keys, tuple) else (keys,)
         b = g.loc[in_before.loc[g.index], target]
         a = g.loc[in_after.loc[g.index], target]
+        n_samples = {"n_samples_before": int(b.notna().sum()),
+                     "n_samples_after": int(a.notna().sum())}
+        if unit == "day":
+            b = b.groupby(dates.loc[b.index]).mean()
+            a = a.groupby(dates.loc[a.index]).mean()
         if b.notna().sum() < min_samples or a.notna().sum() < min_samples:
             continue
         stat = _compare_stats(b, a, confidence)
-        rows.append({**dict(zip(group_cols, keys)), **stat, "method": method})
+        rows.append({**dict(zip(group_cols, keys)), **stat, **n_samples,
+                     "method": method})
 
     out = pd.DataFrame(rows)
+    if len(out):
+        out["q_value"] = _bh_qvalues(out["p_value"])
     out.attrs = dict(df.attrs)
     out.attrs.update(
         value=value,
         confidence=confidence,
+        unit=unit,
         before=tuple(str(x) for x in before_bounds),
         after=tuple(str(x) for x in after_bounds),
+        before_days_effective=effective_days["before"],
+        after_days_effective=effective_days["after"],
         method=method,
     )
+    if notes:
+        out.attrs["warnings"] = notes
     return out
 
 
@@ -279,6 +409,7 @@ def ttest_baseline(
     tz = df[datetime_col].dt.tz
     before_bounds = parse_period(before, tz)
     after_bounds = parse_period(after, tz)
+    _check_disjoint(before_bounds, after_bounds)
 
     ts = df[datetime_col]
     work = df.copy()

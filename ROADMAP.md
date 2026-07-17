@@ -351,6 +351,14 @@ changes every number the app shows — then responsiveness, then the owner batch
 owner to confirm before the next session. Item 13 gained one bullet (the forest
 hover fix); the review's §3 ideas await owner acceptance before becoming items.
 
+**Model assignment (owner, 2026-07-16):** **Item 15 is reassigned to Fable**,
+overriding CLAUDE.md's Opus-end-to-end default — it is the batch's one
+statistics/mathematics-heavy item and Fable produced its analytical foundation in
+the review. All other items (16, 10–13) stay Opus. Going forward the rule of thumb
+is *math-heavy → Fable, everything else → Opus*; the review's §3 candidates
+**travel-time reliability percentiles** (block bootstrap) and a promoted
+**difference-in-differences** are the next likely Fable items once scoped.
+
 ---
 
 ## 14 — Targeted app review by Fable (Target: Fable) — needs Item 7 (review-only)
@@ -401,7 +409,16 @@ Suggested prompt:
 
 ---
 
-## 15 — Before/after statistical validity (Target: Opus) — needs Item 4; from the Item 14 review
+## 15 — Before/after statistical validity (Target: Fable) — needs Item 4; from the Item 14 review
+
+**Target override (owner, 2026-07-16): Fable, not the Opus default.** This is the
+one math-heavy item in the batch — autocorrelation-corrected inference (effective
+sample size / daily-mean aggregation), Benjamini–Hochberg FDR, and null-coverage
+*simulation* as a regression test — and Fable already produced its statistical
+foundation in the Item 14 review (the coverage table, the day-mean fix, the FDR
+recommendation). Overriding CLAUDE.md's Opus-end-to-end default is warranted where
+the work is statistics-heavy and Fable holds warm context; the rest of the batch
+(16, 10–13) stays Opus.
 
 The Item 14 review's headline: the numbers the forest plot shows are
 overconfident. The Welch CI in `beforeafter._compare_stats` treats ~6,000
@@ -412,30 +429,34 @@ REVIEW_ITEM14.md §4.1). Bundled with the other validity fixes in the same file:
 multiple comparisons, period validation, and the GUI's overlapping default
 windows (review B1, verified).
 
-Scope:
-- [ ] `compare_periods`: aggregate the adjusted series to **daily means per
-      segment** (per by-group) before `_compare_stats`; report `n_days` as the
-      headline n. Keep a `unit='sample'` escape hatch for the old behavior,
-      labeled non-robust.
-- [ ] Benjamini–Hochberg `q_value` column across the segment family (pure core);
-      `beforeafter_forest` de-emphasises rows with q above the cutoff and captions
-      the family size.
-- [ ] Period validation: raise on overlapping before/after periods; warn on attrs
-      (and surface in the GUI) when a period is truncated by the decomposition
-      warm-up (`drop_days`) and report the effective days used.
-- [ ] Fix the GUI default windows (`gui/app.py` `_load`): disjoint halves of the
-      span, after the warm-up, clamped to `[lo, hi]` — no overlap at any span
-      (review B1's table is the test fixture).
-- [ ] Docstring note in `beforeafter.py`: profile-shape effects partially absorb
-      into `season_day` — recommend the Item 9 ToD window and/or
-      `by=['Day Group','Time Bin']` when the effect is time-of-day-specific.
-- [ ] pytest: null-coverage regression (daily-mean CI covers 0 at ~nominal rate on
-      an AR(1) synthetic; the old path demonstrably doesn't), BH monotonicity,
-      overlap raise, warm-up warning, default-window disjointness across spans.
-      DESIGN_HISTORY entry.
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 12):
+- [x] `compare_periods`: aggregate the adjusted series to **daily means per
+      segment** (per by-group) before `_compare_stats`; `n_before`/`n_after` now
+      count days (the underlying 5-min counts reported as `n_samples_*`).
+      `unit='sample'` escape hatch kept, labeled non-robust.
+- [x] Benjamini–Hochberg `q_value` column across the returned family (pure core,
+      hand-rolled step-up, NaN-safe); `beforeafter_forest` de-emphasises rows with
+      q > 5% and captions the family size (`"N comparisons · k pass BH-FDR 5%"`).
+- [x] Period validation: overlapping before/after periods **raise** (in
+      `compare_periods` *and* `ttest_baseline`; half-open, so touching is fine);
+      warm-up truncation emits a `UserWarning` + `attrs['warnings']`, with
+      DST-safe effective day counts on `attrs['{before,after}_days_effective']`.
+      The GUI surfaces both: the forest caption shows warnings; an overlap raise
+      becomes a message figure (map delta falls back to mean colouring).
+- [x] GUI default windows (`default_periods` in `gui/app.py`): disjoint halves
+      after the warm-up, clamped to `[lo, hi]`, `None` when the span can't fit
+      two one-day windows — disjoint at every span (B1's spans are the test).
+- [x] Docstring notes in `beforeafter.py` (module + `compare_periods`):
+      profile-shape absorption → ToD window / `by=` groups; secular drift → DiD.
+- [x] pytest: null-coverage regression (AR(1) ρ=0.9, 50 reps: day-unit CI covers
+      0 ≥80%, sample-unit ≤70%), day-vs-sample semantics, BH hand-case +
+      monotonicity + NaN, overlap raise (+ touching-OK), warm-up warning +
+      effective days, default-window disjointness across 11 spans, forest
+      de-emphasis/caption. 9 new tests (124 total, all pass incl. the real-export
+      end-to-end). DESIGN_HISTORY entry.
 
 Suggested prompt:
-> [Opus] In Inrix/, do Item 15 of ROADMAP.md: make the before/after CIs honest —
+> [Fable] In Inrix/, do Item 15 of ROADMAP.md: make the before/after CIs honest —
 > aggregate the seasonally-adjusted series to daily means before the Welch CI
 > (report n_days), add BH-FDR q-values across segments, validate periods
 > (overlap raise + warm-up truncation warning), and fix the GUI's overlapping

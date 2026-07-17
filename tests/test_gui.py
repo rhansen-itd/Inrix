@@ -172,6 +172,65 @@ def test_beforeafter_forest_empty_is_blank():
     assert isinstance(fig, go.Figure)
 
 
+def test_beforeafter_forest_fdr_deemphasis_and_caption():
+    """Item 15: rows with q > alpha are de-emphasised, the caption states the
+    family size, and attrs['warnings'] (warm-up truncation) are surfaced."""
+    compare = pd.DataFrame({
+        SEGMENT_COL: [101, 202, 303],
+        "effect": [-0.3, 0.1, 0.5],          # already sorted -> row order stable
+        "ci_low": [-0.6, -0.2, 0.2],
+        "ci_high": [0.0, 0.4, 0.8],
+        "p_value": [0.3, 0.6, 0.001],
+        "q_value": [0.45, 0.6, 0.003],       # only segment 303 passes 5% FDR
+    })
+    compare.attrs["method"] = "decomposition"
+    compare.attrs["unit"] = "day"
+    compare.attrs["warnings"] = ["before period truncated by the decomposition warm-up"]
+    fig = figures.beforeafter_forest(compare, value_label="TT")
+
+    colors = list(fig.data[0].marker.color)
+    assert colors[2] == "#4c78a8"                     # significant -> full colour
+    assert colors[0] == colors[1] == figures._DEEMPHASIS  # q > 0.05 -> de-emphasised
+    texts = " ".join(a.text for a in fig.layout.annotations)
+    assert "BH-FDR" in texts and "1 pass" in texts.replace("· ", "")
+    assert "truncated" in texts
+    assert "day-level CI" in fig.layout.title.text
+
+
+def test_default_periods_disjoint_and_in_range():
+    """Item 15 / review B1: default windows are disjoint at every span (the old
+    fixed ~5-week windows overlapped under 60 days), sit inside [lo, hi], and
+    start after the decomposition warm-up when the span allows."""
+    from datetime import date, timedelta
+
+    lo = date(2026, 2, 1)
+    for span in (2, 3, 7, 14, 20, 30, 45, 60, 90, 165, 365):
+        hi = lo + timedelta(days=span)
+        b0, b1, a0, a1 = gapp.default_periods(lo, hi)
+        assert lo <= b0 <= b1 < a0 <= a1 <= hi, f"span={span}: not disjoint/in-range"
+        if span >= gapp.DECOMP_WARMUP_DAYS + 2:
+            assert b0 == lo + timedelta(days=gapp.DECOMP_WARMUP_DAYS)
+    # a span too short for two disjoint day windows yields no defaults
+    assert gapp.default_periods(lo, lo + timedelta(days=1)) == (None,) * 4
+    assert gapp.default_periods(lo, lo) == (None,) * 4
+
+
+def test_fig_beforeafter_overlap_shows_message_not_crash(series_df):
+    """User-picked overlapping periods surface as a message figure (the core
+    raises before any decomposition, so this is fast)."""
+    from inrix_tools import speed
+    ds = gapp.Dataset(df=series_df,
+                      metadata=pd.DataFrame(index=pd.Index([101], name=SEGMENT_COL)),
+                      geo=None, metric_cols=speed.metric_columns(series_df),
+                      tz="America/Denver", span=(None, None))
+    fig = gapp._fig_beforeafter(ds, None, TT_COL,
+                                ("2026-03-02", "2026-03-03"),
+                                ("2026-03-02", "2026-03-03"), True)
+    assert isinstance(fig, go.Figure)
+    texts = " ".join(a.text for a in fig.layout.annotations)
+    assert "overlap" in texts
+
+
 def test_decomposition_panel_with_changepoints(series_df):
     from inrix_tools.decompose import (RESID_COL, SEASON_DAY_COL,
                                        SEASON_WEEK_COL, TREND_COL)

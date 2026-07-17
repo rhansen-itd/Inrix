@@ -255,19 +255,30 @@ def summary_bars(
 # ---------------------------------------------------------------------------
 # Before / after (Item 4)
 # ---------------------------------------------------------------------------
+_DEEMPHASIS = "#b9c7d9"  # forest rows that don't clear the FDR cutoff
+
+
 def beforeafter_forest(
     compare: pd.DataFrame,
     *,
     labels: Mapping[int, str] | None = None,
     selected_id: int | None = None,
     value_label: str = "",
+    fdr_alpha: float = 0.05,
     title: str = "",
     height: int = 480,
 ) -> go.Figure:
     """A forest plot of the per-segment before/after effect with its confidence
     interval (from ``beforeafter.compare_periods``): effect on x, one row per
     segment, the CI as a horizontal error bar. A dashed line at 0 marks "no change";
-    a CI clearing it is a real shift. The selected segment is highlighted."""
+    a CI clearing it is a real shift. The selected segment is highlighted.
+
+    When the frame carries a ``q_value`` column (Benjamini–Hochberg, from
+    ``compare_periods``), rows with ``q > fdr_alpha`` are de-emphasised and a
+    caption states the family size — with ~46 segments a couple of raw 95% CIs
+    clear zero by chance alone, so the FDR view is the honest one. Any
+    ``attrs['warnings']`` (e.g. a period truncated by the decomposition warm-up)
+    are surfaced in the caption too."""
     if compare.empty or "effect" not in compare.columns:
         return _blank("Run a before/after comparison to populate this.", height=height)
 
@@ -276,25 +287,50 @@ def beforeafter_forest(
     def _name(sid):
         return (labels or {}).get(int(sid), f"Segment {int(sid)}")
     ytext = [_name(s) for s in d[SEGMENT_COL]]
-    colors = [_HIGHLIGHT if (selected_id is not None and int(s) == int(selected_id))
-              else "#4c78a8" for s in d[SEGMENT_COL]]
 
+    has_q = "q_value" in d.columns
+    sig = (d["q_value"] <= fdr_alpha) if has_q else pd.Series(True, index=d.index)
+
+    def _color(i, sid):
+        if selected_id is not None and int(sid) == int(selected_id):
+            return _HIGHLIGHT
+        return "#4c78a8" if sig.iloc[i] else _DEEMPHASIS
+    colors = [_color(i, s) for i, s in enumerate(d[SEGMENT_COL])]
+
+    qtxt = [f" · q={q:.3f}" for q in d["q_value"]] if has_q else [""] * len(d)
     fig = go.Figure(go.Scatter(
         x=d["effect"], y=y, mode="markers",
         marker=dict(size=9, color=colors),
         error_x=dict(type="data", symmetric=False,
                      array=d["ci_high"] - d["effect"],
-                     arrayminus=d["effect"] - d["ci_low"], thickness=1.2),
+                     arrayminus=d["effect"] - d["ci_low"], thickness=1.2,
+                     color="#9aa5b1"),
         customdata=d[SEGMENT_COL],
-        text=[f"effect {e:+.3f} [{lo:+.3f}, {hi:+.3f}]"
-              for e, lo, hi in zip(d["effect"], d["ci_low"], d["ci_high"])],
+        text=[f"effect {e:+.3f} [{lo:+.3f}, {hi:+.3f}]{q}"
+              for e, lo, hi, q in zip(d["effect"], d["ci_low"], d["ci_high"], qtxt)],
         hovertemplate="%{y}<br>%{text}<extra></extra>",
     ))
     fig.add_vline(x=0, line_dash="dash", line_color="#888")
+
+    caption = []
+    if has_q:
+        caption.append(f"{len(d)} comparisons · {int(sig.sum())} pass "
+                       f"BH-FDR {fdr_alpha:.0%} (de-emphasised = not significant)")
+    caption.extend(f"⚠ {w}" for w in compare.attrs.get("warnings", []))
+    if caption:
+        fig.add_annotation(
+            text="<br>".join(caption), showarrow=False,
+            xref="paper", yref="paper", x=1, y=1.02,
+            xanchor="right", yanchor="bottom",
+            font=dict(size=11, color="#888"), align="right",
+        )
+
     method = compare.attrs.get("method", "")
+    unit = compare.attrs.get("unit")
+    subtitle = f"{method}, {unit}-level CI" if unit else method
     fig.update_layout(
         template=TEMPLATE, height=max(height, 120 + 22 * len(d)),
-        title=title or f"Before/after effect ({method}) — {value_label}",
+        title=title or f"Before/after effect ({subtitle}) — {value_label}",
         xaxis_title=f"After − before ({value_label})",
         yaxis=dict(tickmode="array", tickvals=y, ticktext=ytext, autorange="reversed"),
         margin=dict(l=10, r=10, t=50, b=10), showlegend=False,

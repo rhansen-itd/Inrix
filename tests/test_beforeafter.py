@@ -126,7 +126,14 @@ def test_compare_periods_recovers_injected_shift():
     assert row["effect"] == pytest.approx(2.0, abs=0.4)
     # CI excludes zero -> a detected change
     assert row["ci_low"] > 0
-    assert row["n_before"] > 100 and row["n_after"] > 100
+    # n is in the analysis unit (days, the Item 15 default); the underlying
+    # 5-min sample counts are reported alongside.
+    assert row["n_before"] == 7 and row["n_after"] == 7
+    assert row["n_samples_before"] > 100 and row["n_samples_after"] > 100
+    assert res.attrs["unit"] == "day"
+    # neither period reaches the warm-up -> no truncation warnings
+    assert "warnings" not in res.attrs
+    assert res.attrs["before_days_effective"] == pytest.approx(7.0)
 
 
 def test_decomposition_more_robust_than_raw_under_seasonality():
@@ -175,6 +182,111 @@ def test_compare_periods_skips_thin_groups():
     after = ("2026-03-09", "2026-03-15")
     res = ba.compare_periods(df, before, after, value=VALUE, min_samples=10_000_000)
     assert res.empty
+
+
+# ---------------------------------------------------------------------------
+# Item 15 — statistical validity: units, coverage, FDR, period validation
+# ---------------------------------------------------------------------------
+def test_unit_day_vs_sample_semantics():
+    """unit='day' (default) tests daily means; unit='sample' is the labeled
+    non-robust escape hatch over raw 5-min samples. Same point estimate
+    territory, but the day CI must be wider (it stops pretending 288
+    autocorrelated samples/day are independent)."""
+    df = _make_series(weekend_bump=0.0, step_day=25, step_size=2.0)
+    before = ("2026-02-16", "2026-02-22")
+    after = ("2026-03-09", "2026-03-15")
+    day = ba.compare_periods(df, before, after, value=VALUE).iloc[0]
+    samp = ba.compare_periods(df, before, after, value=VALUE, unit="sample").iloc[0]
+    assert day["n_before"] == 7 and samp["n_before"] > 1000
+    assert samp["n_samples_before"] == samp["n_before"]  # sample unit: n == samples
+    assert (day["ci_high"] - day["ci_low"]) > (samp["ci_high"] - samp["ci_low"])
+    assert day["effect"] == pytest.approx(samp["effect"], abs=0.1)
+    with pytest.raises(ValueError):
+        ba.compare_periods(df, before, after, value=VALUE, unit="week")
+
+
+def test_null_coverage_day_unit_honest_sample_unit_not():
+    """The Item 15 regression: on an AR(1) null (no true change), the day-unit
+    95% CI covers zero at ~nominal rate while the old sample-unit CI — which
+    ignores autocorrelation — demonstrably does not (REVIEW_ITEM14.md §4.1).
+    Raw comparison (use_decomposition=False) keeps the loop fast; the unit
+    logic under test is identical on the decomposition path."""
+    from scipy.signal import lfilter
+
+    rho, reps = 0.9, 50
+    n_days = 28  # two contiguous 14-day periods (DST-free span)
+    idx = pd.date_range("2026-04-06", periods=n_days * 288, freq="5min", tz=TZ)
+    before = ("2026-04-06", "2026-04-19")
+    after = ("2026-04-20", "2026-05-03")
+    rng = np.random.RandomState(7)
+
+    cover = {"day": 0, "sample": 0}
+    for _ in range(reps):
+        e = rng.normal(0, np.sqrt(1 - rho**2), len(idx))
+        x = 10.0 + lfilter([1.0], [1.0, -rho], e)  # AR(1), unit marginal variance
+        df = pd.DataFrame({"Segment ID": np.int64(1), "Date Time": idx, VALUE: x})
+        for unit in cover:
+            row = ba.compare_periods(df, before, after, value=VALUE, unit=unit,
+                                     use_decomposition=False).iloc[0]
+            cover[unit] += row["ci_low"] <= 0 <= row["ci_high"]
+
+    assert cover["day"] / reps >= 0.80      # ~nominal (95%), loose bound for reps=50
+    assert cover["sample"] / reps <= 0.70   # drastically undercovers (~35-50%)
+
+
+def test_bh_qvalues_known_case_and_monotonicity():
+    # hand-computed BH: p=[.01,.04,.03,.005], m=4 -> q=[.02,.04,.04,.02]
+    q = ba._bh_qvalues([0.01, 0.04, 0.03, 0.005])
+    assert np.allclose(q, [0.02, 0.04, 0.04, 0.02])
+    # q >= p, q <= 1, order-preserving; NaN p excluded from the family
+    p = np.array([0.001, 0.2, np.nan, 0.05])
+    q = ba._bh_qvalues(p)
+    assert np.isnan(q[2]) and np.all(q[np.isfinite(q)] <= 1)
+    assert np.all(q[np.isfinite(q)] >= p[np.isfinite(p)])
+    finite = np.isfinite(p)
+    order_p = np.argsort(p[finite])
+    assert np.all(np.diff(q[finite][order_p]) >= 0)
+
+
+def test_compare_periods_emits_qvalues_across_family():
+    df = _make_series(weekend_bump=0.0, step_size=2.0, step_day=25,
+                      segments=(101, 202, 303))
+    res = ba.compare_periods(df, ("2026-02-16", "2026-02-22"),
+                             ("2026-03-09", "2026-03-15"), value=VALUE)
+    assert "q_value" in res.columns and len(res) == 3
+    assert ((res["q_value"] >= res["p_value"] - 1e-12)
+            & (res["q_value"] <= 1)).all()
+
+
+def test_overlapping_periods_raise():
+    df = _make_series(weekend_bump=0.0)
+    before = ("2026-02-16", "2026-03-01")
+    after = ("2026-02-25", "2026-03-15")  # overlaps the before period
+    with pytest.raises(ValueError, match="overlap"):
+        ba.compare_periods(df, before, after, value=VALUE,
+                           use_decomposition=False)
+    with pytest.raises(ValueError, match="overlap"):
+        ba.ttest_baseline(df, before, after, value=VALUE)
+    # touching (half-open) periods are fine: before ends where after starts
+    res = ba.compare_periods(df, ("2026-02-16", "2026-02-22"),
+                             ("2026-02-23", "2026-03-01"), value=VALUE,
+                             use_decomposition=False)
+    assert len(res) == 1
+
+
+def test_warmup_truncation_warns_and_records_effective_days():
+    df = _make_series(n_days=40, weekend_bump=0.0, step_size=0.0)
+    # series starts 2026-02-02; warm-up ends 02-09 -> a before period starting
+    # 02-03 is truncated (13 requested days, 7 effective).
+    before = ("2026-02-03", "2026-02-15")
+    after = ("2026-03-01", "2026-03-10")
+    with pytest.warns(UserWarning, match="warm-up"):
+        res = ba.compare_periods(df, before, after, value=VALUE)
+    assert res.attrs["before_days_effective"] == pytest.approx(7.0)
+    assert res.attrs["after_days_effective"] == pytest.approx(10.0)
+    assert any("truncated" in w for w in res.attrs["warnings"])
+    # n reflects the days that actually decomposed, not the days requested
+    assert res.iloc[0]["n_before"] <= 7
 
 
 # ---------------------------------------------------------------------------

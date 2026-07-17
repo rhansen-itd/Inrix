@@ -156,6 +156,33 @@ def _labels(ds: Dataset) -> dict:
     return {}
 
 
+DECOMP_WARMUP_DAYS = 7  # decompose_segments' drop_days default (see decompose.py)
+
+
+def default_periods(lo, hi, warmup_days: int = DECOMP_WARMUP_DAYS):
+    """Default before/after windows for an export spanning ``[lo, hi]`` (local
+    dates): **disjoint** halves of the span, starting after the decomposition
+    warm-up, clamped to the span. The old defaults (fixed ~5-week windows)
+    silently overlapped for any span under ~60 days, biasing every default
+    effect toward zero — Item 14 review B1; this replaces them.
+
+    Returns ``(b_start, b_end, a_start, a_end)`` dates with
+    ``lo <= b_start <= b_end < a_start <= a_end <= hi`` (the ranges are
+    inclusive calendar days, per ``parse_period``), or all ``None`` when the
+    span can't fit two disjoint one-day windows.
+    """
+    span = (hi - lo).days
+    if span < 2:
+        return None, None, None, None
+    warmup = min(warmup_days, span - 2)  # never eat the whole span
+    u_lo = lo + timedelta(days=warmup)
+    usable = (hi - u_lo).days            # >= 2 by construction
+    half = usable // 2
+    b_start, b_end = u_lo, u_lo + timedelta(days=max(half - 1, 0))
+    a_start, a_end = b_end + timedelta(days=1), hi
+    return b_start, b_end, a_start, a_end
+
+
 # ---------------------------------------------------------------------------
 # Layout
 # ---------------------------------------------------------------------------
@@ -276,13 +303,9 @@ def _register_callbacks(app: Dash) -> None:
         options = [{"label": labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
                    for s in ds.metadata.index]
         lo, hi = ds.span
-        # Default windows: first ~5 weeks (past the decomposition warm-up) vs last ~5.
-        span_days = (hi - lo).days
-        window = timedelta(days=max(21, span_days // 5))
-        b_start = lo + timedelta(days=min(8, span_days // 6))
-        b_end = b_start + window
-        a_end = hi
-        a_start = a_end - window
+        # Default windows: disjoint halves of the span after the decomposition
+        # warm-up (overlap biases effects toward zero — Item 14 review B1).
+        b_start, b_end, a_start, a_end = default_periods(lo, hi)
         status = (f"✓ {len(ds.df):,} rows · {len(ds.metadata)} segments · "
                   f"{lo}…{hi} · {ds.tz}")
         return (token, status, options, no_update,
@@ -320,9 +343,15 @@ def _register_callbacks(app: Dash) -> None:
         col = _metric_col(ds, metric)
         label = figures._unit_label(col)
         if mode == "delta" and all([b0, b1, a0, a1]):
-            comp = _compare_all(ds, col, (b0, b1), (a0, a1), window)
-            values = comp.set_index(SEGMENT_COL)["effect"] if not comp.empty else None
-            label = f"Δ {label}"
+            try:
+                comp = _compare_all(ds, col, (b0, b1), (a0, a1), window)
+            except ValueError:  # e.g. overlapping periods — fall back to means
+                comp = None
+            if comp is not None and not comp.empty:
+                values = comp.set_index(SEGMENT_COL)["effect"]
+                label = f"Δ {label}"
+            else:
+                values = _segment_means(ds, col, window)
         else:
             values = _segment_means(ds, col, window)
         return figures.segment_map(ds.geo, values, value_label=label,
@@ -437,7 +466,10 @@ def _fig_summary(ds, selected, col, name, window=None):
 def _fig_beforeafter(ds, selected, col, before, after, have_periods, window=None):
     if not have_periods:
         return figures._blank("Set before and after date ranges.")
-    comp = _compare_all(ds, col, before, after, window)
+    try:
+        comp = _compare_all(ds, col, before, after, window)
+    except ValueError as exc:  # e.g. overlapping periods — validation, not a crash
+        return figures._blank(f"⚠ {exc}")
     return figures.beforeafter_forest(comp, labels=_labels(ds), selected_id=selected,
                                       value_label=figures._unit_label(col))
 

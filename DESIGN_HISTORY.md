@@ -778,3 +778,89 @@ congestion-relative views, DiD promotion) stay in the report pending owner
 acceptance. Recommended order: **15 → 16 → 11 → 10 → 12 → 13** — validity
 first, since it changes every number the app shows; owner to confirm. No
 DATA_FORMAT change (nothing new learned about the export itself).
+
+---
+
+## Session 12 — Model assignment: Item 15 → Fable (2026-07-16)
+
+Planning-only. After the Item 14 review landed, the owner asked whether any of the
+newly-scoped items should override CLAUDE.md's Opus-end-to-end default and go to
+Fable, given Fable's strength on complex/mathematics-heavy work.
+
+Decision: **Item 15 (before/after statistical validity) is reassigned to Fable.**
+It is the batch's one genuinely statistics-heavy item — autocorrelation-corrected
+inference (effective sample size / daily-mean aggregation), Benjamini–Hochberg FDR
+across the segment family, and a null-coverage *simulation* used as a regression
+test — and Fable already produced its analytical foundation in the review (the
+AR(1) coverage table, the day-mean fix restoring ~96% coverage, the FDR
+recommendation). Warm context + aptitude make the override worthwhile.
+
+Everything else stays Opus: **Item 16** is pure engineering (cache split, LRU
+eviction, metric guards, stale-state fixes), and **Items 10–13** are naming
+heuristics, a date filter, corridor plumbing over existing compute, and GUI polish
+— none math-heavy. The standing rule of thumb going forward: *math-heavy → Fable,
+everything else → Opus (the CLAUDE.md default)*. The review's §3 candidates most
+likely to become Fable items once scoped are **travel-time reliability percentiles**
+(needs a block bootstrap) and a promoted **difference-in-differences**.
+
+Recorded on Item 15's Target line + the ROADMAP post-review note; no code changed.
+
+## Session 12 — Before/after statistical validity (ROADMAP Item 15) (2026-07-16)
+
+Implements the Item 14 review's headline findings (REVIEW_ITEM14.md §4.1–4.3 +
+bug B1): the forest plot's intervals were ~5–9× too narrow, and the GUI's
+default comparison windows overlapped. Target was **Fable** per the owner's
+model-assignment note (math-heavy item; warm review context).
+
+**The core change — days, not samples, are the unit of evidence.**
+`compare_periods` gained `unit='day'` (the default): within each
+(segment[, by-group]) × period, the seasonally-adjusted values are aggregated to
+**local-calendar-day means** before the Welch effect/CI. 5-min samples are
+strongly autocorrelated, so the old sample-level CI covered a true null only
+25–50% of the time at traffic-realistic AR(1) ρ; day means restore ~96%
+(review simulation, now a pytest regression: ρ=0.9, 50 seeded reps — day-unit
+coverage ≥80% asserted, sample-unit ≤70%). `n_before`/`n_after` now count days;
+`n_samples_*` keep the raw counts visible. `unit='sample'` remains as a
+documented **non-robust escape hatch**. Design choice: day-mean aggregation over
+block bootstrap / HAC — equally honest here, far less machinery, and n becomes
+the interpretable "days of evidence".
+
+**Multiple comparisons.** `compare_periods` now emits a Benjamini–Hochberg
+`q_value` across all returned rows (hand-rolled step-up, NaN p-values excluded
+from the family — no scipy-version dependency). `figures.beforeafter_forest`
+de-emphasises rows with q > `fdr_alpha` (default 5%), captions the family size,
+and titles the method as e.g. "decomposition, day-level CI".
+
+**Period validation.** Overlapping before/after periods now **raise** in both
+`compare_periods` and `ttest_baseline` (half-open bounds — periods that touch
+are fine); a period reaching into the decomposition warm-up (`drop_days`)
+triggers a `UserWarning` plus `attrs['warnings']`, with effective day counts on
+`attrs['before_days_effective']`/`'after_days_effective'`. Day counts are
+computed on the naive wall clock so a DST-crossing period still counts whole
+calendar days (the March spring-forward otherwise reports 9.958 days — caught
+by a test). GUI surfacing: the forest renders `attrs['warnings']` in its
+caption; a user-picked overlap becomes a message figure in the before/after tab
+(the raise happens before any decomposition, so it's instant), and the delta
+map falls back to mean colouring.
+
+**Default windows (review B1).** `gui/app.py` gained `default_periods(lo, hi)`:
+disjoint halves of the export span, starting after the 7-day warm-up, clamped
+to the span; spans that can't fit two one-day windows get no defaults. Replaces
+the fixed ~5-week windows that silently overlapped for spans < 60 days.
+
+**Estimand caveats documented** (module + `compare_periods` docstrings):
+daily-profile-shape changes partially absorb into `season_day` (mitigate with
+the Item 9 ToD window and/or `by=['Day Group','Time Bin']`); secular drift
+needs difference-in-differences (Future item, promotion recommended).
+
+**Compatibility notes:** output gains `n_samples_before/after` + `q_value`
+columns and `unit`/effective-days/`warnings` attrs; `n_before/after` change
+meaning under the new default (days). One existing test updated accordingly
+(`test_compare_periods_recovers_injected_shift`); all other Item 4 tests pass
+unchanged — wider day-level CIs still detect the +2 synthetic step cleanly.
+Found in passing: `pd.Timedelta(days=7)` (keyword form) trips a numpy 2.5
+DeprecationWarning under pandas 2.3.3; `pd.Timedelta(7, "D")` doesn't — used
+throughout the new code.
+
+9 new tests (124 total, incl. the real-export end-to-end, all pass). No
+DATA_FORMAT change (nothing new about the export itself).
