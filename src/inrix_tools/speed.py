@@ -290,14 +290,19 @@ def corridor_travel_time(
     require_complete: bool = True,
     datetime_col: str = DATETIME_COL,
     value: str | None = None,
+    expected: str = "max",
 ) -> pd.DataFrame:
     """Sum member-segment travel time to a corridor total per timestamp, applying
     the **complete-set rule** from DATA_FORMAT.md: only timestamps where every
     segment of the corridor reported are summed, so a missing segment shows up as
     a dropped timestamp instead of a silent undercount.
 
-    Uses the Item 1 helper ``io.mark_complete_timestamps`` to flag completeness
-    (``expected_segments`` = the corridor's max observed segment count).
+    Uses the Item 1 helper ``io.mark_complete_timestamps`` to flag completeness.
+    ``expected`` ("max"/"total") selects how the complete-set size is defined —
+    ``"max"`` (default) is the corridor's max simultaneously observed count;
+    ``"total"`` counts every distinct member segment, so a sparse group's
+    "complete" timestamps stay level-comparable (see ``mark_complete_timestamps``
+    and DATA_FORMAT.md's complete-set note).
 
     Args:
         df: local rows with ``Travel Time(...)``, ``Segment ID`` and a corridor
@@ -315,6 +320,11 @@ def corridor_travel_time(
             ``Travel Time(...)``). ``Delay(Minutes)`` (ROADMAP Item 17) sums the
             same way — corridor delay is the sum of member-segment delays under the
             same complete-set rule. The summed column keeps its own name.
+            Completeness is **value-aware**: a reported row whose ``value`` is NaN
+            (possible for delay when the free-flow speed is unresolvable) does not
+            count toward the complete set, so such timestamps are dropped/flagged
+            rather than silently summed short; a timestamp with no values at all
+            yields NaN, never a fabricated 0.
 
     Returns:
         One row per (corridor, timestamp): ``[corridor_col, Date Time,
@@ -330,18 +340,27 @@ def corridor_travel_time(
     if corridor_col not in df.columns:
         raise ValueError(f"Corridor column {corridor_col!r} not in df; see DATA_FORMAT.md.")
 
-    marked = mark_complete_timestamps(df, corridor_col=corridor_col)
+    marked = mark_complete_timestamps(df, corridor_col=corridor_col, expected=expected)
+    # A row whose value is NaN (e.g. Delay where the free-flow speed couldn't be
+    # resolved) contributes nothing to the sum, so it must not count toward the
+    # complete set either — otherwise the sum would undercount while still
+    # claiming completeness. ``expected_segments`` stays row-based (the
+    # corridor's full observed membership), ``n_segments`` counts only the
+    # segments that actually carry a value at that timestamp.
+    marked["_value_seg"] = marked[SEGMENT_COL].where(marked[tt].notna())
     summed = (
         marked.groupby([corridor_col, datetime_col], observed=True)
         .agg(
             **{
                 tt: (tt, "sum"),
-                "n_segments": (SEGMENT_COL, "nunique"),
+                "n_segments": ("_value_seg", "nunique"),
                 "expected_segments": ("expected_segments", "max"),
             }
         )
         .reset_index()
     )
+    # pandas sums an all-NaN group to 0.0; report it as NaN (no data, not zero).
+    summed.loc[summed["n_segments"] == 0, tt] = float("nan")
     summed["complete"] = summed["n_segments"] >= summed["expected_segments"]
     if require_complete:
         summed = summed[summed["complete"]].reset_index(drop=True)
@@ -389,6 +408,7 @@ def network_travel_time(
     corridor_col: str = CORRIDOR_COL,
     label: str = NETWORK_LABEL,
     value: str | None = None,
+    expected: str = "total",
 ) -> pd.DataFrame:
     """Sum **every** segment's travel time to a single network total per timestamp
     — the corridor sum (``corridor_travel_time``) over one synthetic all-segments
@@ -404,6 +424,13 @@ def network_travel_time(
     would otherwise silently shrink the total); it does mean the network series can
     be sparse — feed it through ``decompose_segments`` with the same auto-scaled
     window guard as any other series (see DATA_FORMAT.md's complete-set note).
+
+    ``expected`` defaults to ``"total"`` here (not ``"max"``): the network total
+    is only level-comparable across time if it always sums the **same** whole set
+    of segments, and a sparse network is precisely where ``"max"`` would let two
+    "complete" timestamps sum different subsets (see ``mark_complete_timestamps``).
+    Pass ``expected="max"`` for the older max-simultaneous behaviour. When the full
+    set is regularly achieved (e.g. the Myrtle fixture's 46 segments) the two agree.
 
     Args:
         df: local rows with ``Travel Time(...)`` and ``Segment ID`` (a corridor
@@ -429,6 +456,7 @@ def network_travel_time(
     out = corridor_travel_time(
         work, metadata=metadata, corridor_col=corridor_col,
         require_complete=require_complete, datetime_col=datetime_col, value=tt,
+        expected=expected,
     )
     out.attrs = dict(df.attrs)
     return out

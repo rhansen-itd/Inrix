@@ -95,17 +95,37 @@ undercounting when a segment is missing). `io.py` / `speed.py` should reproduce
 that "complete-set-only" rule and make partial timestamps visible rather than
 silently summing incomplete data.
 
+**How the complete-set size is defined (`expected` — "max" vs "total").**
+`mark_complete_timestamps` (and `corridor_travel_time` / `network_travel_time`
+through it) offers two definitions of "all segments":
+
+- `"max"` — the group's **max simultaneously observed** segment count. This is the
+  seed notebook's rule and the default for `corridor_travel_time`. It is fine when
+  the group regularly achieves its full membership.
+- `"total"` — every **distinct** segment ever seen in the group.
+
+They diverge only on a **sparse** group where *no* timestamp ever holds the whole
+membership. There `"max"` falls to `max < N`, and two "complete" timestamps can
+sum *different* (N−1)-segment subsets — a long segment present in one but not the
+other — so their totals are not level-comparable and decomposition/changepoint
+will read the composition change as a spurious step. `"total"` is stricter (only
+timestamps with the whole set present count), keeping the series level-comparable
+at the cost of more dropped timestamps.
+
 **At network scale (all segments as one group).** `speed.network_travel_time`
 reuses the same rule with a single synthetic all-segments group, so a network
 total requires **every** segment in the export to have reported at that
-timestamp. That is far stricter than a short corridor: with dozens of segments a
+timestamp. Because sparsity is exactly where the `"max"` weakness bites, network
+scope **defaults to `expected="total"`** (pass `expected="max"` for the older
+behaviour). That is far stricter than a short corridor: with dozens of segments a
 sizeable fraction of 5-min timestamps are partial and drop, so the surviving
-network series is sparse (but each retained total is undercount-free, which is
-the point). Verified on the 46-segment Myrtle export: enough complete timestamps
-survive to decompose and run before/after on the aggregate. If a future export
-were sparse enough to starve the decomposition, the fix is the Item 9 window
-guard (already auto-scaled) or relaxing `require_complete`, not abandoning the
-rule.
+network series is sparse (but each retained total is undercount-free and
+level-comparable, which is the point). Verified on the 46-segment Myrtle export:
+the full set is regularly achieved (so `"total"` == `"max"` == 46) and enough
+complete timestamps survive to decompose and run before/after on the aggregate.
+If a future export were sparse enough to starve the decomposition, the fix is the
+Item 9 window guard (already auto-scaled) or relaxing `require_complete`, not
+abandoning the rule.
 
 ## INRIX XD network shapefile (segment geometry)
 

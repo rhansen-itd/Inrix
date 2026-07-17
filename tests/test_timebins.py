@@ -228,6 +228,18 @@ def test_filter_date_range_start_after_end_is_empty():
     assert len(tb.filter_date_range(df, "2026-03-03", "2026-03-01")) == 0
 
 
+def test_filter_date_range_tz_aware_bound_uses_local_day():
+    """A tz-aware bound is converted to the frame's zone *before* its calendar
+    day is taken — normalizing first would shift the cut by the zone offset and
+    record the wrong day on attrs."""
+    df = _df(["2026-02-28 18:00", "2026-03-01 00:00", "2026-03-01 08:00"])
+    # 2026-03-01 12:00 UTC == 2026-03-01 05:00 in Denver -> local day March 1.
+    out = tb.filter_date_range(df, start=pd.Timestamp("2026-03-01 12:00", tz="UTC"))
+    assert list(out["Date Time"].dt.strftime("%Y-%m-%d %H:%M")) == \
+        ["2026-03-01 00:00", "2026-03-01 08:00"]
+    assert out.attrs["date_range"] == ("2026-03-01", None)
+
+
 # --- day-of-week filtering (Item 13) ----------------------------------------
 def test_parse_day_of_week_forms():
     assert tb.parse_day_of_week("Monday") == 0
@@ -235,10 +247,13 @@ def test_parse_day_of_week_forms():
     assert tb.parse_day_of_week("SUN") == 6
     assert tb.parse_day_of_week(4) == 4
     assert tb.parse_day_of_week("3") == 3
+    assert tb.parse_day_of_week(4.0) == 4                  # int-valued float is fine
     with pytest.raises(ValueError):
         tb.parse_day_of_week(7)
     with pytest.raises(ValueError):
         tb.parse_day_of_week("someday")
+    with pytest.raises(ValueError):
+        tb.parse_day_of_week(6.9)                          # must not truncate to Sat
 
 
 def test_filter_day_of_week_keeps_selected_days():

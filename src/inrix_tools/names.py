@@ -173,7 +173,9 @@ def load_names(path) -> pd.DataFrame:
     ``name`` cells become empty strings (``apply_names`` treats them as unset and
     falls back to the seed). No hardcoded paths — the caller supplies ``path``.
     """
-    df = pd.read_csv(path)
+    # keep_default_na=False: a road genuinely named "NA"/"None"/"null" is a
+    # name, not a missing value — pandas' NA sentinels would silently blank it.
+    df = pd.read_csv(path, keep_default_na=False)
     if SEGMENT_COL not in df.columns or NAME_COL not in df.columns:
         raise ValueError(
             f"names CSV {path} must have '{SEGMENT_COL}' and '{NAME_COL}' columns; "

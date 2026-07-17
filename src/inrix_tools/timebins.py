@@ -274,6 +274,8 @@ def parse_day_of_week(day) -> int:
             return parse_day_of_week(int(s))
         raise ValueError(f"Unrecognized day-of-week {day!r} (name, abbrev, or 0–6).")
     d = int(day)
+    if d != day:  # 6.9 must not silently become Saturday
+        raise ValueError(f"Day-of-week {day!r} is not a whole number (0=Mon..6=Sun).")
     if not 0 <= d <= 6:
         raise ValueError(f"Day-of-week int {day!r} out of range 0..6 (0=Mon).")
     return d
@@ -346,6 +348,8 @@ def filter_date_range(
             (``"2026-03-01"``), a ``date`` / ``Timestamp``, or ``None`` / ``""``
             to leave the range **open on the left** (keep everything up to
             ``end``). Any time-of-day component is ignored — the whole day counts.
+            A tz-aware bound is converted to the frame's zone first, so its
+            **local** calendar day is the one that counts.
         end: the last calendar day to keep, **inclusive of that whole day** (the
             exclusive bound is the following local midnight — the same date-only
             convention as ``beforeafter.parse_period``). ``None`` / ``""`` leaves
@@ -363,8 +367,12 @@ def filter_date_range(
     def _bound(x):
         if x is None or (isinstance(x, str) and not x.strip()):
             return None
-        ts = pd.Timestamp(x).normalize()  # midnight of that calendar day
-        return ts.tz_localize(tz) if ts.tzinfo is None else ts.tz_convert(tz)
+        ts = pd.Timestamp(x)
+        # Convert to the frame's zone *before* taking the calendar day: a
+        # tz-aware bound normalized in its own zone would shift the cut by the
+        # offset (and record the wrong day on attrs).
+        ts = ts.tz_localize(tz) if ts.tzinfo is None else ts.tz_convert(tz)
+        return ts.normalize()  # midnight of that local calendar day
 
     lo, hi = _bound(start), _bound(end)
 

@@ -1256,3 +1256,138 @@ re-normalizing on a missing segment), GUI wiring (options gate on the layer,
 colouring, AADT hover), and the real Myrtle-bbox `load_aadt`/`join_aadt` path (year
 filter + reprojection + ≥80% matched). DATA_FORMAT.md gained the AADT-source section
 (EPSG:8826, `Year`/2024, spatial-join key, daily-total caveat).
+
+## Session 20 — Correctness review of Items 15–18 batch (review-only) (2026-07-17)
+
+A targeted bug/correctness pass (Fable) over everything since the Item 14 review —
+Items 15, 16, 10, 11, 12, 13, 17, 18 (Sessions 12–19) — concentrating on the pure
+compute core and the non-trivial compute seams (`beforeafter`, `speed` delay +
+`value=` sums, `aadt`, the timebins filters, `names`, and the GUI cache keys /
+`_analysis_frame` collapse). Skipped, as scoped: layout, callback wiring,
+`figures.py`, and the well-tested `io`/`geometry`/`kml`. **Deliverable:
+[REVIEW_ITEMS15-18.md](REVIEW_ITEMS15-18.md) — analysis only, no code changed.**
+Confirmed findings were reproduced by running the failing case (scripts in the
+session scratchpad; key repros inline in the report). Full test suite green before
+review (baseline).
+
+Headlines (details + ranking in the report): the Item 15 statistics held —
+BH q-values, period validation, `default_periods` disjointness, and the Item 16
+split all attacked and sound. The real bugs sit at the newer data seams:
+**(F1)** the complete-set rule counts rows, not non-NaN values, so a
+corridor/network **delay** sum silently undercounts and turns an all-NaN
+timestamp into a fabricated `0.0` (verified; travel time unaffected; Myrtle has
+no NaN-delay rows today, other exports will); **(F2)** `join_aadt`'s bearing
+gate changes only the flag — a gate-rejected cross-street's AADT is still
+attached via the `nearest` fallback and consumed by every weighted number
+(verified both directions: a crossing street's volume is attached, and a curved
+same-road line is misflagged `nearest` — Session 19's own 46th segment is this
+case); **(F3)** the AADT-weighted speed series level-shifts when the reporting
+set changes, so a coverage outage can read as a before/after speed effect
+(verified); **(F4)** GUI `_adjusted_cache` keys aren't canonicalised (corridor
+keyed in Segment scope, `None` from the map path), so the same decomposition is
+cached twice and the cap-2 cache thrashes — the Item 16 win partially defeated
+(performance only; no key ever collides, so no stale/cross-contaminated
+numbers). Plus smaller items: tz-aware bounds in `filter_date_range`
+normalize-before-convert (boundary up to a day off), network-scale complete-set
+membership inconsistency on sparse exports, per-segment warm-up not reflected in
+truncation warnings, KML export ignoring the vehicle-hours mode, width-0 CIs on
+constant day-means, `parse_day_of_week` float truncation, and names-CSV `NA`
+strings eaten by pandas NA-parsing. Fix-order suggestion in the report §3
+(F1/F2 first — the two that can put a wrong number on screen); becoming ROADMAP
+items awaits owner acceptance.
+
+## Session 21 — Review fixes, part 1 (Session 20 findings F1–F5, F8–F11) (2026-07-17)
+
+Implemented the Session 20 review findings that were either subtle
+(statistics/geometry) or trivial with the review context warm — F1–F5 and
+F8–F11 from [REVIEW_ITEMS15-18.md](REVIEW_ITEMS15-18.md) (statuses annotated
+there). **F6 and F7 remain open**, handed to a follow-up session (each needs a
+small design decision: an `expected_segments` policy for network-scale
+completeness; an attrs contract for per-segment warm-up truncation).
+
+- **F1 (`speed.corridor_travel_time`)** — completeness is now **value-aware**:
+  `n_segments` counts segments whose summed value is non-NaN (a reported row
+  with NaN delay no longer counts complete), and an all-NaN timestamp sums to
+  NaN, never a fabricated 0.0. `expected_segments` stays row-based, so a
+  segment whose delay is never resolvable makes its corridor's timestamps
+  *incomplete* (loud) rather than silently short. Travel-time sums byte-identical
+  (regression-tested); `network_travel_time` inherits.
+- **F2 (`aadt.join_aadt`)** — two changes. A volume is attached **only for a
+  real match**: the `nearest` fallback still identifies the closest line
+  (Route + distance, for diagnosis) but carries NaN AADT, so a gate-rejected
+  cross-street's volume can never reach the weighted metrics. And the bearing
+  gate now compares **local tangents at the closest approach** (new
+  `_local_bearing`: project the other line's nearest point, sample ±5 m) instead
+  of endpoint-to-endpoint chords — a curved/L-shaped same-road feature lying on
+  the segment now *matches*, a crossing street still fails. Real-layer Myrtle
+  join test updated to the new contract (matched-rows-only carry values) and
+  passes.
+- **F3 (`aadt.weighted_speed_by_time`)** — per-timestamp ``coverage`` column
+  (reporting segments' AADT ÷ full member AADT) + a ``min_coverage`` gate
+  (default 0.5, ``0`` restores keep-everything), recorded on
+  ``attrs['weighted_speed']`` with the dropped count. Kills the
+  coverage-artifact failure (mainline missing → 59→20 mph "speed change" with
+  no speed changed) before it reaches the before/after.
+- **F4 (`gui/app.py`)** — `_adjusted_frame` / `_compare_all` canonicalise
+  ``corridor=None`` outside Corridor scope, so the map path (no corridor) and
+  the panel path (auto-picked corridor) share cache entries instead of
+  decomposing the same frame twice into the cap-2 cache.
+- **F5 (`timebins.filter_date_range`)** — tz-aware bounds convert to the
+  frame's zone *before* normalize; the bound's **local** calendar day is the one
+  that counts (attrs now record the right day). Naive/date/string bounds
+  unchanged.
+- **F8 (`gui._write_kml`)** — vehicle-hours map mode now exports as
+  vehicle-hours (was silently plain means).
+- **F9 (`beforeafter._compare_stats`)** — degenerate variance (two constant
+  periods, e.g. quantized short-segment TTs) reports NaN CI / p instead of a
+  width-0 interval with p=0; NaN p is already excluded from the BH family.
+- **F10 (`timebins.parse_day_of_week`)** — non-integral numbers raise
+  (``6.9`` no longer truncates to Saturday).
+- **F11 (`names.load_names`)** — ``keep_default_na=False`` so a road literally
+  named "NA"/"None"/"null" survives the CSV round-trip.
+
+Tests: 9 new/extended (value-aware completeness incl. the travel-time
+no-change guard; crossing-street no-leak + curved-road tangent match + real-join
+contract; coverage gate; cache canonicalisation counter; tz-aware date bound;
+degenerate variance; float DOW; NA names; KML vhd branch). Suite: 220 pass;
+the real-export end-to-end GUI test could not run this session (the dev box had
+<2.3 GB free with the owner's live app instance running — OOM-killed, not
+failing; nothing in this diff touches the paths/values it asserts, and the
+real-layer AADT join test did run and pass).
+
+## Session 22 — Review fixes, part 2 (Session 20 findings F6, F7) (2026-07-17)
+
+Closed the two findings [Session 21](DESIGN_HISTORY.md) handed off — each needed
+a small design decision, now made and documented in
+[REVIEW_ITEMS15-18.md](REVIEW_ITEMS15-18.md) §3.
+
+- **F6 (`io.mark_complete_timestamps` → `speed.corridor_travel_time` /
+  `network_travel_time`)** — the complete-set size is now a policy, `expected`:
+  `"max"` (max simultaneously observed, the original rule) vs `"total"` (every
+  distinct member segment ever seen). They diverge only on a **sparse** group
+  where no timestamp holds the whole membership — there `"max"` lets two
+  "complete" timestamps sum *different* (N−1)-subsets, so their totals aren't
+  level-comparable and decomposition reads the composition change as a spurious
+  step. **Decision:** `corridor_travel_time` keeps `"max"` (fine for a short
+  corridor that regularly fills); `network_travel_time` **defaults to `"total"`**,
+  because sparsity is exactly where the weakness bites and the network docstring
+  already promises "every segment present". On Myrtle the 46-segment set is
+  regularly achieved, so `"total"` == `"max"` == 46 and the default change is a
+  no-op there. DATA_FORMAT.md's complete-set section documents the choice.
+- **F7 (`beforeafter._compare_core`)** — the warm-up truncation flag used the
+  **global** `series_start`, but the decomposition drops its warm-up **per
+  entity**, so a segment whose data begins after the export start (added sensor,
+  staged export) lost more of the before period than the export-wide
+  `*_days_effective` attrs claimed. **Decision:** surface per-segment effective
+  spans as **per-row** `before_days_effective` / `after_days_effective` columns
+  (computed from each group's own earliest surviving timestamp, which already
+  reflects that entity's warm-up drop), keeping the scalar `attrs` values as the
+  export-wide summary. A warning now fires when any segment begins late. The
+  Welch stats were already computed off the actual per-segment data — this only
+  makes the reported evidence honest.
+
+Tests: 5 new (network `"total"` drops mismatched subsets / `"max"` keeps them /
+the two agree when the full set is achieved; `mark_complete_timestamps`
+`"max"`-vs-`"total"` + bad-policy raise; late-starting segment reports the
+shorter per-row effective span + warns). Full suite: **226 pass** (incl. the
+real-export end-to-end GUI test, which ran this session).

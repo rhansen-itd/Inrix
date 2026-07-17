@@ -900,3 +900,54 @@ def test_segment_map_hover_shows_aadt():
     txt = "".join(t for tr in fig.data for t in (tr.text or []) if tr.text is not None)
     assert "AADT: 12,000 (matched)" in txt
     assert "AADT: none" in txt
+
+
+def test_adjusted_cache_canonicalises_corridor_outside_corridor_scope(multi_day_ds, monkeypatch):
+    """Segment/network-scope cache keys must not vary with the (irrelevant)
+    corridor dropdown: the map path passes no corridor while the panels pass the
+    auto-picked one, and a non-canonical key would decompose the identical frame
+    twice and thrash the cap-2 cache."""
+    from inrix_tools import beforeafter
+    ds = multi_day_ds
+    col = gapp._metric_col(ds, "tt")
+
+    calls = {"n": 0}
+    real = beforeafter.adjust_for_periods
+    monkeypatch.setattr(gapp.beforeafter, "adjust_for_periods",
+                        lambda *a, **k: (calls.__setitem__("n", calls["n"] + 1) or real(*a, **k)))
+
+    a = gapp._adjusted_frame(ds, col)                              # map path
+    b = gapp._adjusted_frame(ds, col, corridor="Main")             # panel path
+    assert a is b and calls["n"] == 1
+
+    net1 = gapp._adjusted_frame(ds, col, scope=gapp.SCOPE_NETWORK, corridor="Main")
+    net2 = gapp._adjusted_frame(ds, col, scope=gapp.SCOPE_NETWORK)
+    assert net1 is net2 and calls["n"] == 2                        # one per scope
+
+    # _compare_all shares the same canonical keys (and the adjusted cache).
+    before, after = ("2026-02-10", "2026-02-16"), ("2026-03-01", "2026-03-03")
+    r1 = gapp._compare_all(ds, col, before, after)
+    r2 = gapp._compare_all(ds, col, before, after, corridor="Main")
+    assert r1 is r2 and calls["n"] == 2
+
+
+def test_write_kml_vhd_mode_uses_vehicle_hours(tmp_path, monkeypatch):
+    """The KML export honours the vehicle-hours map mode instead of silently
+    falling back to plain metric means."""
+    gpd = pytest.importorskip("geopandas")
+    from shapely.geometry import LineString
+
+    ds = _aadt_scope_ds()
+    ds.geo = gpd.GeoDataFrame(
+        {"Combined": ["seg a", "seg b"],
+         "geometry": [LineString([(-116.20, 43.61), (-116.20, 43.62)]),
+                      LineString([(-116.19, 43.61), (-116.19, 43.62)])]},
+        index=pd.Index([101, 202], name=SEGMENT_COL), crs="EPSG:4326")
+    monkeypatch.setattr(gapp, "OUTPUT_DIR", tmp_path)
+
+    called = {"n": 0}
+    real = gapp.aadt.vehicle_hours_of_delay
+    monkeypatch.setattr(gapp.aadt, "vehicle_hours_of_delay",
+                        lambda *a, **k: (called.__setitem__("n", called["n"] + 1) or real(*a, **k)))
+    path = gapp._write_kml(ds, "delay", gapp.MAP_MODE_VHD, (None, None), (None, None))
+    assert path.exists() and called["n"] == 1

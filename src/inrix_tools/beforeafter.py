@@ -169,17 +169,22 @@ def _compare_stats(before: pd.Series, after: pd.Series, confidence: float) -> di
     diff = ma - mb
 
     se = math.sqrt(vb / nb + va / na)
-    # Welch-Satterthwaite degrees of freedom.
-    denom = (vb / nb) ** 2 / (nb - 1) + (va / na) ** 2 / (na - 1)
-    dof = (vb / nb + va / na) ** 2 / denom if denom > 0 else float(nb + na - 2)
-    tcrit = stats.t.ppf(1 - (1 - confidence) / 2, dof)
-    ci_low, ci_high = diff - tcrit * se, diff + tcrit * se
+    if se > 0:
+        # Welch-Satterthwaite degrees of freedom.
+        denom = (vb / nb) ** 2 / (nb - 1) + (va / na) ** 2 / (na - 1)
+        dof = (vb / nb + va / na) ** 2 / denom if denom > 0 else float(nb + na - 2)
+        tcrit = stats.t.ppf(1 - (1 - confidence) / 2, dof)
+        ci_low, ci_high = diff - tcrit * se, diff + tcrit * se
+        t_stat, p_value = (float(x) for x in stats.ttest_ind(after, before, equal_var=False))
+    else:
+        # Degenerate variance (both periods constant — e.g. two heavily-quantized
+        # days): a width-0 CI and p=0 would overstate certainty as absolute, so
+        # report the interval and p-value as undefined instead.
+        ci_low = ci_high = t_stat = p_value = float("nan")
 
     # Cohen's d (pooled SD) as a standardized effect size.
     pooled_sd = math.sqrt(((nb - 1) * vb + (na - 1) * va) / (nb + na - 2))
     cohens_d = diff / pooled_sd if pooled_sd > 0 else float("nan")
-
-    t_stat, p_value = stats.ttest_ind(after, before, equal_var=False)
 
     return {
         "n_before": nb,
@@ -272,12 +277,16 @@ def compare_periods(
         ``sd_before`` / ``sd_after`` (in ``unit``), ``effect`` (mean after -
         before, in the value's units), ``ci_low`` / ``ci_high`` (Welch CI on the
         effect), ``cohens_d``, ``t_stat``, ``p_value``, ``q_value``
-        (Benjamini–Hochberg across all returned rows), and ``method``
-        (``"decomposition"`` or ``"raw"``). ``attrs`` records ``value``,
-        ``confidence``, ``unit``, the ``before``/``after`` bounds, the effective
-        day counts ``before_days_effective`` / ``after_days_effective`` (after
-        warm-up clipping), and ``warnings`` (a list, present when a period was
-        truncated by the decomposition warm-up).
+        (Benjamini–Hochberg across all returned rows), ``before_days_effective`` /
+        ``after_days_effective`` (this segment's own effective span — shorter than
+        the export-wide figure for a segment that starts late; see below), and
+        ``method`` (``"decomposition"`` or ``"raw"``). ``attrs`` records
+        ``value``, ``confidence``, ``unit``, the ``before``/``after`` bounds, the
+        **export-wide** effective day counts ``before_days_effective`` /
+        ``after_days_effective`` (from the global series start, after warm-up
+        clipping — the per-row columns refine these per segment), and ``warnings``
+        (a list, present when a period was truncated by the decomposition warm-up
+        or a segment begins after the export start).
     """
     if unit not in ("day", "sample"):
         raise ValueError(f"unit must be 'day' or 'sample', got {unit!r}.")
@@ -439,8 +448,6 @@ def _compare_core(
                 f"({drop_days}-day rolling window): effective start {eff_start} — "
                 f"{effective_days[name]:g} of the requested {requested:g} days used."
             )
-    for msg in notes:
-        warnings.warn(msg, UserWarning, stacklevel=3)
 
     ts = work[datetime_col]
     in_before = _period_mask(ts, *before_bounds)
@@ -448,6 +455,7 @@ def _compare_core(
     dates = ts.dt.date  # local calendar day, for unit='day' aggregation
 
     rows = []
+    late_start = 0  # segments beginning after the global effective start (F7)
     for keys, g in work.groupby(group_cols, dropna=True, observed=True):
         keys = keys if isinstance(keys, tuple) else (keys,)
         b = g.loc[in_before.loc[g.index], target]
@@ -460,8 +468,31 @@ def _compare_core(
         if b.notna().sum() < min_samples or a.notna().sum() < min_samples:
             continue
         stat = _compare_stats(b, a, confidence)
+        # Per-group effective days. The warm-up ``drop_days`` is applied *per
+        # entity* by the decomposition, and a segment may simply begin later than
+        # the export (added sensor, staged export), so its own usable data can
+        # start after the global ``series_start + drop_days`` — the scalar
+        # ``*_days_effective`` attrs (computed from the global start) then overstate
+        # this segment's evidence. The group's earliest surviving timestamp already
+        # reflects any per-entity warm-up drop, so use it as this segment's start.
+        g_start = g[datetime_col].min()
+        eff = {
+            f"{name}_days_effective": max(0.0, _wall_days(max(start, g_start), end))
+            for name, (start, end) in (("before", before_bounds), ("after", after_bounds))
+        }
+        if eff["before_days_effective"] < effective_days["before"] - 1e-9:
+            late_start += 1
         rows.append({**dict(zip(group_cols, keys)), **stat, **n_samples,
-                     "method": method})
+                     **eff, "method": method})
+
+    if late_start:
+        notes.append(
+            f"{late_start} segment(s) begin after the export start (a late-starting "
+            "sensor or staged export); their per-row before_days_effective is shorter "
+            "than the export-wide figure — read each row's own *_days_effective."
+        )
+    for msg in notes:
+        warnings.warn(msg, UserWarning, stacklevel=3)
 
     out = pd.DataFrame(rows)
     if len(out):

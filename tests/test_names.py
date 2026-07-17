@@ -137,3 +137,20 @@ def test_seed_on_real_myrtle_export():
     assert not seed[names.NAME_COL].str.contains(r"US-\d+ ", regex=True).any()
     # spot-check the documented case survives the real pipeline
     assert seed.loc[440882720, names.NAME_COL] == "9th St & Idaho St"
+
+
+def test_load_names_keeps_na_like_strings():
+    """A road genuinely named "NA" (or "None"/"null") is a name, not a missing
+    value — pandas' default NA sentinels must not silently blank it back to the
+    seed."""
+    import tempfile
+
+    p = Path(tempfile.gettempdir()) / "inrix_names_test_na.csv"
+    pd.DataFrame({SEGMENT_COL: [101], "name": ["NA"]}).to_csv(p, index=False)
+    loaded = names.load_names(p)
+    assert loaded.loc[101, names.NAME_COL] == "NA"
+    meta = pd.DataFrame(
+        {"Road": ["N 9th St"], "Intersection": ["Idaho St"], "Combined": ["x"]},
+        index=pd.Index([101], name=SEGMENT_COL))
+    assert names.apply_names(meta, loaded)[101] == "NA"
+    p.unlink()

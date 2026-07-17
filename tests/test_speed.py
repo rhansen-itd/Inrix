@@ -216,6 +216,52 @@ def test_network_missing_travel_time_raises():
         speed.network_travel_time(df)  # no travel-time column
 
 
+@pytest.fixture
+def sparse_network():
+    """Three segments, but no timestamp ever holds all three — every timestamp is
+    a two-segment subset (F6). ``expected='max'`` would call all of them complete;
+    ``expected='total'`` (the network default) requires the full set of 3."""
+    rows = [
+        _row("2026-01-12 08:00", 1, 30, 1.0, corridor="A"),
+        _row("2026-01-12 08:00", 2, 40, 2.0, corridor="A"),   # 3 missing
+        _row("2026-01-12 08:05", 1, 31, 1.1, corridor="A"),
+        _row("2026-01-12 08:05", 3, 50, 3.0, corridor="B"),   # 2 missing
+    ]
+    df = pd.DataFrame(rows)
+    df.attrs["units"] = {"speed": "miles/hour", "travel_time": "Minutes"}
+    return df
+
+
+def test_network_default_total_drops_incomplete_subsets(sparse_network):
+    # Default expected='total': every distinct segment (3) must be present; no
+    # timestamp achieves that, so the "complete" network series is empty rather
+    # than summing two different 2-segment subsets that aren't level-comparable.
+    out = speed.network_travel_time(sparse_network)
+    assert len(out) == 0
+    allts = speed.network_travel_time(sparse_network, require_complete=False)
+    assert (allts["expected_segments"] == 3).all()
+    assert not allts["complete"].any()
+
+
+def test_network_expected_max_keeps_mismatched_subsets(sparse_network):
+    # The older behaviour: expected='max' = max simultaneous (2), so both
+    # 2-segment timestamps count complete even though they sum different members
+    # (1+2 vs 1+3) — this is the F6 hazard the 'total' default avoids.
+    out = speed.network_travel_time(sparse_network, expected="max")
+    assert len(out) == 2
+    assert (out["expected_segments"] == 2).all()
+    assert set(out[TT].round(1)) == {3.0, 4.1}  # 1.0+2.0 and 1.1+3.0
+
+
+def test_network_total_agrees_when_full_set_achieved(multi_corridor):
+    # When the whole membership is regularly present (as on Myrtle's 46 segments),
+    # 'total' and 'max' coincide — the multi_corridor fixture reaches all 3 at 08:00.
+    total = speed.network_travel_time(multi_corridor, expected="total")
+    mx = speed.network_travel_time(multi_corridor, expected="max")
+    assert len(total) == len(mx) == 1
+    assert total.iloc[0][TT] == pytest.approx(mx.iloc[0][TT]) == pytest.approx(6.0)
+
+
 # --- rolling_average --------------------------------------------------------
 def test_rolling_trailing_known_values(binned):
     r = speed.rolling_average(binned, value=SPEED, window=2)
@@ -354,6 +400,42 @@ def test_corridor_delay_is_sum_of_members(delay_df, delay_meta):
     row = corr.iloc[0]
     assert row[DELAY] == pytest.approx(1.0)   # 0.5 + 0.5
     assert row["complete"]
+
+
+def test_corridor_value_sum_nan_rows_break_completeness(delay_meta):
+    """Value-aware complete-set rule: a reported row whose value is NaN (delay
+    with an unresolvable free-flow) contributes nothing to the sum, so the
+    timestamp must NOT count complete — an undercounted "complete" sum, or a
+    fabricated 0.0 from an all-NaN timestamp, is exactly what the rule exists to
+    prevent."""
+    rows = [
+        # t1: both segments carry a delay -> complete, sum 1.0
+        _drow(1001, 30, 1.0, 60, t="2026-01-12 08:00"),
+        _drow(1002, 40, 1.5, 60, t="2026-01-12 08:00"),
+        # t2: seg 1002 reports but its ref speed is 0 -> NaN delay
+        _drow(1001, 30, 1.0, 60, t="2026-01-12 08:05"),
+        _drow(1002, 40, 1.5, 0, t="2026-01-12 08:05"),
+        # t3: both refs bad -> all-NaN
+        _drow(1001, 30, 1.0, 0, t="2026-01-12 08:10"),
+        _drow(1002, 40, 1.5, 0, t="2026-01-12 08:10"),
+    ]
+    df = pd.DataFrame(rows)
+    df.attrs["units"] = {"speed": "miles/hour", "travel_time": "Minutes"}
+    out = speed.segment_delay(df, geo_or_metadata=delay_meta)
+
+    complete_only = speed.corridor_travel_time(out, value=DELAY)
+    assert len(complete_only) == 1                      # only t1 survives
+    assert complete_only[DELAY].iloc[0] == pytest.approx(1.0)
+
+    all_ts = speed.corridor_travel_time(out, value=DELAY, require_complete=False)
+    assert all_ts["complete"].tolist() == [True, False, False]
+    assert all_ts["n_segments"].tolist() == [2, 1, 0]   # value-bearing segments
+    assert math.isnan(all_ts[DELAY].iloc[2])            # all-NaN -> NaN, not 0.0
+
+    # the travel-time path (never-NaN values) is unchanged by the value-aware rule
+    tt_sum = speed.corridor_travel_time(out)
+    assert len(tt_sum) == 3 and tt_sum["complete"].all()
+    assert tt_sum[TT].tolist() == pytest.approx([2.5, 2.5, 2.5])
 
 
 # --- housekeeping -----------------------------------------------------------

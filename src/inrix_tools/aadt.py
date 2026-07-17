@@ -144,14 +144,43 @@ def _bearing_diff(a: float | None, b: float | None) -> float:
     return min(d, 180.0 - d)
 
 
+def _local_bearing(line, point, eps: float = 5.0) -> float | None:
+    """Bearing (undirected, ``[0, 180)``) of ``line``'s local tangent at the point
+    on it nearest ``point``, sampled ±``eps`` units along the line.
+
+    A long/curved route-measure feature can lie exactly on a segment while its
+    endpoint-to-endpoint bearing points somewhere else entirely, so the gate must
+    compare *local* road directions, not whole-feature chords. Falls back to the
+    endpoint bearing when the geometry doesn't support linear referencing or the
+    tangent is degenerate."""
+    try:
+        s = line.project(point)
+        length = line.length
+        if length == 0:
+            return _line_bearing(line)
+        a = line.interpolate(max(0.0, s - eps))
+        b = line.interpolate(min(length, s + eps))
+        dx, dy = b.x - a.x, b.y - a.y
+        if dx == 0 and dy == 0:
+            return _line_bearing(line)
+        return math.degrees(math.atan2(dy, dx)) % 180.0
+    except Exception:
+        return _line_bearing(line)
+
+
 def join_aadt(geo, aadt, max_distance_m=35.0, bearing_tol_deg=45.0):
     """Attach an ``AADT`` value to each segment by spatial match to the AADT layer.
 
     The AADT layer has no segment id, so the join is spatial: for each segment
-    geometry (Item 8), the nearest AADT line whose bearing agrees (rejecting the
-    opposing-direction split or a perpendicular cross-street) within
-    ``max_distance_m`` is the match. A bad or absent match is **flagged, not
-    dropped**, so it is visible downstream.
+    geometry (Item 8), the nearest AADT line whose **local** bearing agrees
+    (rejecting the opposing-direction split or a perpendicular cross-street)
+    within ``max_distance_m`` is the match. Bearings are compared at the
+    nearest-point tangents of both lines (see ``_local_bearing``), so a curved
+    route-measure feature lying on the segment still matches. A bad or absent
+    match is **flagged, not dropped**, so it is visible downstream — but a
+    volume is attached **only for a real match**: a gate-rejected nearest line
+    is reported (its ``Route`` + distance, for diagnosis) with ``AADT`` NaN, so
+    a cross-street's volume can never leak into the weighted metrics.
 
     Args:
         geo: GeoDataFrame indexed by ``Segment ID`` with a ``geometry`` column
@@ -164,14 +193,16 @@ def join_aadt(geo, aadt, max_distance_m=35.0, bearing_tol_deg=45.0):
     Returns:
         A copy of ``geo`` with added columns:
 
-        * ``AADT`` — matched volume (float; ``NaN`` when unmatched),
+        * ``AADT`` — matched volume (float; ``NaN`` when the segment has no
+          gate-passing match — including the ``nearest`` case),
         * ``aadt_source`` — ``"matched"`` (within distance + bearing),
-          ``"nearest"`` (the nearest line, but outside the distance/bearing gate —
-          reported so a marginal join is visible), or ``"missing"`` (no AADT line
-          / no segment geometry),
+          ``"nearest"`` (the geometrically nearest line failed the
+          distance/bearing gate — identified but **not** used for a value), or
+          ``"missing"`` (no AADT line / no segment geometry),
         * ``aadt_dist_m`` — distance to the chosen line in metres (``NaN`` when
           missing),
-        * ``Route`` / ``Commercial`` — carried from the chosen AADT line.
+        * ``Route`` — carried from the chosen line (also for ``nearest``, as a
+          diagnostic) / ``Commercial`` — carried only for a match.
     """
     import geopandas as gpd
     from shapely import STRtree
@@ -188,11 +219,12 @@ def join_aadt(geo, aadt, max_distance_m=35.0, bearing_tol_deg=45.0):
         return out
 
     # Distances/buffers need a metric CRS; estimate a UTM zone from the segments.
+    from shapely.ops import nearest_points
+
     metric_crs = valid_geo.estimate_utm_crs()
     seg_m = valid_geo.geometry.to_crs(metric_crs)
     aadt_m = aadt.to_crs(metric_crs)
     aadt_geoms = list(aadt_m.geometry.values)
-    aadt_bearings = [_line_bearing(g) for g in aadt_geoms]
     tree = STRtree(aadt_geoms)
 
     aadt_vals = aadt[AADT_COL].astype(float).to_numpy()
@@ -201,29 +233,40 @@ def join_aadt(geo, aadt, max_distance_m=35.0, bearing_tol_deg=45.0):
 
     records = {}  # Segment ID -> (aadt, source, dist, route, commercial)
     for sid, seg_geom in seg_m.items():
-        seg_bearing = _line_bearing(seg_geom)
         # Candidate lines whose bounding box is within max_distance of the segment.
         cand = tree.query(seg_geom.buffer(max_distance_m))
         best = None  # (dist, idx) among bearing-consistent lines within distance
         for i in cand:
             d = seg_geom.distance(aadt_geoms[i])
-            if d <= max_distance_m and _bearing_diff(seg_bearing, aadt_bearings[i]) <= bearing_tol_deg:
+            if d > max_distance_m:
+                continue
+            # Compare *local* tangents at the closest approach, not whole-line
+            # chords: a curved AADT feature on the same road must pass, a
+            # crossing street must not.
+            p_seg, p_cand = nearest_points(seg_geom, aadt_geoms[i])
+            seg_bearing = _local_bearing(seg_geom, p_cand)
+            cand_bearing = _local_bearing(aadt_geoms[i], p_seg)
+            if _bearing_diff(seg_bearing, cand_bearing) <= bearing_tol_deg:
                 if best is None or d < best[0]:
                     best = (d, int(i))
         if best is not None:
             d, i = best
-            source = "matched"
+            records[sid] = (
+                float(aadt_vals[i]), "matched", d,
+                None if aadt_route is None else aadt_route[i],
+                pd.NA if aadt_comm is None else aadt_comm[i],
+            )
         else:
-            # Fall back to the geometrically nearest line (any bearing/distance) so a
-            # marginal segment reports a value with a "nearest" flag instead of NaN.
+            # Identify the geometrically nearest line so a failed join is
+            # diagnosable (which road, how far) — but attach NO volume: a
+            # gate-rejected line is by definition not trusted, and its AADT
+            # must not flow into the weighted metrics.
             i = int(tree.nearest(seg_geom))
             d = float(seg_geom.distance(aadt_geoms[i]))
-            source = "nearest"
-        records[sid] = (
-            float(aadt_vals[i]), source, d,
-            None if aadt_route is None else aadt_route[i],
-            pd.NA if aadt_comm is None else aadt_comm[i],
-        )
+            records[sid] = (
+                float("nan"), "nearest", d,
+                None if aadt_route is None else aadt_route[i], pd.NA,
+            )
 
     def _col(pos, default):
         return [records.get(sid, default)[pos] for sid in out.index]
@@ -332,6 +375,7 @@ def weighted_speed_by_time(
     speed_col: str,
     datetime_col: str = DATETIME_COL,
     out_col: str | None = None,
+    min_coverage: float = 0.5,
 ) -> pd.DataFrame:
     """Per-timestamp AADT-weighted mean speed across the segments in ``df``.
 
@@ -339,9 +383,16 @@ def weighted_speed_by_time(
     the corridor/network speed that reflects where the vehicles are, as a time
     series the before/after and decomposition panels can run on. Unlike a corridor
     travel-time **sum** (Item 12, which requires the complete set), a weighted mean
-    tolerates a missing segment, so this uses whatever segments reported at each
-    timestamp (weights re-normalize); segments with a missing/≤0 AADT are dropped
-    from the weighting.
+    tolerates a missing segment (weights re-normalize over whoever reported);
+    segments with a missing/≤0 AADT are dropped from the weighting.
+
+    Re-normalization has a failure mode, though: when the segments that *did*
+    report carry only a small share of the member volume, the "corridor speed" is
+    really the speed of a different population — a reporting outage on the
+    high-AADT mainline would otherwise read as a large speed change with nothing
+    physical behind it. So each timestamp gets a ``coverage`` value (reporting
+    segments' AADT ÷ all members' AADT) and timestamps below ``min_coverage`` are
+    **dropped** (default 0.5; pass 0 to keep everything and judge by the column).
 
     Args:
         df: local rows with ``Segment ID``, a timestamp column, and ``speed_col``
@@ -349,14 +400,22 @@ def weighted_speed_by_time(
         aadt: ``Segment ID``-indexed AADT Series (or a frame with an ``AADT`` column).
         speed_col: the observed speed column to average.
         out_col: name of the weighted-speed column (default ``"Weighted <speed_col>"``).
+        min_coverage: drop timestamps whose reporting AADT share is below this
+            fraction of the full member volume (see above).
 
     Returns:
-        DataFrame ``[datetime_col, out_col]`` — one row per timestamp.
+        DataFrame ``[datetime_col, out_col, coverage]`` — one row per kept
+        timestamp. ``attrs['weighted_speed']`` records ``min_coverage`` and the
+        number of timestamps dropped by it.
     """
     out_col = out_col or f"Weighted {speed_col}"
     vol = _aadt_series(aadt)
     work = df[[SEGMENT_COL, datetime_col, speed_col]].copy()
     work["_w"] = work[SEGMENT_COL].map(vol)
+    # Full member volume: every positive-AADT segment seen anywhere in df — the
+    # denominator that makes per-timestamp coverage comparable across time.
+    members = df[SEGMENT_COL].drop_duplicates().map(vol)
+    total_w = float(members[members > 0].sum())
     work = work[(work["_w"] > 0) & work[speed_col].notna()]
     work["_wx"] = work["_w"] * work[speed_col].astype(float)
     g = (
@@ -365,6 +424,12 @@ def weighted_speed_by_time(
         .reset_index()
     )
     g[out_col] = g["_wx"] / g["_w"].where(g["_w"] > 0)
-    out = g[[datetime_col, out_col]].copy()
+    g["coverage"] = g["_w"] / total_w if total_w > 0 else float("nan")
+    kept = g["coverage"] >= min_coverage
+    out = g.loc[kept, [datetime_col, out_col, "coverage"]].reset_index(drop=True)
     out.attrs = dict(df.attrs)
+    out.attrs["weighted_speed"] = {
+        "min_coverage": float(min_coverage),
+        "n_dropped_low_coverage": int((~kept).sum()),
+    }
     return out

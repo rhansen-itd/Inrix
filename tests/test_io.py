@@ -101,6 +101,31 @@ def test_mark_complete_timestamps(sample_zip):
     assert (marked["expected_segments"] == 2).all()
 
 
+def test_mark_complete_expected_total_vs_max():
+    """'max' counts the max simultaneous set; 'total' every distinct segment ever
+    seen. On a sparse group where no timestamp holds all members they diverge — the
+    F6 hazard 'total' guards against."""
+    tz = "America/Denver"
+    rows = [  # segments {1,2,3}, corridor C, but never all three at one timestamp
+        {"Date Time": pd.Timestamp("2026-01-12 08:00", tz=tz), "Segment ID": 1,
+         "Corridor/Region Name": "C"},
+        {"Date Time": pd.Timestamp("2026-01-12 08:00", tz=tz), "Segment ID": 2,
+         "Corridor/Region Name": "C"},
+        {"Date Time": pd.Timestamp("2026-01-12 08:05", tz=tz), "Segment ID": 1,
+         "Corridor/Region Name": "C"},
+        {"Date Time": pd.Timestamp("2026-01-12 08:05", tz=tz), "Segment ID": 3,
+         "Corridor/Region Name": "C"},
+    ]
+    df = pd.DataFrame(rows)
+    by_max = io.mark_complete_timestamps(df, expected="max")
+    assert (by_max["expected_segments"] == 2).all() and by_max["complete"].all()
+    by_total = io.mark_complete_timestamps(df, expected="total")
+    assert (by_total["expected_segments"] == 3).all()
+    assert not by_total["complete"].any()
+    with pytest.raises(ValueError):
+        io.mark_complete_timestamps(df, expected="most")
+
+
 def test_split_part_discovery(sample_zip, tmp_path):
     """A single ..._part_1.zip pointing at a lone part still loads (one part)."""
     parts = io._discover_parts(sample_zip)

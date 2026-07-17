@@ -439,7 +439,13 @@ def _adjusted_frame(ds: Dataset, col: str, window=None, *,
     (Item 14 review O1: 8.2 s/miss). Feeds both the before/after stats
     (``_compare_all``) and the decomposition tab (``_fig_decomp``). The scope + the
     ToD window + the DOW selection all key the cache so distinct filters don't
-    collide (Items 12/13)."""
+    collide (Items 12/13). ``corridor`` only shapes the frame in Corridor scope,
+    so it is canonicalised to ``None`` elsewhere — otherwise the same
+    segment-scope decomposition would be cached once per corridor-dropdown value
+    (the map path passes no corridor, the panels pass the picked one) and thrash
+    the cap-2 cache with duplicates."""
+    if scope != SCOPE_CORRIDOR:
+        corridor = None
     key = (col, _window_key(window), scope, corridor, _days_key(days))
     cache = ds._adjusted_cache
     if key in cache:
@@ -459,8 +465,13 @@ def _compare_all(ds: Dataset, col: str, before, after, window=None, *,
     returns one row per segment; corridor/network scope returns a single aggregate
     row. The costly decomposition is cached in ``_adjusted_frame``; here we only
     run the cheap per-period Welch stats off it, so a date-picker change is
-    sub-second. Overlapping/invalid periods raise *before* any decomposition."""
+    sub-second. Overlapping/invalid periods raise *before* any decomposition.
+    ``corridor`` is canonicalised like in ``_adjusted_frame`` so the map (which
+    passes no corridor) and the panels (which pass the picked one) share the
+    same segment-scope cache entries."""
     beforeafter.check_periods(before, after, ds.df[DATETIME_COL].dt.tz)  # fast-fail
+    if scope != SCOPE_CORRIDOR:
+        corridor = None
     key = (col, str(before), str(after), _window_key(window), scope, corridor,
            _days_key(days))
     cache = ds._compare_cache
@@ -1121,7 +1132,15 @@ def _fig_decomp(ds, selected, col, name, window=None, days=None, *,
 def _write_kml(ds, metric, mode, before, after, window=None, days=None) -> Path:
     col = _metric_col(ds, metric)
     geo = ds.geo.copy()
-    if mode == "delta" and all(before) and all(after):
+    delay_col = _metric_col(ds, "delay")
+    if mode == MAP_MODE_VHD and _has_aadt(ds) and delay_col is not None:
+        # Mirror the map's vehicle-hours colouring so the export really is "the
+        # current map colouring", not silently the plain metric mean.
+        mean_delay = _segment_means(ds, delay_col, window, days)
+        vh = aadt.vehicle_hours_of_delay(mean_delay, ds.aadt)["vehicle_hours"]
+        geo["metric"] = vh.reindex(geo.index)
+        color_by = "metric"
+    elif mode == "delta" and all(before) and all(after):
         comp = _compare_all(ds, col, before, after, window, days=days)
         geo["metric"] = comp.set_index(SEGMENT_COL)["effect"].reindex(geo.index)
         color_by = "metric"

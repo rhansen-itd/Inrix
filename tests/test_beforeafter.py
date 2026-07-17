@@ -312,6 +312,31 @@ def test_warmup_truncation_warns_and_records_effective_days():
     assert res.iloc[0]["n_before"] <= 7
 
 
+def test_late_starting_segment_reports_shorter_effective_days():
+    """A segment whose data begins after the export start (added sensor / staged
+    export) has fewer usable days than the export-wide figure claims — F7. Its own
+    per-row before_days_effective reflects the shorter span, and a warning fires."""
+    df = _make_series(n_days=40, weekend_bump=0.0, step_size=0.0, segments=(101, 202))
+    late = pd.Timestamp("2026-02-20", tz=TZ)  # segment 202 has no data before this
+    keep = ~((df["Segment ID"] == 202) & (df["Date Time"] < late))
+    df2 = df[keep].reset_index(drop=True)
+    df2.attrs = dict(df.attrs)
+    before, after = ("2026-02-10", "2026-02-28"), ("2026-03-05", "2026-03-12")
+    with pytest.warns(UserWarning, match="after the export start"):
+        res = ba.compare_periods(df2, before, after, value=VALUE, use_decomposition=False)
+    by_seg = res.set_index("Segment ID")
+    # segment 202's before window effectively starts 2026-02-20 -> 9 wall days
+    # (02-20 .. the exclusive 03-01 bound), vs segment 101's full 19.
+    assert by_seg.loc[202, "before_days_effective"] == pytest.approx(9.0)
+    assert by_seg.loc[101, "before_days_effective"] > by_seg.loc[202, "before_days_effective"]
+    # after period: both report throughout -> equal, un-truncated effective days
+    assert (by_seg.loc[101, "after_days_effective"]
+            == pytest.approx(by_seg.loc[202, "after_days_effective"]))
+    # the export-wide attr still reflects the full-coverage (segment-101) span
+    assert res.attrs["before_days_effective"] == pytest.approx(
+        by_seg.loc[101, "before_days_effective"])
+
+
 # ---------------------------------------------------------------------------
 # Item 16 — the cache-split halves (adjust_for_periods / compare_adjusted)
 # ---------------------------------------------------------------------------
@@ -392,3 +417,18 @@ def test_methods_agree_in_easy_case():
     decomp = ba.compare_periods(df, before, after, value=VALUE).iloc[0]["effect"]
     tt = ba.ttest_baseline(df, before, after, value=VALUE).iloc[0]["avg_difference"]
     assert abs(decomp - tt) < 0.4  # both ~ +2 with no seasonal confound
+
+
+def test_compare_stats_degenerate_variance_reports_nan_not_certainty():
+    """Two constant periods (e.g. heavily-quantized short-segment travel times
+    over few days): a width-0 CI and p=0 would present the effect as absolutely
+    certain — the interval and p-value must be undefined instead. The effect and
+    means stay reported."""
+    st = ba._compare_stats(pd.Series([5.0, 5.0]), pd.Series([7.0, 7.0]), 0.95)
+    assert st["effect"] == pytest.approx(2.0)
+    assert np.isnan(st["ci_low"]) and np.isnan(st["ci_high"])
+    assert np.isnan(st["p_value"]) and np.isnan(st["t_stat"])
+    # NaN p-values are excluded from the BH family (existing behaviour) — the
+    # degenerate row therefore never claims significance either way.
+    q = ba._bh_qvalues([st["p_value"], 0.01])
+    assert np.isnan(q[0]) and q[1] == pytest.approx(0.01)

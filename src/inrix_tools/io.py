@@ -185,23 +185,49 @@ def filter_cvalue(df: pd.DataFrame, threshold: int = DEFAULT_CVALUE_THRESHOLD) -
     return out
 
 
-def mark_complete_timestamps(df: pd.DataFrame, corridor_col: str = CORRIDOR_COL) -> pd.DataFrame:
+def mark_complete_timestamps(
+    df: pd.DataFrame,
+    corridor_col: str = CORRIDOR_COL,
+    expected: str = "max",
+) -> pd.DataFrame:
     """Flag timestamps where **every** segment of a corridor reported — the
     complete-set rule from DATA_FORMAT.md, so partial timestamps are visible
     rather than silently summed to an undercount.
 
     Adds ``n_segments`` (distinct segments at this timestamp within the
-    corridor), ``expected_segments`` (the corridor's max observed count), and a
-    boolean ``complete``. If ``corridor_col`` is absent, the whole frame is one
-    group. Filter with ``df[df['complete']]`` when summing corridor travel time.
+    corridor), ``expected_segments``, and a boolean ``complete``. If
+    ``corridor_col`` is absent, the whole frame is one group. Filter with
+    ``df[df['complete']]`` when summing corridor travel time.
+
+    ``expected`` chooses how the complete-set size is defined:
+
+    - ``"max"`` (default) — the group's **max simultaneously observed** segment
+      count. Cheap and robust for a short corridor that regularly achieves its
+      full set. Its weakness (see DATA_FORMAT.md): on a **sparse** group where no
+      timestamp ever holds all N segments, ``expected`` falls to ``max < N`` and
+      two "complete" timestamps can sum *different* (N−1)-subsets — their totals
+      are not level-comparable, so decomposition/changepoint see spurious steps.
+    - ``"total"`` — every distinct segment ever seen in the group. Stricter:
+      only timestamps with the *whole* membership present count complete, so the
+      summed series is level-comparable across time. Preferred for network scope
+      (``network_travel_time``), where sparsity makes the ``"max"`` weakness
+      reachable. When the full set is regularly achieved the two agree.
     """
+    if expected not in ("max", "total"):
+        raise ValueError(f"expected must be 'max' or 'total', got {expected!r}.")
     out = df.copy()
     has_corridor = corridor_col in out.columns
     keys = [corridor_col, DATETIME_COL] if has_corridor else [DATETIME_COL]
     out["n_segments"] = out.groupby(keys)[SEGMENT_COL].transform("nunique")
     if has_corridor:
-        out["expected_segments"] = out.groupby(corridor_col)["n_segments"].transform("max")
-    else:
+        group = out.groupby(corridor_col)
+        if expected == "max":
+            out["expected_segments"] = group["n_segments"].transform("max")
+        else:  # every distinct segment ever seen in the corridor
+            out["expected_segments"] = group[SEGMENT_COL].transform("nunique")
+    elif expected == "max":
         out["expected_segments"] = int(out["n_segments"].max())
+    else:
+        out["expected_segments"] = int(out[SEGMENT_COL].nunique())
     out["complete"] = out["n_segments"] >= out["expected_segments"]
     return out

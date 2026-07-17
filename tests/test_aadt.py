@@ -59,9 +59,11 @@ def test_join_matches_parallel_rejects_crossing():
     assert j.loc[1001, "aadt_dist_m"] < 20  # ~8 m
 
 
-def test_join_far_line_flagged_nearest_not_matched():
-    """A segment whose only AADT line is beyond ``max_distance_m`` still gets a
-    value, flagged ``nearest`` (visible, not silently matched or dropped)."""
+def test_join_far_line_flagged_nearest_no_value():
+    """A segment whose only AADT line is beyond ``max_distance_m`` is flagged
+    ``nearest`` with the line identified (Route + distance, for diagnosis) but
+    **no volume attached** — an untrusted line's AADT must not flow into the
+    weighted metrics."""
     far = gpd.GeoDataFrame(
         {"AADT": [5000], "Route": ["R"], "Commercial": [0],
          "geometry": [LineString([(-116.19, 43.610), (-116.19, 43.620)])]},  # ~800 m east
@@ -69,8 +71,46 @@ def test_join_far_line_flagged_nearest_not_matched():
     )
     j = aadt.join_aadt(_seg_geo(), far, max_distance_m=35.0)
     assert j.loc[1001, "aadt_source"] == "nearest"
-    assert j.loc[1001, "AADT"] == 5000
+    assert pd.isna(j.loc[1001, "AADT"])
+    assert j.loc[1001, "Route"] == "R"
     assert j.loc[1001, "aadt_dist_m"] > 100
+
+
+def test_join_crossing_only_never_leaks_its_volume():
+    """When the only line in reach is a perpendicular cross-street (distance ~0 —
+    it crosses the segment), the bearing gate rejects it and the fallback must NOT
+    attach its volume: the vehicle-hours / weighted-speed math would otherwise
+    silently use the cross-street's AADT."""
+    seg = _seg_geo()
+    cross = gpd.GeoDataFrame(
+        {"AADT": [99999.0], "Route": ["R-cross"], "Commercial": [100],
+         "geometry": [LineString([(-116.201, 43.615), (-116.199, 43.615)])]},
+        crs="EPSG:4326",
+    )
+    j = aadt.join_aadt(seg, cross)
+    assert j.loc[1001, "aadt_source"] == "nearest"
+    assert pd.isna(j.loc[1001, "AADT"])
+    # and the weighting consumes that as missing, not as 99999:
+    vh = aadt.vehicle_hours_of_delay(pd.Series({1001: 6.0}), j["AADT"])
+    assert vh.loc[1001, "vehicle_hours"] == 0.0
+
+
+def test_join_curved_same_road_matches_by_local_tangent():
+    """A curved (L-shaped) AADT feature lying ON the segment matches: the local
+    tangent at the closest approach is what's compared, not the feature's
+    endpoint-to-endpoint chord (which is >45° off here)."""
+    seg = _seg_geo()  # N–S along -116.20
+    lshape = gpd.GeoDataFrame(
+        {"AADT": [12000.0], "Route": ["R-same"], "Commercial": [500],
+         "geometry": [LineString([
+             (-116.20, 43.610), (-116.20, 43.620),   # runs along the segment...
+             (-116.19, 43.620),                       # ...then turns east (long leg)
+         ])]},
+        crs="EPSG:4326",
+    )
+    j = aadt.join_aadt(seg, lshape)
+    assert j.loc[1001, "aadt_source"] == "matched"
+    assert j.loc[1001, "AADT"] == 12000.0
 
 
 def test_join_missing_geometry_and_empty_layer():
@@ -138,7 +178,7 @@ def test_vehicle_hours_zero_aadt_kept_as_zero():
 
 def test_weighted_speed_by_time():
     """Per-timestamp Σ(w·v)/Σw across segments; tolerates a segment missing at a
-    timestamp (weights re-normalize)."""
+    timestamp (weights re-normalize), with per-timestamp ``coverage`` reported."""
     ts = pd.date_range("2026-03-02 00:00", periods=2, freq="5min", tz="America/Denver")
     df = pd.DataFrame({
         DATETIME_COL: [ts[0], ts[0], ts[1]],          # ts[1] has only segment 2
@@ -151,6 +191,33 @@ def test_weighted_speed_by_time():
     assert wcol in out.columns and len(out) == 2
     assert out.iloc[0][wcol] == pytest.approx((60 * 1000 + 20 * 3000) / 4000)   # 30
     assert out.iloc[1][wcol] == pytest.approx(20.0)                              # only seg2
+    assert out.iloc[0]["coverage"] == pytest.approx(1.0)
+    assert out.iloc[1]["coverage"] == pytest.approx(0.75)   # ≥ the 0.5 default -> kept
+    assert out.attrs["weighted_speed"]["n_dropped_low_coverage"] == 0
+
+
+def test_weighted_speed_drops_low_coverage_timestamps():
+    """A timestamp where the dominant-volume segment is missing must not read as a
+    speed change: with only ~2% of member volume reporting, the re-normalized mean
+    describes a different population, so the default coverage gate drops it
+    (``min_coverage=0`` keeps it for inspection, with the coverage visible)."""
+    ts = pd.date_range("2026-03-02 00:00", periods=2, freq="5min", tz="America/Denver")
+    df = pd.DataFrame({
+        DATETIME_COL: [ts[0], ts[0], ts[1]],          # ts[1] misses the 50k mainline
+        SEGMENT_COL: [1, 2, 2],
+        "Speed(miles/hour)": [60.0, 20.0, 20.0],      # no speed changed anywhere
+    })
+    vol = pd.Series({1: 50000.0, 2: 1000.0})
+    wcol = "Weighted Speed(miles/hour)"
+    out = aadt.weighted_speed_by_time(df, vol, speed_col="Speed(miles/hour)")
+    assert len(out) == 1                               # the artifact timestamp is gone
+    assert out.iloc[0][wcol] == pytest.approx((60 * 50000 + 20 * 1000) / 51000)
+    assert out.attrs["weighted_speed"]["n_dropped_low_coverage"] == 1
+
+    kept = aadt.weighted_speed_by_time(df, vol, speed_col="Speed(miles/hour)",
+                                       min_coverage=0.0)
+    assert len(kept) == 2
+    assert kept.iloc[1]["coverage"] == pytest.approx(1000 / 51000)
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +245,9 @@ def test_real_myrtle_bbox_join():
                            bbox=(b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad))
     j = aadt.join_aadt(geo, layer)
     # The AADT centerlines coincide with the XD segments, so the vast majority join
-    # cleanly; every segment gets *some* flagged value (matched or nearest).
+    # cleanly; a volume is attached exactly for the matched rows (a gate-rejected
+    # nearest line is identified but carries no value).
     assert (j["aadt_source"] == "matched").mean() > 0.8
-    assert j["AADT"].notna().all()
+    assert j.loc[j["aadt_source"] == "matched", "AADT"].notna().all()
+    assert j.loc[j["aadt_source"] != "matched", "AADT"].isna().all()
     assert (j.loc[j["aadt_source"] == "matched", "aadt_dist_m"] < 35).all()
