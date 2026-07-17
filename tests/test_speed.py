@@ -262,6 +262,87 @@ def test_network_total_agrees_when_full_set_achieved(multi_corridor):
     assert total.iloc[0][TT] == pytest.approx(mx.iloc[0][TT]) == pytest.approx(6.0)
 
 
+# --- segment_coverage + explicit membership (Item 19) -----------------------
+@pytest.fixture
+def coverage_net():
+    """Three segments over 10 timestamps. Segment 3 is chronically missing: it is
+    the SOLE absent member at the first 4 timestamps (so dropping it recovers
+    exactly those 4). Segments 1 and 2 report at every timestamp."""
+    rows = []
+    ts = pd.date_range("2026-01-12 08:00", periods=10, freq="5min", tz=TZ)
+    for i, t in enumerate(ts):
+        for seg in (1, 2, 3):
+            if seg == 3 and i < 4:        # seg 3 absent at the first 4 timestamps
+                continue
+            rows.append(_row(t.strftime("%Y-%m-%d %H:%M"), seg, 30, 1.0, corridor="C"))
+    df = pd.DataFrame(rows)
+    df.attrs["units"] = {"speed": "miles/hour", "travel_time": "Minutes"}
+    return df
+
+
+def test_segment_coverage_flags_chronically_missing(coverage_net):
+    cov = speed.segment_coverage(coverage_net).set_index("Segment ID")
+    # seg 3 reports 6/10 timestamps; its removal recovers exactly 4 complete-set
+    # timestamps (the ones where it was the sole missing member).
+    assert cov.loc[3, "coverage"] == pytest.approx(0.6)
+    assert cov.loc[3, speed.COMPLETE_COST_COL] == 4
+    # segs 1 & 2 are always present -> full coverage, zero cost.
+    for seg in (1, 2):
+        assert cov.loc[seg, "coverage"] == pytest.approx(1.0)
+        assert cov.loc[seg, speed.COMPLETE_COST_COL] == 0
+    # baseline complete-set count over the full member set is 6 (timestamps 4..9).
+    assert cov.attrs["n_complete"] == 6
+    assert cov.attrs["n_members"] == 3 and cov.attrs["n_timestamps"] == 10
+    # sorted most-worth-dropping first: the costly/low-coverage segment leads.
+    assert speed.segment_coverage(coverage_net).iloc[0]["Segment ID"] == 3
+
+
+def test_segment_coverage_cost_matches_recovered_timestamps(coverage_net):
+    """The reported cost is *exact*: deselecting the flagged segment via the
+    membership override raises the number of complete-set timestamps by that much."""
+    full = speed.corridor_travel_time(coverage_net, require_complete=True)
+    dropped = speed.corridor_travel_time(coverage_net, require_complete=True,
+                                         members=[1, 2])
+    cost = speed.segment_coverage(coverage_net).set_index("Segment ID").loc[
+        3, speed.COMPLETE_COST_COL]
+    assert len(full) == 6                        # only timestamps 4..9 complete
+    assert len(dropped) == 10                    # dropping seg 3 recovers all 10
+    assert len(dropped) - len(full) == cost      # exactly the reported cost (4)
+
+
+def test_segment_coverage_subset_members_only(coverage_net):
+    """Restricting to a member subset measures coverage over that subset alone: with
+    only segments 1 & 2 (both always present) every timestamp is complete."""
+    cov = speed.segment_coverage(coverage_net, members=[1, 2])
+    assert set(cov["Segment ID"]) == {1, 2}
+    assert (cov["coverage"] == 1.0).all()
+    assert cov.attrs["n_complete"] == cov.attrs["n_timestamps"]
+
+
+def test_segment_coverage_value_aware(coverage_net):
+    """A NaN value counts as *not reported* (mirrors corridor_travel_time): blanking
+    seg 1's travel time at one timestamp drops its coverage and adds a cost."""
+    df = coverage_net.copy()
+    # blank seg 1's value at timestamp index 5 (a currently-complete timestamp).
+    mask = (df["Segment ID"] == 1) & (df["Date Time"] == pd.Timestamp("2026-01-12 08:25", tz=TZ))
+    df.loc[mask, TT] = float("nan")
+    cov = speed.segment_coverage(df, value=TT).set_index("Segment ID")
+    assert cov.loc[1, "coverage"] == pytest.approx(0.9)   # 9/10 now
+    assert cov.loc[1, speed.COMPLETE_COST_COL] == 1       # sole missing at that ts
+
+
+def test_corridor_members_override_changes_aggregate(binned):
+    """The additive members param feeds the complete-set sum exactly the selected
+    segments — dropping the always-present seg 1002 leaves seg 1001 alone, so every
+    1001 timestamp is 'complete' and the summed series changes."""
+    both = speed.corridor_travel_time(binned)                      # complete set = 2
+    only_1001 = speed.corridor_travel_time(binned, members=[1001])
+    assert len(both) == 2
+    # seg 1001 reports at 08:00/08:05/08:10 (binned midday/other-date rows exist too)
+    assert len(only_1001) >= 3 and (only_1001["expected_segments"] == 1).all()
+    assert set(only_1001[TT].round(1)) >= {1.0, 1.1, 1.2}
+
+
 # --- rolling_average --------------------------------------------------------
 def test_rolling_trailing_known_values(binned):
     r = speed.rolling_average(binned, value=SPEED, window=2)

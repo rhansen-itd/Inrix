@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import figures  # noqa: E402
 
 import dash_bootstrap_components as dbc  # noqa: E402
-from dash import Dash, Input, Output, State, ctx, dcc, html, no_update  # noqa: E402
+from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html, no_update  # noqa: E402
 
 from inrix_tools import aadt, beforeafter, changepoint, geometry, io, kml, names, speed  # noqa: E402
 from inrix_tools.io import CORRIDOR_COL, DATETIME_COL, SEGMENT_COL  # noqa: E402
@@ -390,6 +390,102 @@ def _days_key(days):
     return "all" if len(dset) >= 7 else tuple(sorted(dset))
 
 
+# ---------------------------------------------------------------------------
+# Segment table + explicit corridor membership  (Item 19)
+# ---------------------------------------------------------------------------
+# dash_table column ids for the segment table.
+TBL_ID = SEGMENT_COL          # "Segment ID"
+TBL_NAME = names.NAME_COL     # "name" (editable)
+TBL_COMBINED = "Combined"     # raw INRIX label, reference
+TBL_COVERAGE = speed.COVERAGE_COL          # "coverage" (fraction, shown as %)
+TBL_COST = speed.COMPLETE_COST_COL         # "complete_set_cost"
+
+
+def _all_segment_ids(ds: Dataset) -> list[int]:
+    """Every ``Segment ID`` the table lists (metadata order, the dropdown order)."""
+    return [int(s) for s in ds.metadata.index]
+
+
+def _norm_members(ds: Dataset, members) -> list[int] | None:
+    """Canonicalise a raw member-id selection to the explicit set that overrides the
+    default grouping, or ``None`` when it is a no-op. A selection that is empty or
+    covers **every** segment behaves like "no override" (Item 19), so the existing
+    corridor-name grouping / whole-network default is used — only a real subset
+    drives the explicit-membership path in ``_analysis_frame``."""
+    if not members:
+        return None
+    all_ids = set(_all_segment_ids(ds)) or {int(s) for s in ds.df[SEGMENT_COL].unique()}
+    picked = sorted({int(m) for m in members} & all_ids) if all_ids else sorted({int(m) for m in members})
+    if not picked or set(picked) == all_ids:
+        return None
+    return picked
+
+
+def _members_key(members) -> str | tuple:
+    """Cache key for a member selection (mirrors ``_window_key`` / ``_days_key``):
+    ``"all"`` for the no-override case, else the sorted id tuple."""
+    if not members:
+        return "all"
+    return tuple(sorted(int(m) for m in members))
+
+
+def _table_rows(ds: Dataset, members=None, window=None, days=None) -> list[dict]:
+    """Build the segment-table records: friendly name, raw ``Combined`` label, and
+    the Item-19 completeness diagnostics (``coverage``, ``complete_set_cost``)
+    computed by ``speed.segment_coverage`` over the current member set within the
+    active ToD/DOW window. One row per export segment (non-members get coverage/cost
+    measured against the selected set so the table ranks what to drop)."""
+    labels = _labels(ds)
+    combined = ds.geo["Combined"] if (ds.geo is not None and "Combined" in ds.geo.columns) else None
+    member_ids = _norm_members(ds, members) or _all_segment_ids(ds)
+    tt = _metric_col(ds, "tt")
+    frame = _apply_tod(ds.df, window, days)
+    cov = speed.segment_coverage(frame, members=member_ids, value=tt)
+    cov = cov.set_index(SEGMENT_COL)
+    rows = []
+    for sid in _all_segment_ids(ds):
+        c = cov.loc[sid] if sid in cov.index else None
+        rows.append({
+            TBL_ID: sid,
+            TBL_NAME: labels.get(sid, f"Segment {sid}"),
+            TBL_COMBINED: ("" if combined is None else
+                           ("" if pd.isna(combined.get(sid)) else str(combined.get(sid)))),
+            TBL_COVERAGE: (round(float(c[TBL_COVERAGE]) * 100, 1)
+                           if c is not None and pd.notna(c[TBL_COVERAGE]) else None),
+            TBL_COST: int(c[TBL_COST]) if c is not None else 0,
+        })
+    return rows
+
+
+def _table_columns() -> list[dict]:
+    """The dash_table column spec: an editable ``name``, then read-only reference +
+    completeness columns (sortable natively)."""
+    return [
+        {"name": "Name", "id": TBL_NAME, "editable": True},
+        {"name": "INRIX label", "id": TBL_COMBINED, "editable": False},
+        {"name": "Coverage %", "id": TBL_COVERAGE, "type": "numeric", "editable": False},
+        {"name": "Completeness cost", "id": TBL_COST, "type": "numeric", "editable": False},
+        {"name": "Segment ID", "id": TBL_ID, "editable": False},
+    ]
+
+
+def _rows_to_member_ids(data, selected_rows) -> list[int]:
+    """Map dash_table ``selected_rows`` (positional indices) to ``Segment ID``s."""
+    if not data or not selected_rows:
+        return []
+    return [int(data[i][TBL_ID]) for i in selected_rows if 0 <= i < len(data)]
+
+
+def _segment_row_index(data, segment_id) -> int | None:
+    """The table row index carrying ``segment_id`` (for map-click → row highlight)."""
+    if not data or segment_id is None:
+        return None
+    for i, r in enumerate(data):
+        if int(r[TBL_ID]) == int(segment_id):
+            return i
+    return None
+
+
 def _scope_label(ds: Dataset, scope: str, corridor) -> str:
     """The friendly name shown for a corridor/network aggregate entity."""
     if scope == SCOPE_CORRIDOR:
@@ -398,7 +494,7 @@ def _scope_label(ds: Dataset, scope: str, corridor) -> str:
 
 
 def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None,
-                    days=None) -> pd.DataFrame:
+                    days=None, members=None) -> pd.DataFrame:
     """The tz-aware, ToD/DOW-filtered rows the analysis panels decompose/compare (Item 12).
 
     *Segment* scope returns ``ds.df`` (real Segment IDs). *Corridor* / *Network*
@@ -407,19 +503,33 @@ def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None,
     **collapsed to one synthetic Segment ID** (``_AGG_SEGMENT_ID``), so the
     decompose/compare adapters that group by Segment ID run on the aggregate series
     unchanged. ``col`` must be a summable column (travel time or delay) in the
-    aggregate scopes (the GUI restricts the metric there)."""
+    aggregate scopes (the GUI restricts the metric there).
+
+    ``members`` (Item 19) is an explicit ``Segment ID`` set from the segment table;
+    when it is a real subset (``_norm_members``) it **overrides** the corridor-name
+    grouping / whole-network default, so the complete-set sum runs on exactly the
+    selected segments (deselecting a chronically-missing one recovers timestamps)."""
     df = _apply_tod(ds.df, window, days)
     if scope == SCOPE_SEGMENT:
         return df
+    member_ids = _norm_members(ds, members)
     if col == _wspeed_col(ds):
         # AADT-weighted mean speed (Item 18): a per-timestamp Σ(w·v)/Σw across the
         # corridor/network members (weights = AADT). Unlike the travel-time sum this
         # is a *mean*, so it tolerates a missing segment rather than dropping the
         # timestamp — corridor travel time stays a sum, this is the volume-weighted
         # speed companion.
-        members = df if scope == SCOPE_NETWORK else df[df[CORRIDOR_COL] == corridor]
+        if member_ids is not None:
+            mdf = df[df[SEGMENT_COL].isin(member_ids)]
+        else:
+            mdf = df if scope == SCOPE_NETWORK else df[df[CORRIDOR_COL] == corridor]
         base = _metric_col(ds, "speed")
-        agg = aadt.weighted_speed_by_time(members, ds.aadt, speed_col=base, out_col=col)
+        agg = aadt.weighted_speed_by_time(mdf, ds.aadt, speed_col=base, out_col=col)
+    elif member_ids is not None:
+        # Explicit membership sums exactly the picked segments (one synthetic group),
+        # under the same complete-set rule — labelled by the corridor in corridor scope.
+        lbl = corridor if scope == SCOPE_CORRIDOR else speed.NETWORK_LABEL
+        agg = speed.network_travel_time(df, value=col, members=member_ids, label=lbl)
     elif scope == SCOPE_CORRIDOR:
         agg = speed.corridor_travel_time(df, value=col)  # length/speed not needed here
         agg = agg[agg[CORRIDOR_COL] == corridor]
@@ -432,7 +542,8 @@ def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None,
 
 
 def _adjusted_frame(ds: Dataset, col: str, window=None, *,
-                    scope: str = SCOPE_SEGMENT, corridor=None, days=None) -> pd.DataFrame:
+                    scope: str = SCOPE_SEGMENT, corridor=None, days=None,
+                    members=None) -> pd.DataFrame:
     """The seasonally-adjusted frame for ``(col, window, days, scope, corridor)`` —
     the expensive decomposition, computed once and cached (cap ``_ADJ_CACHE_CAP``,
     LRU) so before/after date changes reuse it instead of re-decomposing
@@ -444,14 +555,17 @@ def _adjusted_frame(ds: Dataset, col: str, window=None, *,
     segment-scope decomposition would be cached once per corridor-dropdown value
     (the map path passes no corridor, the panels pass the picked one) and thrash
     the cap-2 cache with duplicates."""
-    if scope != SCOPE_CORRIDOR:
+    if scope == SCOPE_SEGMENT:
+        corridor, members = None, None      # neither shapes a segment-scope frame
+    elif scope != SCOPE_CORRIDOR:
         corridor = None
-    key = (col, _window_key(window), scope, corridor, _days_key(days))
+    members = _norm_members(ds, members)
+    key = (col, _window_key(window), scope, corridor, _days_key(days), _members_key(members))
     cache = ds._adjusted_cache
     if key in cache:
         cache[key] = cache.pop(key)  # touch -> most-recently-used
         return cache[key]
-    frame = _analysis_frame(ds, col, scope, corridor, window, days)
+    frame = _analysis_frame(ds, col, scope, corridor, window, days, members)
     adjusted = beforeafter.adjust_for_periods(frame, value=col)
     cache[key] = adjusted
     while len(cache) > _ADJ_CACHE_CAP:
@@ -460,7 +574,8 @@ def _adjusted_frame(ds: Dataset, col: str, window=None, *,
 
 
 def _compare_all(ds: Dataset, col: str, before, after, window=None, *,
-                 scope: str = SCOPE_SEGMENT, corridor=None, days=None) -> pd.DataFrame:
+                 scope: str = SCOPE_SEGMENT, corridor=None, days=None,
+                 members=None) -> pd.DataFrame:
     """Before/after (decomposition primary) at the chosen scope. Segment scope
     returns one row per segment; corridor/network scope returns a single aggregate
     row. The costly decomposition is cached in ``_adjusted_frame``; here we only
@@ -470,15 +585,19 @@ def _compare_all(ds: Dataset, col: str, before, after, window=None, *,
     passes no corridor) and the panels (which pass the picked one) share the
     same segment-scope cache entries."""
     beforeafter.check_periods(before, after, ds.df[DATETIME_COL].dt.tz)  # fast-fail
-    if scope != SCOPE_CORRIDOR:
+    if scope == SCOPE_SEGMENT:
+        corridor, members = None, None
+    elif scope != SCOPE_CORRIDOR:
         corridor = None
+    members = _norm_members(ds, members)
     key = (col, str(before), str(after), _window_key(window), scope, corridor,
-           _days_key(days))
+           _days_key(days), _members_key(members))
     cache = ds._compare_cache
     if key in cache:
         cache[key] = cache.pop(key)  # touch -> MRU
         return cache[key]
-    adjusted = _adjusted_frame(ds, col, window, scope=scope, corridor=corridor, days=days)
+    adjusted = _adjusted_frame(ds, col, window, scope=scope, corridor=corridor,
+                               days=days, members=members)
     cache[key] = beforeafter.compare_adjusted(adjusted, before=before, after=after)
     while len(cache) > _COMPARE_CACHE_CAP:
         cache.pop(next(iter(cache)))
@@ -627,28 +746,82 @@ def _controls() -> dbc.Card:
     ]), className="mb-2")
 
 
+def _segment_table() -> dbc.Card:
+    """The interactive segment table (Item 19): edit friendly names inline, select
+    which segments belong to the active corridor (row checkboxes = membership), and
+    read the completeness diagnostics (coverage %, complete-set cost) so a
+    chronically-missing segment can be deselected for a more complete aggregate.
+    Two-way linked with the map (click a segment → its row highlights; select rows
+    → the map dims non-members and the corridor/network panels sum exactly the
+    selection)."""
+    return dbc.Card(dbc.CardBody([
+        dbc.Row([
+            dbc.Col(html.H6("Segments", className="text-muted mb-0"), className="me-auto"),
+            dbc.Col(html.Span(id="table-status", className="small text-muted me-2"),
+                    width="auto", className="text-end"),
+            dbc.Col(dbc.Button("Save names", id="save-names", color="link", size="sm",
+                               className="p-0",
+                               title="Write the edited names to the names CSV"),
+                    width="auto"),
+        ], className="align-items-center g-1"),
+        html.Div("Edit a name inline, then Save. Tick rows to set the corridor/network "
+                 "member set; a highlighted row costs the complete-set rule timestamps "
+                 "(deselect it for a more complete aggregate).",
+                 className="small text-muted mb-1"),
+        dash_table.DataTable(
+            id="segment-table",
+            columns=_table_columns(),
+            data=[],
+            editable=True,
+            row_selectable="multi",
+            selected_rows=[],
+            sort_action="native",
+            page_action="none",
+            fixed_rows={"headers": True},
+            style_table={"maxHeight": "300px", "overflowY": "auto"},
+            style_cell={"fontSize": "0.85rem", "padding": "2px 6px", "textAlign": "left",
+                        "maxWidth": 220, "whiteSpace": "normal"},
+            style_header={"fontWeight": "600"},
+            # Flag the segments that cost the corridor/network complete-set rule
+            # timestamps (Item 19) so they're visible-not-silent; the active segment
+            # (map/dropdown selection) gets a stronger accent.
+            style_data_conditional=[
+                {"if": {"filter_query": f"{{{TBL_COST}}} > 0"},
+                 "backgroundColor": "#fff3cd"},
+                {"if": {"state": "active"}, "backgroundColor": "#d7eaf7"},
+            ],
+        ),
+    ]), className="mb-2")
+
+
 def _layout() -> dbc.Container:
     return dbc.Container([
         dcc.Store(id="data-token"),
+        # Explicit corridor membership (Item 19): the segment table's selected rows,
+        # as a Segment ID list, driving the aggregate panels + the map dimming.
+        dcc.Store(id="corridor-members"),
         html.H4("INRIX segment explorer", className="my-2"),
         dbc.Row([
             dbc.Col(_controls(), width=3),
-            dbc.Col(dbc.Card(dbc.CardBody([
-                # Segment picker + a compact KML export icon (Item 13: demoted from
-                # the full-width control panel button — KML is now a rare export, so
-                # it lives here as a small icon with its status inline).
-                dbc.Row([
-                    dbc.Col(dbc.Label("Segment", className="mb-0"), className="me-auto"),
-                    dbc.Col(html.Span(id="kml-status", className="small text-muted me-2"),
-                            width="auto", className="text-end"),
-                    dbc.Col(dbc.Button("⤓ KML", id="export-kml", color="link", size="sm",
-                                       className="p-0",
-                                       title="Export KML of the current map colouring"),
-                            width="auto"),
-                ], className="align-items-center g-1"),
-                dcc.Dropdown(id="segment", placeholder="Load an export, then pick or click a segment"),
-                dcc.Graph(id="map", style={"height": "620px"}),
-            ])), width=9),
+            dbc.Col([
+                dbc.Card(dbc.CardBody([
+                    # Segment picker + a compact KML export icon (Item 13: demoted from
+                    # the full-width control panel button — KML is now a rare export, so
+                    # it lives here as a small icon with its status inline).
+                    dbc.Row([
+                        dbc.Col(dbc.Label("Segment", className="mb-0"), className="me-auto"),
+                        dbc.Col(html.Span(id="kml-status", className="small text-muted me-2"),
+                                width="auto", className="text-end"),
+                        dbc.Col(dbc.Button("⤓ KML", id="export-kml", color="link", size="sm",
+                                           className="p-0",
+                                           title="Export KML of the current map colouring"),
+                                width="auto"),
+                    ], className="align-items-center g-1"),
+                    dcc.Dropdown(id="segment", placeholder="Load an export, then pick or click a segment"),
+                    dcc.Graph(id="map", style={"height": "620px"}),
+                ])),
+                _segment_table(),
+            ], width=9),
         ]),
         dbc.Row(dbc.Col(dbc.Tabs(id="tabs", active_tab="ts", children=[
             dbc.Tab(dcc.Graph(id="fig-ts"), label="Time series", tab_id="ts"),
@@ -708,6 +881,9 @@ def _register_callbacks(app: Dash) -> None:
         Output("scope", "options"),
         Output("map-mode", "options"),
         Output("wspeed", "options"),
+        Output("segment-table", "data"),
+        Output("segment-table", "selected_rows"),
+        Output("corridor-members", "data"),
         Input("load", "n_clicks"),
         State("source", "value"),
         State("tz", "value"),
@@ -735,7 +911,7 @@ def _register_callbacks(app: Dash) -> None:
                               date_start=date_start, date_end=date_end,
                               freeflow=freeflow, aadt_path=aadt_path or None)
         except Exception as exc:  # surface the failure in the UI, don't crash
-            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 21)
+            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 24)
         token = _store(ds)
         labels = _labels(ds)
         options = [{"label": labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
@@ -765,12 +941,18 @@ def _register_callbacks(app: Dash) -> None:
         # resolved on this load.
         map_mode_opts = _map_mode_options(ds)
         wspeed_opts = _wspeed_options(ds)
+        # Segment table (Item 19): one row per segment (name / raw label / coverage
+        # / complete-set cost), no membership override yet (empty selection = the
+        # default corridor grouping / whole network). Reset the selection + member
+        # store on a fresh load so stale ids don't leak across exports.
+        table_data = _table_rows(ds)
         # Reset the segment selection: a new export's ids differ, so keeping the
         # old value would leave every panel on a stale/blank segment (review B5).
         return (token, status, options, None, metric_options, metric_value,
                 lo, hi, b_start, b_end, lo, hi, a_start, a_end,
                 full_lo, full_hi, r_start, r_end,
-                corr_opts, corr_val, scope_opts, map_mode_opts, wspeed_opts)
+                corr_opts, corr_val, scope_opts, map_mode_opts, wspeed_opts,
+                table_data, [], None)
 
     # Map click -> segment dropdown (the dropdown is the single selection source).
     @app.callback(
@@ -827,16 +1009,22 @@ def _register_callbacks(app: Dash) -> None:
         Input("tod-window", "value"),
         Input("scope", "value"),
         Input("dow-days", "value"),
+        Input("corridor-members", "data"),
     )
-    def _map(token, metric, mode, selected, b0, b1, a0, a1, window, scope, days):
+    def _map(token, metric, mode, selected, b0, b1, a0, a1, window, scope, days, members):
         ds = _get(token)
         if ds is None:
             return figures.segment_map(_empty_geo())
+        # Membership dimming (Item 19): when the segment table has a real subset
+        # selected, draw non-members faint so the corridor stands out. A no-op
+        # (empty / all) selection dims nothing.
+        member_ids = _norm_members(ds, members)
+        mset = set(member_ids) if member_ids is not None else None
         # The map stays segment-level in every scope; corridor/network restrict the
         # metric to the ones that sum across segments (travel time / delay).
         col = _metric_col(ds, _agg_metric_key(metric) if scope in _AGG_SCOPES else metric)
         if col is None:  # metric absent (mid-load transition) — draw a bare map
-            return figures.segment_map(ds.geo, label_col="name",
+            return figures.segment_map(ds.geo, label_col="name", member_ids=mset,
                                        sublabel_col="Combined", uirevision=f"data-{token}")
         label = figures._unit_label(col)
         if mode == MAP_MODE_VHD and _has_aadt(ds) and _metric_col(ds, "delay") is not None:
@@ -861,6 +1049,7 @@ def _register_callbacks(app: Dash) -> None:
         # recenters the map instead of keeping the old city's pan/zoom (review B5).
         return figures.segment_map(ds.geo, values, value_label=label,
                                    selected_id=selected, label_col="name",
+                                   member_ids=mset,
                                    sublabel_col="Combined", uirevision=f"data-{token}")
 
     # Panels, keyed on the active tab so only the visible one computes.
@@ -882,9 +1071,10 @@ def _register_callbacks(app: Dash) -> None:
         Input("corridor", "value"),
         Input("dow-days", "value"),
         Input("wspeed", "value"),
+        Input("corridor-members", "data"),
     )
     def _panels(tab, token, selected, metric, b0, b1, a0, a1, window, scope, corridor,
-                days, wspeed):
+                days, wspeed, members):
         ds = _get(token)
         blank = figures._blank("Load an export to begin.")
         if ds is None:
@@ -903,20 +1093,21 @@ def _register_callbacks(app: Dash) -> None:
 
         if tab == "ts":
             out["ts"] = _fig_timeseries(ds, selected, col, before, after, name, window,
-                                        days, scope=scope, corridor=corridor)
+                                        days, scope=scope, corridor=corridor, members=members)
         elif tab == "summary":
             # The day×time summary means over the segment's rows (Segment scope) or
             # the per-timestamp summed travel time (Corridor/Network, Item 13). With
             # before/after periods set it renders the two periods side by side.
             out["summary"] = _fig_summary(ds, selected, col, name, window, days,
                                           before=before, after=after,
-                                          scope=scope, corridor=corridor)
+                                          scope=scope, corridor=corridor, members=members)
         elif tab == "ba":
             out["ba"] = _fig_beforeafter(ds, selected, col, before, after, have_periods,
-                                         window, days, scope=scope, corridor=corridor)
+                                         window, days, scope=scope, corridor=corridor,
+                                         members=members)
         elif tab == "decomp":
             out["decomp"] = _fig_decomp(ds, selected, col, name, window, days,
-                                        scope=scope, corridor=corridor)
+                                        scope=scope, corridor=corridor, members=members)
         return out["ts"], out["summary"], out["ba"], out["decomp"]
 
     @app.callback(
@@ -991,6 +1182,121 @@ def _register_callbacks(app: Dash) -> None:
         picked = [names[int(d)] for d in sorted(set(int(x) for x in days))]
         return "Analysing " + ", ".join(picked) + " only."
 
+    # Segment table row selection (Item 19) -> the corridor-member store, and refresh
+    # the coverage / complete-set-cost columns against the newly selected subset (a
+    # segment's cost is measured relative to the *chosen* set). Name edits in the
+    # ``data`` State are preserved — only the two computed columns are rewritten.
+    @app.callback(
+        Output("corridor-members", "data"),
+        Output("segment-table", "data", allow_duplicate=True),
+        Output("table-status", "children"),
+        Input("segment-table", "selected_rows"),
+        State("segment-table", "data"),
+        State("data-token", "data"),
+        State("tod-window", "value"),
+        State("dow-days", "value"),
+        prevent_initial_call=True,
+    )
+    def _members_changed(selected_rows, data, token, window, days):
+        ds = _get(token)
+        if ds is None or not data:
+            return no_update, no_update, no_update
+        member_ids = _rows_to_member_ids(data, selected_rows)
+        # Coverage is measured against the effective member set (the selection, or
+        # every segment when nothing is ticked / all are).
+        eff = _norm_members(ds, member_ids) or _all_segment_ids(ds)
+        cov = speed.segment_coverage(_apply_tod(ds.df, window, days),
+                                     members=eff, value=_metric_col(ds, "tt"))
+        cov = cov.set_index(SEGMENT_COL)
+        updated = [dict(r) for r in data]
+        for r in updated:
+            sid = int(r[TBL_ID])
+            if sid in cov.index:
+                c = cov.loc[sid]
+                r[TBL_COVERAGE] = (round(float(c[TBL_COVERAGE]) * 100, 1)
+                                   if pd.notna(c[TBL_COVERAGE]) else None)
+                r[TBL_COST] = int(c[TBL_COST])
+        n = len(member_ids)
+        override = _norm_members(ds, member_ids) is not None
+        status = (f"{n} of {len(data)} segments — corridor member set"
+                  if override else "No membership override (all segments)")
+        return (member_ids or None), updated, status
+
+    # Map click / dropdown selection -> highlight (scroll to) the segment's table row.
+    # ``active_cell`` both highlights the row and scrolls it into view; guard on the
+    # current row so this doesn't ping-pong with the reverse callback below.
+    @app.callback(
+        Output("segment-table", "active_cell"),
+        Input("segment", "value"),
+        State("segment-table", "data"),
+        State("segment-table", "active_cell"),
+        prevent_initial_call=True,
+    )
+    def _highlight_row(selected, data, active):
+        idx = _segment_row_index(data, selected)
+        if idx is None:
+            return no_update
+        if active and active.get("row") == idx:
+            return no_update
+        return {"row": idx, "column": 0, "column_id": TBL_NAME}
+
+    # Clicking a table row cell selects that segment for the panels + the map ring
+    # (the reverse link). Guarded on the current selection so it settles at a
+    # fixpoint with ``_highlight_row`` rather than looping.
+    @app.callback(
+        Output("segment", "value", allow_duplicate=True),
+        Input("segment-table", "active_cell"),
+        State("segment-table", "data"),
+        State("segment", "value"),
+        prevent_initial_call=True,
+    )
+    def _row_selects_segment(active, data, current):
+        if not active or not data:
+            return no_update
+        row = active.get("row")
+        if row is None or not (0 <= row < len(data)):
+            return no_update
+        sid = int(data[row][TBL_ID])
+        if current is not None and int(current) == sid:
+            return no_update
+        return sid
+
+    # Save the inline-edited names (Item 19): write the table's Name column to the
+    # names CSV (the same portable store load_names reads), and update the live
+    # label mapping so the dropdown / map hover reflect the edits without a reload.
+    @app.callback(
+        Output("names-status", "children", allow_duplicate=True),
+        Output("segment", "options", allow_duplicate=True),
+        Input("save-names", "n_clicks"),
+        State("segment-table", "data"),
+        State("data-token", "data"),
+        State("names-path", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_names(_n, data, token, names_path):
+        ds = _get(token)
+        if ds is None or not data:
+            return "Load an export first.", no_update
+        names_df = pd.DataFrame({
+            SEGMENT_COL: [int(r[TBL_ID]) for r in data],
+            names.INRIX_LABEL_COL: [str(r.get(TBL_COMBINED, "") or "") for r in data],
+            names.NAME_COL: [str(r.get(TBL_NAME, "") or "") for r in data],
+        })
+        out_path = Path(names_path) if names_path else (OUTPUT_DIR / "segment_names.csv")
+        try:
+            path = names.write_names(names_df, out_path)
+        except Exception as exc:
+            return f"⚠ Save failed: {exc}", no_update
+        # Update the live label mapping + geo so labels refresh without reloading.
+        new_labels = {int(r[TBL_ID]): (str(r[TBL_NAME]).strip() or f"Segment {int(r[TBL_ID])}")
+                      for r in data}
+        ds.labels.update(new_labels)
+        if ds.geo is not None and "name" in ds.geo.columns:
+            ds.geo["name"] = ds.geo.index.map(lambda s: ds.labels.get(int(s), f"Segment {int(s)}"))
+        options = [{"label": ds.labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
+                   for s in ds.metadata.index]
+        return f"✓ Saved {path} — set it as Names CSV to reuse across sessions.", options
+
 
 # --- panel builders (subset -> compute-core call -> figure) -----------------
 def _hour_label(h) -> str:
@@ -1019,11 +1325,11 @@ def _agg_guard(scope, corridor):
 
 
 def _fig_timeseries(ds, selected, col, before, after, name, window=None, days=None, *,
-                    scope=SCOPE_SEGMENT, corridor=None):
+                    scope=SCOPE_SEGMENT, corridor=None, members=None):
     if scope in _AGG_SCOPES:
         if (g := _agg_guard(scope, corridor)) is not None:
             return g
-        sub = _analysis_frame(ds, col, scope, corridor, window, days)
+        sub = _analysis_frame(ds, col, scope, corridor, window, days, members)
         name = _scope_label(ds, scope, corridor)
         empty_msg = "No complete-set timestamps in this range."
     else:
@@ -1051,7 +1357,7 @@ def _period_subset(df: pd.DataFrame, period) -> pd.DataFrame:
 
 
 def _fig_summary(ds, selected, col, name, window=None, days=None, *,
-                 before=None, after=None, scope=SCOPE_SEGMENT, corridor=None):
+                 before=None, after=None, scope=SCOPE_SEGMENT, corridor=None, members=None):
     """The day-group x time-bin summary. Segment scope means over the segment's
     rows; corridor/network scope means over the per-timestamp **summed** travel
     time (Item 13, revisiting the Item 12 segment-only decision). When before/after
@@ -1060,7 +1366,7 @@ def _fig_summary(ds, selected, col, name, window=None, days=None, *,
     if scope in _AGG_SCOPES:
         if (g := _agg_guard(scope, corridor)) is not None:
             return g
-        frame = _analysis_frame(ds, col, scope, corridor, window, days)
+        frame = _analysis_frame(ds, col, scope, corridor, window, days, members)
         name = _scope_label(ds, scope, corridor)
         empty_msg = "No complete-set timestamps in this range."
     else:
@@ -1083,14 +1389,14 @@ def _fig_summary(ds, selected, col, name, window=None, days=None, *,
 
 
 def _fig_beforeafter(ds, selected, col, before, after, have_periods, window=None,
-                     days=None, *, scope=SCOPE_SEGMENT, corridor=None):
+                     days=None, *, scope=SCOPE_SEGMENT, corridor=None, members=None):
     if not have_periods:
         return figures._blank("Set before and after date ranges.")
     if (g := _agg_guard(scope, corridor)) is not None:
         return g
     try:
         comp = _compare_all(ds, col, before, after, window, scope=scope,
-                            corridor=corridor, days=days)
+                            corridor=corridor, days=days, members=members)
     except ValueError as exc:  # e.g. overlapping periods — validation, not a crash
         return figures._blank(f"⚠ {exc}")
     if scope in _AGG_SCOPES:
@@ -1103,7 +1409,7 @@ def _fig_beforeafter(ds, selected, col, before, after, have_periods, window=None
 
 
 def _fig_decomp(ds, selected, col, name, window=None, days=None, *,
-                scope=SCOPE_SEGMENT, corridor=None):
+                scope=SCOPE_SEGMENT, corridor=None, members=None):
     if scope in _AGG_SCOPES:
         if (g := _agg_guard(scope, corridor)) is not None:
             return g
@@ -1118,7 +1424,8 @@ def _fig_decomp(ds, selected, col, name, window=None, days=None, *,
     # the trend/changepoints describe the selected window/weekdays; decompose_segments
     # auto-scales its rolling-window sample guard so a narrow window doesn't come
     # back empty (see decompose.py).
-    adjusted = _adjusted_frame(ds, col, window, scope=scope, corridor=corridor, days=days)
+    adjusted = _adjusted_frame(ds, col, window, scope=scope, corridor=corridor,
+                               days=days, members=members)
     seg = adjusted[adjusted[SEGMENT_COL] == entity]
     if seg.empty or col not in seg.columns:
         return figures._blank(

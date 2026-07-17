@@ -87,6 +87,18 @@ narrows the session to a calendar sub-range at load — the loaded frame really
 shrinks, so a few weeks of a multi-month export stays snappy; leave it at the full
 span (the default) to keep everything, or widen it and re-**Load** to restore.
 
+The **segment table** (below the map) does triple duty and is two-way linked with
+the map: **edit a friendly name inline** and click **Save names** to write the
+names CSV (the in-app editor supersedes hand-editing the template); **tick rows**
+to set an explicit corridor/network **member set** — the aggregate panels then sum
+exactly the selected segments and the map dims the rest; and the **Coverage %** and
+**Completeness cost** columns flag which segments cost the complete-set rule
+timestamps. A highlighted row (cost > 0) is a chronically-missing segment —
+deselect it to recover the timestamps its absence was dropping and get a more
+complete aggregate series (`speed.segment_coverage`; see
+[DATA_FORMAT.md](DATA_FORMAT.md)). Clicking a segment on the map highlights and
+scrolls to its table row; clicking a row selects that segment for the panels.
+
 The map uses **Plotly native maps** (MapLibre `open-street-map`, no Mapbox token).
 The GUI is a thin shell: `gui/figures.py` turns compute-core DataFrames into
 figures and `gui/app.py` only wires inputs to them — all statistics stay in

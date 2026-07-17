@@ -127,6 +127,22 @@ If a future export were sparse enough to starve the decomposition, the fix is th
 Item 9 window guard (already auto-scaled) or relaxing `require_complete`, not
 abandoning the rule.
 
+**Segment coverage + the "completeness cost" (Item 19).** Which segments are
+*costing* the corridor/network its complete-set timestamps is answerable directly:
+`speed.segment_coverage(df, members=...)` reports, per member segment over the
+timestamps any member reported, its **coverage** (fraction of those timestamps it
+reports) and its **`complete_set_cost`** — the number of timestamps at which it is
+the *sole* absent member, i.e. exactly how many complete-set timestamps its
+removal would recover. Dropping the highest-cost segment via the additive
+`members=` list on `corridor_travel_time` / `network_travel_time` restricts the
+sum to the remaining segments *before* the complete-set rule runs, so those
+timestamps become complete and the aggregate series gets denser (at the cost of no
+longer covering that segment). The cost number is exact: `len(dropped_complete) −
+len(full_complete) == complete_set_cost` for the dropped segment. The GUI surfaces
+these two columns in the interactive segment table and flags any row with
+`complete_set_cost > 0`, so a chronically-missing segment is visible-not-silent and
+can be deselected for a more complete corridor/network aggregate.
+
 ## INRIX XD network shapefile (segment geometry)
 
 The official INRIX XD road network, delivered as a shapefile

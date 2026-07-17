@@ -69,7 +69,8 @@ def test_build_app_layout_headless():
     for needed in ("map", "segment", "fig-ts", "fig-summary", "fig-ba", "fig-decomp",
                    "load", "before-range", "after-range", "export-kml", "data-token",
                    "tod-window", "names-path", "write-names", "restrict-range",
-                   "scope", "corridor", "dow-days", "dow-status"):
+                   "scope", "corridor", "dow-days", "dow-status",
+                   "segment-table", "corridor-members", "save-names", "table-status"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
@@ -360,6 +361,20 @@ def test_end_to_end_real_export():
     assert gapp._fig_timeseries(ds_trim, sid, col,
                                 ("2026-03-02", "2026-03-10"),
                                 ("2026-03-20", "2026-03-28"), "seg").data
+
+    # Item 19: the segment table lists every segment with coverage + complete-set
+    # cost, and an explicit member subset feeds the network aggregate (dropping the
+    # highest-cost segment recovers timestamps the complete-set rule was losing).
+    from inrix_tools import speed as _speed19
+    rows = gapp._table_rows(ds)
+    assert len(rows) == 46 and all(gapp.TBL_COVERAGE in r for r in rows)
+    cov = _speed19.segment_coverage(ds.df, value=col)
+    worst = int(cov.iloc[0][SEGMENT_COL])                 # highest complete-set cost
+    net_all = gapp._analysis_frame(ds, col, gapp.SCOPE_NETWORK, None)
+    keep = [s for s in gapp._all_segment_ids(ds) if s != worst]
+    net_drop = gapp._analysis_frame(ds, col, gapp.SCOPE_NETWORK, None, members=keep)
+    # dropping the costliest segment never loses complete-set timestamps.
+    assert len(net_drop) >= len(net_all)
 
 
 # ---------------------------------------------------------------------------
@@ -703,8 +718,9 @@ def test_scope_keys_the_adjusted_cache(scope_ds):
     net = gapp._adjusted_frame(scope_ds, col, scope=gapp.SCOPE_NETWORK)
     keys = set(scope_ds._adjusted_cache)
     # the key gained a trailing DOW element ("all" = no day-of-week filter, Item 13)
-    assert (col, "full", gapp.SCOPE_SEGMENT, None, "all") in keys
-    assert (col, "full", gapp.SCOPE_NETWORK, None, "all") in keys
+    # and a members element ("all" = no membership override, Item 19)
+    assert (col, "full", gapp.SCOPE_SEGMENT, None, "all", "all") in keys
+    assert (col, "full", gapp.SCOPE_NETWORK, None, "all", "all") in keys
     assert set(seg[SEGMENT_COL].unique()) == {101, 202}
     assert set(net[SEGMENT_COL].unique()) == {gapp._AGG_SEGMENT_ID}
 
@@ -951,3 +967,138 @@ def test_write_kml_vhd_mode_uses_vehicle_hours(tmp_path, monkeypatch):
                         lambda *a, **k: (called.__setitem__("n", called["n"] + 1) or real(*a, **k)))
     path = gapp._write_kml(ds, "delay", gapp.MAP_MODE_VHD, (None, None), (None, None))
     assert path.exists() and called["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Item 19 — interactive segment table: coverage, membership, name edit, map link
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def table_ds():
+    """A 3-segment, one-corridor dataset where segment 303 is chronically missing
+    (absent at the first 20 timestamps, where it is the SOLE missing member), so
+    the coverage helper flags it with a non-zero complete-set cost."""
+    from inrix_tools import speed
+    from inrix_tools.io import CORRIDOR_COL
+    TZ = "America/Denver"
+    ts = pd.date_range("2026-02-02", periods=40, freq="5min", tz=TZ)
+    rng = np.random.default_rng(3)
+    rows = []
+    for s in (101, 202, 303):
+        for i, t in enumerate(ts):
+            if s == 303 and i < 20:          # 303 absent at the first 20 timestamps
+                continue
+            rows.append({DATETIME_COL: t, SEGMENT_COL: np.int64(s),
+                         TT_COL: 10 + rng.normal(0, 0.3), SPEED_COL: 30 + rng.normal(0, 2),
+                         CORRIDOR_COL: "Main"})
+    df = pd.DataFrame(rows)
+    meta = pd.DataFrame({"Combined": ["Seg 101", "Seg 202", "Seg 303"]},
+                        index=pd.Index([101, 202, 303], name=SEGMENT_COL))
+    ds = gapp.Dataset(df=df, metadata=meta, geo=None,
+                      metric_cols=speed.metric_columns(df), tz=TZ, span=(None, None))
+    ds.labels = {101: "First", 202: "Second", 303: "Missing one"}
+    return ds
+
+
+def test_table_rows_flag_incomplete_segment(table_ds):
+    """The table rows carry the friendly name + the completeness diagnostics; the
+    chronically-missing segment is flagged with a non-zero complete-set cost."""
+    rows = gapp._table_rows(table_ds)
+    by_id = {r[gapp.TBL_ID]: r for r in rows}
+    assert set(by_id) == {101, 202, 303}
+    assert by_id[101][gapp.TBL_NAME] == "First"
+    # 303 reports 20/40 timestamps -> 50% coverage, and dropping it recovers the
+    # 20 timestamps it was the sole missing member at (exact cost).
+    assert by_id[303][gapp.TBL_COVERAGE] == pytest.approx(50.0)
+    assert by_id[303][gapp.TBL_COST] == 20
+    assert by_id[101][gapp.TBL_COST] == 0 and by_id[202][gapp.TBL_COST] == 0
+
+
+def test_table_columns_name_editable_others_not():
+    cols = {c["id"]: c for c in gapp._table_columns()}
+    assert cols[gapp.TBL_NAME]["editable"] is True
+    for cid in (gapp.TBL_COMBINED, gapp.TBL_COVERAGE, gapp.TBL_COST, gapp.TBL_ID):
+        assert cols[cid]["editable"] is False
+
+
+def test_rows_to_member_ids_and_row_index(table_ds):
+    data = gapp._table_rows(table_ds)
+    # selected_rows are positional indices into `data`.
+    picked = gapp._rows_to_member_ids(data, [0, 2])
+    assert picked == [int(data[0][gapp.TBL_ID]), int(data[2][gapp.TBL_ID])]
+    assert gapp._rows_to_member_ids(data, []) == []
+    # map-click -> row highlight: find the row carrying a Segment ID.
+    sid = int(data[1][gapp.TBL_ID])
+    assert gapp._segment_row_index(data, sid) == 1
+    assert gapp._segment_row_index(data, 999999) is None
+
+
+def test_norm_members_noop_vs_subset(table_ds):
+    all_ids = gapp._all_segment_ids(table_ds)
+    assert gapp._norm_members(table_ds, None) is None
+    assert gapp._norm_members(table_ds, []) is None
+    assert gapp._norm_members(table_ds, all_ids) is None            # whole set = no override
+    assert gapp._norm_members(table_ds, [202, 101]) == [101, 202]   # subset, sorted
+
+
+def test_members_key_collapses_noop():
+    assert gapp._members_key(None) == "all"
+    assert gapp._members_key([]) == "all"
+    assert gapp._members_key([303, 101]) == (101, 303)
+
+
+def test_membership_override_changes_network_aggregate(table_ds):
+    """Feeding an explicit member subset to the aggregate builder drops the
+    chronically-missing segment, recovering the complete-set timestamps its
+    absence was costing — so the network series lengthens and its values change."""
+    col = gapp._metric_col(table_ds, "tt")
+    full = gapp._analysis_frame(table_ds, col, gapp.SCOPE_NETWORK, None)
+    # with all three, only the 20 timestamps where 303 reports are complete.
+    assert len(full) == 20
+    dropped = gapp._analysis_frame(table_ds, col, gapp.SCOPE_NETWORK, None,
+                                   members=[101, 202])
+    assert len(dropped) == 40                       # all timestamps now complete
+    assert set(dropped[SEGMENT_COL].unique()) == {gapp._AGG_SEGMENT_ID}
+
+
+def test_membership_keys_the_adjusted_cache(table_ds):
+    """A membership subset is a distinct cache key so it doesn't collide with the
+    whole-network decomposition."""
+    pytest.importorskip("traffic_anomaly")
+    col = gapp._metric_col(table_ds, "tt")
+    gapp._adjusted_frame(table_ds, col, scope=gapp.SCOPE_NETWORK)
+    gapp._adjusted_frame(table_ds, col, scope=gapp.SCOPE_NETWORK, members=[101, 202])
+    keys = set(table_ds._adjusted_cache)
+    assert (col, "full", gapp.SCOPE_NETWORK, None, "all", "all") in keys
+    assert (col, "full", gapp.SCOPE_NETWORK, None, "all", (101, 202)) in keys
+
+
+def test_segment_map_dims_nonmembers(geo_two):
+    """A proper membership subset draws non-member segment lines faint; the whole
+    set / None dims nothing."""
+    fig = figures.segment_map(geo_two, member_ids={101})
+    # line traces are the Scattermap 'lines' traces, in geo order (101, 202).
+    lines = [t for t in fig.data if getattr(t, "mode", None) == "lines"]
+    assert len(lines) == 2
+    member_op, nonmember_op = lines[0].opacity, lines[1].opacity
+    assert nonmember_op < member_op                       # 202 dimmed
+    # whole set -> no dimming (both full strength).
+    full = figures.segment_map(geo_two, member_ids={101, 202})
+    ops = {t.opacity for t in full.data if getattr(t, "mode", None) == "lines"}
+    assert all(o >= 0.85 for o in ops)
+
+
+def test_save_names_round_trips_table_edits(table_ds, tmp_path, monkeypatch):
+    """The Save-names path (write_names) persists the table's edited Name column so
+    load_names reads it back — exercised through the same code the callback runs."""
+    from inrix_tools import names as _names
+    data = gapp._table_rows(table_ds)
+    # edit a name in the table data, as an inline edit would.
+    data[0][gapp.TBL_NAME] = "Renamed first"
+    names_df = pd.DataFrame({
+        SEGMENT_COL: [int(r[gapp.TBL_ID]) for r in data],
+        _names.INRIX_LABEL_COL: [str(r.get(gapp.TBL_COMBINED, "") or "") for r in data],
+        _names.NAME_COL: [str(r.get(gapp.TBL_NAME, "") or "") for r in data],
+    })
+    path = _names.write_names(names_df, tmp_path / "segment_names.csv")
+    loaded = _names.load_names(path)
+    assert loaded.loc[int(data[0][gapp.TBL_ID]), _names.NAME_COL] == "Renamed first"

@@ -291,6 +291,7 @@ def corridor_travel_time(
     datetime_col: str = DATETIME_COL,
     value: str | None = None,
     expected: str = "max",
+    members: Sequence[int] | None = None,
 ) -> pd.DataFrame:
     """Sum member-segment travel time to a corridor total per timestamp, applying
     the **complete-set rule** from DATA_FORMAT.md: only timestamps where every
@@ -325,6 +326,13 @@ def corridor_travel_time(
             count toward the complete set, so such timestamps are dropped/flagged
             rather than silently summed short; a timestamp with no values at all
             yields NaN, never a fabricated 0.
+        members: optional explicit ``Segment ID`` membership (ROADMAP Item 19). When
+            given, the corridor is exactly these segments — rows are restricted to
+            them *before* the complete-set rule runs, so a user can deselect a
+            chronically-missing segment (``segment_coverage``) and recover the
+            timestamps its absence was costing. ``None`` (default) keeps the
+            ``corridor_col`` grouping's observed membership. Additive — the existing
+            behaviour is unchanged when omitted.
 
     Returns:
         One row per (corridor, timestamp): ``[corridor_col, Date Time,
@@ -340,7 +348,15 @@ def corridor_travel_time(
     if corridor_col not in df.columns:
         raise ValueError(f"Corridor column {corridor_col!r} not in df; see DATA_FORMAT.md.")
 
-    marked = mark_complete_timestamps(df, corridor_col=corridor_col, expected=expected)
+    # Explicit membership (Item 19): restrict the sum to exactly the selected
+    # segments *before* the complete-set rule runs, so completeness is measured
+    # against the chosen member set — deselecting a chronically-missing segment
+    # both drops it from the sum and stops it from starving the complete-set count.
+    sub = df
+    if members is not None:
+        sub = df[df[SEGMENT_COL].isin([int(m) for m in members])]
+
+    marked = mark_complete_timestamps(sub, corridor_col=corridor_col, expected=expected)
     # A row whose value is NaN (e.g. Delay where the free-flow speed couldn't be
     # resolved) contributes nothing to the sum, so it must not count toward the
     # complete set either — otherwise the sum would undercount while still
@@ -367,7 +383,7 @@ def corridor_travel_time(
 
     # Length + space-mean speed only make sense for the travel-time sum.
     if metadata is not None and tt == metric_columns(df)["travel_time"]:
-        summed = _attach_corridor_length_speed(summed, df, metadata, corridor_col, tt)
+        summed = _attach_corridor_length_speed(summed, sub, metadata, corridor_col, tt)
 
     summed.attrs = dict(df.attrs)
     return summed
@@ -409,6 +425,7 @@ def network_travel_time(
     label: str = NETWORK_LABEL,
     value: str | None = None,
     expected: str = "total",
+    members: Sequence[int] | None = None,
 ) -> pd.DataFrame:
     """Sum **every** segment's travel time to a single network total per timestamp
     — the corridor sum (``corridor_travel_time``) over one synthetic all-segments
@@ -441,6 +458,9 @@ def network_travel_time(
         require_complete: keep only complete timestamps (default). ``False`` keeps
             partial timestamps with the ``complete`` flag so gaps are visible.
         label: the single-group label written into ``corridor_col``.
+        members: optional explicit ``Segment ID`` membership (ROADMAP Item 19) — sum
+            only these segments as the "network", under the same complete-set rule.
+            ``None`` (default) sums every segment in the export.
 
     Returns:
         One row per timestamp (same columns as ``corridor_travel_time``), with
@@ -456,9 +476,114 @@ def network_travel_time(
     out = corridor_travel_time(
         work, metadata=metadata, corridor_col=corridor_col,
         require_complete=require_complete, datetime_col=datetime_col, value=tt,
-        expected=expected,
+        expected=expected, members=members,
     )
     out.attrs = dict(df.attrs)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Segment coverage / completeness diagnostics  (ROADMAP Item 19)
+# ---------------------------------------------------------------------------
+# Column names on the coverage table.
+COVERAGE_COL = "coverage"                 # fraction of member timestamps a segment reports
+COMPLETE_COST_COL = "complete_set_cost"   # complete-set timestamps its removal would recover
+
+
+def segment_coverage(
+    df: pd.DataFrame,
+    members: Sequence[int] | None = None,
+    value: str | None = None,
+    datetime_col: str = DATETIME_COL,
+) -> pd.DataFrame:
+    """Per-segment completeness diagnostics over a member set — which segments cost
+    the corridor/network **complete-set rule** timestamps (ROADMAP Item 19).
+
+    For the chosen member set (``members``, or every distinct ``Segment ID`` in
+    ``df`` when ``None``), this reports for each member, over the set of timestamps
+    where *any* member reported:
+
+    - ``coverage`` — the fraction of those timestamps at which the segment itself
+      reported. A chronically-missing segment has low coverage.
+    - ``complete_set_cost`` — the count of timestamps that would become
+      **complete** (every remaining member present) if this segment were dropped
+      from the set — i.e. the timestamps at which it is the *sole* absent member.
+      This is exactly how many complete-set timestamps its presence is costing:
+      deselecting the highest-cost segment recovers that many timestamps for the
+      aggregate series (see ``corridor_travel_time``'s complete-set rule and
+      DATA_FORMAT.md).
+
+    "Reported" is value-aware when ``value`` is given (a row whose ``value`` is NaN
+    — e.g. an unresolvable delay — does not count as present, matching
+    ``corridor_travel_time``); with ``value=None`` any row for the segment counts.
+
+    Args:
+        df: local rows with ``Segment ID`` and ``datetime_col`` (typically already
+            ToD/DOW-filtered by the caller, so coverage describes the analysed
+            window).
+        members: the member ``Segment ID`` set to measure over. ``None`` uses every
+            segment present in ``df``.
+        value: optional column whose non-NaN presence defines "reported".
+
+    Returns:
+        One row per member: ``[Segment ID, n_reported, n_timestamps, coverage,
+        complete_set_cost]``, sorted by descending ``complete_set_cost`` then
+        ascending ``coverage`` (the segments most worth deselecting first).
+        ``n_timestamps`` is the shared denominator (distinct timestamps any member
+        reported). ``attrs`` records ``n_members``, ``n_timestamps`` and
+        ``n_complete`` (complete-set timestamps under the full member set).
+    """
+    if SEGMENT_COL not in df.columns:
+        raise ValueError(f"{SEGMENT_COL!r} column required for segment_coverage.")
+    if members is None:
+        member_ids = [int(s) for s in pd.unique(df[SEGMENT_COL])]
+    else:
+        member_ids = [int(m) for m in dict.fromkeys(members)]  # de-dup, keep order
+
+    cols = [SEGMENT_COL, datetime_col] + ([value] if value else [])
+    sub = df[df[SEGMENT_COL].isin(member_ids)][cols].copy()
+    if value is not None:
+        sub = sub[sub[value].notna()]
+
+    empty = pd.DataFrame(
+        {SEGMENT_COL: pd.Series(member_ids, dtype="int64"),
+         "n_reported": 0, "n_timestamps": 0,
+         COVERAGE_COL: float("nan"), COMPLETE_COST_COL: 0}
+    )
+    if not member_ids or sub.empty:
+        empty.attrs = {"n_members": len(member_ids), "n_timestamps": 0, "n_complete": 0}
+        return empty
+
+    # Presence matrix: rows = timestamps any member reported, cols = every member
+    # (a member that never reports gets an all-False column via reindex).
+    present = (
+        sub.assign(_p=True)
+        .pivot_table(index=datetime_col, columns=SEGMENT_COL, values="_p",
+                     aggfunc="any", fill_value=False)
+        .reindex(columns=member_ids, fill_value=False)
+        .astype(bool)
+    )
+    n_ts = len(present)
+    n_members = len(member_ids)
+    per_ts_present = present.sum(axis=1)
+    n_complete = int((per_ts_present >= n_members).sum())
+    # A segment's removal recovers a timestamp iff it is the *only* absent member:
+    # present count is exactly n_members-1 and this segment is the one absent.
+    missing_one = per_ts_present == (n_members - 1)
+    n_reported = present.sum(axis=0)
+    cost = (missing_one.values[:, None] & ~present.values).sum(axis=0)
+
+    out = pd.DataFrame({
+        SEGMENT_COL: pd.Series(member_ids, dtype="int64"),
+        "n_reported": [int(n_reported[s]) for s in member_ids],
+        "n_timestamps": int(n_ts),
+        COVERAGE_COL: [float(n_reported[s]) / n_ts for s in member_ids],
+        COMPLETE_COST_COL: [int(c) for c in cost],
+    })
+    out = out.sort_values([COMPLETE_COST_COL, COVERAGE_COL],
+                          ascending=[False, True]).reset_index(drop=True)
+    out.attrs = {"n_members": n_members, "n_timestamps": int(n_ts),
+                 "n_complete": n_complete}
     return out
 
 

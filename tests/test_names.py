@@ -89,6 +89,38 @@ def test_load_names_requires_columns(tmp_path):
         names.load_names(bad)
 
 
+# --- write_names: the in-app editor round-trip (Item 19) --------------------
+def test_write_names_round_trips_edited_table(tmp_path):
+    """The GUI segment table's edited names persist through write_names and read
+    back verbatim via load_names (the in-app editor supersedes hand-editing)."""
+    edited = pd.DataFrame({
+        SEGMENT_COL: [440882720, 1187539993],
+        names.INRIX_LABEL_COL: ["N 9th St S 9th St / Idaho St", "S 9th St S 9th St"],
+        names.NAME_COL: ["Idaho @ 9th (edited)", "  9th St  "],   # trimmed on write
+    })
+    path = names.write_names(edited, tmp_path / "segment_names.csv")
+    assert path.exists()
+    loaded = names.load_names(path)
+    assert loaded.loc[440882720, names.NAME_COL] == "Idaho @ 9th (edited)"
+    assert loaded.loc[1187539993, names.NAME_COL] == "9th St"       # whitespace stripped
+    # the resolved mapping picks up the edited name over the seed.
+    mapping = names.apply_names(REPRESENTATIVE, loaded)
+    assert mapping[440882720] == "Idaho @ 9th (edited)"
+
+
+def test_write_names_requires_columns(tmp_path):
+    with pytest.raises(ValueError, match="must have"):
+        names.write_names(pd.DataFrame({"foo": [1]}), tmp_path / "x.csv")
+
+
+def test_write_names_optional_inrix_label(tmp_path):
+    """inrix_label is optional on input; a Segment ID + name table still round-trips."""
+    minimal = pd.DataFrame({SEGMENT_COL: [7], names.NAME_COL: ["Seven"]})
+    loaded = names.load_names(names.write_names(minimal, tmp_path / "m.csv"))
+    assert loaded.loc[7, names.NAME_COL] == "Seven"
+    assert loaded.loc[7, names.INRIX_LABEL_COL] == ""
+
+
 # --- apply_names: user CSV over seed, with fallbacks ------------------------
 def test_apply_names_seed_only():
     mapping = names.apply_names(REPRESENTATIVE)

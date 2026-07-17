@@ -1391,3 +1391,169 @@ the two agree when the full set is achieved; `mark_complete_timestamps`
 `"max"`-vs-`"total"` + bad-policy raise; late-starting segment reports the
 shorter per-row effective span + warns). Full suite: **226 pass** (incl. the
 real-export end-to-end GUI test, which ran this session).
+
+## Session 23 — Roadmap cleanup + scoping the next refinement batch (Items 19–21) (2026-07-17)
+
+A planning/housekeeping-only session (like Sessions 0 / 0.1 / 10): no compute
+changed. Two things happened.
+
+**Cleanup.** Items 1–18 are all complete and certified (see Sessions 1–22), so
+their verbose scopes were **cleared from ROADMAP.md** — the file now opens with a
+one-line *Completed* index that points each finished item at its DESIGN_HISTORY
+session, keeping every cross-reference navigable without carrying the full build
+record twice. The build record itself stays here; nothing was deleted from this
+file.
+
+**Scoping.** The owner handed over five requests; grouped into three
+session-sized items plus one Future entry, recording the decisions so a later
+session doesn't re-litigate them:
+
+- **Segment table = corridor selection + name editing, merged (Item 19).** The
+  owner's "selectable segments for a corridor (flag the ones that make it
+  incomplete so I can drop them)" and "improve the CSV segment-name workflow with
+  a built-in editor, click a map object to select its table row" are the **same
+  table surface** — the owner explicitly suggested combining them. Scoped as one
+  item: an editable-*and*-selectable `dash_table.DataTable`, two-way linked with
+  the map, with a **pure-core completeness helper** (built on Item 1
+  `mark_complete_timestamps`) that flags which segments cost the complete-set rule
+  timestamps so they can be deselected for a more complete corridor/network
+  aggregate. The in-app editor supersedes Item 10's external hand-edit-the-CSV
+  path as primary (CSV kept for portability).
+
+- **Layout fix stays its own small item (Item 20).** "Charts below the map, to
+  the right of settings — kill the awkward whitespace between map and charts" is a
+  pure layout/CSS reflow with no compute and no dependency on the table work, so
+  it was **not** folded into Item 19 (that item is already large); kept as a small
+  Opus/Sonnet-eligible item.
+
+- **Database storage (Item 21).** "Add a DB (maybe one, connect, then select),
+  cache processed GIS data incl. AADT, a low-visibility intake button to ingest an
+  export, then run everything from the same DB." Scoped as a new pure-core
+  `store.py` (no hardcoded paths, file loaders still work — DB optional) plus a
+  GUI intake/select rewiring, caching the Item 18 spatial join at ingest. **DB
+  choice (DuckDB vs SQLite) is deliberately deferred to the top of the build
+  session** — DuckDB is already transitive via `traffic-anomaly` and fits
+  columnar + spatial, but the pick should follow the ingest/query needs. Flagged a
+  split point (pure core first, GUI second) because it's the largest item in the
+  batch.
+
+- **Directionality de-conflated into two things (owner correction, same day).**
+  The owner's original single "directionality" bullet ran together two unrelated
+  concerns, now split:
+  - **Direction-aware AADT *volume* → Future, unscoped.** "Signed +/− (N/E vs
+    S/W) or an N/E/S/W selector/offset/multiselect, fancy version a time-of-day
+    directional factor" — but about which direction's **count** to weight by. The
+    owner said **don't scope it yet, add it to Future**; it needs a planning pass
+    on whether `Cumulative_AADT` carries direction (route direction, `MADT1..12`,
+    class fields) or whether direction must be inferred from XD bearing.
+  - **Direction-aware *display* on the map → Item 20 (merged).** The concrete
+    usability bug: co-located opposing-direction segments overlap, so only the one
+    plotted on top renders — the other is hidden and unclickable. First scoped as
+    its own **Item 22** (a pure-core direction helper — Direction → compass and →
+    `+`/`−`, N/E positive — plus display toggles, a perpendicular display-offset
+    that leaves the analytic geometry untouched, or both, decided at build time),
+    then **merged into Item 20**: the display fix and the layout reflow edit the
+    **same `gui/app.py` map/layout region + `figures.segment_map`**, so running
+    them in one session loads the GUI context once and places the new direction
+    controls against the reflowed layout in a single coherent pass, rather than
+    restructuring the map container and squeezing controls into it a session later.
+    Item 22 is retired (stub kept, ID not reused). Noted the relationship to Item 19
+    (overlap makes map-click-to-row ambiguous) and that the `+`/`−` convention is
+    shared with the Future directional-AADT item.
+
+**Merge economics (owner-directed, 2026-07-17):** the owner asked to combine
+sessions only where it's *cheaper* (avoided context re-reads) or *better code*,
+and otherwise leave them split. Applied here: Items 20 (layout) + 22 (directional
+display) → **one Item 20**, because both edit the same map/layout code and the
+context load + the shared map-container edit would otherwise be paid twice; the
+lone non-shared piece (a pure-core `geometry` offset helper) is small and additive.
+Item 21 (the DB work) was **left standalone** — it shares little code surface with
+the GUI items and is the batch's largest lift.
+
+No renumbering — new IDs continue from 18 (→ 19, 20, 21; 22 assigned then retired
+into 20). File/priority order is 19 → 20 → 21; each is independent. Next: whichever
+the owner picks — Item 20 is the cheapest win (layout + map display), Item 19 the
+most-requested feature, Item 21 the largest lift.
+
+## Session 24 — Interactive segment table: coverage + membership + name edit (ROADMAP Item 19) (2026-07-17)
+
+Built the owner's most-requested refinement: one `dash_table.DataTable` doing
+triple duty — edit friendly names inline, select which segments belong to the
+active corridor/network, and flag which segments cost the complete-set rule its
+timestamps — two-way linked with the map. Pure-core first, then the GUI wiring,
+then a live preview of both link directions.
+
+**Pure core.**
+
+- **`speed.segment_coverage(df, members=None, value=None)`** — the completeness
+  helper. Over the timestamps any member reported, it returns per member the
+  **`coverage`** fraction and the **`complete_set_cost`** = the count of timestamps
+  at which that segment is the *sole* absent member (exactly how many complete-set
+  timestamps its removal recovers). Implemented as a presence pivot
+  (timestamp × member, reindexed so a never-reporting member is an all-False
+  column); `cost = (present_count == n_members−1) & ¬present[s]` summed over
+  timestamps. Value-aware when `value` is passed (a NaN value is *not reported*,
+  matching `corridor_travel_time`). Sorted most-worth-dropping first;
+  `attrs` carries `n_members` / `n_timestamps` / `n_complete`. Typed, no plotting.
+- **Additive `members=` on `corridor_travel_time` / `network_travel_time`** — an
+  explicit `Segment ID` list that restricts the rows *before* the complete-set rule
+  runs, so the sum + completeness are measured against exactly the selected set.
+  `None` (default) keeps the existing `Corridor/Region Name` grouping / whole
+  network, so every prior call is unchanged. The cost is exact:
+  `len(dropped_complete) − len(full_complete) == complete_set_cost` (asserted).
+- **`names.write_names(names_df, path)`** — persists an *edited* `Segment ID → name`
+  table (the table's rows) to the same CSV format `load_names` reads, so the in-app
+  editor round-trips through the portable store. Distinct from
+  `write_names_template` (which regenerates the seed from metadata); `inrix_label`
+  optional, name trimmed.
+
+**GUI (`gui/app.py` + `gui/figures.py`).**
+
+- A `dash_table.DataTable` (`segment-table`) with an **editable `name`** column,
+  read-only `Combined` / **Coverage %** / **Completeness cost** / `Segment ID`,
+  `row_selectable="multi"`, native sort, and a `style_data_conditional` that ambers
+  any `complete_set_cost > 0` row. A **Save names** link writes the CSV and updates
+  the live label mapping (`ds.labels` + `geo["name"]`) so the dropdown / hover
+  refresh without a reload.
+- **Explicit membership** flows through a `dcc.Store("corridor-members")` fed by the
+  table's `selected_rows`. `_norm_members` canonicalises it: empty / whole-set →
+  `None` (no override, so existing corridor/network defaults hold), a real subset →
+  the sorted id list. Threaded through `_analysis_frame` (a subset routes both
+  corridor and network scope through `network_travel_time(members=…)`, one synthetic
+  group), `_adjusted_frame`, and `_compare_all`, with `_members_key` added to both
+  caches so a subset decomposition doesn't collide with the whole-network one.
+- **Two-way map ↔ table link.** `figures.segment_map` gained a `member_ids` arg that
+  draws non-members faint (opacity 0.2) when a *proper* subset is selected (whole /
+  empty dims nothing). `_map` passes the normalised member set. Map click →
+  `segment.value` (existing) → `_highlight_row` sets the table `active_cell`
+  (highlights + scrolls to the row); clicking a row cell → `_row_selects_segment`
+  sets `segment.value` (map ring + panels). Both callbacks guard on the current
+  value/row so they settle at a fixpoint instead of looping.
+
+**Decisions.** Default selection is **empty** (no override), not "all ticked": a
+no-op selection means "use the corridor grouping / whole network", which keeps every
+Item 12/17/18 default intact and only lets the table *refine* membership. An
+explicit subset in corridor scope routes through `network_travel_time` (one group,
+`expected="total"`) rather than the corridor-name grouping — the membership *is* the
+corridor once the user has picked it. The visible-not-silent completeness flag
+(ambered row + the cost column) is the owner's core ask made concrete.
+
+**Verification.** `pytest tests/` — **243 passing** (incl. the self-skipping
+real-export end-to-end, which now also asserts the 46-row table, `segment_coverage`,
+and that dropping the costliest segment never loses complete-set timestamps). New
+tests: coverage on a fixture with a known chronically-missing segment (exact cost 4,
+coverage 0.6, and `dropped − full == cost`), value-aware coverage, subset coverage,
+the `members=` override on `corridor_travel_time`, `write_names` round-trip, and the
+GUI wiring (table rows/columns, `_rows_to_member_ids`, `_segment_row_index`,
+`_norm_members`, membership keys the adjusted cache, `segment_map` dims non-members,
+the save round-trip). **Live preview on the real Myrtle export** confirmed both
+directions: ticking rows → "2 of 46 segments" + the map dimming 44 of 46 lines; a
+map click → the dropdown + the table `active_cell` moving to row 19 (the clicked
+segment) and scrolling into view; a row-cell click → the map selection ring; **Save
+names** → `out/segment_names.csv` in the exact `load_names` format.
+
+**Docs.** DATA_FORMAT.md gained a "Segment coverage + the completeness cost" note in
+the complete-set section; README documents the segment table's three jobs and the
+map link; ROADMAP Item 19 boxes checked and the Completed index + status line
+updated. Follow-ons unchanged: Item 20 (layout reflow + directional display — it
+will place the new table against the reflowed layout) and Item 21 (DB storage).

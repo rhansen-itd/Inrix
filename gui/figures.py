@@ -67,6 +67,7 @@ def segment_map(
     label_col: str = "Combined",
     sublabel_col: str | None = None,
     colorscale: str = _MAP_COLORSCALE,
+    member_ids: set | None = None,
     height: int = 620,
     uirevision: str = "segment-map",
 ) -> go.Figure:
@@ -90,6 +91,10 @@ def segment_map(
             the title (e.g. the raw INRIX ``Combined`` label); skipped when it
             equals the title or is missing.
         selected_id: segment to highlight (ring + thick white-edged line).
+        member_ids: optional corridor-membership set (ROADMAP Item 19). When a
+            *proper subset* is given, non-member segments are drawn faint so the
+            selected corridor stands out; ``None`` or the whole set dims nothing.
+            Members stay full-strength and clickable/hoverable either way.
         uirevision: Plotly ``uirevision`` token — pan/zoom is preserved while it
             is unchanged, so key it on the loaded dataset to recenter on a new
             export but hold the view across metric/selection updates.
@@ -101,16 +106,24 @@ def segment_map(
     lons, lats, cvals, custom, texts = [], [], [], [], []
     color_for = _line_colors(geo.index, values, colorscale)
 
+    # A membership set that is a *proper* subset of the drawn segments dims the
+    # non-members; an empty / whole-set selection dims nothing (Item 19).
+    ids_drawn = {int(s) for s in geo.index}
+    mset = {int(m) for m in member_ids} & ids_drawn if member_ids is not None else None
+    dim_nonmembers = bool(mset) and mset != ids_drawn
+
     for sid, row in geo.iterrows():
         geom = row.get("geometry")
         if geom is None or getattr(geom, "is_empty", True):
             continue
         xs, ys = geom.xy
         is_sel = selected_id is not None and int(sid) == int(selected_id)
+        is_member = mset is None or int(sid) in mset
+        faint = dim_nonmembers and not is_member
         fig.add_trace(go.Scattermap(
             lon=list(xs), lat=list(ys), mode="lines",
             line=dict(width=6 if is_sel else 3, color=_HIGHLIGHT if is_sel else color_for[sid]),
-            opacity=1.0 if is_sel else 0.85,
+            opacity=0.2 if faint else (1.0 if is_sel else 0.85),
             hoverinfo="skip", showlegend=False,
         ))
         mid = geom.interpolate(0.5, normalized=True)

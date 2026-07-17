@@ -165,6 +165,33 @@ def write_names_template(metadata: pd.DataFrame, path) -> Path:
     return path
 
 
+def write_names(names_df: pd.DataFrame, path) -> Path:
+    """Write an edited ``Segment ID -> name`` table to ``path`` as a names CSV that
+    ``load_names`` reads back verbatim (ROADMAP Item 19's in-app editor path).
+
+    Unlike ``write_names_template`` (which regenerates the *seed* from metadata),
+    this persists names the user has already edited — e.g. the rows of the GUI
+    segment table. ``names_df`` needs a ``Segment ID`` and a ``name`` column
+    (``inrix_label`` optional, blanked if absent); the output column order matches
+    the template so the store stays a single portable format. Returns the path.
+    """
+    if SEGMENT_COL not in names_df.columns or NAME_COL not in names_df.columns:
+        raise ValueError(
+            f"names_df must have '{SEGMENT_COL}' and '{NAME_COL}' columns; "
+            f"got {list(names_df.columns)}"
+        )
+    out = pd.DataFrame({
+        SEGMENT_COL: names_df[SEGMENT_COL].astype("int64"),
+        INRIX_LABEL_COL: (names_df[INRIX_LABEL_COL].fillna("").astype(str)
+                          if INRIX_LABEL_COL in names_df.columns else ""),
+        NAME_COL: names_df[NAME_COL].fillna("").astype(str).str.strip(),
+    })
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(path, index=False)
+    return path
+
+
 def load_names(path) -> pd.DataFrame:
     """Read a names CSV written by ``write_names_template`` (or hand-authored).
 
