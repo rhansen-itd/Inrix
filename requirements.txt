@@ -1,0 +1,30 @@
+# requirements.txt — pinned dependency set for inrix_tools.
+#
+# pyproject.toml is the source of truth; this file mirrors it for a one-shot
+# `pip install -r requirements.txt` that pulls the full app + test stack (core +
+# the geo and gui extras + dev tooling). Keep the two in sync when either changes.
+#
+# For a minimal install of just the pure stats core, use the first block only
+# (or `pip install .`); the geo/gui/dev blocks are the pyproject optional extras.
+
+# --- core (pure stats core: io, timebins, speed, beforeafter, decompose) ---
+pandas>=2.0
+numpy>=1.24
+plotly>=5.20
+scipy>=1.11
+# Robust decomposition / changepoint on multi-entity time series.
+# Depended on, not vendored (MIT, PyPI, CI-tested). See CLAUDE.md.
+traffic-anomaly>=2.5.0
+
+# --- geo extra (geometry.py, kml.py, aadt.py: XD shapefile + AADT join) ---
+geopandas>=0.14
+shapely>=2.0
+pyogrio>=0.7   # fast shapefile IO backend for geopandas
+
+# --- gui extra (gui/: Plotly Dash data explorer; consumes the geo layer) ---
+dash>=2.16
+dash-bootstrap-components>=1.5
+
+# --- dev (tests + lint) ---
+pytest>=8.0
+ruff>=0.4
