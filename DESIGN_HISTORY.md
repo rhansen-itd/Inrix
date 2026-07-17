@@ -1632,3 +1632,105 @@ errors.
 section (the signed `N/E = +` convention + the offset rule); ROADMAP Item 20 boxes
 checked and the status line + Completed index updated. Remaining open work: Item 21
 (DB-backed storage & ingest).
+
+## Session 26 — DB-backed storage & ingest: DuckDB store + GUI intake/select (ROADMAP Item 21) (2026-07-17)
+
+Closed the Items 19–21 batch. Moved the app off re-parsing the export `.zip` and the
+GIS shapefiles every session onto an optional **persistent DuckDB store**: ingest an
+export + its processed geometry/AADT join **once**, then *select* it back and run from
+the DB — the expensive Item 18 spatial join is cached at ingest, not repeated per load.
+Pure core first (`store.py` + its tests), then the GUI intake/select wiring; the
+file-path loader stays fully intact (the DB is an accelerator, not a requirement).
+
+**Top-of-session decision (recorded): DuckDB, not SQLite.** DuckDB is already a
+transitive dependency (via `traffic-anomaly`'s `ibis-framework[duckdb]`), and its
+columnar engine fits the analytic scan of a ~2M-row export. The DuckDB **`spatial`
+extension is deliberately *not* used**: the GIS layers here are a small per-segment
+table, so geometry is serialized as **WKB blobs** and rehydrated with `shapely` — no
+in-DB spatial predicates, which keeps `connect` offline (no extension download) and the
+schema portable. SQLite would serve the small tables but loses on the big scan, so the
+pick is on the *query* need, per the ROADMAP's guidance.
+
+**Pure core (`src/inrix_tools/store.py`).** No GUI imports, **no hardcoded paths** (the
+DB path/connection is always a param).
+
+- **`connect(db_path, read_only=)`** — opens DuckDB, pins `SET TimeZone='UTC'` (so
+  `TIMESTAMPTZ` reads back as UTC), ensures the `_datasets` registry.
+- **`ingest_export` / `put_export`** — write the `io.load_data` frame + `io.load_metadata`
+  frame to per-dataset tables (`obs_<key>` / `meta_<key>`) and upsert a registry row
+  (source, tz, units, row/segment counts, date span, `schema_version`, `ingested_at`).
+  Idempotent per name (`CREATE OR REPLACE` + registry replace). `put_export` is the
+  lower entry for when the caller already holds the frames (the GUI does).
+- **`ingest_geometry` / `ingest_aadt`** — persist the **processed** geo layer to
+  `geo_<key>`: `Segment ID`, `source`, the `join_aadt` columns
+  (`AADT`/`aadt_source`/`aadt_dist_m`/`Route`/`Commercial`), geometry as a WKB blob
+  (`NULL` for a `missing` segment). `ingest_aadt` merges just the AADT columns onto an
+  existing geo (geometry preserved). This is the once-at-ingest cache of the spatial join.
+- **`list_datasets` / `dataset_names` / `load_export` / `load_metadata` / `load_geometry`
+  / `load_dataset` / `remove_dataset`** — read side. `load_export` normalizes `Date Time`
+  back to `datetime64[ns, UTC]` and restores `df.attrs['units']` so the frame **equals**
+  the file loader's; `load_geometry` rebuilds a WGS84 GeoDataFrame indexed by `Segment ID`;
+  `load_dataset` bundles all three into a `StoredDataset`.
+- **Per-dataset tables keyed by `_dataset_key(name)`** (sanitized name + short md5) so
+  heterogeneous exports (different unit-named columns) never collide on one schema, and
+  re-ingest is a clean overwrite.
+
+**GUI (`gui/app.py`).** Kept the thin-shell split — the callbacks call `store.*`, no
+statistics added.
+
+- **`load_dataset` refactor.** Factored the file build into `_build_geo` (shapefile read
+  + `segment_geometry` + `join_aadt` — the expensive step) and the cheap per-session
+  decoration into `_decorate_geo` (Combined hover label, directional `dir_group`/`dir_sign`,
+  friendly `name`). A new `dataset_name=` param switches the source: unset → the file path
+  (build geo); set → `store.load_dataset` (ingested frames + the **cached** join). Both
+  paths then run the identical tail (`to_local` → `filter_cvalue` → date range → delay →
+  decorate → AADT series), so a DB-loaded `Dataset` is indistinguishable from a file-loaded
+  one. The names/directions/Combined are re-derived on load (kept out of the cache — they're
+  cheap and `names_path`-dependent).
+- **`ingest_to_db`** — reads the export once, `put_export`s it, builds+joins the geo once
+  via `_build_geo`, and `ingest_geometry`s it.
+- **Intake/select controls (low-visibility).** In the Data card: a "⤓ Ingest current
+  export to DB" link button + status, and a "Saved datasets" `dcc.Dropdown` (options read
+  from the DB at layout build via `_dataset_options`, which degrades to `[]` when no DB
+  file exists — headless-safe). `_ingest` callback ingests then selects the new dataset,
+  which (as a second Input on `_load`) auto-loads it from the DB. `_load` now branches on
+  `ctx.triggered_id`: the "Load export" button → file path; a dataset selection → DB path
+  (loading the full ingested span; a cleared selection is a no-op).
+- Single lazily-opened connection (`_db()` over `DEFAULT_DB = inrix_store.duckdb`,
+  gitignored). DB features degrade to off if DuckDB/the store is unavailable.
+
+**Decisions.** (1) `store.py` is **persistence-only** — it accepts prebuilt frames rather
+than importing the geo stack, so its tests are shapefile-free and it stays dependency-light
+(the GUI, which already builds geo, orchestrates). (2) The geo cache holds only
+geometry+join columns; the `name`/`Combined`/direction decoration is re-derived per load so
+an edited names CSV or a tz change is honoured without re-ingest. (3) Migration policy is
+**re-ingest** (the store is a cache): `schema_version` is stamped per dataset and a stale
+one is rebuilt from the recorded `source`; no in-place migrator until an ingest is
+expensive enough to warrant one. (4) WKB-over-blob instead of the DuckDB spatial extension,
+per the top-of-session decision.
+
+**Verification.** `pytest tests/` — **263 passing** (250 → +11 store, +2 GUI). The
+`store.py` suite (`tests/test_store.py`, 11 tests) covers: `io.load_data`/`load_metadata`
+**parity** after round-trip; tz-aware UTC + units preserved; geometry+AADT round-trip (real
+polylines, a `missing` segment as `None`, match flags); `load_dataset` bundling;
+`ingest_aadt` updating only the join columns; the **GIS-join cache hit** (monkeypatched
+`aadt.join_aadt` counter stays 0 on load); the DB path as a param persisting to a nested
+file; and the **self-skipping real-export ingest** (the licensed Myrtle export — ran, 2M-row
+round-trip span matched). `tests/test_gui.py` adds the DB intake/select coverage: the layout
+ids (`dataset` / `ingest-export` / `ingest-status`) present; an `ingest_to_db` → DB
+`load_dataset` frame that **equals** the file load while `_build_geo` is called **once at
+ingest, not on load** (the join cache hit at the GUI seam, via a call counter); and
+`_dataset_options` empty without a DB file (headless-safe). *(A transient harness issue
+mid-session briefly rejected every Python spawn — `echo`/`ls` worked but `python`/`pytest`
+returned "Stream closed"; it cleared and the full suite ran green.)* **Live end-to-end on
+the real Myrtle export**: file load 1.87M rows / 46 segs / AADT in **16.2 s**; `ingest_to_db`
+(real shapefile geometry + real AADT spatial join, 2.19M raw rows cached) in **13.2 s**;
+then **DB load of the same 1.87M rows / 46 segs / AADT in 3.8 s** — ~4× faster, reading the
+cached join (all 46 AADT segments `matched`), with row/segment parity against the file load
+and `has_geometry`/`has_aadt`/`schema_version=1` correct in the registry.
+
+**Docs.** DATA_FORMAT.md gained a "Database store (`store.py`, Item 21)" section (the DuckDB
+decision + WKB rationale, the table layout, the tz/geometry round-trip rules, and the
+`schema_version` / re-ingest migration policy); ROADMAP Item 21 boxes checked, status line +
+Completed index updated (the Items 19–21 batch is now complete). The Items 19–21 refinement
+batch is closed; all remaining ROADMAP work is in **Future** (needs a planning pass).

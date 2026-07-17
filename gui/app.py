@@ -36,7 +36,7 @@ import figures  # noqa: E402
 import dash_bootstrap_components as dbc  # noqa: E402
 from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html, no_update  # noqa: E402
 
-from inrix_tools import aadt, beforeafter, changepoint, geometry, io, kml, names, speed  # noqa: E402
+from inrix_tools import aadt, beforeafter, changepoint, geometry, io, kml, names, speed, store  # noqa: E402
 from inrix_tools.io import CORRIDOR_COL, DATETIME_COL, SEGMENT_COL  # noqa: E402
 from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
@@ -61,6 +61,11 @@ DEFAULT_TZ = io.DEFAULT_TZ
 DEFAULT_CVALUE = io.DEFAULT_CVALUE_THRESHOLD
 OUTPUT_DIR = _REPO / "out"
 CACHE_DIR = _REPO / "geometry_cache"
+# Persistent DuckDB store (Item 21): ingest an export + its GIS join once, then
+# select it back instead of re-parsing. Path is the app's default; the pure
+# ``store`` module never hardcodes it (the connection is always a param there).
+# Generated output — gitignored, regenerate by re-ingesting.
+DEFAULT_DB = str(_REPO / "inrix_store.duckdb")
 # AM peak / midday / PM peak / overnight — a sensible default; not load-bearing.
 DEFAULT_TIME_BINS = ["6:00AM-9:00AM", "9:00AM-3:00PM", "3:00PM-7:00PM", "7:00PM-6:00AM"]
 
@@ -175,6 +180,36 @@ def _get(token) -> Dataset | None:
 
 
 # ---------------------------------------------------------------------------
+# Persistent DuckDB store (Item 21): a single lazily-opened connection to the
+# app's default DB. The pure ``store`` module takes the path as a param; the app
+# supplies ``DEFAULT_DB`` here. Optional — if DuckDB / the store is unavailable,
+# the DB features degrade to empty and the file-path loader keeps working.
+# ---------------------------------------------------------------------------
+_DB = {"path": None, "con": None}
+
+
+def _db(path: str | None = None):
+    """The shared store connection (opened on first use, reused thereafter)."""
+    path = path or DEFAULT_DB
+    if _DB["con"] is None or _DB["path"] != path:
+        _DB["con"] = store.connect(path)
+        _DB["path"] = path
+    return _DB["con"]
+
+
+def _dataset_options() -> list[dict]:
+    """Dropdown options for the datasets already ingested into the store — read at
+    layout build. Degrades to ``[]`` if the DB file doesn't exist yet or the store
+    can't be opened (keeps the headless smoke test DB-free)."""
+    try:
+        if not Path(DEFAULT_DB).exists():
+            return []
+        return [{"label": n, "value": n} for n in store.dataset_names(_db())]
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Compute wiring — thin calls into inrix_tools (no statistics defined here).
 # ---------------------------------------------------------------------------
 def _parse_freeflow(freeflow):
@@ -186,11 +221,61 @@ def _parse_freeflow(freeflow):
     return "ref"
 
 
+def _build_geo(meta, shapefile: str, aadt_path: str | None, cache_stem: str):
+    """Build the processed segment-geometry layer from files (Item 8) and spatially
+    join AADT onto it (Item 18) — the expensive step the DB caches once at ingest.
+
+    Returns a GeoDataFrame indexed by ``Segment ID`` with ``geometry`` / ``source``
+    and, when ``aadt_path`` resolves, the ``join_aadt`` columns. Best-effort AADT:
+    a missing file or a join error just leaves the volume columns off."""
+    seg_ids = list(meta.index)
+    cache = CACHE_DIR / f"{cache_stem}.geoparquet"
+    net = geometry.load_xd_network(shapefile, segment_ids=seg_ids, cache_path=str(cache))
+    geo = geometry.segment_geometry(net, segment_ids=seg_ids, metadata=meta)
+    if aadt_path:
+        try:
+            b = geo.total_bounds
+            pad = 0.01  # ~1 km — cover AADT lines just outside the segment envelope
+            bbox = (b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad)
+            aadt_layer = aadt.load_aadt(aadt_path, year=aadt.DEFAULT_YEAR, bbox=bbox)
+            geo = aadt.join_aadt(geo, aadt_layer)
+        except Exception:
+            pass  # degrade to no-AADT
+    return geo
+
+
+def _decorate_geo(geo, meta, labels):
+    """Annotate a (freshly built or DB-loaded) geo layer with the cheap, per-session
+    columns kept **out** of the cache: the raw ``Combined`` hover label, the
+    directional compass group / sign (Item 20), and the friendly ``name`` (Item 10,
+    ``names_path``-dependent). Geometry and the cached AADT-join columns are
+    untouched."""
+    if geo is None:
+        return geo
+    if "Combined" in meta.columns:
+        geo["Combined"] = meta["Combined"].reindex(geo.index)
+    # Directional display (Item 20): compass group (N/E/S/W) + ± sign from metadata
+    # Direction, so the map can filter which directions render and colour by sign.
+    if "Direction" in meta.columns:
+        geo = geometry.attach_directions(geo, meta["Direction"])
+    geo["name"] = geo.index.map(lambda s: labels.get(int(s), f"Segment {int(s)}"))
+    return geo
+
+
 def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHAPEFILE,
                  names_path: str | None = None,
                  date_start=None, date_end=None, freeflow="ref",
-                 aadt_path: str | None = None) -> Dataset:
+                 aadt_path: str | None = None, dataset_name: str | None = None) -> Dataset:
     """Load + localize + CValue-filter an export, join its segment geometry.
+
+    Two intake paths (Item 21), identical downstream:
+
+    * **File** (default) — read the export ``.zip`` / dir / ``.csv`` with
+      :func:`io.load_data` / :func:`io.load_metadata` and build the geometry+AADT
+      layer from the shapefiles via :func:`_build_geo` (the spatial join runs here).
+    * **DB** (``dataset_name`` set) — read the *ingested* frames + the **cached**
+      geometry+AADT layer straight from the DuckDB store (:mod:`inrix_tools.store`),
+      so the export isn't re-parsed and the spatial join isn't repeated.
 
     ``names_path`` (optional) points at a user-edited names CSV
     (``names.load_names``); the resolved ``Segment ID -> friendly name`` mapping
@@ -204,14 +289,23 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     is kept on ``full_span`` so the "Restrict dates" picker can widen again.
 
     ``aadt_path`` (optional, Item 18) points at the ITD AADT layer
-    (``Cumulative_AADT.zip``); when given, ``aadt.load_aadt`` reads the 2024 rows
-    within the export's geometry bounds and ``aadt.join_aadt`` spatially attaches a
-    volume per ``Segment ID`` (flagged ``matched`` / ``nearest`` / ``missing``).
-    The per-segment AADT lands on ``Dataset.aadt`` and on ``geo`` (for the hover
-    and the volume-weighted map/scope options). A load/join failure degrades
-    quietly to no-AADT (the extra options stay hidden).
+    (``Cumulative_AADT.zip``); on the file path ``aadt.load_aadt`` reads the 2024
+    rows within the export's geometry bounds and ``aadt.join_aadt`` spatially
+    attaches a volume per ``Segment ID`` (flagged ``matched`` / ``nearest`` /
+    ``missing``). On the DB path the join is read from the cache instead. The
+    per-segment AADT lands on ``Dataset.aadt`` and on ``geo``. A load/join failure
+    degrades quietly to no-AADT (the extra options stay hidden).
     """
-    raw = io.load_data(source)
+    if dataset_name:
+        # DB path: ingested frames + the cached geometry/AADT join (no re-parse,
+        # no repeated spatial join).
+        sd = store.load_dataset(_db(), dataset_name)
+        raw, meta, geo = sd.df, sd.metadata, sd.geo
+    else:
+        raw = io.load_data(source)
+        meta = io.load_metadata(source)
+        geo = _build_geo(meta, shapefile, aadt_path, Path(source).stem)
+
     local = io.to_local(raw, tz)
     full = io.filter_cvalue(local, cvalue)
     # Untrimmed span first (drives the Restrict-dates picker bounds), then trim.
@@ -221,56 +315,28 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
         filt = filter_date_range(full, date_start, date_end)
     else:
         filt = full
-    meta = io.load_metadata(source)
-
-    seg_ids = list(meta.index)
-    cache = CACHE_DIR / f"{Path(source).stem}.geoparquet"
-    net = geometry.load_xd_network(shapefile, segment_ids=seg_ids, cache_path=str(cache))
-    geo = geometry.segment_geometry(net, segment_ids=seg_ids, metadata=meta)
-    if "Combined" in meta.columns:
-        geo["Combined"] = meta["Combined"].reindex(geo.index)
-    # Directional display (Item 20): annotate each segment with its compass group
-    # (N/E/S/W) and +/- sign from metadata Direction, so the map can filter which
-    # directions render and colour by sign. Geometry stays untouched here — the
-    # perpendicular offset that separates co-located opposing pairs is applied on a
-    # display copy in the map callback.
-    if "Direction" in meta.columns:
-        geo = geometry.attach_directions(geo, meta["Direction"])
 
     # Friendly names (Item 10): seed from the INRIX labels, overlaid by the user's
     # CSV when supplied. A single mapping is the source of truth for the dropdown,
-    # map hover title, forest rows, and panel titles; the raw Combined stays on
-    # ``geo`` for the hover subtitle so nothing is lost.
+    # map hover title, table rows, and panel titles.
     names_df = names.load_names(names_path) if names_path else None
     labels = names.apply_names(meta, names_df)
-    geo["name"] = geo.index.map(lambda s: labels.get(int(s), f"Segment {int(s)}"))
+    geo = _decorate_geo(geo, meta, labels)
 
     # Delay metric (Item 17): a per-row Delay(Minutes) = observed travel time −
-    # free-flow travel time (Miles / free-flow speed × 60), computed once at load
-    # so it flows through every panel like any other value column. Metadata
-    # supplies segment length; a segment with no resolvable free-flow speed gets
-    # NaN delay and the metric is disabled by _metric_choices. Skip quietly if the
-    # export can't support it (no Ref Speed / Speed column).
+    # free-flow travel time, computed once at load so it flows through every panel
+    # like any other value column. Skip quietly if the export can't support it.
     try:
         filt = speed.segment_delay(filt, geo_or_metadata=meta,
                                     free_flow=_parse_freeflow(freeflow))
     except ValueError:
         pass  # no Delay column -> metric option stays disabled
 
-    # AADT volume layer (Item 18): a spatial join of the 2024 AADT lines (within the
-    # export's geometry bounds) onto each Segment ID. Optional and best-effort — a
-    # missing file or a join error just leaves the volume features off.
-    aadt_series = None
-    if aadt_path:
-        try:
-            b = geo.total_bounds
-            pad = 0.01  # ~1 km — cover AADT lines just outside the segment envelope
-            bbox = (b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad)
-            aadt_layer = aadt.load_aadt(aadt_path, year=aadt.DEFAULT_YEAR, bbox=bbox)
-            geo = aadt.join_aadt(geo, aadt_layer)
-            aadt_series = geo[aadt.AADT_COL]
-        except Exception:
-            aadt_series = None  # degrade to no-AADT
+    # AADT (Item 18): the per-segment volume now lives on ``geo`` — from the file
+    # spatial join (``_build_geo``) or the DB cache — so the same column feeds the
+    # weighted metrics regardless of intake path.
+    aadt_series = geo[aadt.AADT_COL] if (
+        geo is not None and aadt.AADT_COL in getattr(geo, "columns", [])) else None
 
     dates = filt[DATETIME_COL].dt.date
     # An over-narrow restriction can empty the frame; fall back to the full span
@@ -281,6 +347,22 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
         metric_cols=speed.metric_columns(filt), tz=tz,
         span=span, full_span=full_span, labels=labels, aadt=aadt_series,
     )
+
+
+def ingest_to_db(source: str, shapefile: str = DEFAULT_SHAPEFILE,
+                 aadt_path: str | None = None, name: str | None = None) -> str:
+    """Ingest an export + its processed GIS join into the store under ``name``
+    (defaults to the source stem). Reads the export once with the file loaders,
+    builds the geometry+AADT layer once via :func:`_build_geo`, and persists both —
+    the spatial join runs **here**, not per later load. Returns the dataset name."""
+    name = name or Path(source).stem
+    con = _db()
+    df = io.load_data(source)
+    meta = io.load_metadata(source)
+    store.put_export(con, name, df, meta, source=str(source))
+    geo = _build_geo(meta, shapefile, aadt_path, Path(source).stem)
+    store.ingest_geometry(con, name, geo)
+    return name
 
 
 def _metric_col(ds: Dataset, metric_key: str) -> str | None:
@@ -720,6 +802,17 @@ def _controls() -> dbc.Card:
         dbc.Button("Write name template", id="write-names", color="link", size="sm",
                    className="p-0 mt-1"),
         html.Div(id="names-status", className="small text-muted"),
+        # Database-backed storage (Item 21): a low-visibility intake. "Ingest to DB"
+        # loads the current export + its GIS join into the DuckDB store *once*;
+        # thereafter pick it from "Saved datasets" to run from the DB (no re-parse,
+        # no repeated spatial join). The file-path loader above still works unchanged.
+        dbc.Button("⤓ Ingest current export to DB", id="ingest-export", color="link",
+                   size="sm", className="p-0 mt-1 d-block",
+                   title="Store this export + its geometry/AADT join for fast reload"),
+        html.Div(id="ingest-status", className="small text-muted"),
+        dbc.Label("Saved datasets", className="mt-1 small text-muted"),
+        dcc.Dropdown(id="dataset", placeholder="Select an ingested dataset (DB)",
+                     options=_dataset_options(), clearable=True),
         html.Hr(),
         html.H6("Metric", className="text-muted"),
         dbc.RadioItems(id="metric", value="tt", inline=True,
@@ -954,6 +1047,7 @@ def _register_callbacks(app: Dash) -> None:
         Output("dir-compass", "options"),
         Output("dir-compass", "value"),
         Input("load", "n_clicks"),
+        Input("dataset", "value"),
         State("source", "value"),
         State("tz", "value"),
         State("cvalue", "value"),
@@ -965,20 +1059,26 @@ def _register_callbacks(app: Dash) -> None:
         State("aadt-path", "value"),
         prevent_initial_call=True,
     )
-    def _load(_n, source, tz, cvalue, metric, names_path, date_start, date_end,
+    def _load(_n, dataset, source, tz, cvalue, metric, names_path, date_start, date_end,
               freeflow, aadt_path):
+        # Two triggers feed this callback (Item 21): the "Load export" button loads
+        # from the file path (``source``); selecting a "Saved datasets" entry loads
+        # that dataset from the DuckDB store. A cleared dataset selection is a no-op.
+        from_db = ctx.triggered_id == "dataset"
+        if from_db and not dataset:
+            return tuple([no_update] * 28)
         # A cleared CValue input arrives as None/"" — default it rather than let
         # int(None) blow up with a cryptic message (Item 14 review B6).
         cv = DEFAULT_CVALUE if cvalue in (None, "") else int(cvalue)
+        # On a DB select, load the full ingested span (the Restrict-dates picker may
+        # still hold the previous export's range); the picker resets below.
+        r_ds, r_de = (None, None) if from_db else (date_start, date_end)
         try:
-            # date_start/date_end come from the Restrict-dates picker (Item 11):
-            # trim the session to that calendar sub-range so the cached frame,
-            # and every downstream compute, is smaller. Empty on the first load
-            # (no restriction) until the picker is populated below.
             ds = load_dataset(source, tz or DEFAULT_TZ, cv,
                               names_path=names_path or None,
-                              date_start=date_start, date_end=date_end,
-                              freeflow=freeflow, aadt_path=aadt_path or None)
+                              date_start=r_ds, date_end=r_de,
+                              freeflow=freeflow, aadt_path=aadt_path or None,
+                              dataset_name=dataset if from_db else None)
         except Exception as exc:  # surface the failure in the UI, don't crash
             return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 26)
         token = _store(ds)
@@ -997,8 +1097,8 @@ def _register_callbacks(app: Dash) -> None:
         # user can widen again), start/end echo the applied restriction, defaulting
         # to the full span when none is set (Item 11).
         full_lo, full_hi = ds.full_span
-        r_start = date_start or full_lo
-        r_end = date_end or full_hi
+        r_start = r_ds or full_lo
+        r_end = r_de or full_hi
         trimmed = (lo, hi) != (full_lo, full_hi)
         status = (f"✓ {len(ds.df):,} rows · {len(ds.metadata)} segments · "
                   f"{lo}…{hi}{' (restricted)' if trimmed else ''} · {ds.tz}")
@@ -1026,6 +1126,26 @@ def _register_callbacks(app: Dash) -> None:
                 full_lo, full_hi, r_start, r_end,
                 corr_opts, corr_val, scope_opts, map_mode_opts, wspeed_opts,
                 table_data, [], None, dir_opts, [])
+
+    # Ingest the current export (+ its GIS join) into the DuckDB store, then refresh
+    # the "Saved datasets" dropdown and select the new dataset — which triggers
+    # ``_load`` to run from the DB (Item 21). Best-effort: a failure surfaces inline.
+    @app.callback(
+        Output("dataset", "options"),
+        Output("dataset", "value"),
+        Output("ingest-status", "children"),
+        Input("ingest-export", "n_clicks"),
+        State("source", "value"),
+        State("aadt-path", "value"),
+        prevent_initial_call=True,
+    )
+    def _ingest(_n, source, aadt_path):
+        try:
+            name = ingest_to_db(source, aadt_path=aadt_path or None)
+        except Exception as exc:
+            return no_update, no_update, f"⚠ Ingest failed: {exc}"
+        opts = [{"label": n, "value": n} for n in store.dataset_names(_db())]
+        return opts, name, f"✓ Ingested '{name}' — loading from DB"
 
     # Map click -> segment dropdown (the dropdown is the single selection source).
     @app.callback(
