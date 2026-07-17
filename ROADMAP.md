@@ -348,8 +348,8 @@ even though its stable ID is higher.
 its confirmed findings became **Items 15–16**, placed right after it. The review's
 recommended order is **15 → 16 → 11 → 10 → 12 → 13** (stats validity first — it
 changes every number the app shows — then responsiveness, then the owner batch).
-**Items 15 and 16 are now done** (DESIGN_HISTORY Sessions 12–13); the remaining
-order is **11 → 10 → 12 → 13**. Item 13 gained one bullet (the forest hover fix);
+**Items 15, 16, 10 and 11 are now done** (DESIGN_HISTORY Sessions 12–15); the
+remaining order is **12 → 13**. Item 13 gained one bullet (the forest hover fix);
 the review's §3 ideas await owner acceptance before becoming items.
 
 **Model assignment (owner, 2026-07-16):** **Item 15 is reassigned to Fable**,
@@ -561,21 +561,26 @@ and stays snappy. A **pure-core row filter** feeding the existing `Dataset`, not
 new statistic — the same architectural shape as the Item 9 time-of-day window, but
 on calendar date rather than time-of-day.
 
-Scope:
-- [ ] `timebins.filter_date_range(df, start, end)` (or `io.filter_dates`) — keep
-      rows whose local `Date Time` date is in `[start, end]` (inclusive calendar
-      days, tz-aware, half-open at the next midnight like `parse_period`); records
-      the retained span on `attrs`. Empty/None bound = open on that side.
-- [ ] GUI: a "Restrict dates" `DatePickerRange` (defaulting to the full export
-      span) applied **at load / on an Apply button**, shrinking the cached
-      `Dataset.df` so the reduction is real (memory + speed), not just a display
-      filter. The before/after and time-of-day controls then operate within the
-      retained span (clamp their allowed range to it).
-- [ ] Confirm the before/after default windows and the map/panels recompute
-      correctly against the trimmed `span`; invalidate the `_compare_cache`.
-- [ ] pytest: date filter (inclusive edges, open bound, tz/attrs, immutability)
-      + a GUI test that a trimmed dataset carries fewer rows and the panels drive.
-      DESIGN_HISTORY entry.
+Scope (done 2026-07-16 — see DESIGN_HISTORY.md Session 15):
+- [x] `timebins.filter_date_range(df, start, end)` — keep rows whose local
+      `Date Time` date is in `[start, end]` (inclusive calendar days, tz-aware,
+      half-open at the next local midnight like `parse_period`, DST-safe); records
+      the applied inclusive span on `attrs['date_range']` as an ISO `(start, end)`
+      pair. `None`/`""` bound = open on that side; a `start` after `end` keeps
+      nothing.
+- [x] GUI: a "Restrict dates" `DatePickerRange` (defaulting to the full export
+      span) applied **at load**, shrinking the cached `Dataset.df` so the reduction
+      is real (memory + downstream speed), not just a display filter. Picker bounds
+      are the *untrimmed* export span (`Dataset.full_span`) so it can widen again;
+      the before/after and ToD controls clamp to the trimmed `span`.
+- [x] The before/after default windows (`default_periods`) and the map/panels
+      recompute against the trimmed `span` (they read `ds.df` / `ds.span`); the
+      `_compare_cache` is fresh because each load builds a new `Dataset` with empty
+      caches (`_store` evicts the prior one).
+- [x] pytest: date filter (inclusive edges, whole end-day, open bound, tz/attrs,
+      immutability, DST day, start>end) + GUI tests that a trimmed dataset carries
+      fewer rows and the panels drive, plus the real-export restricted-load path.
+      9 new tests (162 total). DESIGN_HISTORY entry.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 11 of ROADMAP.md: add a session date-subset. Pure-core

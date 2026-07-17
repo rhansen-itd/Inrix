@@ -68,7 +68,7 @@ def test_build_app_layout_headless():
     ids = {c.id for c in app.layout._traverse() if getattr(c, "id", None)}
     for needed in ("map", "segment", "fig-ts", "fig-summary", "fig-ba", "fig-decomp",
                    "load", "before-range", "after-range", "export-kml", "data-token",
-                   "tod-window", "names-path", "write-names"):
+                   "tod-window", "names-path", "write-names", "restrict-range"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
@@ -319,6 +319,18 @@ def test_end_to_end_real_export():
     out = gapp._write_kml(ds, "tt", "mean", before, after)
     assert out.exists() and out.stat().st_size > 0
 
+    # Item 11: a date restriction on load really shrinks the cached frame while the
+    # full export span is preserved for the picker bounds, and panels still drive.
+    ds_trim = gapp.load_dataset(gapp.DEFAULT_SOURCE, gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE,
+                                date_start="2026-03-01", date_end="2026-03-31")
+    assert len(ds_trim.df) < len(ds.df)
+    assert ds_trim.full_span == ds.span            # untrimmed span retained
+    assert ds_trim.span[0] >= ds.span[0] and ds_trim.span[1] <= ds.span[1]
+    assert ds_trim.df[DATETIME_COL].dt.month.unique().tolist() == [3]
+    assert gapp._fig_timeseries(ds_trim, sid, col,
+                                ("2026-03-02", "2026-03-10"),
+                                ("2026-03-20", "2026-03-28"), "seg").data
+
 
 # ---------------------------------------------------------------------------
 # Item 16 — compare-cache split + GUI hardening
@@ -457,3 +469,53 @@ def test_hour_label_formats_slider_values():
     assert gapp._hour_label(17.5) == "5:30 PM"
     assert gapp._hour_label(0) == "12:00 AM"
     assert gapp._hour_label(24) == "12:00 AM"     # slider max = end of day
+
+
+# ---------------------------------------------------------------------------
+# Item 11 — session date-subset on load
+# ---------------------------------------------------------------------------
+def test_dataset_full_span_defaults_to_span():
+    """A Dataset built without an explicit full_span uses its span (so the
+    Restrict-dates picker bounds are sane even for hand-built test datasets)."""
+    ds = gapp.Dataset(df=pd.DataFrame(), metadata=pd.DataFrame(), geo=None,
+                      metric_cols={}, tz="America/Denver", span=("a", "b"))
+    assert ds.full_span == ("a", "b")
+
+
+def test_date_restriction_shrinks_frame_and_panels_drive(multi_day_ds):
+    """A trimmed Dataset carries fewer rows, its span reflects the sub-range while
+    full_span keeps the export span, and the panels still drive off the smaller
+    frame (Item 11)."""
+    from inrix_tools import speed
+    from inrix_tools.timebins import filter_date_range
+
+    full = multi_day_ds.df                        # 30 days, 2 segments
+    trimmed = filter_date_range(full, "2026-02-10", "2026-02-19")
+    assert len(trimmed) < len(full)
+    assert set(trimmed[DATETIME_COL].dt.strftime("%Y-%m-%d").unique()) == \
+        {f"2026-02-{d:02d}" for d in range(10, 20)}
+
+    full_dates = full[DATETIME_COL].dt.date
+    trim_dates = trimmed[DATETIME_COL].dt.date
+    ds = gapp.Dataset(df=trimmed,
+                      metadata=pd.DataFrame(index=pd.Index([101, 202], name=SEGMENT_COL)),
+                      geo=None, metric_cols=speed.metric_columns(trimmed),
+                      tz="America/Denver",
+                      span=(trim_dates.min(), trim_dates.max()),
+                      full_span=(full_dates.min(), full_dates.max()))
+    assert ds.span != ds.full_span                # restriction recorded
+    col = gapp._metric_col(ds, "tt")
+    # a panel drives on the trimmed frame (only in-range timestamps present)
+    fig = gapp._fig_timeseries(ds, 101, col, ("2026-02-10", "2026-02-11"),
+                               ("2026-02-18", "2026-02-19"), "seg")
+    assert fig.data
+    xs = pd.to_datetime(fig.data[0].x)
+    assert xs.max().strftime("%Y-%m-%d") <= "2026-02-19"
+
+
+def test_default_periods_clamp_to_trimmed_span():
+    """The before/after defaults are computed from the trimmed span, so they land
+    inside the retained range, not the full export."""
+    from datetime import date
+    b0, b1, a0, a1 = gapp.default_periods(date(2026, 2, 10), date(2026, 2, 25))
+    assert date(2026, 2, 10) <= b0 <= b1 < a0 <= a1 <= date(2026, 2, 25)

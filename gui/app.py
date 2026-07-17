@@ -41,6 +41,7 @@ from inrix_tools.io import DATETIME_COL, SEGMENT_COL  # noqa: E402
 from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
     assign_time_bins,
+    filter_date_range,
     filter_time_window,
     DAY_GROUP_COL,
     TIME_BIN_COL,
@@ -74,7 +75,8 @@ class Dataset:
     geo: object                      # GeoDataFrame indexed by Segment ID
     metric_cols: dict                # {"speed": col, "travel_time": col}
     tz: str
-    span: tuple                      # (min_date, max_date) local dates
+    span: tuple                      # (min_date, max_date) local dates — after any date restriction
+    full_span: tuple = None          # the untrimmed export span, for the "Restrict dates" picker bounds (Item 11)
     labels: dict = field(default_factory=dict)   # Segment ID -> friendly name (Item 10)
     # Seasonally-adjusted full-export frames, keyed by (metric col, ToD-window):
     # the expensive decomposition, cached independently of the before/after dates
@@ -83,6 +85,10 @@ class Dataset:
     # it are cheap and cached in _compare_cache.
     _adjusted_cache: dict = field(default_factory=dict)
     _compare_cache: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.full_span is None:
+            self.full_span = self.span
 
 
 _ADJ_CACHE_CAP = 2        # full-export sized frames — keep only a couple
@@ -111,16 +117,31 @@ def _get(token) -> Dataset | None:
 # Compute wiring — thin calls into inrix_tools (no statistics defined here).
 # ---------------------------------------------------------------------------
 def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHAPEFILE,
-                 names_path: str | None = None) -> Dataset:
+                 names_path: str | None = None,
+                 date_start=None, date_end=None) -> Dataset:
     """Load + localize + CValue-filter an export, join its segment geometry.
 
     ``names_path`` (optional) points at a user-edited names CSV
     (``names.load_names``); the resolved ``Segment ID -> friendly name`` mapping
     is stored on the ``Dataset`` and used everywhere a segment is labelled.
+
+    ``date_start`` / ``date_end`` (optional, Item 11) restrict the session to an
+    inclusive local calendar-date range via ``timebins.filter_date_range``, so
+    ``Dataset.df`` really carries fewer rows (memory + downstream speed), not just
+    a display filter. The **trimmed** span is recorded on ``span`` (the
+    before/after and time-of-day controls clamp to it); the untrimmed export span
+    is kept on ``full_span`` so the "Restrict dates" picker can widen again.
     """
     raw = io.load_data(source)
     local = io.to_local(raw, tz)
-    filt = io.filter_cvalue(local, cvalue)
+    full = io.filter_cvalue(local, cvalue)
+    # Untrimmed span first (drives the Restrict-dates picker bounds), then trim.
+    full_dates = full[DATETIME_COL].dt.date
+    full_span = (full_dates.min(), full_dates.max())
+    if date_start or date_end:
+        filt = filter_date_range(full, date_start, date_end)
+    else:
+        filt = full
     meta = io.load_metadata(source)
 
     seg_ids = list(meta.index)
@@ -139,10 +160,13 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     geo["name"] = geo.index.map(lambda s: labels.get(int(s), f"Segment {int(s)}"))
 
     dates = filt[DATETIME_COL].dt.date
+    # An over-narrow restriction can empty the frame; fall back to the full span
+    # for display bounds rather than a NaN span (the panels handle an empty df).
+    span = (dates.min(), dates.max()) if len(filt) else full_span
     return Dataset(
         df=filt, metadata=meta, geo=geo,
         metric_cols=speed.metric_columns(filt), tz=tz,
-        span=(dates.min(), dates.max()), labels=labels,
+        span=span, full_span=full_span, labels=labels,
     )
 
 
@@ -283,6 +307,12 @@ def _controls() -> dbc.Card:
         dbc.Label("Names CSV (optional)", className="mt-2"),
         dbc.Input(id="names-path", value="", size="sm", debounce=True,
                   placeholder="path to an edited segment_names.csv"),
+        # Restrict-dates (Item 11): trim the session to a calendar sub-range on
+        # Load so every downstream compute runs on the smaller frame. Defaults to
+        # the full export span (a no-op) once loaded; narrow it and re-Load to trim.
+        dbc.Label("Restrict dates (optional)", className="mt-2"),
+        dcc.DatePickerRange(id="restrict-range", className="d-block",
+                            display_format="YYYY-MM-DD"),
         dbc.Button("Load export", id="load", color="primary", size="sm", className="mt-2 w-100"),
         html.Div(id="load-status", className="small text-muted mt-1"),
         dbc.Button("Write name template", id="write-names", color="link", size="sm",
@@ -379,24 +409,34 @@ def _register_callbacks(app: Dash) -> None:
         Output("after-range", "max_date_allowed"),
         Output("after-range", "start_date"),
         Output("after-range", "end_date"),
+        Output("restrict-range", "min_date_allowed"),
+        Output("restrict-range", "max_date_allowed"),
+        Output("restrict-range", "start_date"),
+        Output("restrict-range", "end_date"),
         Input("load", "n_clicks"),
         State("source", "value"),
         State("tz", "value"),
         State("cvalue", "value"),
         State("metric", "value"),
         State("names-path", "value"),
+        State("restrict-range", "start_date"),
+        State("restrict-range", "end_date"),
         prevent_initial_call=True,
     )
-    def _load(_n, source, tz, cvalue, metric, names_path):
+    def _load(_n, source, tz, cvalue, metric, names_path, date_start, date_end):
         # A cleared CValue input arrives as None/"" — default it rather than let
         # int(None) blow up with a cryptic message (Item 14 review B6).
         cv = DEFAULT_CVALUE if cvalue in (None, "") else int(cvalue)
         try:
+            # date_start/date_end come from the Restrict-dates picker (Item 11):
+            # trim the session to that calendar sub-range so the cached frame,
+            # and every downstream compute, is smaller. Empty on the first load
+            # (no restriction) until the picker is populated below.
             ds = load_dataset(source, tz or DEFAULT_TZ, cv,
-                              names_path=names_path or None)
+                              names_path=names_path or None,
+                              date_start=date_start, date_end=date_end)
         except Exception as exc:  # surface the failure in the UI, don't crash
-            return (no_update, f"⚠ Load failed: {exc}", no_update, no_update,
-                    no_update, no_update, *[no_update] * 8)
+            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 16)
         token = _store(ds)
         labels = _labels(ds)
         options = [{"label": labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
@@ -406,15 +446,23 @@ def _register_callbacks(app: Dash) -> None:
         # land on a present metric.
         metric_options, metric_value = _metric_choices(ds, metric)
         lo, hi = ds.span
-        # Default windows: disjoint halves of the span after the decomposition
-        # warm-up (overlap biases effects toward zero — Item 14 review B1).
+        # Default windows: disjoint halves of the (possibly trimmed) span after the
+        # decomposition warm-up (overlap biases effects toward zero — review B1).
         b_start, b_end, a_start, a_end = default_periods(lo, hi)
+        # Restrict-dates picker: bounds are the *untrimmed* export span (so the
+        # user can widen again), start/end echo the applied restriction, defaulting
+        # to the full span when none is set (Item 11).
+        full_lo, full_hi = ds.full_span
+        r_start = date_start or full_lo
+        r_end = date_end or full_hi
+        trimmed = (lo, hi) != (full_lo, full_hi)
         status = (f"✓ {len(ds.df):,} rows · {len(ds.metadata)} segments · "
-                  f"{lo}…{hi} · {ds.tz}")
+                  f"{lo}…{hi}{' (restricted)' if trimmed else ''} · {ds.tz}")
         # Reset the segment selection: a new export's ids differ, so keeping the
         # old value would leave every panel on a stale/blank segment (review B5).
         return (token, status, options, None, metric_options, metric_value,
-                lo, hi, b_start, b_end, lo, hi, a_start, a_end)
+                lo, hi, b_start, b_end, lo, hi, a_start, a_end,
+                full_lo, full_hi, r_start, r_end)
 
     # Map click -> segment dropdown (the dropdown is the single selection source).
     @app.callback(

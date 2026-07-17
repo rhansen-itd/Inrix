@@ -971,3 +971,53 @@ template" button that writes `out/segment_names.csv` from the loaded metadata.
 Kept KML export on `Combined` (out of Item 10's listed surfaces). 18 new tests
 (153 total, incl. the real-export end-to-end and an owner-workflow override check,
 all pass). No DATA_FORMAT change — the label structure was already documented.
+
+---
+
+## Session 15 — Session date-subset on load (ROADMAP Item 11) (2026-07-16)
+
+The Myrtle export is ~2M rows over ~5.5 months; a study usually cares about a few
+weeks. This adds a calendar-date restriction so the loaded frame — and every
+downstream compute (map, panels, decomposition) — runs on the smaller slice. Same
+architectural shape as the Item 9 time-of-day window, but on calendar date: a
+pure-core row filter feeding the existing `Dataset`, not a new statistic.
+
+**Pure core (`timebins.filter_date_range`).** Keeps rows whose **local wall-clock
+calendar date** falls in `[start, end]`, inclusive of both endpoint days. The end
+is fully inclusive — the exclusive bound is the *following* local midnight via
+`pd.DateOffset(days=1)` (calendar-day, so DST-safe), mirroring
+`beforeafter.parse_period`'s date-only-end convention. Each bound is normalised to
+midnight and localised to the frame's tz; `None`/`""` leaves that side open (so the
+function does one-sided trims and a both-open no-op). Placed in `timebins` next to
+`filter_time_window` for symmetry (the two "restrict rows before compute"
+primitives live together). Records the applied inclusive span on
+`attrs['date_range']` as an ISO `(start, end)` pair; returns a copy (input
+untouched). A `start` after `end` keeps nothing, consistent with the half-open cut.
+
+**GUI wiring (`gui/app.py`).** A "Restrict dates" `DatePickerRange` in the Data
+controls, applied **at load** (the primary of the roadmap's "at load / on an Apply
+button" — one code path, no second button, and reload is the natural
+session-reset). `load_dataset` grew `date_start`/`date_end`: it computes the
+**untrimmed** span first (from the CValue-filtered frame), then trims. `Dataset`
+gained `full_span` (defaults to `span` via `__post_init__` for hand-built test
+datasets) — the picker's `min/max_date_allowed` are the *full* span so the user can
+widen again, while `span` (trimmed) clamps the before/after pickers and drives
+`default_periods`. The `_load` callback echoes the applied restriction back into the
+picker (defaulting to the full span when none is set) and flags `(restricted)` in
+the status line. An over-narrow restriction that empties the frame falls back to the
+full span for display bounds rather than a NaN span (the panels already render an
+empty df as a blank).
+
+**Why apply-at-load, and cache invalidation.** Re-reading the export from disk on
+each restrict change is the deliberate cost of a "trim for the session" action; the
+payoff is that the ~8 s decomposition and every panel then run on fewer rows. The
+`_compare_cache` / `_adjusted_cache` need no explicit invalidation: each load builds
+a fresh `Dataset` with empty caches and `_store` evicts the prior one (Item 16 B2),
+so a trimmed session can't read a stale full-span decomposition.
+
+9 new tests (162 total, all pass incl. the real-export end-to-end, which now also
+exercises a restricted load — the frame shrinks, `full_span` is retained, and the
+panels drive): pure-core inclusive edges / whole-end-day / open bounds / attrs /
+immutability / DST day / start>end, plus GUI `full_span` defaulting, a trimmed-frame
+shrink+drive check, and default-period clamping to the trimmed span. No DATA_FORMAT
+change — date filtering uses the already-documented tz-aware local timestamp.

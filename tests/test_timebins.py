@@ -176,6 +176,58 @@ def test_filter_time_window_attrs_and_input_unmutated():
     assert len(df) == 2  # original untouched
 
 
+# --- calendar date-range filtering (Item 11) --------------------------------
+def _days(dates, tz=TZ):
+    """A frame with one noon sample per given local calendar date."""
+    return _df([f"{d} 12:00" for d in dates], tz=tz)
+
+
+def test_filter_date_range_inclusive_edges():
+    """Both endpoint days are kept; the day before start / after end are dropped."""
+    df = _days(["2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05"])
+    out = tb.filter_date_range(df, "2026-03-02", "2026-03-04")
+    assert list(out["Date Time"].dt.strftime("%Y-%m-%d")) == \
+        ["2026-03-02", "2026-03-03", "2026-03-04"]
+
+
+def test_filter_date_range_end_day_fully_inclusive():
+    """A late-in-the-day sample on the end date is kept (inclusive whole day)."""
+    df = _df(["2026-03-04 23:55", "2026-03-05 00:05"])
+    out = tb.filter_date_range(df, "2026-03-01", "2026-03-04")
+    assert list(out["Date Time"].dt.strftime("%Y-%m-%d %H:%M")) == ["2026-03-04 23:55"]
+
+
+def test_filter_date_range_open_bounds():
+    """A None/empty bound leaves that side open."""
+    df = _days(["2026-03-01", "2026-03-02", "2026-03-03"])
+    assert len(tb.filter_date_range(df, None, "2026-03-02")) == 2      # open left
+    assert len(tb.filter_date_range(df, "2026-03-02", None)) == 2      # open right
+    assert len(tb.filter_date_range(df, "", "")) == 3                  # both open = no-op
+    assert tb.filter_date_range(df, "", "").attrs["date_range"] == (None, None)
+
+
+def test_filter_date_range_records_span_and_preserves_input():
+    df = _days(["2026-03-01", "2026-03-02", "2026-03-03"])
+    df.attrs["units"] = {"speed": "miles/hour"}
+    out = tb.filter_date_range(df, "2026-03-02", "2026-03-03")
+    assert out.attrs["date_range"] == ("2026-03-02", "2026-03-03")
+    assert out.attrs["units"] == {"speed": "miles/hour"}   # attrs carried through
+    assert len(df) == 3                                     # original untouched
+    assert df["Date Time"].dt.tz is not None and out["Date Time"].dt.tz is not None
+
+
+def test_filter_date_range_dst_safe_whole_day():
+    """Spring-forward day (2026-03-08 in Denver, 23h long) is kept whole."""
+    df = _df(["2026-03-08 01:30", "2026-03-08 23:30"])
+    out = tb.filter_date_range(df, "2026-03-08", "2026-03-08")
+    assert len(out) == 2
+
+
+def test_filter_date_range_start_after_end_is_empty():
+    df = _days(["2026-03-01", "2026-03-02", "2026-03-03"])
+    assert len(tb.filter_date_range(df, "2026-03-03", "2026-03-01")) == 0
+
+
 # --- group label composition ------------------------------------------------
 def test_group_label_composition():
     df = _df(["2026-01-12 08:00", "2026-01-17 14:00", "2026-01-12 11:00"])

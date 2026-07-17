@@ -253,6 +253,68 @@ def filter_time_window(
     return out
 
 
+def filter_date_range(
+    df: pd.DataFrame,
+    start=None,
+    end=None,
+    datetime_col: str = DATETIME_COL,
+) -> pd.DataFrame:
+    """Keep only rows whose **local calendar date** falls in ``[start, end]``
+    (inclusive of both endpoint days).
+
+    The calendar-date companion to ``filter_time_window`` (time-of-day): trim a
+    session to a date sub-range — e.g. a few weeks of a multi-month export — so
+    every downstream compute (map, panels, decomposition) runs on the smaller
+    frame. Run ``io.to_local`` first so the timestamp is tz-aware local; the cut
+    is made on the **local** wall-clock date and is DST-safe (a whole calendar
+    day is kept even across a spring-forward/fall-back).
+
+    Args:
+        df: rows with a tz-aware local ``datetime_col``.
+        start: the first calendar day to keep (inclusive). A date string
+            (``"2026-03-01"``), a ``date`` / ``Timestamp``, or ``None`` / ``""``
+            to leave the range **open on the left** (keep everything up to
+            ``end``). Any time-of-day component is ignored — the whole day counts.
+        end: the last calendar day to keep, **inclusive of that whole day** (the
+            exclusive bound is the following local midnight — the same date-only
+            convention as ``beforeafter.parse_period``). ``None`` / ``""`` leaves
+            the range **open on the right**.
+        datetime_col: the timestamp column.
+
+    Returns:
+        A filtered copy; ``df.attrs`` is preserved and the applied inclusive date
+        span is recorded on ``attrs['date_range']`` as an ISO ``(start, end)``
+        pair (each side ``None`` when open) for reproducibility. A ``start`` after
+        ``end`` keeps nothing (an empty frame), consistent with the half-open cut.
+    """
+    tz = df[datetime_col].dt.tz
+
+    def _bound(x):
+        if x is None or (isinstance(x, str) and not x.strip()):
+            return None
+        ts = pd.Timestamp(x).normalize()  # midnight of that calendar day
+        return ts.tz_localize(tz) if ts.tzinfo is None else ts.tz_convert(tz)
+
+    lo, hi = _bound(start), _bound(end)
+
+    ts = df[datetime_col]
+    mask = pd.Series(True, index=df.index)
+    if lo is not None:
+        mask &= ts >= lo
+    if hi is not None:
+        # inclusive of the whole end day -> exclusive at the next local midnight.
+        # DateOffset advances a calendar day (DST-safe), unlike a fixed 24h delta.
+        mask &= ts < hi + pd.DateOffset(days=1)
+
+    out = df[mask].copy()
+    out.attrs = dict(df.attrs)
+    out.attrs["date_range"] = (
+        None if lo is None else lo.date().isoformat(),
+        None if hi is None else hi.date().isoformat(),
+    )
+    return out
+
+
 def assign_group_label(
     df: pd.DataFrame,
     day_col: str = DAY_GROUP_COL,

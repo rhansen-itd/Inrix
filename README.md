@@ -82,7 +82,10 @@ switch the map colouring between segment mean and the before/after Δ; and **Exp
 KML** writes the current colouring to `out/segments.kml`. The **time-of-day
 window** slider restricts every panel, the map, and the export to a chosen part of
 the day (e.g. the 4–6PM peak) — the decomposition/changepoint runs on that window
-on its own terms; leave it at the full 0–24h span for no filter.
+on its own terms; leave it at the full 0–24h span for no filter. **Restrict dates**
+narrows the session to a calendar sub-range at load — the loaded frame really
+shrinks, so a few weeks of a multi-month export stays snappy; leave it at the full
+span (the default) to keep everything, or widen it and re-**Load** to restore.
 
 The map uses **Plotly native maps** (MapLibre `open-street-map`, no Mapbox token).
 The GUI is a thin shell: `gui/figures.py` turns compute-core DataFrames into
