@@ -1141,3 +1141,55 @@ the corridor sum-not-mean check; the forest hover fix; the layout smoke test now
 requires the DOW checklist + status. Verified end-to-end in the browser on the real
 1.87M-row Myrtle export (marker click, DOW filter + status, side-by-side summary
 facets, tooltip formatter, no console errors).
+
+## Session 18 — Delay vs free-flow travel time (ROADMAP Item 17) (2026-07-17)
+
+Added **delay** — the excess travel time a segment carries over its free-flow
+(open-road) travel time — as a first-class metric. A pure-core derivation, not a
+new data source: INRIX already supplies free-flow speed (`Ref Speed(...)`) and
+observed `Travel Time(Minutes)`, and the geometry/metadata supplies length.
+
+**`speed.segment_delay(df, geo_or_metadata=None, free_flow='ref', floor=True)`.**
+Adds a per-row `Delay(Minutes)` = observed travel time − free-flow travel time,
+where free-flow TT = `Miles / free_flow_speed × 60`. `free_flow` is selectable:
+`'ref'` (the per-row `Ref Speed` column, INRIX's open-road reference — *not* the
+posted limit) or `('pXX', q)` (each segment's `q`-th percentile of observed speed,
+a fallback for exports where `Ref Speed` is missing/suspect). `floor=True` clamps
+negative delay (probe noise faster than free-flow) to 0. **Length-cancellation:**
+when no length source is given the function degrades to the speed-based form
+`TravelTime × (1 − v_obs/v_ff)`, which is algebraically identical to the
+length-based value (length cancels) — verified in a test that the two agree. Rows
+with a non-positive/missing free-flow speed get `NaN` delay; `attrs['delay']`
+records the resolved source, floor, and `length_source`.
+
+**Flows through the existing paths as another value column.** `metric_columns`
+now also detects a `Delay(` column (a third key, `delay`), so `segment_summary` /
+`daily_timebin_summary` pick it up by prefix and `beforeafter.compare_periods` on
+`value='Delay(Minutes)'` reports the **change in delay** (Δ delay + CI) with the
+Item 15 day-mean aggregation + BH-FDR unchanged (delay is just another
+seasonally-adjustable series — a test recovers an injected free-flow-gap shift with
+a CI excluding 0). **Corridor/network scope:** delay sums across member segments
+exactly like travel time, so `corridor_travel_time` / `network_travel_time` gained
+a `value=` parameter (defaults to the detected travel-time column) and length/space-
+mean-speed attach only when summing travel time. A corridor-delay test confirms it
+equals the sum of member delays under the complete-set rule.
+
+**GUI.** Delay is a third metric radio option (map colouring, time series, summary,
+before/after forest, decomposition). `_metric_choices` learns it (disabled like any
+absent metric when the export can't resolve free-flow — the Item 16 B3 pattern);
+`_scope_metric` allows Delay **and** travel time in aggregate scope (both sum) while
+still disabling Speed. A small **"Delay free-flow"** dropdown (Ref Speed / observed
+95th pct) is read at load — delay is computed once into `Dataset.df` via
+`segment_delay`, so a source change rebuilds a fresh Dataset (fresh caches). The
+map/panels use a new `_agg_metric_key` so Delay survives into corridor/network scope
+while Speed falls back to travel time; `_analysis_frame` passes `value=col` to the
+corridor/network sums.
+
+10 new tests (all pass): delay math (length-based, speed-fallback equality, floor,
+percentile free-flow, NaN on bad free-flow, missing-Ref raise), `segment_summary`
+auto-pickup, corridor-delay = sum-of-members, the before/after Δ-delay shift
+recovery, GUI metric wiring (segment + aggregate scope, `_agg_metric_key`,
+`_parse_freeflow`), and the real-export delay path (computed at load, floored,
+network-scope before/after) folded into the end-to-end test. Note: the full suite's
+real-export tests exceed this box's ~2.6 GB free RAM when run together (a
+pre-existing environment limit, not a regression) — run the heavy tests per-module.

@@ -27,21 +27,164 @@ _STATS = ("count", "mean", "std", "median")
 # (see ``network_travel_time``).
 NETWORK_LABEL = "Network"
 
+# The delay column ``segment_delay`` attaches (excess travel time over free-flow).
+DELAY_COL = "Delay(Minutes)"
+
 
 # ---------------------------------------------------------------------------
 # Column discovery
 # ---------------------------------------------------------------------------
 def metric_columns(df: pd.DataFrame) -> dict[str, str | None]:
-    """Locate the ``Speed(...)`` and ``Travel Time(...)`` columns by prefix, so
-    aggregation doesn't hard-code the unit (mph vs kmh — see DATA_FORMAT.md)."""
+    """Locate the ``Speed(...)``, ``Travel Time(...)`` and ``Delay(...)`` columns
+    by prefix, so aggregation doesn't hard-code the unit (mph vs kmh — see
+    DATA_FORMAT.md). ``delay`` is present only after ``segment_delay`` runs."""
     speed = next((c for c in df.columns if c.startswith("Speed(")), None)
     tt = next((c for c in df.columns if c.startswith("Travel Time(")), None)
-    return {"speed": speed, "travel_time": tt}
+    delay = next((c for c in df.columns if c.startswith("Delay(")), None)
+    return {"speed": speed, "travel_time": tt, "delay": delay}
 
 
 def _default_values(df: pd.DataFrame) -> list[str]:
     m = metric_columns(df)
-    return [c for c in (m["speed"], m["travel_time"]) if c is not None]
+    return [c for c in (m["speed"], m["travel_time"], m["delay"]) if c is not None]
+
+
+# ---------------------------------------------------------------------------
+# Delay vs free-flow travel time  (ROADMAP Item 17)
+# ---------------------------------------------------------------------------
+def _ref_speed_column(df: pd.DataFrame) -> str | None:
+    return next((c for c in df.columns if c.startswith("Ref Speed(")), None)
+
+
+def _free_flow_speed(df: pd.DataFrame, free_flow, speed_col: str | None):
+    """Resolve the per-row free-flow (open-road) speed series and a label for it.
+
+    ``free_flow='ref'`` uses the per-row ``Ref Speed(...)`` column (INRIX's
+    free-flow reference — **not** the posted limit; see DATA_FORMAT.md). A
+    ``('pXX', q)`` spec uses each segment's ``q``-th percentile of *observed*
+    speed instead, for exports/segments where ``Ref Speed`` is missing or suspect.
+    """
+    if free_flow == "ref":
+        ref = _ref_speed_column(df)
+        if ref is None:
+            raise ValueError(
+                "free_flow='ref' but no 'Ref Speed(...)' column is present; pass "
+                "a ('pXX', percentile) spec to use observed speed instead."
+            )
+        return df[ref].astype(float), "ref"
+    if isinstance(free_flow, (tuple, list)) and len(free_flow) == 2:
+        kind, q = free_flow
+        if isinstance(kind, str) and kind.lower().startswith("p"):
+            if speed_col is None:
+                raise ValueError("Percentile free-flow needs a 'Speed(...)' column.")
+            pct = float(q)
+            per_seg = df.groupby(SEGMENT_COL, observed=True)[speed_col].transform(
+                lambda x: x.quantile(pct / 100.0)
+            )
+            return per_seg.astype(float), f"p{q:g}"
+    raise ValueError(
+        f"Unrecognized free_flow spec {free_flow!r}; use 'ref' or ('pXX', percentile)."
+    )
+
+
+def _segment_length(df: pd.DataFrame, geo_or_metadata) -> pd.Series | None:
+    """A per-row segment length (miles) aligned to ``df``, from a GeoDataFrame
+    (``Miles``) or metadata (``Segment Length(Miles)``) keyed by ``Segment ID``,
+    or ``None`` when no length source is available."""
+    if geo_or_metadata is None:
+        return None
+    src = geo_or_metadata
+    cols = list(getattr(src, "columns", []))
+    length_col = next((c for c in ("Miles", "Segment Length(Miles)") if c in cols), None)
+    if length_col is None:
+        return None
+    lut = src[length_col]
+    if lut.index.name != SEGMENT_COL and SEGMENT_COL in cols:
+        lut = src.set_index(SEGMENT_COL)[length_col]
+    mapped = df[SEGMENT_COL].map(lut.astype(float))
+    mapped.index = df.index
+    return mapped
+
+
+def segment_delay(
+    df: pd.DataFrame,
+    geo_or_metadata: pd.DataFrame | None = None,
+    free_flow="ref",
+    floor: bool = True,
+    out_col: str = DELAY_COL,
+) -> pd.DataFrame:
+    """Add a per-row ``Delay(Minutes)`` column — the excess travel time a segment
+    carries over its free-flow (open-road) travel time.
+
+    ``delay = observed Travel Time(Minutes) - free-flow travel time``, where the
+    free-flow travel time is ``Miles / free_flow_speed x 60``. INRIX already
+    supplies the free-flow speed (``Ref Speed(...)``, DATA_FORMAT.md) and observed
+    travel time, and the geometry/metadata supplies length, so delay is a pure
+    derivation — no new data source (ROADMAP Item 17).
+
+    Args:
+        geo_or_metadata: a GeoDataFrame (``Miles``) or metadata frame
+            (``Segment Length(Miles)``) keyed by ``Segment ID``, supplying segment
+            length. When length is unavailable the computation **degrades to the
+            speed-based form** ``TravelTime x (1 - v_obs/v_ff)``, which is
+            algebraically the same value (length cancels) as long as a
+            ``Speed(...)`` column is present.
+        free_flow: ``'ref'`` (default) uses the per-row ``Ref Speed(...)`` column;
+            a ``('pXX', q)`` spec uses each segment's ``q``-th percentile of
+            observed speed (for exports where ``Ref Speed`` is missing/suspect).
+        floor: clamp negative delay (probe noise faster than free-flow) to 0
+            (default). Set ``False`` to keep signed values.
+        out_col: name of the added column (default ``"Delay(Minutes)"``).
+
+    Returns:
+        A copy of ``df`` with ``out_col`` appended. Rows where the free-flow speed
+        is missing/non-positive get ``NaN`` delay. ``attrs['delay']`` records the
+        resolved ``free_flow`` source, ``floor``, and the ``length_source``
+        (``'length'`` or ``'speed'``).
+    """
+    m = metric_columns(df)
+    tt_col, sp_col = m["travel_time"], m["speed"]
+    if tt_col is None:
+        raise ValueError("No 'Travel Time(...)' column; cannot compute delay.")
+
+    v_ff, ff_source = _free_flow_speed(df, free_flow, sp_col)
+    length = _segment_length(df, geo_or_metadata)
+
+    tt_obs = df[tt_col].astype(float)
+    v_ff = v_ff.astype(float)
+    valid = v_ff > 0
+
+    free_tt = None
+    length_source = None
+    if length is not None:
+        free_tt = length / v_ff * 60.0
+        length_source = "length"
+    if sp_col is not None:
+        speed_based = tt_obs * df[sp_col].astype(float) / v_ff
+        if free_tt is None:
+            free_tt, length_source = speed_based, "speed"
+        else:
+            # per-segment missing lengths fall back to the (identical) speed form
+            free_tt = free_tt.fillna(speed_based)
+    if free_tt is None:
+        raise ValueError(
+            "Need segment length (geo_or_metadata) or a 'Speed(...)' column to "
+            "compute free-flow travel time; neither was available."
+        )
+
+    delay = (tt_obs - free_tt).where(valid)
+    if floor:
+        delay = delay.clip(lower=0)  # NaN is preserved by clip
+
+    out = df.copy()
+    out[out_col] = delay
+    out.attrs = dict(df.attrs)
+    out.attrs["delay"] = {
+        "free_flow": ff_source,
+        "floor": bool(floor),
+        "length_source": length_source,
+    }
+    return out
 
 
 def _present(df: pd.DataFrame, cols: Iterable[str]) -> list[str]:
@@ -146,6 +289,7 @@ def corridor_travel_time(
     corridor_col: str = CORRIDOR_COL,
     require_complete: bool = True,
     datetime_col: str = DATETIME_COL,
+    value: str | None = None,
 ) -> pd.DataFrame:
     """Sum member-segment travel time to a corridor total per timestamp, applying
     the **complete-set rule** from DATA_FORMAT.md: only timestamps where every
@@ -162,20 +306,27 @@ def corridor_travel_time(
         metadata: optional ``Segment ID``-indexed metadata (from
             ``io.load_metadata``). When given, the corridor's summed length is
             added as ``Length(Miles)`` and, if units are miles/minutes, a
-            space-mean ``Corridor Speed(miles/hour)`` (length ÷ travel-time).
+            space-mean ``Corridor Speed(miles/hour)`` (length ÷ travel-time). Only
+            attached when summing the travel-time column (not, e.g., delay).
         require_complete: keep only complete timestamps (default). ``False``
             returns every timestamp with an ``complete`` flag so partials are
             visible but not dropped.
+        value: the column to sum across member segments (default: the detected
+            ``Travel Time(...)``). ``Delay(Minutes)`` (ROADMAP Item 17) sums the
+            same way — corridor delay is the sum of member-segment delays under the
+            same complete-set rule. The summed column keeps its own name.
 
     Returns:
         One row per (corridor, timestamp): ``[corridor_col, Date Time,
-        Travel Time(...), n_segments, expected_segments, complete]`` (+ length /
-        speed when metadata is supplied). ``corridor_col`` is renamed to nothing —
-        it keeps its own name.
+        <value>, n_segments, expected_segments, complete]`` (+ length /
+        speed when metadata is supplied and ``value`` is travel time).
+        ``corridor_col`` keeps its own name.
     """
-    tt = metric_columns(df)["travel_time"]
+    tt = value or metric_columns(df)["travel_time"]
     if tt is None:
         raise ValueError("No 'Travel Time(...)' column found.")
+    if tt not in df.columns:
+        raise ValueError(f"Value column {tt!r} not in df.")
     if corridor_col not in df.columns:
         raise ValueError(f"Corridor column {corridor_col!r} not in df; see DATA_FORMAT.md.")
 
@@ -195,7 +346,8 @@ def corridor_travel_time(
     if require_complete:
         summed = summed[summed["complete"]].reset_index(drop=True)
 
-    if metadata is not None:
+    # Length + space-mean speed only make sense for the travel-time sum.
+    if metadata is not None and tt == metric_columns(df)["travel_time"]:
         summed = _attach_corridor_length_speed(summed, df, metadata, corridor_col, tt)
 
     summed.attrs = dict(df.attrs)
@@ -236,6 +388,7 @@ def network_travel_time(
     datetime_col: str = DATETIME_COL,
     corridor_col: str = CORRIDOR_COL,
     label: str = NETWORK_LABEL,
+    value: str | None = None,
 ) -> pd.DataFrame:
     """Sum **every** segment's travel time to a single network total per timestamp
     — the corridor sum (``corridor_travel_time``) over one synthetic all-segments
@@ -266,7 +419,7 @@ def network_travel_time(
         One row per timestamp (same columns as ``corridor_travel_time``), with
         ``corridor_col`` == ``label`` throughout.
     """
-    tt = metric_columns(df)["travel_time"]
+    tt = value or metric_columns(df)["travel_time"]
     if tt is None:
         raise ValueError("No 'Travel Time(...)' column found.")
     work = df.copy()
@@ -275,7 +428,7 @@ def network_travel_time(
     work[corridor_col] = label
     out = corridor_travel_time(
         work, metadata=metadata, corridor_col=corridor_col,
-        require_complete=require_complete, datetime_col=datetime_col,
+        require_complete=require_complete, datetime_col=datetime_col, value=tt,
     )
     out.attrs = dict(df.attrs)
     return out

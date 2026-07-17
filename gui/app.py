@@ -59,8 +59,18 @@ CACHE_DIR = _REPO / "geometry_cache"
 # AM peak / midday / PM peak / overnight — a sensible default; not load-bearing.
 DEFAULT_TIME_BINS = ["6:00AM-9:00AM", "9:00AM-3:00PM", "3:00PM-7:00PM", "7:00PM-6:00AM"]
 
-_METRICS = {"tt": "travel_time", "speed": "speed"}
-_METRIC_LABEL = {"tt": "Travel time", "speed": "Speed"}
+_METRICS = {"tt": "travel_time", "speed": "speed", "delay": "delay"}
+_METRIC_LABEL = {"tt": "Travel time", "speed": "Speed", "delay": "Delay"}
+_METRIC_ORDER = ("tt", "speed", "delay")
+# Metrics that sum across segments under the complete-set rule, so they are valid
+# in Corridor/Network scope (Speed is not — no meaningful segment weighting).
+_AGG_METRICS = ("tt", "delay")
+
+
+def _agg_metric_key(metric: str) -> str:
+    """The metric key an aggregate (corridor/network) scope runs on: keep travel
+    time or delay (both sum across segments); anything else falls back to tt."""
+    return metric if metric in _AGG_METRICS else "tt"
 
 # Analysis scope (Item 12): the entity the time-series / before-after /
 # decomposition panels run on. *Segment* = the map-selected segment. *Corridor* /
@@ -129,9 +139,18 @@ def _get(token) -> Dataset | None:
 # ---------------------------------------------------------------------------
 # Compute wiring — thin calls into inrix_tools (no statistics defined here).
 # ---------------------------------------------------------------------------
+def _parse_freeflow(freeflow):
+    """Map the free-flow dropdown value to a ``speed.segment_delay`` ``free_flow``
+    spec: ``'ref'`` -> the Ref Speed column; ``'pNN'`` -> the NN-th observed
+    percentile (``('pXX', NN)``)."""
+    if isinstance(freeflow, str) and freeflow.lower().startswith("p") and freeflow[1:].isdigit():
+        return ("pXX", int(freeflow[1:]))
+    return "ref"
+
+
 def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHAPEFILE,
                  names_path: str | None = None,
-                 date_start=None, date_end=None) -> Dataset:
+                 date_start=None, date_end=None, freeflow="ref") -> Dataset:
     """Load + localize + CValue-filter an export, join its segment geometry.
 
     ``names_path`` (optional) points at a user-edited names CSV
@@ -172,6 +191,18 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     labels = names.apply_names(meta, names_df)
     geo["name"] = geo.index.map(lambda s: labels.get(int(s), f"Segment {int(s)}"))
 
+    # Delay metric (Item 17): a per-row Delay(Minutes) = observed travel time −
+    # free-flow travel time (Miles / free-flow speed × 60), computed once at load
+    # so it flows through every panel like any other value column. Metadata
+    # supplies segment length; a segment with no resolvable free-flow speed gets
+    # NaN delay and the metric is disabled by _metric_choices. Skip quietly if the
+    # export can't support it (no Ref Speed / Speed column).
+    try:
+        filt = speed.segment_delay(filt, geo_or_metadata=meta,
+                                    free_flow=_parse_freeflow(freeflow))
+    except ValueError:
+        pass  # no Delay column -> metric option stays disabled
+
     dates = filt[DATETIME_COL].dt.date
     # An over-narrow restriction can empty the frame; fall back to the full span
     # for display bounds rather than a NaN span (the panels handle an empty df).
@@ -194,11 +225,11 @@ def _metric_choices(ds: Dataset, current: str | None):
     is still present; else lands on the first present metric."""
     have = {k: _metric_col(ds, k) is not None for k in _METRICS}
     options = [{"label": f" {_METRIC_LABEL[k]}", "value": k, "disabled": not have[k]}
-               for k in ("tt", "speed")]
+               for k in _METRIC_ORDER]
     if current in have and have[current]:
         value = current
     else:
-        value = next((k for k in ("tt", "speed") if have[k]), current)
+        value = next((k for k in _METRIC_ORDER if have[k]), current)
     return options, value
 
 
@@ -295,16 +326,16 @@ def _analysis_frame(ds: Dataset, col: str, scope: str, corridor, window=None,
     (``speed.corridor_travel_time`` / ``network_travel_time``, complete-set rule)
     **collapsed to one synthetic Segment ID** (``_AGG_SEGMENT_ID``), so the
     decompose/compare adapters that group by Segment ID run on the aggregate series
-    unchanged. ``col`` must be the travel-time column in the aggregate scopes (the
-    GUI forces the metric there)."""
+    unchanged. ``col`` must be a summable column (travel time or delay) in the
+    aggregate scopes (the GUI restricts the metric there)."""
     df = _apply_tod(ds.df, window, days)
     if scope == SCOPE_SEGMENT:
         return df
     if scope == SCOPE_CORRIDOR:
-        agg = speed.corridor_travel_time(df)  # length/speed not needed here
+        agg = speed.corridor_travel_time(df, value=col)  # length/speed not needed here
         agg = agg[agg[CORRIDOR_COL] == corridor]
     else:  # network
-        agg = speed.network_travel_time(df)
+        agg = speed.network_travel_time(df, value=col)
     out = agg[[DATETIME_COL, col]].copy()
     out[SEGMENT_COL] = _AGG_SEGMENT_ID
     out.attrs = dict(df.attrs)
@@ -421,7 +452,15 @@ def _controls() -> dbc.Card:
         html.H6("Metric", className="text-muted"),
         dbc.RadioItems(id="metric", value="tt", inline=True,
                        options=[{"label": " Travel time", "value": "tt"},
-                                {"label": " Speed", "value": "speed"}]),
+                                {"label": " Speed", "value": "speed"},
+                                {"label": " Delay", "value": "delay"}]),
+        # Free-flow speed source for the Delay metric (Item 17): Ref Speed is
+        # INRIX's open-road reference; the observed 95th-pct is a fallback for
+        # exports where Ref Speed is missing/suspect. Applied at Load.
+        dbc.Label("Delay free-flow", className="mt-2"),
+        dcc.Dropdown(id="freeflow", clearable=False, value="ref",
+                     options=[{"label": "Ref Speed (open road)", "value": "ref"},
+                              {"label": "Observed 95th pct", "value": "p95"}]),
         dbc.Label("Colour map by", className="mt-2"),
         dcc.Dropdown(id="map-mode", clearable=False, value="mean",
                      options=[{"label": "Segment mean", "value": "mean"},
@@ -560,9 +599,10 @@ def _register_callbacks(app: Dash) -> None:
         State("names-path", "value"),
         State("restrict-range", "start_date"),
         State("restrict-range", "end_date"),
+        State("freeflow", "value"),
         prevent_initial_call=True,
     )
-    def _load(_n, source, tz, cvalue, metric, names_path, date_start, date_end):
+    def _load(_n, source, tz, cvalue, metric, names_path, date_start, date_end, freeflow):
         # A cleared CValue input arrives as None/"" — default it rather than let
         # int(None) blow up with a cryptic message (Item 14 review B6).
         cv = DEFAULT_CVALUE if cvalue in (None, "") else int(cvalue)
@@ -573,7 +613,8 @@ def _register_callbacks(app: Dash) -> None:
             # (no restriction) until the picker is populated below.
             ds = load_dataset(source, tz or DEFAULT_TZ, cv,
                               names_path=names_path or None,
-                              date_start=date_start, date_end=date_end)
+                              date_start=date_start, date_end=date_end,
+                              freeflow=freeflow)
         except Exception as exc:  # surface the failure in the UI, don't crash
             return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 19)
         token = _store(ds)
@@ -636,10 +677,17 @@ def _register_callbacks(app: Dash) -> None:
             return no_update, no_update
         if scope not in _AGG_SCOPES:
             return _metric_choices(ds, metric)  # restore available metrics
-        have_tt = _metric_col(ds, "tt") is not None
-        options = [{"label": " Travel time", "value": "tt", "disabled": not have_tt},
-                   {"label": " Speed", "value": "speed", "disabled": True}]
-        return options, "tt"
+        # Corridor/Network sum across segments: travel time and delay are valid
+        # (both sum under the complete-set rule); speed has no segment weighting.
+        have = {k: _metric_col(ds, k) is not None for k in _METRIC_ORDER}
+        options = [
+            {"label": " Travel time", "value": "tt", "disabled": not have["tt"]},
+            {"label": " Speed", "value": "speed", "disabled": True},
+            {"label": " Delay", "value": "delay", "disabled": not have["delay"]},
+        ]
+        value = metric if metric in _AGG_METRICS and have[metric] else (
+            "tt" if have["tt"] else "delay")
+        return options, value
 
     # The map: colour by metric/mode, highlight the selection.
     @app.callback(
@@ -660,9 +708,9 @@ def _register_callbacks(app: Dash) -> None:
         ds = _get(token)
         if ds is None:
             return figures.segment_map(_empty_geo())
-        # The map stays segment-level in every scope; corridor/network force
-        # travel time (they have no per-segment speed to colour by).
-        col = _metric_col(ds, "tt" if scope in _AGG_SCOPES else metric)
+        # The map stays segment-level in every scope; corridor/network restrict the
+        # metric to the ones that sum across segments (travel time / delay).
+        col = _metric_col(ds, _agg_metric_key(metric) if scope in _AGG_SCOPES else metric)
         if col is None:  # metric absent (mid-load transition) — draw a bare map
             return figures.segment_map(ds.geo, label_col="name",
                                        sublabel_col="Combined", uirevision=f"data-{token}")
@@ -709,9 +757,9 @@ def _register_callbacks(app: Dash) -> None:
         blank = figures._blank("Load an export to begin.")
         if ds is None:
             return blank, blank, blank, blank
-        # Corridor/Network scope analyses summed travel time (segment sums have no
-        # meaningful speed weighting), so force the metric there.
-        col = _metric_col(ds, "tt" if scope in _AGG_SCOPES else metric)
+        # Corridor/Network scope analyses summed travel time or delay (both sum
+        # across segments; speed has no meaningful weighting), so restrict there.
+        col = _metric_col(ds, _agg_metric_key(metric) if scope in _AGG_SCOPES else metric)
         if col is None:  # metric absent (mid-load transition) — nothing to plot yet
             miss = figures._blank("This export doesn't carry the selected metric.")
             return miss, miss, miss, miss

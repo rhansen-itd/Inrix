@@ -348,10 +348,10 @@ even though its stable ID is higher.
 its confirmed findings became **Items 15–16**, placed right after it. The review's
 recommended order is **15 → 16 → 11 → 10 → 12 → 13** (stats validity first — it
 changes every number the app shows — then responsiveness, then the owner batch).
-**Items 15, 16, 10, 11, 12 and 13 are now done** (DESIGN_HISTORY Sessions 12–17);
-Item 13 gained one bullet (the forest hover fix) before it landed. The remaining
-batch items are **17–18** (delay metric + AADT weighting); the review's §3 ideas
-await owner acceptance before becoming items.
+**Items 15, 16, 10, 11, 12, 13 and 17 are now done** (DESIGN_HISTORY Sessions
+12–18); Item 13 gained one bullet (the forest hover fix) before it landed. The
+remaining batch item is **18** (AADT weighting, depends on Item 17); the review's
+§3 ideas await owner acceptance before becoming items.
 
 **Appended 2026-07-16 (new owner request):** **Items 17–18** — a delay metric
 (travel time vs free-flow) with before/after delta, and an AADT GIS layer for
@@ -740,36 +740,42 @@ travel time vs free-flow TT in before and after period"* — is then just the
 existing before/after machinery (Item 4/15) run on the delay column: the reported
 effect is the change in delay across the intervention.
 
-Scope:
-- [ ] `speed.segment_delay(df, geo_or_metadata=None, free_flow='ref', floor=True)`
+Scope (done 2026-07-17 — see DESIGN_HISTORY.md Session 18):
+- [x] `speed.segment_delay(df, geo_or_metadata=None, free_flow='ref', floor=True)`
       — add a per-row `Delay(Minutes)` column = observed `Travel Time(Minutes)` −
       free-flow travel time, where free-flow TT = `Miles / free_flow_speed × 60`.
       `free_flow` selectable: `'ref'` (the per-row `Ref Speed` column, default),
       or a per-segment high percentile of observed speed (e.g. `('pXX', 95)`) for
       exports/segments where `Ref Speed` is missing or suspect. `floor=True`
-      clamps negatives (probe noise faster than free-flow) to 0; record the source
-      + floor on `attrs`. Pure — no plotting. Degrade gracefully when length is
-      unavailable (fall back to speed-based delay: `Miles·(1/v − 1/v_ff)·60`,
-      which cancels the length dependence into the same value).
-- [ ] Delay flows through the existing aggregation and before/after paths as
-      another value column: `segment_summary` / `daily_timebin_summary` pick it up
-      by prefix, and `beforeafter.compare_periods` on `value_column='Delay(Minutes)'`
-      gives the **delay increase (Δ delay + CI)** the owner asked for. Confirm the
-      Item 15 day-mean aggregation + BH-FDR apply unchanged (delay is just another
-      seasonally-adjustable series). Corridor/network scope (Item 12): delay sums
-      across member segments exactly like travel time (same complete-set rule).
-- [ ] GUI: add **Delay** as a metric option alongside Speed / Travel time (map
-      colouring, time series, summary, before/after forest, decomposition). The
-      metric radio + `_scope_metric` / `_metric_choices` guards learn the new
-      column; a segment with no resolvable free-flow speed is disabled like a
-      missing metric (Item 16 B3 pattern). Free-flow source is a small control
-      (default `Ref Speed`).
-- [ ] pytest: known delay on a synthetic fixture (observed TT − length/RefSpeed·60,
-      floor behaviour, the speed-based fallback equals the length-based value),
-      `attrs` recording, before/after Δ-delay recovers an injected free-flow-gap
-      shift with a CI excluding 0, corridor delay = sum of member delays under the
-      complete-set rule, GUI metric wiring, and the real-export delay path.
-      DESIGN_HISTORY entry; DATA_FORMAT delay-definition note.
+      clamps negatives (probe noise faster than free-flow) to 0; source + floor +
+      length-source recorded on `attrs['delay']`. Pure — no plotting. Degrades to
+      the speed-based form `TravelTime·(1 − v/v_ff)` when length is unavailable,
+      which cancels the length dependence into the same value (a test asserts the
+      two agree).
+- [x] Delay flows through the existing aggregation and before/after paths as
+      another value column: `metric_columns` detects the `Delay(` prefix (new
+      `delay` key) so `segment_summary` / `daily_timebin_summary` pick it up, and
+      `beforeafter.compare_periods` on `value='Delay(Minutes)'` gives the **delay
+      increase (Δ delay + CI)**. Item 15 day-mean aggregation + BH-FDR apply
+      unchanged (delay is just another seasonally-adjustable series). Corridor/
+      network scope (Item 12): delay sums across member segments exactly like
+      travel time via a new `value=` param on `corridor_travel_time` /
+      `network_travel_time` (same complete-set rule).
+- [x] GUI: **Delay** is a third metric radio option (map colouring, time series,
+      summary, before/after forest, decomposition). `_metric_choices` learns the
+      new column (disabled like a missing metric when free-flow can't be resolved —
+      Item 16 B3 pattern); `_scope_metric` allows Delay + Travel time in aggregate
+      scope while disabling Speed; `_agg_metric_key` keeps Delay in corridor/network
+      scope. Free-flow source is a small control (`Ref Speed` / observed 95th pct),
+      read at load so delay is computed once into `Dataset.df`.
+- [x] pytest: known delay on a synthetic fixture (length-based, floor behaviour,
+      the speed-based fallback equals the length-based value, percentile free-flow,
+      NaN on bad free-flow, missing-Ref raise), `attrs` recording, before/after
+      Δ-delay recovers an injected free-flow-gap shift with a CI excluding 0,
+      corridor delay = sum of member delays under the complete-set rule, GUI metric
+      wiring (`_agg_metric_key`, `_parse_freeflow`, aggregate scope), and the
+      real-export delay path. 10 new tests. DESIGN_HISTORY entry; DATA_FORMAT
+      delay-definition note.
 
 Suggested prompt:
 > [Opus] In Inrix/, do Item 17 of ROADMAP.md: add a delay metric —

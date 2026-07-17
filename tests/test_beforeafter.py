@@ -136,6 +136,29 @@ def test_compare_periods_recovers_injected_shift():
     assert res.attrs["before_days_effective"] == pytest.approx(7.0)
 
 
+def test_compare_periods_on_delay_recovers_shift():
+    """Item 17: Δ-delay recovers an injected free-flow-gap shift (CI excludes 0).
+
+    A constant free-flow travel time (constant Ref Speed + length) makes delay a
+    level-shift of observed travel time, so the injected +2 step survives into the
+    delay column and the before/after Δ-delay is ~+2 with a CI above zero.
+    """
+    from inrix_tools import speed
+
+    df = _make_series(weekend_bump=0.0, step_day=25, step_size=2.0)
+    df["Ref Speed(miles/hour)"] = 60.0
+    meta = (pd.DataFrame({"Segment ID": [101], "Segment Length(Miles)": [0.5]})
+            .set_index("Segment ID"))
+    delayed = speed.segment_delay(df, geo_or_metadata=meta)
+    before = ("2026-02-16", "2026-02-22")
+    after = ("2026-03-09", "2026-03-15")
+    res = ba.compare_periods(delayed, before, after, value=speed.DELAY_COL)
+    row = res.iloc[0]
+    assert row["effect"] == pytest.approx(2.0, abs=0.4)
+    assert row["ci_low"] > 0
+    assert res.attrs["value"] == speed.DELAY_COL
+
+
 def test_decomposition_more_robust_than_raw_under_seasonality():
     # Weekly seasonality (+4 on weekends). Before period includes a weekend;
     # after period is weekdays-only -> raw comparison is biased by the differing

@@ -64,7 +64,10 @@ def test_metric_columns_detects_by_prefix():
     assert speed.metric_columns(df) == {
         "speed": "Speed(kilometers/hour)",
         "travel_time": "Travel Time(Seconds)",
+        "delay": None,
     }
+    df2 = pd.DataFrame(columns=["Delay(Minutes)", "Travel Time(Minutes)"])
+    assert speed.metric_columns(df2)["delay"] == "Delay(Minutes)"
 
 
 # --- segment_summary --------------------------------------------------------
@@ -242,6 +245,115 @@ def test_rolling_leading_direction(binned):
 def test_rolling_bad_direction_raises(binned):
     with pytest.raises(ValueError):
         speed.rolling_average(binned, value=SPEED, direction="sideways")
+
+
+# --- delay vs free-flow (Item 17) -------------------------------------------
+REF = "Ref Speed(miles/hour)"
+DELAY = "Delay(Minutes)"
+
+
+def _drow(seg, sp, tt, ref, t="2026-01-12 08:00", corridor="9th"):
+    return {
+        "Date Time": pd.Timestamp(t, tz=TZ),
+        "Segment ID": seg,
+        SPEED: sp,
+        TT: tt,
+        REF: ref,
+        "Corridor/Region Name": corridor,
+    }
+
+
+@pytest.fixture
+def delay_df():
+    # seg 1001: length 0.5 mi, obs 30 mph (=> TT 1.0 min), free-flow 60 mph
+    #           => free-flow TT 0.5 min, delay 0.5 min.
+    # seg 1002: length 1.0 mi, obs 40 mph (=> TT 1.5 min), free-flow 60 mph
+    #           => free-flow TT 1.0 min, delay 0.5 min.
+    df = pd.DataFrame([
+        _drow(1001, 30, 1.0, 60),
+        _drow(1002, 40, 1.5, 60),
+    ])
+    df.attrs["units"] = {"speed": "miles/hour", "travel_time": "Minutes"}
+    return df
+
+
+@pytest.fixture
+def delay_meta():
+    return (pd.DataFrame({"Segment ID": [1001, 1002],
+                          "Segment Length(Miles)": [0.5, 1.0]})
+            .set_index("Segment ID"))
+
+
+def test_segment_delay_length_based(delay_df, delay_meta):
+    out = speed.segment_delay(delay_df, geo_or_metadata=delay_meta)
+    assert out[DELAY].tolist() == pytest.approx([0.5, 0.5])
+    assert out.attrs["delay"] == {"free_flow": "ref", "floor": True,
+                                   "length_source": "length"}
+    # detected as a metric column now
+    assert speed.metric_columns(out)["delay"] == DELAY
+
+
+def test_segment_delay_speed_fallback_equals_length(delay_df, delay_meta):
+    """With no length source the speed-based form gives the identical value."""
+    length_based = speed.segment_delay(delay_df, geo_or_metadata=delay_meta)
+    speed_based = speed.segment_delay(delay_df, geo_or_metadata=None)
+    assert speed_based.attrs["delay"]["length_source"] == "speed"
+    assert speed_based[DELAY].tolist() == pytest.approx(length_based[DELAY].tolist())
+
+
+def test_segment_delay_floor(delay_meta):
+    # observed *faster* than free-flow: TT 0.4 < free-flow 0.5 -> raw delay -0.1
+    df = pd.DataFrame([_drow(1001, 75, 0.4, 60)])
+    df.attrs["units"] = {"speed": "miles/hour", "travel_time": "Minutes"}
+    floored = speed.segment_delay(df, geo_or_metadata=delay_meta)
+    assert floored[DELAY].iloc[0] == pytest.approx(0.0)
+    signed = speed.segment_delay(df, geo_or_metadata=delay_meta, floor=False)
+    assert signed[DELAY].iloc[0] == pytest.approx(-0.1)
+
+
+def test_segment_delay_percentile_free_flow():
+    # three rows for one segment; 95th pct of observed speed is ~ the max here.
+    rows = [_drow(1001, 30, 1.0, 60, t="2026-01-12 08:00"),
+            _drow(1001, 60, 0.5, 60, t="2026-01-12 08:05"),
+            _drow(1001, 60, 0.5, 60, t="2026-01-12 08:10")]
+    df = pd.DataFrame(rows)
+    df.attrs["units"] = {"speed": "miles/hour", "travel_time": "Minutes"}
+    out = speed.segment_delay(df, geo_or_metadata=None, free_flow=("pXX", 95))
+    # v_ff ~ 60 (95th pct); the 30-mph row: delay = 1.0*(1 - 30/60) = 0.5
+    assert out.attrs["delay"]["free_flow"] == "p95"
+    assert out[DELAY].iloc[0] == pytest.approx(0.5, abs=0.05)
+
+
+def test_segment_delay_nan_on_bad_free_flow(delay_meta):
+    df = pd.DataFrame([_drow(1001, 30, 1.0, 0)])  # ref speed 0 -> undefined
+    df.attrs["units"] = {"speed": "miles/hour", "travel_time": "Minutes"}
+    out = speed.segment_delay(df, geo_or_metadata=delay_meta)
+    assert math.isnan(out[DELAY].iloc[0])
+
+
+def test_segment_delay_missing_ref_raises():
+    df = pd.DataFrame([{"Date Time": pd.Timestamp("2026-01-12 08:00", tz=TZ),
+                        "Segment ID": 1001, SPEED: 30, TT: 1.0}])
+    with pytest.raises(ValueError):
+        speed.segment_delay(df, free_flow="ref")
+
+
+def test_delay_summary_picks_up_delay(delay_df, delay_meta):
+    """segment_summary auto-summarizes Delay once the column exists (by prefix)."""
+    out = speed.segment_delay(delay_df, geo_or_metadata=delay_meta)
+    out = tb.assign_day_group(out)
+    out = tb.assign_time_bins(out, ["6:30AM-9:00AM"])
+    summ = speed.segment_summary(out)
+    assert f"{DELAY}_mean" in summ.columns
+
+
+def test_corridor_delay_is_sum_of_members(delay_df, delay_meta):
+    """Corridor delay sums member-segment delays under the complete-set rule."""
+    out = speed.segment_delay(delay_df, geo_or_metadata=delay_meta)
+    corr = speed.corridor_travel_time(out, value=DELAY)
+    row = corr.iloc[0]
+    assert row[DELAY] == pytest.approx(1.0)   # 0.5 + 0.5
+    assert row["complete"]
 
 
 # --- housekeeping -----------------------------------------------------------

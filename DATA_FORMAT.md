@@ -154,6 +154,31 @@ and the statewide file fully covers the Ada County study area (zero unmatched).
 **License:** INRIX/NPMRDS geometry — treat like the data exports: gitignored,
 not redistributed.
 
+## Delay vs free-flow travel time (derived)
+
+**Delay** is the excess travel time a segment carries over its free-flow
+(open-road) travel time — a pure derivation from columns already in the export, so
+no new data source is needed (`speed.segment_delay`, ROADMAP Item 17):
+
+```
+Delay(Minutes) = Travel Time(Minutes) − free-flow travel time
+free-flow travel time = Miles / free_flow_speed × 60
+```
+
+- **Free-flow speed** defaults to the per-row `Ref Speed(miles/hour)` column —
+  INRIX's open-road reference speed, **not** the posted/legal limit. Where
+  `Ref Speed` is missing or suspect, a per-segment high percentile of *observed*
+  speed (e.g. the 95th) is the fallback.
+- **Length** comes from `Segment Length(Miles)` (metadata) or `Miles`
+  (XD shapefile). When length is unavailable the computation degrades to the
+  **speed-based form** `Travel Time × (1 − v_obs/v_ff)`, which is algebraically the
+  same value (length cancels), as long as a `Speed(...)` column is present.
+- Negative delay (probe noise measuring faster than free-flow) is floored to 0 by
+  default; a non-positive/missing free-flow speed yields `NaN` delay (that segment
+  is treated as a missing metric in the GUI).
+- **Corridor/network delay is a sum** across member segments, exactly like travel
+  time, under the same complete-set rule (`corridor_travel_time(..., value='Delay(Minutes)')`).
+
 ## Known quirks / open questions
 
 - **Missing intervals**: segments do not always report every 5 minutes;

@@ -320,6 +320,20 @@ def test_end_to_end_real_export():
     out = gapp._write_kml(ds, "tt", "mean", before, after)
     assert out.exists() and out.stat().st_size > 0
 
+    # Item 17: delay is computed at load (Ref Speed free-flow), a first-class
+    # metric driving the map/panels, and valid in the aggregate scope. Validate the
+    # before/after delay path on the single-entity network aggregate (46x lighter
+    # than a 46-segment decomposition — keeps the real-export test's memory bounded).
+    from inrix_tools import speed as _speed
+    assert ds.metric_cols["delay"] == _speed.DELAY_COL
+    dcol = gapp._metric_col(ds, "delay")
+    assert (ds.df[dcol].dropna() >= 0).all()          # floored at 0
+    assert gapp._fig_timeseries(ds, sid, dcol, before, after, "seg").data
+    net_delay = gapp._analysis_frame(ds, dcol, gapp.SCOPE_NETWORK, None)
+    assert dcol in net_delay.columns and len(net_delay)
+    comp_delay = gapp._compare_all(ds, dcol, before, after, scope=gapp.SCOPE_NETWORK)
+    assert len(comp_delay) == 1 and "effect" in comp_delay.columns
+
     # Item 12: network scope aggregates all segments' travel time (complete-set
     # rule) into one synthetic entity; before/after + decomposition run on it.
     _, corr_val, scope_opts = gapp._scope_options(ds)
@@ -437,7 +451,8 @@ def test_metric_choices_disables_absent_metric(series_df):
     options, value = gapp._metric_choices(ds, "tt")   # user had tt selected
     assert value == "speed"
     by_val = {o["value"]: o["disabled"] for o in options}
-    assert by_val == {"tt": True, "speed": False}
+    # delay is absent too (no Delay column on this synthetic frame)
+    assert by_val == {"tt": True, "speed": False, "delay": True}
     # both present -> keep the current choice
     both = gapp.Dataset(df=series_df, metadata=ds.metadata, geo=None,
                         metric_cols=speed.metric_columns(series_df),
@@ -468,6 +483,50 @@ def test_metric_col_and_segment_means(series_df):
     assert gapp._metric_col(ds, "speed") == SPEED_COL
     means = gapp._segment_means(ds, SPEED_COL)
     assert 101 in means.index
+
+
+def test_delay_metric_wiring_segment_and_aggregate(series_df):
+    """Item 17: a Delay column is a first-class metric — enabled in the radio,
+    driving the map/panels, and (unlike speed) valid in aggregate scope."""
+    from inrix_tools import speed
+    REF = "Ref Speed(miles/hour)"
+    df = series_df.copy()
+    df[REF] = 60.0
+    df["Corridor/Region Name"] = "C1"
+    meta = (pd.DataFrame({"Segment ID": [101], "Segment Length(Miles)": [0.5]})
+            .set_index("Segment ID"))
+    df = speed.segment_delay(df, geo_or_metadata=meta)
+    ds = gapp.Dataset(df=df,
+                      metadata=pd.DataFrame(index=pd.Index([101], name=SEGMENT_COL)),
+                      geo=None, metric_cols=speed.metric_columns(df),
+                      tz="America/Denver", span=(None, None))
+    # Delay is present + selectable in the segment-scope radio.
+    options, _ = gapp._metric_choices(ds, "delay")
+    by_val = {o["value"]: o["disabled"] for o in options}
+    assert by_val["delay"] is False
+    col = gapp._metric_col(ds, "delay")
+    assert col == speed.DELAY_COL
+    assert gapp._agg_metric_key("delay") == "delay"    # delay stays in agg scope
+    assert gapp._agg_metric_key("speed") == "tt"       # speed falls back to tt
+    # A corridor aggregate on delay sums member delays (one segment here).
+    frame = gapp._analysis_frame(ds, col, gapp.SCOPE_CORRIDOR, "C1")
+    assert col in frame.columns and not frame.empty
+    # segment means on delay colour the map without error.
+    assert 101 in gapp._segment_means(ds, col).index
+
+
+def test_agg_metrics_include_delay_exclude_speed():
+    """Corridor/Network scope sums across segments — travel time and delay sum
+    cleanly under the complete-set rule; speed has no segment weighting."""
+    assert set(gapp._AGG_METRICS) == {"tt", "delay"}
+    assert "speed" not in gapp._AGG_METRICS
+
+
+def test_parse_freeflow_spec():
+    assert gapp._parse_freeflow("ref") == "ref"
+    assert gapp._parse_freeflow("p95") == ("pXX", 95)
+    assert gapp._parse_freeflow("p85") == ("pXX", 85)
+    assert gapp._parse_freeflow(None) == "ref"
 
 
 def test_apply_tod_window_filters_and_full_day_is_noop(series_df):
