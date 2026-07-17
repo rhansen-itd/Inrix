@@ -23,6 +23,10 @@ data.csv
 # Cached geometry subsets are regenerated from the shapefile.
 *.geoparquet
 /geometry_cache/
+# DuckDB store (Item 21): ingested exports + GIS join cache; regenerate by
+# re-ingesting from the tools.
+*.duckdb
+*.duckdb.wal
 
 # --- Python / packaging ---
 __pycache__/

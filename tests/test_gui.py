@@ -72,7 +72,9 @@ def test_build_app_layout_headless():
                    "scope", "corridor", "dow-days", "dow-status",
                    "segment-table", "corridor-members", "save-names", "table-status",
                    # Item 20 directional-display controls
-                   "dir-compass", "dir-offset"):
+                   "dir-compass", "dir-offset",
+                   # Item 21 DB intake/select controls
+                   "dataset", "ingest-export", "ingest-status"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
@@ -1197,3 +1199,119 @@ def test_save_names_round_trips_table_edits(table_ds, tmp_path, monkeypatch):
     path = _names.write_names(names_df, tmp_path / "segment_names.csv")
     loaded = _names.load_names(path)
     assert loaded.loc[int(data[0][gapp.TBL_ID]), _names.NAME_COL] == "Renamed first"
+
+
+# ---------------------------------------------------------------------------
+# Item 21 — DB-backed intake/select, wired through the GUI load path
+# ---------------------------------------------------------------------------
+_DATA_HDR_21 = (
+    "Date Time,Segment ID,UTC Date Time,Speed(miles/hour),"
+    "Hist Av Speed(miles/hour),Ref Speed(miles/hour),Travel Time(Minutes),"
+    "CValue,Pct Score30,Pct Score20,Pct Score10,Road Closure,Corridor/Region Name\n"
+)
+
+
+def _drow(local_dt, seg, speed, tt, cvalue):
+    return (f"{local_dt},{seg},2026-01-01T00:00:00Z,{speed},23,40,{tt},"
+            f"{cvalue},100,0,0,F,9th\n")
+
+
+@pytest.fixture
+def export_zip(tmp_path):
+    """A tiny two-segment export the file loaders accept (as in test_io/test_store)."""
+    import zipfile
+    rows = [
+        _drow("2026-01-15T08:00:00-07:00", 1001, 30, 0.50, 95),
+        _drow("2026-01-15T08:00:00-07:00", 1002, 40, 0.40, 90),
+        _drow("2026-07-15T08:00:00-06:00", 1001, 32, 0.48, 88),
+        _drow("2026-07-15T08:00:00-06:00", 1002, 41, 0.39, 91),
+    ]
+    meta = (
+        "Segment ID,Road,Direction,Start Latitude,End Latitude,Start Longitude,"
+        "End Longitude,State/Region,District,Postal Code,Segment Length(Miles),Intersection\n"
+        "1001,S 9th St,N,43.61,43.62,-116.20,-116.19,Idaho,Ada,83702,0.13,Boise Ctr\n"
+        "1002,S 9th St,S,43.62,43.63,-116.19,-116.18,Idaho,Ada,83702,0.12,Myrtle St\n"
+    )
+    zpath = tmp_path / "Tiny_5_min_part_1.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr("Tiny_5_min_part_1/data.csv", _DATA_HDR_21 + "".join(rows))
+        zf.writestr("Tiny_5_min_part_1/metadata.csv", meta)
+    return zpath
+
+
+@pytest.fixture
+def tiny_geo():
+    """The processed geo layer _build_geo would return — 2 real polylines + an AADT
+    join — so the GIS build can be stubbed (no shapefile needed in the test)."""
+    gpd = pytest.importorskip("geopandas")
+    from shapely.geometry import LineString
+    from inrix_tools import aadt as _aadt
+
+    g = gpd.GeoDataFrame(
+        {"source": ["xd", "xd"],
+         _aadt.AADT_COL: [42000.0, 15000.0],
+         _aadt.AADT_SOURCE_COL: ["matched", "matched"],
+         _aadt.AADT_DIST_COL: [3.1, 8.7],
+         "Route": ["US-30", "US-30"],
+         "geometry": [LineString([(-116.20, 43.61), (-116.19, 43.62)]),
+                      LineString([(-116.19, 43.62), (-116.18, 43.63)])]},
+        geometry="geometry", crs="EPSG:4326",
+    )
+    g.index = pd.Index([1001, 1002], name=SEGMENT_COL)
+    return g
+
+
+@pytest.fixture
+def db_env(tmp_path, monkeypatch, tiny_geo):
+    """Point the GUI's default DB at a tmp file, reset the cached connection, and
+    stub _build_geo (counting its calls) so the spatial build is shapefile-free."""
+    pytest.importorskip("duckdb")
+    monkeypatch.setattr(gapp, "DEFAULT_DB", str(tmp_path / "test_store.duckdb"))
+    gapp._DB.update(path=None, con=None)
+    calls = {"n": 0}
+
+    def _fake_build_geo(meta, shapefile, aadt_path, cache_stem):
+        calls["n"] += 1
+        return tiny_geo.copy()
+
+    monkeypatch.setattr(gapp, "_build_geo", _fake_build_geo)
+    yield calls
+    con = gapp._DB.get("con")
+    if con is not None:
+        con.close()
+    gapp._DB.update(path=None, con=None)
+
+
+def test_ingest_then_db_load_matches_file_and_reuses_join(export_zip, db_env):
+    from inrix_tools import aadt as _aadt
+
+    # File-path load builds the geo once.
+    file_ds = gapp.load_dataset(str(export_zip), gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE)
+    assert db_env["n"] == 1
+    assert file_ds.aadt is not None
+
+    # Ingest into the DB (builds the geo again — the once-at-ingest spatial join).
+    name = gapp.ingest_to_db(str(export_zip))
+    assert db_env["n"] == 2
+    assert name in gapp.store.dataset_names(gapp._db())
+    assert {o["value"] for o in gapp._dataset_options()} == {name}
+
+    # DB load reads the cached join — _build_geo is NOT called again.
+    db_ds = gapp.load_dataset("", gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE, dataset_name=name)
+    assert db_env["n"] == 2                       # cache hit, no recompute
+    assert _aadt.AADT_COL in db_ds.geo.columns
+    assert db_ds.aadt is not None
+
+    # The DB-loaded frame equals the file-loaded frame (same downstream processing).
+    pd.testing.assert_frame_equal(
+        db_ds.df.reset_index(drop=True), file_ds.df.reset_index(drop=True))
+    # Friendly names + directional annotation are re-derived on the DB path too.
+    assert "name" in db_ds.geo.columns
+    assert gapp.geometry.DIR_GROUP_COL in db_ds.geo.columns
+
+
+def test_dataset_options_empty_without_db(tmp_path, monkeypatch):
+    """No DB file yet -> the Saved-datasets dropdown is empty (headless-safe)."""
+    monkeypatch.setattr(gapp, "DEFAULT_DB", str(tmp_path / "absent.duckdb"))
+    gapp._DB.update(path=None, con=None)
+    assert gapp._dataset_options() == []

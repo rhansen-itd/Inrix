@@ -281,6 +281,55 @@ offset; the other 44 are untouched. The GUI applies this on a per-render display
 frame keyed off the direction toggles — the metric/coverage compute all stay on the
 un-offset `ds.geo`.
 
+## Database store (`store.py`, Item 21)
+
+An optional **persistent DuckDB store** lets a session *select* a previously
+ingested export instead of re-parsing the `.zip` and re-running the GIS spatial
+join every time. It is an accelerator, not a requirement — the file loaders
+(`io` / `geometry` / `aadt`) keep working, and running straight from a path is
+unchanged.
+
+**Why DuckDB (not SQLite).** DuckDB is already a transitive dependency (via
+`traffic-anomaly`'s `ibis-framework[duckdb]`), and its columnar engine is the right
+fit for the analytic scans of a ~2M-row export. The DuckDB **`spatial` extension is
+not used**: the GIS layers here are a small per-segment table, so geometry is
+serialized as **WKB blobs** and rehydrated with `shapely` — no in-DB spatial
+predicates, so `store.connect` stays offline (no extension download) and the schema
+is portable. SQLite would serve the small tables but loses on the big scan, so the
+choice is made on the *query* need (decision recorded in DESIGN_HISTORY Session 26).
+
+**Layout.** Per-dataset tables, keyed by a sanitized-name + short-hash suffix
+(`_dataset_key`), so heterogeneous exports (different unit-named columns) never
+collide on one shared schema, and re-ingest of a name is a clean `CREATE OR REPLACE`
+(idempotent):
+
+| table | contents |
+|-------|----------|
+| `_datasets` | registry: one row per dataset — `name` (PK), `tbl_key`, `source`, `tz`, `units_*`, `n_rows`, `n_segments`, `date_min/max`, `has_geometry`, `has_aadt`, `schema_version`, `ingested_at` |
+| `obs_<key>` | the `io.load_data` time-series frame verbatim (`Date Time` as `TIMESTAMPTZ`) |
+| `meta_<key>` | the `io.load_metadata` frame (Segment ID as a column; `Combined` included) |
+| `geo_<key>` | the **processed** GIS join: `Segment ID`, `source`, the `join_aadt` columns (`AADT` / `aadt_source` / `aadt_dist_m` / `Route` / `Commercial`), and geometry as a WKB blob (`_geom_wkb`, `NULL` for a `missing` segment). This is what makes the Item 18 spatial join run **once at ingest**, not per load. |
+
+**Round-trip fidelity (must equal the file loaders):**
+
+- **Timezone.** `io.load_data` returns `Date Time` as tz-aware **UTC**
+  (`datetime64[ns, UTC]`). DuckDB stores `TIMESTAMPTZ` and, on read, materializes it
+  in the *session* zone at μs resolution — so the connection pins `SET
+  TimeZone='UTC'` and `load_export` normalizes back to `datetime64[ns, UTC]`. Units
+  (`df.attrs['units']`) are restored from the registry.
+- **Geometry.** WKB in / `shapely.wkb` out, into a WGS84 GeoDataFrame indexed by
+  `Segment ID` — matching `geometry.segment_geometry` plus the cached AADT columns.
+- **Object NULLs.** A NULL string/object cell round-trips as `None` (not `NaN`), so
+  parity holds only where the source frame has no missing string cells; numeric NaN
+  round-trips as NaN. (Not an issue for the covered frames.)
+
+**Versioning / migration.** Every dataset row stamps `schema_version`
+(`store.SCHEMA_VERSION`, currently **1**). There is no in-place migrator yet — the
+store is a *cache*, so the migration policy is **re-ingest**: bump `SCHEMA_VERSION`
+when the layout changes, and a stale-version dataset is simply re-ingested from its
+`source` (recorded in the registry). Add a real migrator only if an ingest ever
+becomes expensive enough that a re-run is unacceptable.
+
 ## Known quirks / open questions
 
 - **Missing intervals**: segments do not always report every 5 minutes;

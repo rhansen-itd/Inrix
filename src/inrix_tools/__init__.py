@@ -14,6 +14,7 @@ Modules are scaffolded as stubs until built per ROADMAP.md:
     kml         — segment geometry -> KML (Item 6)
     names       — friendly, user-editable segment names (Item 10)
     aadt        — AADT volume layer + volume weighting (Item 18)
+    store       — DuckDB-backed storage & ingest of exports + GIS join (Item 21)
 """
 
 __version__ = "0.1.0"

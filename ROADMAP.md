@@ -26,8 +26,10 @@ on open work — a one-line index below points each one at its DESIGN_HISTORY
 session so nothing is orphaned. **Items 19+ are a new owner-requested batch**
 scoped 2026-07-17 (DESIGN_HISTORY Session 23); they refine the working explorer
 rather than adding to the core pipeline. **Item 19 (the interactive segment table)
-is now done** (Session 24) and **Item 20 (GUI map & layout display polish) is now
-done** (Session 25); **Item 21 remains open.**
+is done** (Session 24), **Item 20 (GUI map & layout display polish) is done**
+(Session 25), and **Item 21 (DB-backed storage & ingest) is now done** (Session 26).
+The batch (Items 19–21) is complete; remaining work is all in **Future** (needs a
+planning pass).
 
 ---
 
@@ -63,6 +65,9 @@ sessions.
   right of the settings column) + directional segment display (`geometry`
   direction/sign helpers + perpendicular display offset + compass toggles) —
   DESIGN_HISTORY Session 25
+- **21** — DB-backed storage & ingest (`store.py`, DuckDB) + GUI intake/select
+  (ingest once, run from the DB; the Item 18 spatial join cached at ingest) —
+  DESIGN_HISTORY Session 26
 
 Post-batch correctness review of Items 15–18 and its fixes: Sessions 20–22.
 
@@ -131,7 +136,18 @@ Not reused. See DESIGN_HISTORY Session 23.
 
 ---
 
-## 21 — Database-backed storage & ingest (`store.py` + GUI intake) (Target: Opus) — needs Items 1, 8, 18
+## 21 — (done 2026-07-17 — DB-backed storage & ingest) — see Completed index + DESIGN_HISTORY Session 26
+
+Delivered the pure-core `store.py` (DuckDB, decision recorded) and the GUI intake:
+`connect`/`ingest_export`/`put_export`/`ingest_geometry`/`ingest_aadt`/`list_datasets`/
+`load_dataset` over idempotent per-dataset tables, with `Date Time` round-tripping
+tz-aware UTC and geometry as WKB blobs (no in-DB spatial needed); the Item 18 spatial
+join is cached **once at ingest** and read back, never recomputed per load. GUI gained
+a low-visibility "⤓ Ingest current export to DB" button + a "Saved datasets" select
+(reads the DB, auto-loads on pick), with the file-path loader unchanged (DB optional).
+Full scope cleared per the Completed-index convention.
+
+<details><summary>Original scope (delivered)</summary>
 
 Move from re-parsing the export zip and the GIS shapefiles every session to a
 **persistent local database**. Establish one DB connection; a low-visibility
@@ -153,38 +169,28 @@ tables); SQLite is the fallback if in-DB spatial isn't needed. Pick per the
 ingest/query needs, not by default.
 
 Scope:
-- [ ] **Pure core `src/inrix_tools/store.py`**: `connect(db_path)`,
+- [x] **Pure core `src/inrix_tools/store.py`**: `connect(db_path)`,
       `ingest_export(...)` (writes the typed tz-aware frame + metadata, idempotent
       — re-ingest replaces/updates), `ingest_geometry(...)` / `ingest_aadt(...)`
       (persist the Item 8 geometry and the Item 18 AADT join keyed by dataset),
       `list_datasets()`, and `load_dataset(...)` returning the **same typed frames
       the file loaders produce** (`io.load_data` parity). No hardcoded paths.
-- [ ] **Cache the processed GIS join** (segment → geometry, segment → AADT with
+- [x] **Cache the processed GIS join** (segment → geometry, segment → AADT with
       `aadt_source`/match distance) keyed by dataset so Item 18's spatial join
       runs **once at ingest**, not per load.
-- [ ] **GUI**: a low-visibility (not top-of-page) **"Ingest export"** intake
+- [x] **GUI**: a low-visibility (not top-of-page) **"Ingest export"** intake
       button; the main data control becomes a **select-from-ingested-datasets**
       dropdown reading the DB, replacing/augmenting the path box. Running straight
       from a file path still works unchanged (DB optional).
-- [ ] Schema + versioning/migration note in **DATA_FORMAT.md**.
-- [ ] pytest: ingest → list → load round-trip returns frames **equal to the direct
+- [x] Schema + versioning/migration note in **DATA_FORMAT.md**.
+- [x] pytest: ingest → list → load round-trip returns frames **equal to the direct
       file loaders**; the GIS-join cache hit avoids recompute (monkeypatched
       counter); the DB path is a param (no hardcoded path escapes); a self-skipping
       real-export ingest test. DESIGN_HISTORY entry.
-- [ ] **Split point if the session runs long:** land the pure-core `store.py` +
-      ingest/round-trip (with tests) first; the GUI intake/select rewiring is the
-      clean follow-on.
+- [x] **Split point if the session runs long:** landed the pure-core `store.py` +
+      ingest/round-trip *and* the GUI intake/select rewiring in one session.
 
-Suggested prompt:
-> [Opus] In Inrix/, do Item 21 of ROADMAP.md: add database-backed storage. A pure
-> `src/inrix_tools/store.py` (pick DuckDB vs SQLite at the top, record it) that
-> ingests an export + the XD geometry + the Item 18 AADT join into a local DB
-> once (idempotent, no hardcoded paths) and loads datasets back as the same typed
-> frames the file loaders produce, caching the processed GIS join so the spatial
-> match runs once. GUI: a low-visibility "Ingest export" button and a
-> select-from-ingested-datasets dropdown; file-path loading still works. pytest
-> the ingest→load parity + the join-cache hit. DATA_FORMAT schema note; docs. If
-> long, land the pure core first and the GUI second.
+</details>
 
 ---
 
