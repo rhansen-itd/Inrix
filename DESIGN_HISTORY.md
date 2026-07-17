@@ -1557,3 +1557,78 @@ the complete-set section; README documents the segment table's three jobs and th
 map link; ROADMAP Item 19 boxes checked and the Completed index + status line
 updated. Follow-ons unchanged: Item 20 (layout reflow + directional display — it
 will place the new table against the reflowed layout) and Item 21 (DB storage).
+
+## Session 25 — GUI map & layout display polish: reflow + directional segment display (ROADMAP Item 20) (2026-07-17)
+
+Two GUI-display fixes in the same `gui/app.py` map/layout region — closing the
+awkward map↔charts whitespace, and making co-located opposing segments both visible
+and clickable — plus the pure-core direction helpers that back the second. No new
+statistics.
+
+**Top-of-session decision (recorded): ship BOTH mechanisms.** The ROADMAP floated
+toggles-vs-offset-vs-both; both were built, as recommended — the compass toggle
+declutters (filter which directions render), the perpendicular offset lets both
+directions of an overlapping pair be seen at once. They compose (a hidden direction
+needn't be offset).
+
+**Pure core (`geometry.py`).**
+
+- **`direction_group(d)` / `direction_sign(d)`** — codify one signed compass
+  convention: group a raw `Direction` to its primary cardinal `N/E/S/W` (compound
+  `NE` → `N`, spelling-tolerant `nb`/`Northbound`), and sign it **N & E = `+1`, S &
+  W = `−1`** (unknown → `0`). This is the `+`/`−` convention the toggles display and
+  the one the Future directional-AADT item will reuse.
+- **`attach_directions(geo, directions)`** — annotate a geo copy with `dir_group` /
+  `dir_sign` columns from a `Segment ID → Direction` map (geometry untouched).
+- **`offset_overlapping_segments(geo, offset_m=6, tol_m=20, angle_tol_deg=35)`** —
+  the display-only offset. Detects co-located opposing pairs (anti-parallel bearing
+  **and** geometries within tolerance) and translates each perpendicular to travel,
+  **right-hand of its own bearing**, so a NB/SB pair separates east/west. Returns a
+  **copy** with an `offset_applied` flag column; the analytic geometry is never
+  mutated and isolated segments are byte-for-byte unchanged. Bearing from the
+  start→end vector, metre↔degree conversion at the layer's mean latitude.
+
+**GUI (`gui/app.py`).**
+
+- **(A) Layout reflow.** The chart `Tabs` moved out of a full-width bottom row into
+  the **right column**, stacked below the map + segment table; the settings stay in
+  the left column. Columns are now responsive (`xs=12, lg=3` / `lg=9`) so they stack
+  full-width on a narrow viewport. The map↔charts gap is gone.
+- **(B) Directional display.** `load_dataset` calls `attach_directions` from
+  `metadata.Direction`. A new **`dir-compass`** checklist (options `N (+) / E (+) /
+  S (−) / W (−)`, only the present groups) filters which directions render, and a
+  **`dir-offset`** switch (default on) applies the offset. A `_display_geo(ds,
+  dir_groups, offset_on)` helper builds the per-render display frame (filter +
+  offset); the `_map` callback draws it. All metric/coverage compute stays on the
+  un-offset `ds.geo`; map colouring is unaffected (colour still comes from the
+  metric, not position). Selection ring and hover fire on the visible/offset
+  segments; click `customdata` is still the Segment ID.
+
+**Decisions.** The offset uses each segment's **own geometry bearing** (right-hand
+rule) rather than the `Direction` sign, so it separates opposing pairs even when
+metadata is imperfect — the sign helper is kept separate for the toggle labels and
+the Future AADT split. Default toggle state is **empty = render all** (like the Item
+19 membership no-op); selecting *every* present group is also a no-op. Offset is a
+display copy, never a mutation, so the analytic/KML/coverage paths are provably
+untouched.
+
+**Verification.** `pytest tests/` — **250 passing** (243 → +4 geometry, +3 GUI; the
+self-skipping real-export end-to-end also gained direction-path assertions inline).
+New tests: `direction_group`/
+`_sign` across cardinal/compound/spelled/blank forms; `attach_directions` leaves
+geometry intact; the offset separates a co-located opposing pair, leaves an isolated
+segment byte-for-byte, is perpendicular and ~`offset_m` sized, and never mutates the
+input; `_direction_options` lists only present groups in `+`/`−` order;
+`_display_geo` filters + offsets; and the reflowed-tree structural assertion (tabs
+share the right column with the map + table, not the left controls column). **Live
+preview on the real Myrtle export**: the two-column reflow (settings left; map, then
+table, then charts in the right column — gap closed); the direction control showing
+`N (+)/E (+)/S (−)/W (−)` with the offset switch on; the map drawing all 46 lines +
+46 clickable markers with the one real opposing pair (2 of 46) offset apart and both
+clickable; and checking `N` filtering the map down to 23 N-segments. No console
+errors.
+
+**Docs.** DATA_FORMAT.md gained a "Direction convention & directional map display"
+section (the signed `N/E = +` convention + the offset rule); ROADMAP Item 20 boxes
+checked and the status line + Completed index updated. Remaining open work: Item 21
+(DB-backed storage & ingest).

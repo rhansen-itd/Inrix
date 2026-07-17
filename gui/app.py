@@ -229,6 +229,13 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     geo = geometry.segment_geometry(net, segment_ids=seg_ids, metadata=meta)
     if "Combined" in meta.columns:
         geo["Combined"] = meta["Combined"].reindex(geo.index)
+    # Directional display (Item 20): annotate each segment with its compass group
+    # (N/E/S/W) and +/- sign from metadata Direction, so the map can filter which
+    # directions render and colour by sign. Geometry stays untouched here — the
+    # perpendicular offset that separates co-located opposing pairs is applied on a
+    # display copy in the map callback.
+    if "Direction" in meta.columns:
+        geo = geometry.attach_directions(geo, meta["Direction"])
 
     # Friendly names (Item 10): seed from the INRIX labels, overlaid by the user's
     # CSV when supplied. A single mapping is the source of truth for the dropdown,
@@ -338,6 +345,45 @@ def _wspeed_options(ds):
     no speed column (so it's inert without the data behind it)."""
     ok = _has_aadt(ds) and _wspeed_col(ds) is not None
     return [{"label": " AADT-weighted mean speed", "value": "on", "disabled": not ok}]
+
+
+# Direction-display control (Item 20): the compass groups, in +/- order (N & E =
+# positive, S & W = negative), with a short signed label so the +/- convention is
+# visible on the toggle itself.
+_DIR_ORDER = ("N", "E", "S", "W")
+_DIR_CTRL_LABEL = {"N": "N (+)", "E": "E (+)", "S": "S (−)", "W": "W (−)"}
+
+
+def _direction_options(ds) -> list[dict]:
+    """Compass-group checklist options for the directions actually present in the
+    export (from the geo ``dir_group`` annotation). Empty when no direction metadata
+    resolved (the control then filters nothing)."""
+    if ds.geo is None or geometry.DIR_GROUP_COL not in ds.geo.columns:
+        return []
+    present = {g for g in ds.geo[geometry.DIR_GROUP_COL].dropna().unique()}
+    return [{"label": " " + _DIR_CTRL_LABEL[g], "value": g}
+            for g in _DIR_ORDER if g in present]
+
+
+def _display_geo(ds, dir_groups=None, offset_on=True):
+    """The **display** GeoDataFrame the map draws (Item 20): the analytic ``ds.geo``
+    optionally filtered to the selected compass groups and with co-located opposing
+    pairs nudged apart. ``dir_groups`` is a set/list of ``N/E/S/W`` to keep (a
+    no-op — ``None``, empty, or every present group — renders all); ``offset_on``
+    applies the perpendicular display offset. The analytic geometry is never
+    mutated — this returns a fresh frame."""
+    geo = ds.geo
+    if geo is None:
+        return geo
+    has_dir = geometry.DIR_GROUP_COL in geo.columns
+    if has_dir and dir_groups:
+        keep = set(dir_groups)
+        present = {g for g in geo[geometry.DIR_GROUP_COL].dropna().unique()}
+        if keep and keep & present and not present <= keep:  # a real subset filters
+            geo = geo[geo[geometry.DIR_GROUP_COL].isin(keep)]
+    if offset_on and len(geo):
+        geo = geometry.offset_overlapping_segments(geo)
+    return geo
 
 
 ALL_DAYS = list(range(7))  # DOW checklist value = every weekday selected (a no-op)
@@ -801,8 +847,12 @@ def _layout() -> dbc.Container:
         # as a Segment ID list, driving the aggregate panels + the map dimming.
         dcc.Store(id="corridor-members"),
         html.H4("INRIX segment explorer", className="my-2"),
+        # Layout reflow (Item 20-A): settings in a left column; the map, segment
+        # table, and the chart panels stacked in one right column, so the charts sit
+        # directly below the map (right of the settings) with no map↔charts gap.
+        # Responsive: the two columns stack full-width below the ``lg`` breakpoint.
         dbc.Row([
-            dbc.Col(_controls(), width=3),
+            dbc.Col(_controls(), xs=12, lg=3),
             dbc.Col([
                 dbc.Card(dbc.CardBody([
                     # Segment picker + a compact KML export icon (Item 13: demoted from
@@ -818,17 +868,34 @@ def _layout() -> dbc.Container:
                                 width="auto"),
                     ], className="align-items-center g-1"),
                     dcc.Dropdown(id="segment", placeholder="Load an export, then pick or click a segment"),
+                    # Direction display (Item 20-B): a compass multiselect that filters
+                    # which segment directions render/are clickable, plus a switch to
+                    # nudge co-located opposing pairs apart so both are visible. Both
+                    # compose; a hidden direction needn't be offset.
+                    dbc.Row([
+                        dbc.Col([
+                            dbc.Label("Show directions", className="mb-0 small text-muted"),
+                            dbc.Checklist(id="dir-compass", inline=True, value=[],
+                                          options=[], className="small"),
+                        ], className="me-auto"),
+                        dbc.Col(dbc.Checklist(
+                            id="dir-offset", switch=True, className="small",
+                            value=["on"],
+                            options=[{"label": " Offset overlapping", "value": "on"}]),
+                            width="auto"),
+                    ], className="align-items-center g-1 mt-1"),
                     dcc.Graph(id="map", style={"height": "620px"}),
                 ])),
                 _segment_table(),
-            ], width=9),
+                dbc.Card(dbc.CardBody(dbc.Tabs(id="tabs", active_tab="ts", children=[
+                    dbc.Tab(dcc.Graph(id="fig-ts"), label="Time series", tab_id="ts"),
+                    dbc.Tab(dcc.Graph(id="fig-summary"), label="Day × time summary", tab_id="summary"),
+                    dbc.Tab(dcc.Graph(id="fig-ba"), label="Before / after", tab_id="ba"),
+                    dbc.Tab(dcc.Graph(id="fig-decomp"), label="Decomposition + changepoints",
+                            tab_id="decomp"),
+                ]))),
+            ], xs=12, lg=9),
         ]),
-        dbc.Row(dbc.Col(dbc.Tabs(id="tabs", active_tab="ts", children=[
-            dbc.Tab(dcc.Graph(id="fig-ts"), label="Time series", tab_id="ts"),
-            dbc.Tab(dcc.Graph(id="fig-summary"), label="Day × time summary", tab_id="summary"),
-            dbc.Tab(dcc.Graph(id="fig-ba"), label="Before / after", tab_id="ba"),
-            dbc.Tab(dcc.Graph(id="fig-decomp"), label="Decomposition + changepoints", tab_id="decomp"),
-        ]), width=12), className="mt-2"),
     ], fluid=True)
 
 
@@ -884,6 +951,8 @@ def _register_callbacks(app: Dash) -> None:
         Output("segment-table", "data"),
         Output("segment-table", "selected_rows"),
         Output("corridor-members", "data"),
+        Output("dir-compass", "options"),
+        Output("dir-compass", "value"),
         Input("load", "n_clicks"),
         State("source", "value"),
         State("tz", "value"),
@@ -911,7 +980,7 @@ def _register_callbacks(app: Dash) -> None:
                               date_start=date_start, date_end=date_end,
                               freeflow=freeflow, aadt_path=aadt_path or None)
         except Exception as exc:  # surface the failure in the UI, don't crash
-            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 24)
+            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 26)
         token = _store(ds)
         labels = _labels(ds)
         options = [{"label": labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
@@ -946,13 +1015,17 @@ def _register_callbacks(app: Dash) -> None:
         # default corridor grouping / whole network). Reset the selection + member
         # store on a fresh load so stale ids don't leak across exports.
         table_data = _table_rows(ds)
+        # Direction-display control (Item 20): populate the compass multiselect with
+        # only the directions present in this export; reset it to no filter (render
+        # all) on a fresh load so stale groups don't leak across exports.
+        dir_opts = _direction_options(ds)
         # Reset the segment selection: a new export's ids differ, so keeping the
         # old value would leave every panel on a stale/blank segment (review B5).
         return (token, status, options, None, metric_options, metric_value,
                 lo, hi, b_start, b_end, lo, hi, a_start, a_end,
                 full_lo, full_hi, r_start, r_end,
                 corr_opts, corr_val, scope_opts, map_mode_opts, wspeed_opts,
-                table_data, [], None)
+                table_data, [], None, dir_opts, [])
 
     # Map click -> segment dropdown (the dropdown is the single selection source).
     @app.callback(
@@ -1010,11 +1083,19 @@ def _register_callbacks(app: Dash) -> None:
         Input("scope", "value"),
         Input("dow-days", "value"),
         Input("corridor-members", "data"),
+        Input("dir-compass", "value"),
+        Input("dir-offset", "value"),
     )
-    def _map(token, metric, mode, selected, b0, b1, a0, a1, window, scope, days, members):
+    def _map(token, metric, mode, selected, b0, b1, a0, a1, window, scope, days, members,
+             dir_groups, dir_offset):
         ds = _get(token)
         if ds is None:
             return figures.segment_map(_empty_geo())
+        # Directional display (Item 20): the map draws a display copy of the geometry
+        # — filtered to the selected compass groups and with co-located opposing pairs
+        # nudged apart — so both directions are visible and clickable. The analytic
+        # ds.geo (and every metric/coverage compute) is untouched.
+        geo = _display_geo(ds, dir_groups, offset_on=bool(dir_offset) and "on" in set(dir_offset))
         # Membership dimming (Item 19): when the segment table has a real subset
         # selected, draw non-members faint so the corridor stands out. A no-op
         # (empty / all) selection dims nothing.
@@ -1024,7 +1105,7 @@ def _register_callbacks(app: Dash) -> None:
         # metric to the ones that sum across segments (travel time / delay).
         col = _metric_col(ds, _agg_metric_key(metric) if scope in _AGG_SCOPES else metric)
         if col is None:  # metric absent (mid-load transition) — draw a bare map
-            return figures.segment_map(ds.geo, label_col="name", member_ids=mset,
+            return figures.segment_map(geo, label_col="name", member_ids=mset,
                                        sublabel_col="Combined", uirevision=f"data-{token}")
         label = figures._unit_label(col)
         if mode == MAP_MODE_VHD and _has_aadt(ds) and _metric_col(ds, "delay") is not None:
@@ -1047,7 +1128,7 @@ def _register_callbacks(app: Dash) -> None:
             values = _segment_means(ds, col, window, days)
         # Key uirevision on the data token so loading a *different* export
         # recenters the map instead of keeping the old city's pan/zoom (review B5).
-        return figures.segment_map(ds.geo, values, value_label=label,
+        return figures.segment_map(geo, values, value_label=label,
                                    selected_id=selected, label_col="name",
                                    member_ids=mset,
                                    sublabel_col="Combined", uirevision=f"data-{token}")

@@ -70,9 +70,88 @@ def test_build_app_layout_headless():
                    "load", "before-range", "after-range", "export-kml", "data-token",
                    "tod-window", "names-path", "write-names", "restrict-range",
                    "scope", "corridor", "dow-days", "dow-status",
-                   "segment-table", "corridor-members", "save-names", "table-status"):
+                   "segment-table", "corridor-members", "save-names", "table-status",
+                   # Item 20 directional-display controls
+                   "dir-compass", "dir-offset"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
+
+
+def test_layout_reflow_charts_share_right_column_with_map(geo_two):
+    """Item 20-A: the chart tabs live in the SAME right column as the map + table
+    (not a separate full-width bottom row), and that column does not also hold the
+    left-column controls — so the charts sit directly below the map, gap closed."""
+    app = gapp.build_app()
+
+    def _iter_children(node):
+        ch = getattr(node, "children", None)
+        if ch is None:
+            return []
+        return ch if isinstance(ch, (list, tuple)) else [ch]
+
+    def _ids(node):
+        out = set()
+        if getattr(node, "id", None):
+            out.add(node.id)
+        for child in _iter_children(node):
+            out |= _ids(child)
+        return out
+
+    # the smallest subtree containing both the map and the tabs is the right column;
+    # it must also carry the segment table but NOT the left-column 'load' control.
+    def _smallest_with_both(node):
+        ids = _ids(node)
+        if not ({"map", "tabs"} <= ids):
+            return None
+        for child in _iter_children(node):
+            inner = _smallest_with_both(child)
+            if inner is not None:
+                return inner
+        return node
+
+    right_col = _smallest_with_both(app.layout)
+    assert right_col is not None
+    col_ids = _ids(right_col)
+    assert {"map", "tabs", "segment-table"} <= col_ids
+    assert "load" not in col_ids           # the controls live in the *other* column
+
+
+def test_direction_options_from_geo(geo_two):
+    """_direction_options lists only the compass groups present in the export, in
+    +/- order with a signed label."""
+    from inrix_tools import geometry, speed
+    g = geometry.attach_directions(geo_two, {101: "N", 202: "S"})
+    ds = gapp.Dataset(df=pd.DataFrame(), metadata=pd.DataFrame(), geo=g,
+                      metric_cols={}, tz="America/Denver", span=(None, None))
+    opts = gapp._direction_options(ds)
+    assert [o["value"] for o in opts] == ["N", "S"]     # only present groups, N before S
+    assert "(+)" in opts[0]["label"] and "(−)" in opts[1]["label"]
+    # no direction annotation -> no options (control filters nothing)
+    ds_no = gapp.Dataset(df=pd.DataFrame(), metadata=pd.DataFrame(), geo=geo_two,
+                         metric_cols={}, tz="America/Denver", span=(None, None))
+    assert gapp._direction_options(ds_no) == []
+
+
+def test_display_geo_filters_and_offsets(geo_two):
+    """_display_geo filters to the chosen compass groups and offsets co-located
+    opposing pairs; a no-op group selection renders all; the analytic geo is
+    untouched."""
+    from inrix_tools import geometry
+    g = geometry.attach_directions(geo_two, {101: "N", 202: "S"})
+    ds = gapp.Dataset(df=pd.DataFrame(), metadata=pd.DataFrame(), geo=g,
+                      metric_cols={}, tz="America/Denver", span=(None, None))
+    # filter to N only -> one segment drawn
+    only_n = gapp._display_geo(ds, ["N"], offset_on=False)
+    assert list(only_n.index) == [101]
+    # no filter (empty) -> both, and the offset separates the co-located pair
+    both = gapp._display_geo(ds, [], offset_on=True)
+    assert set(both.index) == {101, 202}
+    assert geometry.OFFSET_FLAG_COL in both.columns and both[geometry.OFFSET_FLAG_COL].all()
+    # selecting every present group is a no-op filter (renders all)
+    allsel = gapp._display_geo(ds, ["N", "S"], offset_on=False)
+    assert set(allsel.index) == {101, 202}
+    # the analytic geometry is untouched by the offset
+    assert list(ds.geo["geometry"]) == list(g["geometry"])
 
 
 def test_layout_builds_without_data_cache():
@@ -375,6 +454,22 @@ def test_end_to_end_real_export():
     net_drop = gapp._analysis_frame(ds, col, gapp.SCOPE_NETWORK, None, members=keep)
     # dropping the costliest segment never loses complete-set timestamps.
     assert len(net_drop) >= len(net_all)
+
+    # Item 20: directions resolve from metadata onto geo, the compass control lists
+    # only present groups, a compass filter keeps only that direction, and the
+    # display offset separates a real co-located opposing pair while leaving the
+    # analytic geometry byte-for-byte intact.
+    from inrix_tools import geometry as _geom
+    assert set(ds.geo[_geom.DIR_GROUP_COL].dropna().unique()) == {"N", "E", "S", "W"}
+    assert [o["value"] for o in gapp._direction_options(ds)] == ["N", "E", "S", "W"]
+    only_n = gapp._display_geo(ds, ["N"], offset_on=False)
+    assert len(only_n) and set(only_n[_geom.DIR_GROUP_COL].dropna()) == {"N"}
+    analytic_wkt = [g.wkt for g in ds.geo["geometry"]]
+    disp = gapp._display_geo(ds, [], offset_on=True)
+    assert int(disp[_geom.OFFSET_FLAG_COL].sum()) >= 2      # >=1 opposing pair nudged
+    off_id = disp.index[disp[_geom.OFFSET_FLAG_COL]][0]
+    assert disp.loc[off_id, "geometry"].distance(ds.geo.loc[off_id, "geometry"]) > 0
+    assert [g.wkt for g in ds.geo["geometry"]] == analytic_wkt  # display path never mutates ds.geo
 
 
 # ---------------------------------------------------------------------------
