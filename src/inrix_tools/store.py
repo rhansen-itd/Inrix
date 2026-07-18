@@ -51,13 +51,17 @@ import pandas as pd
 from . import io as _io
 from .geometry import WGS84
 from .io import CORRIDOR_COL, DATETIME_COL, SEGMENT_COL
+from .names import INRIX_LABEL_COL as _INRIX_LABEL_COL
+from .names import NAME_COL as _NAME_COL
 
 # Bump when the on-disk layout changes; stamped on every area row. v2 = the Item 23
-# area/merge model (v1 was the Item 21 one-dataset-per-export layout).
+# area/merge model (v1 was the Item 21 one-dataset-per-export layout). The Item 27
+# _names table is additive (created on connect, no data migration), so no bump.
 SCHEMA_VERSION = 2
 
 AREAS_TABLE = "_areas"                # area registry (one row per corridor-group)
 INGESTS_TABLE = "_ingests"           # provenance: one row per ingested export
+NAMES_TABLE = "_names"               # friendly names, global by Segment ID (Item 27)
 GEOM_WKB_COL = "_geom_wkb"           # BLOB column holding each segment's WKB
 BIN_COL = "bin_minutes"              # time-bin partition column on the obs table
 
@@ -116,6 +120,20 @@ def _ensure_registry(con) -> None:
             date_min     TIMESTAMP WITH TIME ZONE,
             date_max     TIMESTAMP WITH TIME ZONE,
             ingested_at  TIMESTAMP
+        )
+        """
+    )
+    # Friendly segment names (Item 27), **global** by Segment ID — INRIX ids are
+    # globally unique, so one name applies across every area. Last-write-wins upsert
+    # (an edit overwrites; unlike the keep-first observation merge). Not stamped with
+    # SCHEMA_VERSION — the table is additive and created idempotently on connect.
+    con.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS "{NAMES_TABLE}" (
+            "{SEGMENT_COL}"       BIGINT PRIMARY KEY,
+            "{_NAME_COL}"         VARCHAR,
+            "{_INRIX_LABEL_COL}"  VARCHAR,
+            updated_at            TIMESTAMP
         )
         """
     )
@@ -208,10 +226,15 @@ def put_export(con, df: pd.DataFrame, metadata: pd.DataFrame, *,
                source: str | None = None, ingested_at: datetime | None = None) -> dict:
     """Merge an already-loaded export frame + metadata into its area.
 
-    The lower-level entry behind :func:`ingest_export` — the GUI already holds the
-    frames (it builds them for the geometry join), so it calls this directly. New
-    rows are those whose ``(Segment ID, Date Time, bin_minutes)`` are not already in
-    the area (keep-first); segment metadata is merged keep-first per ``Segment ID``.
+    The lower-level entry behind :func:`ingest_export`, for callers that already hold
+    the export's **raw** frames. Note the GUI's ingest (:func:`gui.app.ingest_to_db`)
+    deliberately **re-reads the raw export** (``io.load_data`` / ``io.load_metadata``)
+    for this call rather than reusing its in-memory ``Dataset.df``: that working frame
+    is CValue-filtered, localized, and carries the derived ``Delay`` column, so
+    persisting it would store a filtered/derived view instead of the raw export — the
+    re-read is on purpose, not a missed optimization. New rows are those whose
+    ``(Segment ID, Date Time, bin_minutes)`` are not already in the area (keep-first);
+    segment metadata is merged keep-first per ``Segment ID``.
     """
     _ensure_registry(con)
     area_key, area_name, corridors = area_identity(df)
@@ -238,6 +261,13 @@ def _merge_frame(con, table: str, frame: pd.DataFrame, keys: list[str]) -> int:
     tuple already exists are skipped). Creates the table on first write. Tolerates
     column drift between exports (missing columns fill NULL; new columns are added).
     Returns the number of rows actually inserted."""
+    # Rows whose own key column is NULL can't participate in keep-first dedup — SQL
+    # NULL never equals NULL, so the anti-join treats them as "new" and re-inserts
+    # them on *every* re-ingest (review R6). Drop NULL-key rows up front so keep-first
+    # holds and no duplicate NULL-key rows leak in.
+    present_keys = [k for k in keys if k in frame.columns]
+    if present_keys:
+        frame = frame.dropna(subset=present_keys)
     con.register("_merge_src", frame)
     try:
         if not _table_exists(con, table):
@@ -400,28 +430,111 @@ def _area_row(con, area_key: str) -> dict | None:
     return None if len(df) == 0 else df.iloc[0].to_dict()
 
 
-def load_export(con, area_key: str, bin_minutes: int | None = None) -> pd.DataFrame:
+def _date_bounds_utc(date_start, date_end, tz):
+    """Half-open **UTC** instants ``[lo, hi)`` equivalent to
+    :func:`timebins.filter_date_range`'s *inclusive local-calendar-date* cut, for
+    pushing a date restriction into the SQL ``WHERE`` clause (Item 25).
+
+    ``date_start`` / ``date_end`` are local calendar dates (a ``"YYYY-MM-DD"`` string,
+    a ``date`` / ``Timestamp``, or ``None`` / ``""`` for an open side); ``tz`` names
+    the local zone they are read in (``None`` → UTC). The bounds are
+    ``[local_midnight(start), local_midnight(end)+1 day)`` computed in ``tz`` and then
+    expressed in UTC. Because comparing the stored UTC ``Date Time`` against these
+    instants is *tz-invariant*, the pushed-down cut is **exactly** the frame that
+    ``filter_date_range`` would keep after ``io.to_local`` — DST included — so no
+    re-trim in pandas is needed. Returns ``(lo, hi)`` as tz-aware UTC
+    :class:`datetime.datetime` (or ``None`` for an open side)."""
+    zone = tz or "UTC"
+
+    def _midnight(x):
+        if x is None or (isinstance(x, str) and not x.strip()):
+            return None
+        ts = pd.Timestamp(x)
+        ts = ts.tz_localize(zone) if ts.tzinfo is None else ts.tz_convert(zone)
+        return ts.normalize()  # midnight of that local calendar day
+
+    lo_local = _midnight(date_start)
+    hi_local = _midnight(date_end)
+    lo = None if lo_local is None else lo_local.tz_convert("UTC").to_pydatetime()
+    # inclusive of the whole end day -> exclusive at the next local midnight (a
+    # DateOffset advances a calendar day, DST-safe — like ``filter_date_range``).
+    hi = (None if hi_local is None
+          else (hi_local + pd.DateOffset(days=1)).tz_convert("UTC").to_pydatetime())
+    return lo, hi
+
+
+def load_export(con, area_key: str, bin_minutes: int | None = None, *,
+                date_start=None, date_end=None, tz=None) -> pd.DataFrame:
     """Load an area's merged time-series frame for one bin-length — the same typed,
     tz-aware **UTC** shape :func:`io.load_data` produces (the ``bin_minutes``
     partition column is dropped and ``df.attrs['units']`` restored).
 
     ``bin_minutes`` selects the partition; if ``None`` and the area has exactly one
     bin, that one is used (else a :class:`ValueError` names the choices).
+
+    ``date_start`` / ``date_end`` (optional, Item 25) restrict the load to an
+    **inclusive local calendar-date range**, *pushed down* into the SQL scan so an
+    ever-growing area isn't pulled into memory whole. The bounds are read in ``tz``
+    (the corridor's local zone; ``None`` → UTC) and are semantically **identical** to
+    :func:`timebins.filter_date_range` applied after ``io.to_local`` — see
+    :func:`_date_bounds_utc`. An over-narrow range yields an empty (but still typed)
+    frame.
     """
     row = _area_row(con, area_key)
     if row is None:
         raise KeyError(f"No area {area_key!r} in the store.")
     bin_minutes = _resolve_bin(con, area_key, bin_minutes)
     obs = _obs_table(area_key)
+    where = [f'"{BIN_COL}" = ?']
+    params: list = [bin_minutes]
+    lo, hi = _date_bounds_utc(date_start, date_end, tz)
+    if lo is not None:
+        where.append(f'"{DATETIME_COL}" >= ?')
+        params.append(lo)
+    if hi is not None:
+        where.append(f'"{DATETIME_COL}" < ?')
+        params.append(hi)
     df = con.execute(
-        f'SELECT * EXCLUDE ("{BIN_COL}") FROM "{obs}" WHERE "{BIN_COL}" = ?',
-        [bin_minutes]).df()
+        f'SELECT * EXCLUDE ("{BIN_COL}") FROM "{obs}" WHERE {" AND ".join(where)}',
+        params).df()
     if DATETIME_COL in df.columns:
-        df[DATETIME_COL] = (
-            df[DATETIME_COL].dt.tz_convert("UTC").astype("datetime64[ns, UTC]"))
+        col = df[DATETIME_COL]
+        # DuckDB reads TIMESTAMPTZ in the (UTC-pinned) session zone; normalize to the
+        # canonical dtype. Guard the empty case (an over-narrow range may return 0
+        # rows as a tz-naive column) by localizing before converting.
+        if getattr(col.dtype, "tz", None) is not None:
+            col = col.dt.tz_convert("UTC")
+        else:
+            col = col.dt.tz_localize("UTC")
+        df[DATETIME_COL] = col.astype("datetime64[ns, UTC]")
     df.attrs["units"] = {"speed": row.get("units_speed"),
                          "travel_time": row.get("units_travel_time")}
     return df
+
+
+def area_local_span(con, area_key: str, tz=None) -> tuple:
+    """The area's **untrimmed** span as ``(first_date, last_date)`` local calendar
+    dates (Item 25) — read from the ``_areas`` registry's UTC ``date_min`` /
+    ``date_max`` and converted into ``tz`` (``None`` → UTC).
+
+    Used by the GUI to bound the Restrict-dates picker on a DB load: with the date
+    push-down the loaded frame no longer carries the full range, so the picker's
+    widen-again bounds come from the registry, not the (possibly trimmed) frame.
+    Returns ``(None, None)`` when the area has no recorded span. Raises
+    :class:`KeyError` for an unknown area."""
+    row = _area_row(con, area_key)
+    if row is None:
+        raise KeyError(f"No area {area_key!r} in the store.")
+    zone = tz or "UTC"
+
+    def _local_date(v):
+        if v is None or pd.isna(v):
+            return None
+        ts = pd.Timestamp(v)
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+        return ts.tz_convert(zone).date()
+
+    return (_local_date(row.get("date_min")), _local_date(row.get("date_max")))
 
 
 def _resolve_bin(con, area_key: str, bin_minutes: int | None) -> int:
@@ -447,6 +560,68 @@ def load_metadata(con, area_key: str) -> pd.DataFrame:
         dfm[SEGMENT_COL] = dfm[SEGMENT_COL].astype("int64")
         dfm = dfm.set_index(SEGMENT_COL)
     return dfm
+
+
+# ---------------------------------------------------------------------------
+# Friendly names (Item 27): global, last-write-wins
+# ---------------------------------------------------------------------------
+def save_names(con, names_df: pd.DataFrame, *, updated_at: datetime | None = None) -> int:
+    """Upsert friendly segment names into the global :data:`NAMES_TABLE`,
+    **last-write-wins** per ``Segment ID`` — an edit overwrites the stored name
+    (unlike the keep-first observation merge). A **blank** name *clears* the override
+    (the row is deleted), so the segment falls back to its INRIX seed on next load,
+    matching ``names.apply_names``'s blank-means-unset rule.
+
+    ``names_df`` needs a ``Segment ID`` and a ``name`` column (``inrix_label``
+    optional). Names are keyed **globally** by ``Segment ID`` (INRIX ids are globally
+    unique), so a name saved once applies in every area. Returns the number of names
+    written (blanks/clears not counted)."""
+    _ensure_registry(con)
+    if SEGMENT_COL not in names_df.columns or _NAME_COL not in names_df.columns:
+        raise ValueError(
+            f"names_df must have '{SEGMENT_COL}' and '{_NAME_COL}' columns; "
+            f"got {list(names_df.columns)}")
+    ts = updated_at or datetime.now(timezone.utc)
+    has_label = _INRIX_LABEL_COL in names_df.columns
+    written = 0
+    for _, r in names_df.iterrows():
+        sid = int(r[SEGMENT_COL])
+        raw = r[_NAME_COL]
+        name = "" if pd.isna(raw) else str(raw).strip()
+        if not name:  # a cleared name removes the override (fall back to the seed)
+            con.execute(f'DELETE FROM "{NAMES_TABLE}" WHERE "{SEGMENT_COL}" = ?', [sid])
+            continue
+        label = r[_INRIX_LABEL_COL] if has_label else None
+        label = "" if (label is None or pd.isna(label)) else str(label)
+        con.execute(
+            f'INSERT INTO "{NAMES_TABLE}" VALUES (?,?,?,?) '
+            f'ON CONFLICT ("{SEGMENT_COL}") DO UPDATE SET '
+            f'"{_NAME_COL}" = excluded."{_NAME_COL}", '
+            f'"{_INRIX_LABEL_COL}" = excluded."{_INRIX_LABEL_COL}", '
+            f'updated_at = excluded.updated_at',
+            [sid, name, label, ts])
+        written += 1
+    return written
+
+
+def load_names(con) -> pd.DataFrame:
+    """The stored friendly names as a ``Segment ID``-indexed frame (columns ``name``,
+    ``inrix_label``) — the shape :func:`names.apply_names` layers over the seed. An
+    empty (but typed) frame when nothing has been saved.
+
+    Does **not** create the table (unlike the write path) so it is safe on a
+    read-only connection and never writes to the store as a side effect of a load."""
+    if not _table_exists(con, NAMES_TABLE):
+        return pd.DataFrame(
+            {_NAME_COL: pd.Series([], dtype="object"),
+             _INRIX_LABEL_COL: pd.Series([], dtype="object")},
+            index=pd.Index([], name=SEGMENT_COL, dtype="int64"))
+    df = con.execute(
+        f'SELECT "{SEGMENT_COL}", "{_NAME_COL}", "{_INRIX_LABEL_COL}" '
+        f'FROM "{NAMES_TABLE}"').df()
+    if len(df):
+        df[SEGMENT_COL] = df[SEGMENT_COL].astype("int64")
+    return df.set_index(SEGMENT_COL)
 
 
 def load_geometry(con, area_key: str):
@@ -487,19 +662,24 @@ class StoredDataset:
 
 
 def load_dataset(con, area_key: str, bin_minutes: int | None = None, *,
-                 with_geometry: bool = True) -> StoredDataset:
+                 with_geometry: bool = True, date_start=None, date_end=None,
+                 tz=None) -> StoredDataset:
     """Load everything cached for an area + bin-length in one call.
 
     Returns a :class:`StoredDataset` whose ``df`` / ``metadata`` equal the file
     loaders' output and whose ``geo`` is the cached (already-joined) geometry — so a
     session runs from the DB without re-parsing the export or repeating the spatial
     join. Pass ``with_geometry=False`` to skip the geo read.
+
+    ``date_start`` / ``date_end`` / ``tz`` (Item 25) restrict ``df`` to an inclusive
+    local calendar-date range, pushed down into the scan — see :func:`load_export`.
     """
     row = _area_row(con, area_key)
     if row is None:
         raise KeyError(f"No area {area_key!r} in the store.")
     bin_minutes = _resolve_bin(con, area_key, bin_minutes)
-    df = load_export(con, area_key, bin_minutes)
+    df = load_export(con, area_key, bin_minutes,
+                     date_start=date_start, date_end=date_end, tz=tz)
     metadata = load_metadata(con, area_key)
     geo = load_geometry(con, area_key) if with_geometry else None
     return StoredDataset(

@@ -160,6 +160,16 @@ def test_same_corridor_exports_merge_keep_first(con, tmp_path):
     assert len(store.load_export(con, a["area_key"], 5)) == 5
 
 
+def test_merge_frame_drops_null_key_rows(con):
+    # A NULL key can't participate in keep-first dedup (SQL NULL != NULL), so without
+    # the R6 guard the NULL-key row would re-insert on every ingest -> duplicates.
+    frame = pd.DataFrame({SEGMENT_COL: [1001, None], "v": [1, 2]})
+    assert store._merge_frame(con, "t_null", frame, keys=[SEGMENT_COL]) == 1
+    # Re-ingesting the same frame adds nothing (keep-first holds; no NULL re-leak).
+    assert store._merge_frame(con, "t_null", frame, keys=[SEGMENT_COL]) == 0
+    assert con.execute('SELECT count(*) FROM "t_null"').fetchone()[0] == 1
+
+
 def test_multiple_bin_lengths_coexist_and_select(con, tmp_path):
     za = _make_zip(tmp_path, "A", _rows_5min(T5, [1001]), [1001])
     zh = _make_zip(tmp_path, "H", _rows_5min(T15, [1001]), [1001])
@@ -276,6 +286,130 @@ def test_remove_area(con, zip_a):
     assert not store.remove_area(con, info["area_key"])
     with pytest.raises(KeyError):
         store.load_export(con, info["area_key"], 5)
+
+
+# ---------------------------------------------------------------------------
+# Friendly names in the store (Item 27): global, last-write-wins upsert
+# ---------------------------------------------------------------------------
+from inrix_tools.names import INRIX_LABEL_COL, NAME_COL  # noqa: E402
+
+
+def test_save_names_last_write_wins_and_blank_clears(con):
+    df = pd.DataFrame({SEGMENT_COL: [1001, 1002, 1003],
+                       NAME_COL: ["Main & 1st", "   ", "Elm St"],
+                       INRIX_LABEL_COL: ["L1", "L2", "L3"]})
+    assert store.save_names(con, df) == 2                 # 1002 blank -> skipped
+    back = store.load_names(con)
+    assert back.index.name == SEGMENT_COL and back.index.dtype == "int64"
+    assert back.loc[1001, NAME_COL] == "Main & 1st"
+    assert 1002 not in back.index                          # blank never stored
+
+    # Last-write-wins: an edit overwrites; a blank clears the override (row removed).
+    df2 = pd.DataFrame({SEGMENT_COL: [1001, 1003],
+                        NAME_COL: ["Main St (edited)", ""]})
+    assert store.save_names(con, df2) == 1
+    back2 = store.load_names(con)
+    assert back2.loc[1001, NAME_COL] == "Main St (edited)"  # overwritten
+    assert 1003 not in back2.index                          # cleared
+
+
+def test_load_names_empty_when_none_saved(con):
+    empty = store.load_names(con)
+    assert list(empty.columns) == [NAME_COL, INRIX_LABEL_COL]
+    assert len(empty) == 0 and empty.index.name == SEGMENT_COL
+
+
+def test_save_names_requires_columns(con):
+    with pytest.raises(ValueError, match="must have"):
+        store.save_names(con, pd.DataFrame({"foo": [1]}))
+
+
+# ---------------------------------------------------------------------------
+# Date push-down (Item 25): restrict a DB load by inclusive local calendar date,
+# pushed into the SQL scan — must match ``filter_date_range`` on the localized frame.
+# ---------------------------------------------------------------------------
+_TZ = "America/Denver"  # MST (-07:00) across the fixture days — clear of DST
+
+
+@pytest.fixture
+def zip_md(tmp_path):
+    """A multi-day 5-min export (two 5-min stamps/day for five February days) so a
+    date sub-range genuinely splits it. The -07:00 offset ≠ UTC, so a bad UTC-bound
+    conversion would shift the cut and fail the parity check."""
+    times = []
+    for day in ("2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06"):
+        times += [f"{day}T08:00:00-07:00", f"{day}T08:05:00-07:00"]
+    return _make_zip(tmp_path, "MD", _rows_5min(times, [1001, 1002]), [1001, 1002])
+
+
+def _sorted_keys(df):
+    return (df[[SEGMENT_COL, DATETIME_COL]]
+            .sort_values([SEGMENT_COL, DATETIME_COL]).reset_index(drop=True))
+
+
+def test_load_export_date_pushdown_equals_filter_date_range(con, zip_md):
+    from inrix_tools.timebins import filter_date_range
+
+    info = store.ingest_export(con, zip_md)
+    key = info["area_key"]
+    full_local = io.to_local(store.load_export(con, key, 5), _TZ)
+    # The pandas-side calendar cut we must reproduce exactly.
+    expected = filter_date_range(full_local, "2026-02-03", "2026-02-05")
+
+    pushed = store.load_export(con, key, 5, date_start="2026-02-03",
+                               date_end="2026-02-05", tz=_TZ)
+    pushed_local = io.to_local(pushed, _TZ)
+
+    assert 0 < len(pushed_local) < len(full_local)     # a real reduction
+    pd.testing.assert_frame_equal(
+        _sorted_keys(pushed_local), _sorted_keys(expected))
+    # inclusive of the whole end day; the day after is excluded.
+    days = pushed_local[DATETIME_COL].dt.tz_convert(_TZ).dt.date.astype(str)
+    assert set(days) == {"2026-02-03", "2026-02-04", "2026-02-05"}
+
+
+def test_load_export_open_sided_range(con, zip_md):
+    info = store.ingest_export(con, zip_md)
+    key = info["area_key"]
+    # Only a start bound (hi open): keep from 02-05 on.
+    ge = io.to_local(store.load_export(con, key, 5, date_start="2026-02-05", tz=_TZ), _TZ)
+    assert set(ge[DATETIME_COL].dt.tz_convert(_TZ).dt.date.astype(str)) == {
+        "2026-02-05", "2026-02-06"}
+    # Only an end bound (lo open): keep up to and including 02-03.
+    le = io.to_local(store.load_export(con, key, 5, date_end="2026-02-03", tz=_TZ), _TZ)
+    assert set(le[DATETIME_COL].dt.tz_convert(_TZ).dt.date.astype(str)) == {
+        "2026-02-02", "2026-02-03"}
+
+
+def test_load_export_empty_range_degrades(con, zip_md):
+    info = store.ingest_export(con, zip_md)
+    key = info["area_key"]
+    # start after end -> an empty, still-typed frame (no crash), same columns.
+    empty = store.load_export(con, key, 5, date_start="2026-02-10",
+                              date_end="2026-02-01", tz=_TZ)
+    full = store.load_export(con, key, 5)
+    assert len(empty) == 0
+    assert str(empty[DATETIME_COL].dtype) == "datetime64[ns, UTC]"
+    assert list(empty.columns) == list(full.columns)
+
+
+def test_area_local_span_from_registry(con, zip_md):
+    info = store.ingest_export(con, zip_md)
+    lo, hi = store.area_local_span(con, info["area_key"], _TZ)
+    assert (lo.isoformat(), hi.isoformat()) == ("2026-02-02", "2026-02-06")
+    # No tz -> UTC dates (the 08:00 MST stamps are 15:00 UTC, still the same day).
+    lo_utc, hi_utc = store.area_local_span(con, info["area_key"])
+    assert (lo_utc.isoformat(), hi_utc.isoformat()) == ("2026-02-02", "2026-02-06")
+    with pytest.raises(KeyError):
+        store.area_local_span(con, "nope")
+
+
+def test_load_dataset_pushes_dates_down(con, zip_md):
+    info = store.ingest_export(con, zip_md)
+    sd = store.load_dataset(con, info["area_key"], 5, with_geometry=False,
+                            date_start="2026-02-04", date_end="2026-02-04", tz=_TZ)
+    days = sd.df[DATETIME_COL].dt.tz_convert(_TZ).dt.date.astype(str)
+    assert set(days) == {"2026-02-04"}
 
 
 # ---------------------------------------------------------------------------

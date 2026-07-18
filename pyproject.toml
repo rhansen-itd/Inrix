@@ -47,3 +47,6 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Repo root on the path so the retired-but-tested ``legacy/`` package imports
+# (``inrix_tools`` is the installed src package; ``legacy`` is reference-only).
+pythonpath = ["."]

@@ -323,19 +323,42 @@ adds a **bin-length selector**; `load_export(area_key, bin_minutes)` reads one
 partition (and errors, listing the choices, if an area holds several and none is
 given).
 
+**Date push-down (Item 25).** `load_export` / `load_dataset` take optional
+`date_start` / `date_end` (inclusive **local calendar dates**) plus a `tz`, and push
+the restriction *into the DuckDB scan* — an area accumulates indefinitely under the
+merge model, so pulling it whole then trimming in pandas is what this avoids. The
+bounds are the **half-open UTC instants** `[local_midnight(start), local_midnight(end)+1 day)`
+computed in `tz` (defaulting to UTC), so the pushed-down cut is *exactly* the frame
+`timebins.filter_date_range` would keep after `io.to_local` — comparing the stored
+UTC `Date Time` against those instants is tz-invariant, so it matches to the row,
+DST included, with no pandas re-trim. An over-narrow range returns an empty (still
+typed, tz-aware) frame. `area_local_span(area_key, tz)` reads the registry's
+`date_min` / `date_max` back as local calendar dates for the GUI's picker bounds
+(the trimmed frame no longer carries the full range).
+
 **Layout.** Per-area tables keyed by `area_key`; two shared registries:
 
 | table | contents |
 |-------|----------|
 | `_areas` | registry: one row per area — `area_key` (PK), `area_name`, `corridors` (JSON), `units_*`, `n_segments`, `date_min/max`, `has_geometry`, `has_aadt`, `schema_version`, `created_at`, `updated_at` |
 | `_ingests` | provenance: one row per ingested export — `area_key`, `source`, `bin_minutes`, `n_rows_added`, `date_min/max`, `ingested_at` |
+| `_names` | friendly segment names (Item 27), **global** — `Segment ID` (PK), `name`, `inrix_label`, `updated_at`. Not keyed by area (INRIX Segment IDs are globally unique, so a name applies everywhere the segment appears). |
 | `obs_<area_key>` | the merged `io.load_data` rows for the area + a `bin_minutes` partition column (`Date Time` as `TIMESTAMPTZ`) |
 | `meta_<area_key>` | the merged `io.load_metadata` frame (Segment ID as a column; `Combined` included) |
 | `geo_<area_key>` | the **processed** GIS join: `Segment ID`, `source`, the `join_aadt` columns (`AADT` / `aadt_source` / `aadt_dist_m` / `Route` / `Commercial`), geometry as a WKB blob (`_geom_wkb`, `NULL` for a `missing` segment). Cached at ingest so the Item 18 spatial join runs **once**, not per load. |
 
 Exports whose column sets differ (an extra column) still merge — a missing column
 fills `NULL`, a new one is added via `ALTER TABLE ADD COLUMN` (`_align_columns`), and
-the anti-join insert uses `INSERT … BY NAME`.
+the anti-join insert uses `INSERT … BY NAME`. NULL-key rows are dropped before the
+merge (they can't participate in keep-first dedup — Item 26 / R6).
+
+**Friendly names (Item 27).** `store.save_names` upserts into `_names`
+**last-write-wins** per `Segment ID` (`INSERT … ON CONFLICT DO UPDATE` — an edit
+*overwrites*, unlike the keep-first observation merge); a **blank** name *deletes* the
+row, clearing the override so the segment falls back to its INRIX seed. `load_names`
+returns the `Segment ID`-indexed override frame that `names.apply_names` layers over
+the seed, applied automatically on every load (the file path too). This retired the
+old `segment_names.csv` round-trip (the CSV writers moved to `legacy/names_csv.py`).
 
 **Round-trip fidelity (a single-export area must equal the file loaders):**
 
@@ -356,7 +379,9 @@ one-dataset-per-export layout). There is no in-place migrator — the store is a
 *cache*, so the migration policy is **re-ingest**: bump the version, delete the
 `.duckdb` file, and re-run ingest (a v1 store's old `obs_<key>`/`_datasets` tables are
 simply ignored by v2 code, so an existing file keeps working but its old data won't
-appear as an area until re-ingested).
+appear as an area until re-ingested). The Item 27 `_names` table is **additive** —
+it's created on `connect` if absent, so an existing v2 store gains it with no re-ingest
+and no version bump (the observation/area layout is unchanged).
 
 ## Known quirks / open questions
 

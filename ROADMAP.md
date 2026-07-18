@@ -30,8 +30,16 @@ is done** (Session 24), **Item 20 (GUI map & layout display polish) is done**
 (Session 25), and **Item 21 (DB-backed storage & ingest) is done** (Session 26).
 An owner follow-on, **Item 23 (area-based store: merge exports by corridor set +
 bin-length partition), is now done** (Session 27), superseding Item 21's
-one-dataset-per-export model. The batch (Items 19–21, 23) is complete; remaining
-work is all in **Future** (needs a planning pass).
+one-dataset-per-export model. The batch (Items 19–21, 23) is complete.
+**Items 24–27 are a new batch** from the 2026-07-18 whole-app review
+([REVIEW_APP_2026-07-18.md](REVIEW_APP_2026-07-18.md), DESIGN_HISTORY Session 28):
+DB-first intake, date push-down, a hardening pass, and the corridor-scoped
+segment-table redesign. **Item 24 (DB-first intake inversion) is done** (Session
+29) and **Item 25 (date push-down: Restrict-dates on DB loads) is done** (Session
+30), **Item 26 (store & app hardening — R5/R6/R9) is done** (Session 31), and **Item 27
+(corridor-scoped segment table + names in the DuckDB store — R10/R11/R12) is done**
+(Session 32). The 2026-07-18 review batch (Items 24–27) is **complete**. Everything else
+is in **Future** (needs a planning pass).
 
 ---
 
@@ -231,6 +239,186 @@ Delivered:
 **Migration note:** an existing Item-21 (`v1`) `inrix_store.duckdb` isn't read by the
 `v2` code (its old tables are ignored) — delete the file and re-ingest, or just
 re-ingest into the fresh area tables.
+
+---
+
+# Review batch — findings from the 2026-07-18 whole-app review (Items 24–27)
+
+Scoped from [REVIEW_APP_2026-07-18.md](REVIEW_APP_2026-07-18.md) (Fable,
+review-only; owner accepted 2026-07-18 — DESIGN_HISTORY Session 28). Finding IDs
+(R1–R12) below refer to that document. File order is priority order: 24 first
+(the owner's dropped Item 21 request), then 25 and 27 (both land cleanest after
+24), 26 any time. Nothing here is math-heavy, so no Fable implementation item —
+per the owner's rule, Fable stays the review/verification tier.
+
+---
+
+## 24 — (done 2026-07-18 — DB-first intake: invert the data controls) — see DESIGN_HISTORY Session 29
+
+**Target: Opus** (GUI/layout work, no new compute). Independent.
+
+The Item 21 scope line that didn't land — "the main data control becomes a
+select-from-ingested-datasets dropdown" — plus the display nits that live in the
+same `_controls()`/`_load` region (review R1/R2/R4/R7). Scope:
+
+- [x] **Area + Bin become the top-of-panel data control** (normal-weight
+      labels); auto-select the most-recent area (and its first bin) at startup
+      so the app opens loaded from the DB (R1, R2).
+- [x] **Demote the file loader** — path/tz/CValue/Names/AADT/Restrict-dates +
+      the Load button move into a collapsed `dbc.Accordion` section ("Load /
+      ingest an export file"); Load button drops `color="primary"` (R1).
+- [x] `app.layout = _layout` (callable) so area options refresh per page load
+      instead of freezing at import (R2).
+- [x] **Provenance in the load status** (area name + bin vs. file name) and
+      mutually-exclusive intake state — a file load clears the Area selection
+      and vice versa (R4).
+- [x] Compass checklist initialises to all present groups (R7). *(R8 — the
+      save-names path wiring — is superseded by Item 27's names-in-DB; don't
+      patch the CSV loop.)*
+- [x] pytest: startup auto-select wiring, provenance strings, state clearing;
+      headless layout test keeps passing DB-free. DESIGN_HISTORY entry.
+
+Delivered: DB-first `_controls()` (Area + Bin lead; file loader in a collapsed
+`dbc.Accordion`, Load button `color="secondary"`), `_default_area`/`_area_label`/
+`_load_provenance` helpers, `app.layout = _layout` (callable), the `_area_bins`
+callback firing on initial render (startup auto-load cascade), a file load clearing
+the Area selection + file-vs-area provenance in the load status, and the compass
+checklist initialising to all present groups. **271 tests pass**; the real Myrtle
+export verified end-to-end in the browser (ingest → area auto-select → DB load;
+page reload auto-loads from the store; file load clears the area + shows file
+provenance). Full scope kept above per the box-checking convention.
+
+*Suggested prompt:* "Do Item 24 of ROADMAP.md — make the DB the primary intake
+in gui/app.py per REVIEW_APP_2026-07-18.md R1/R2/R4/R7."
+
+---
+
+## 25 — (done 2026-07-18 — date push-down: Restrict-dates on DB loads) — see DESIGN_HISTORY Session 30
+
+**Target: Opus.** Core (`store.py`) + a small GUI wire-up; lands cleanest
+*after* Item 24 (same controls column), but no hard dependency.
+
+Today a DB load hard-codes the date restriction off and the only other trigger
+loads from the file path — so an area (which accumulates indefinitely under the
+Item 23 model) can only ever be loaded whole (review R3). Scope:
+
+- [x] `store.load_export` / `load_dataset` grow `date_start`/`date_end`
+      (inclusive local-calendar semantics **identical** to
+      `timebins.filter_date_range` — the tz conversion happens after load, so
+      push down UTC bounds derived from the local dates, or filter
+      conservatively in SQL and re-trim in pandas; decide + record).
+- [x] GUI: the Restrict-dates picker applies to DB loads; picker bounds come
+      from the area registry's `date_min`/`date_max` (R3).
+- [x] pytest: DB-restricted load == file-load + `filter_date_range` on the same
+      span (parity); empty-range degrade. DESIGN_HISTORY entry; DATA_FORMAT
+      note if the bound semantics need stating.
+
+Delivered: **exact UTC push-down** (decision recorded) — `store.load_export` /
+`load_dataset` take `date_start`/`date_end` (local calendar dates) + `tz` and compile
+the half-open UTC instants `[local_midnight(start), local_midnight(end)+1 day)` into the
+SQL `WHERE`, tz-invariantly **identical** to `timebins.filter_date_range` after
+`io.to_local` (DST included, no pandas re-trim); new `store.area_local_span` sources the
+picker's widen-again bounds from the `_areas` registry. GUI: the DB `load_dataset`
+branch pushes the range down (file branch unchanged); the **Restrict-dates picker moved
+to the top-level data control** (out of the file-loader accordion — it governs the DB
+path now) and became an `Input` to `_load`, so editing dates re-scans the current area;
+an area switch drops the stale restriction. **279 tests pass** (+9: store push-down
+parity / open-sided / empty-degrade / `area_local_span` / `load_dataset` threading; GUI
+placement + `Input` wiring + end-to-end DB restrict). Full scope kept above per the
+box-checking convention.
+
+*Suggested prompt:* "Do Item 25 of ROADMAP.md — add date push-down to
+inrix_tools.store and wire Restrict-dates to DB loads, per
+REVIEW_APP_2026-07-18.md R3."
+
+---
+
+## 26 — (done 2026-07-18 — store & app hardening) — see DESIGN_HISTORY Session 31
+
+**Target: Sonnet-eligible** (mechanical, each fix is small and testable; Opus
+if run in the same sitting as 24/25). Independent.
+
+- [x] Per-callback `con.cursor()` for the shared DuckDB connection in
+      `gui/app.py` — `_db()` now returns a fresh UTC-pinned cursor per call
+      (a cursor doesn't inherit the parent's session TimeZone) so threaded
+      callbacks don't share one connection (R5).
+- [x] `_merge_frame` drops NULL-key rows (`dropna(subset=present_keys)`) so
+      keep-first holds; test: re-ingest a frame with a NULL `Segment ID` row →
+      no dupes (R6).
+- [x] `put_export` docstring corrected — the GUI re-reads the raw export on
+      purpose; the in-memory frames are filtered/derived (R9).
+- [x] pytest for each (+2, 281 total); DESIGN_HISTORY entry.
+
+Delivered all three review nits: `_db()` hands out per-call `con.cursor()`s
+(re-pinning `TimeZone='UTC'`, verified cursors don't inherit it), `_merge_frame`
+filters NULL-key rows before the keep-first anti-join (they can't dedup and were
+re-inserting every ingest), and the `put_export` docstring now records that the
+GUI's raw re-read is intentional. **281 tests pass.**
+
+*Suggested prompt:* "Do Item 26 of ROADMAP.md — the hardening batch from
+REVIEW_APP_2026-07-18.md R5/R6/R9."
+
+---
+
+## 27 — (done 2026-07-18 — corridor-scoped segment table + names in DB) — see DESIGN_HISTORY Session 32
+
+**Target: Opus** (GUI + a small store schema addition; no new math). Lands
+cleanest **after Item 24** (same controls region, and it assumes the DB is the
+primary intake); supersedes Item 24's original R8 bullet.
+
+Owner direction (2026-07-18): the table shows **one corridor**; membership is
+an **Include/Exclude column** (all included by default, deselect to exclude);
+segment names **save to the DB**, retiring the CSV workflow. Also fixes the
+owner-reported disappearing-rows bug at the root — the table's positional
+`selected_rows`/`active_cell.row` indices corrupt under a native sort because
+rows carry no `id` key (review R10, code-verified).
+
+**Owner decisions (recorded Session 32):** include/exclude sets stay
+**session-state only**; the `_names` table is keyed **globally by Segment ID**
+(INRIX ids are globally unique); Network/Segment scope list **all** segments,
+Corridor scope lists that corridor's segments. Scope:
+
+- [x] **Fix the selection identity bug (R10)**: every table row carries
+      ``id = Segment ID``; lookups go through ``active_cell["row_id"]`` / row
+      data, never positional indices. Dropped ``row_selectable`` and
+      ``fixed_rows`` (plain scroll container avoids the misrender-on-replace);
+      the map→row highlight is a ``{Segment ID}`` ``filter_query`` style, not a
+      positional ``active_cell`` write, so it survives a native sort.
+- [x] **Corridor-scoped rows (R11)**: ``_build_table`` lists the picked
+      corridor's segments (all/Network + Segment scope list everything). One
+      editable **Include/Exclude** dropdown-presentation column, default
+      all-Include; ``_exclusions_changed`` derives the member set (corridor
+      minus exclusions) **without rewriting ``data``**, feeding the existing
+      ``members=`` path; the map dims only *excluded* segments.
+- [x] **Names in the store (R12)**: a global ``_names`` table
+      (``Segment ID`` PK → name, **last-write-wins** upsert; blank clears the
+      override). ``load_dataset`` applies stored names over the seed on every
+      load; Save in the table upserts to the store.
+- [x] **Retire the CSV workflow**: removed the ``Names CSV`` input, ``Write
+      name template`` button, and the save-path status dance;
+      ``names.py``'s ``apply_names`` seed logic stayed (now source-agnostic);
+      the CSV writers moved to ``legacy/names_csv.py``.
+- [x] **Decided + recorded:** include/exclude sets stay **session-state only**
+      (owner call — not persisted per area+corridor).
+- [x] pytest: id-keyed selection survives a sorted view, exclusion set →
+      member mapping, names upsert round-trip (edit → save → reload applies;
+      blank clears), CSV controls gone from the layout, stored names apply on a
+      DB load. DESIGN_HISTORY entry; DATA_FORMAT gained the ``_names`` table.
+
+Delivered: global `_names` table (LWW upsert, blank-clears, read-only-safe load) +
+`save_names`/`load_names`; DB-first name application on every load (`_stored_names`);
+the CSV round-trip retired to `legacy/names_csv.py`; a corridor-scoped, id-keyed table
+(`_build_table` sole owner of the data) with an editable Include/Exclude column
+(`_exclusions_changed` → member set + `corridor-excluded` map dimming, no per-toggle
+`data` rewrite); the R10 highlight rewired to a Segment-ID `filter_query`;
+`row_selectable`/`fixed_rows` dropped. **286 tests pass**; verified live on the real
+Myrtle store (auto-load with the additive `_names` table; Include-dropdown table;
+Corridor scope re-scopes to the 11-segment corridor). Full scope kept above per the
+box-checking convention.
+
+*Suggested prompt:* "Do Item 27 of ROADMAP.md — corridor-scoped segment table
+with an Include/Exclude column and names persisted in the DuckDB store, per
+REVIEW_APP_2026-07-18.md R10–R12."
 
 ---
 
