@@ -1734,3 +1734,83 @@ decision + WKB rationale, the table layout, the tz/geometry round-trip rules, an
 `schema_version` / re-ingest migration policy); ROADMAP Item 21 boxes checked, status line +
 Completed index updated (the Items 19–21 batch is now complete). The Items 19–21 refinement
 batch is closed; all remaining ROADMAP work is in **Future** (needs a planning pass).
+
+## Session 27 — Area-based store: merge exports by corridor set + bin-length partition (ROADMAP Item 23) (2026-07-17)
+
+An owner follow-on to Item 21, right after it merged: **change the store's data model
+from one silo per export to a persistent *area*.** The owner wanted exports of the
+same corridors to accumulate (not a separate dataset each), with duplicate entries
+merged and different time bin-lengths coexisting behind a selector. Same pure-core-
+first discipline: `store.py` rewritten + tested, then the GUI, then docs.
+
+**Top-of-session decisions (asked + recorded).** Three forks resolved with the owner
+before building the schema:
+1. **Area identity = corridor set.** An export's area is the sorted set of its distinct
+   `Corridor/Region Name` values; the same set → the same `area_key` → exports merge.
+   (Alternatives offered: pick/name at ingest; segment-ID set. Owner chose corridor set —
+   so a *subset*-corridor export becomes a new area, an accepted tradeoff.)
+2. **Bin length = partition + selector.** Different bases (5-/15-/60-min) coexist in one
+   area, partitioned by an auto-detected `bin_minutes`; the GUI adds a bin selector.
+3. **Overlap = keep-first.** A row already stored (same `Segment ID` + `Date Time` +
+   `bin_minutes`) is never overwritten by a later export.
+
+**Pure core (`src/inrix_tools/store.py`, rewritten, `SCHEMA_VERSION` 1 → 2).**
+
+- **`area_identity(df)`** — `(area_key, area_name, corridors)` from the sorted distinct
+  corridor set (MD5-hashed key, corridors joined for the name); falls back to the sorted
+  Segment-ID set (`segments(N)`) when there's no corridor column.
+- **`detect_bin_minutes(df)`** — the **modal** consecutive-`Date Time` spacing per
+  segment, in minutes (gap-robust; 5-min INRIX → 5).
+- **`ingest_export` / `put_export`** — derive area + bin, then **merge keep-first**:
+  `_merge_frame` inserts only rows whose key tuple is absent, via an anti-join
+  `INSERT … BY NAME` after `_align_columns` adds any new columns (so column-drift between
+  exports merges, not errors). Returns `{area_key, area_name, bin_minutes, n_rows_added}`.
+  Metadata merges keep-first per `Segment ID`. `_areas` (registry: units, span, segment
+  count recomputed from the merged obs; `created_at` preserved) + `_ingests` (provenance
+  per export) tables.
+- **`ingest_geometry` / `ingest_aadt`** — the processed geometry+AADT layer merges
+  keep-first per `Segment ID` (WKB blobs, `NULL` for `missing`) and **persists with the
+  area**, so the Item 18 spatial join is cached once and reused across every later export.
+- **Read side** — `list_areas` (+ a `bins` column), `area_names`, `area_bins`,
+  `load_export(area, bin)` (normalizes `Date Time` back to `datetime64[ns, UTC]`, restores
+  units; `SELECT * EXCLUDE (bin_minutes)`; errors listing choices if multi-bin and none
+  given), `load_metadata`, `load_geometry`, `load_dataset` (bundles into a `StoredDataset`
+  carrying `area_key`/`area_name`/`bin_minutes`), `remove_area`.
+
+**GUI (`gui/app.py`).** Thin-shell split kept.
+
+- `load_dataset` DB branch now takes `(area_key, bin_minutes)` (was `dataset_name`);
+  `ingest_to_db` returns the merge summary. The file build (`_build_geo`) and per-session
+  decoration (`_decorate_geo`: Combined/direction/name) are unchanged and shared.
+- The "Saved datasets" dropdown is replaced by an **Area** dropdown + a **Bin length**
+  dropdown. `_ingest` merges into the auto-derived area and selects it → `_area_bins`
+  populates the bin options + default → the default bin (an Input to `_load`) triggers the
+  DB load. `_load` branches on `ctx.triggered_id == "area-bin"`.
+
+**Decisions.** (1) Keep-first (not last-wins) per the owner — corrected re-exports don't
+clobber stored values; `n_rows_added` makes a no-op merge visible. (2) Area = the *full*
+corridor set, so a partial-corridor export is deliberately a new area (documented) rather
+than a silent partial-merge. (3) Geometry/metadata persist at area level and merge
+keep-first, so the spatial join is a one-time cost per area even as exports accumulate.
+(4) `store.py` stays persistence-only (no geo-stack import); the GUI orchestrates the build.
+(5) v2 is a schema break; the store is a cache, so the policy is re-ingest (a v1 file's old
+tables are ignored, not migrated).
+
+**Verification.** `pytest tests/` — **265 passing** (`test_store.py` rewritten to 13 area
+tests; `test_gui.py` updated: layout ids `area`/`area-bin`, the ingest→area DB-load
+round-trip with the join cache-hit, `_area_options` empty without a DB). Coverage: bin
+detection (5 & 15-min); corridor-set grouping (same set merges, other corridor = new area);
+**keep-first overlap** (the overlapping timestamp keeps the first value; re-ingest adds 0);
+two bin-lengths coexist + selectable (+ the multi-bin “pass a bin” error); geometry/metadata
+union keep-first; single-export `load_export`/`load_metadata` **parity** with the file
+loaders; DB-path-is-a-param persistence; self-skipping real-export. **Live end-to-end on the
+real Myrtle export:** ingested as one area named by its corridor set (5th-6th / 9th / Capitol
+/ Front / Myrtle …), bin 5 auto-detected, **+2,185,368 rows**; **re-ingest → +0 new rows**
+(keep-first idempotent); **DB load 1.87M rows in 3.3 s vs 12.8 s file** (~4×), row parity, all
+46 AADT segments `matched`, registry `schema_version=2`.
+
+**Docs.** DATA_FORMAT "Database store" section rewritten for the area model (corridor-set
+rule + its subset caveat, keep-first merge, bin partition, v2 tables, re-ingest migration);
+ROADMAP Item 23 added (Completed index + done-section with a v1→v2 migration note) and the
+status line updated. **Migration:** an existing v1 `inrix_store.duckdb` isn't read by v2 —
+delete it (or just re-ingest) to see data as areas.

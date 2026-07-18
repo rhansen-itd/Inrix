@@ -197,14 +197,23 @@ def _db(path: str | None = None):
     return _DB["con"]
 
 
-def _dataset_options() -> list[dict]:
-    """Dropdown options for the datasets already ingested into the store — read at
-    layout build. Degrades to ``[]`` if the DB file doesn't exist yet or the store
-    can't be opened (keeps the headless smoke test DB-free)."""
+def _area_options() -> list[dict]:
+    """Dropdown options for the **areas** (corridor groups) ingested into the store —
+    read at layout build. Degrades to ``[]`` if the DB file doesn't exist yet or the
+    store can't be opened (keeps the headless smoke test DB-free)."""
     try:
         if not Path(DEFAULT_DB).exists():
             return []
-        return [{"label": n, "value": n} for n in store.dataset_names(_db())]
+        return [{"label": name, "value": key} for key, name in store.area_names(_db())]
+    except Exception:
+        return []
+
+
+def _bin_options(area_key) -> list[dict]:
+    """Bin-length options for an area (5-min / 15-min / …), from the partitions
+    actually present. Degrades to ``[]`` on any error."""
+    try:
+        return [{"label": f"{b}-min", "value": b} for b in store.area_bins(_db(), area_key)]
     except Exception:
         return []
 
@@ -265,17 +274,19 @@ def _decorate_geo(geo, meta, labels):
 def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHAPEFILE,
                  names_path: str | None = None,
                  date_start=None, date_end=None, freeflow="ref",
-                 aadt_path: str | None = None, dataset_name: str | None = None) -> Dataset:
+                 aadt_path: str | None = None,
+                 area_key: str | None = None, bin_minutes: int | None = None) -> Dataset:
     """Load + localize + CValue-filter an export, join its segment geometry.
 
-    Two intake paths (Item 21), identical downstream:
+    Two intake paths (Items 21/23), identical downstream:
 
     * **File** (default) — read the export ``.zip`` / dir / ``.csv`` with
       :func:`io.load_data` / :func:`io.load_metadata` and build the geometry+AADT
       layer from the shapefiles via :func:`_build_geo` (the spatial join runs here).
-    * **DB** (``dataset_name`` set) — read the *ingested* frames + the **cached**
-      geometry+AADT layer straight from the DuckDB store (:mod:`inrix_tools.store`),
-      so the export isn't re-parsed and the spatial join isn't repeated.
+    * **DB** (``area_key`` set) — read the merged frames for that **area** +
+      ``bin_minutes`` partition + the **cached** geometry/AADT layer straight from the
+      DuckDB store (:mod:`inrix_tools.store`), so the export isn't re-parsed and the
+      spatial join isn't repeated.
 
     ``names_path`` (optional) points at a user-edited names CSV
     (``names.load_names``); the resolved ``Segment ID -> friendly name`` mapping
@@ -296,10 +307,10 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     per-segment AADT lands on ``Dataset.aadt`` and on ``geo``. A load/join failure
     degrades quietly to no-AADT (the extra options stay hidden).
     """
-    if dataset_name:
-        # DB path: ingested frames + the cached geometry/AADT join (no re-parse,
-        # no repeated spatial join).
-        sd = store.load_dataset(_db(), dataset_name)
+    if area_key:
+        # DB path: the area's merged frames for this bin + the cached geometry/AADT
+        # join (no re-parse, no repeated spatial join).
+        sd = store.load_dataset(_db(), area_key, bin_minutes)
         raw, meta, geo = sd.df, sd.metadata, sd.geo
     else:
         raw = io.load_data(source)
@@ -350,19 +361,19 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
 
 
 def ingest_to_db(source: str, shapefile: str = DEFAULT_SHAPEFILE,
-                 aadt_path: str | None = None, name: str | None = None) -> str:
-    """Ingest an export + its processed GIS join into the store under ``name``
-    (defaults to the source stem). Reads the export once with the file loaders,
-    builds the geometry+AADT layer once via :func:`_build_geo`, and persists both —
-    the spatial join runs **here**, not per later load. Returns the dataset name."""
-    name = name or Path(source).stem
+                 aadt_path: str | None = None) -> dict:
+    """Ingest an export — **merging** it into its corridor **area** (Item 23) — plus
+    its processed GIS join. Reads the export once with the file loaders, builds the
+    geometry+AADT layer once via :func:`_build_geo`, and persists both; the spatial
+    join runs **here**, not per later load. Returns the ingest summary dict
+    (``area_key`` / ``area_name`` / ``bin_minutes`` / ``n_rows_added``)."""
     con = _db()
     df = io.load_data(source)
     meta = io.load_metadata(source)
-    store.put_export(con, name, df, meta, source=str(source))
+    info = store.put_export(con, df, meta, source=str(source))
     geo = _build_geo(meta, shapefile, aadt_path, Path(source).stem)
-    store.ingest_geometry(con, name, geo)
-    return name
+    store.ingest_geometry(con, info["area_key"], geo)
+    return info
 
 
 def _metric_col(ds: Dataset, metric_key: str) -> str | None:
@@ -802,17 +813,21 @@ def _controls() -> dbc.Card:
         dbc.Button("Write name template", id="write-names", color="link", size="sm",
                    className="p-0 mt-1"),
         html.Div(id="names-status", className="small text-muted"),
-        # Database-backed storage (Item 21): a low-visibility intake. "Ingest to DB"
-        # loads the current export + its GIS join into the DuckDB store *once*;
-        # thereafter pick it from "Saved datasets" to run from the DB (no re-parse,
-        # no repeated spatial join). The file-path loader above still works unchanged.
+        # Database-backed storage (Items 21/23): a low-visibility intake. "Ingest to
+        # DB" merges the current export into its corridor **area** in the DuckDB store
+        # (exports of the same corridors accumulate; same segment+timestamp is
+        # keep-first) and caches its GIS join *once*. Thereafter pick an **area** +
+        # **bin length** to run from the DB (no re-parse, no repeated spatial join).
+        # The file-path loader above still works unchanged.
         dbc.Button("⤓ Ingest current export to DB", id="ingest-export", color="link",
                    size="sm", className="p-0 mt-1 d-block",
-                   title="Store this export + its geometry/AADT join for fast reload"),
+                   title="Merge this export into its corridor area + cache its geometry/AADT join"),
         html.Div(id="ingest-status", className="small text-muted"),
-        dbc.Label("Saved datasets", className="mt-1 small text-muted"),
-        dcc.Dropdown(id="dataset", placeholder="Select an ingested dataset (DB)",
-                     options=_dataset_options(), clearable=True),
+        dbc.Label("Area (DB)", className="mt-1 small text-muted"),
+        dcc.Dropdown(id="area", placeholder="Select a saved area",
+                     options=_area_options(), clearable=True),
+        dbc.Label("Bin length", className="mt-1 small text-muted"),
+        dcc.Dropdown(id="area-bin", placeholder="—", clearable=False),
         html.Hr(),
         html.H6("Metric", className="text-muted"),
         dbc.RadioItems(id="metric", value="tt", inline=True,
@@ -1047,7 +1062,8 @@ def _register_callbacks(app: Dash) -> None:
         Output("dir-compass", "options"),
         Output("dir-compass", "value"),
         Input("load", "n_clicks"),
-        Input("dataset", "value"),
+        Input("area-bin", "value"),
+        State("area", "value"),
         State("source", "value"),
         State("tz", "value"),
         State("cvalue", "value"),
@@ -1059,13 +1075,13 @@ def _register_callbacks(app: Dash) -> None:
         State("aadt-path", "value"),
         prevent_initial_call=True,
     )
-    def _load(_n, dataset, source, tz, cvalue, metric, names_path, date_start, date_end,
-              freeflow, aadt_path):
-        # Two triggers feed this callback (Item 21): the "Load export" button loads
-        # from the file path (``source``); selecting a "Saved datasets" entry loads
-        # that dataset from the DuckDB store. A cleared dataset selection is a no-op.
-        from_db = ctx.triggered_id == "dataset"
-        if from_db and not dataset:
+    def _load(_n, bin_value, area_key, source, tz, cvalue, metric, names_path,
+              date_start, date_end, freeflow, aadt_path):
+        # Two triggers feed this callback (Items 21/23): the "Load export" button
+        # loads from the file path (``source``); choosing an area's bin-length loads
+        # that area+bin from the DuckDB store. A DB trigger with no area/bin is a no-op.
+        from_db = ctx.triggered_id == "area-bin"
+        if from_db and (not area_key or bin_value is None):
             return tuple([no_update] * 28)
         # A cleared CValue input arrives as None/"" — default it rather than let
         # int(None) blow up with a cryptic message (Item 14 review B6).
@@ -1078,7 +1094,8 @@ def _register_callbacks(app: Dash) -> None:
                               names_path=names_path or None,
                               date_start=r_ds, date_end=r_de,
                               freeflow=freeflow, aadt_path=aadt_path or None,
-                              dataset_name=dataset if from_db else None)
+                              area_key=area_key if from_db else None,
+                              bin_minutes=bin_value if from_db else None)
         except Exception as exc:  # surface the failure in the UI, don't crash
             return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 26)
         token = _store(ds)
@@ -1127,12 +1144,13 @@ def _register_callbacks(app: Dash) -> None:
                 corr_opts, corr_val, scope_opts, map_mode_opts, wspeed_opts,
                 table_data, [], None, dir_opts, [])
 
-    # Ingest the current export (+ its GIS join) into the DuckDB store, then refresh
-    # the "Saved datasets" dropdown and select the new dataset — which triggers
-    # ``_load`` to run from the DB (Item 21). Best-effort: a failure surfaces inline.
+    # Ingest the current export (+ its GIS join) into the DuckDB store, merging into
+    # its corridor area (Item 23), then refresh the Area dropdown and select the area
+    # — which populates the bin dropdown and triggers ``_load`` to run from the DB.
+    # Best-effort: a failure surfaces inline.
     @app.callback(
-        Output("dataset", "options"),
-        Output("dataset", "value"),
+        Output("area", "options"),
+        Output("area", "value"),
         Output("ingest-status", "children"),
         Input("ingest-export", "n_clicks"),
         State("source", "value"),
@@ -1141,11 +1159,29 @@ def _register_callbacks(app: Dash) -> None:
     )
     def _ingest(_n, source, aadt_path):
         try:
-            name = ingest_to_db(source, aadt_path=aadt_path or None)
+            info = ingest_to_db(source, aadt_path=aadt_path or None)
         except Exception as exc:
             return no_update, no_update, f"⚠ Ingest failed: {exc}"
-        opts = [{"label": n, "value": n} for n in store.dataset_names(_db())]
-        return opts, name, f"✓ Ingested '{name}' — loading from DB"
+        opts = [{"label": name, "value": key} for key, name in store.area_names(_db())]
+        added = info["n_rows_added"]
+        msg = (f"✓ Merged into '{info['area_name']}' "
+               f"({info['bin_minutes']}-min, +{added:,} new rows) — loading")
+        return opts, info["area_key"], msg
+
+    # Area selection -> populate the bin-length dropdown and default to the first bin
+    # (which, as an Input to ``_load``, triggers the DB load). A cleared area empties
+    # the bin control (its None value is a ``_load`` no-op).
+    @app.callback(
+        Output("area-bin", "options"),
+        Output("area-bin", "value"),
+        Input("area", "value"),
+        prevent_initial_call=True,
+    )
+    def _area_bins(area_key):
+        if not area_key:
+            return [], None
+        opts = _bin_options(area_key)
+        return opts, (opts[0]["value"] if opts else None)
 
     # Map click -> segment dropdown (the dropdown is the single selection source).
     @app.callback(
