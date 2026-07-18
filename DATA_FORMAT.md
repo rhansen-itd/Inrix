@@ -281,13 +281,12 @@ offset; the other 44 are untouched. The GUI applies this on a per-render display
 frame keyed off the direction toggles — the metric/coverage compute all stay on the
 un-offset `ds.geo`.
 
-## Database store (`store.py`, Item 21)
+## Database store (`store.py`, Items 21 + 23)
 
-An optional **persistent DuckDB store** lets a session *select* a previously
-ingested export instead of re-parsing the `.zip` and re-running the GIS spatial
-join every time. It is an accelerator, not a requirement — the file loaders
-(`io` / `geometry` / `aadt`) keep working, and running straight from a path is
-unchanged.
+An optional **persistent DuckDB store** lets a session *select* a previously ingested
+**area** instead of re-parsing a `.zip` and re-running the GIS spatial join every
+time. It is an accelerator, not a requirement — the file loaders (`io` / `geometry` /
+`aadt`) keep working, and running straight from a path is unchanged.
 
 **Why DuckDB (not SQLite).** DuckDB is already a transitive dependency (via
 `traffic-anomaly`'s `ibis-framework[duckdb]`), and its columnar engine is the right
@@ -298,37 +297,66 @@ predicates, so `store.connect` stays offline (no extension download) and the sch
 is portable. SQLite would serve the small tables but loses on the big scan, so the
 choice is made on the *query* need (decision recorded in DESIGN_HISTORY Session 26).
 
-**Layout.** Per-dataset tables, keyed by a sanitized-name + short-hash suffix
-(`_dataset_key`), so heterogeneous exports (different unit-named columns) never
-collide on one shared schema, and re-ingest of a name is a clean `CREATE OR REPLACE`
-(idempotent):
+**Organizing unit: the area (Item 23).** The store is **not** one silo per export.
+An export's **area** is the sorted set of its distinct `Corridor/Region Name` values
+(`area_key` = a hash of that set; `area_name` = the corridors joined). Exports of the
+**same corridor set merge** into one growing area, so a session picks an *area*, not a
+file. Consequences of the corridor-set rule to know:
+
+- A later export covering **only a subset** of an area's corridors has a *different*
+  corridor set → it becomes a **new area**, it does not merge into the superset one.
+- When an export carries no corridor column/values, the area falls back to the sorted
+  **Segment ID set** (named `segments(N)`).
+
+**Merge is keep-first.** New observation rows are those whose
+`(Segment ID, Date Time, bin_minutes)` tuple is **not already present**; an overlapping
+row keeps the **first-ingested** value (a later export never overwrites it). So
+re-ingesting the same or an overlapping export is idempotent (`n_rows_added` reports
+what was actually new). Segment **metadata** and the processed **geometry+AADT** layer
+merge the same way — keep-first per `Segment ID` — so a segment's geometry/join is
+cached once and reused across every later export of the area.
+
+**Bin length is a partition (Item 23).** Different time bases coexist in one area,
+kept apart by an auto-detected `bin_minutes` column (the **modal** consecutive-
+`Date Time` spacing per segment: 5-min INRIX → `5`, a 15-min export → `15`). The GUI
+adds a **bin-length selector**; `load_export(area_key, bin_minutes)` reads one
+partition (and errors, listing the choices, if an area holds several and none is
+given).
+
+**Layout.** Per-area tables keyed by `area_key`; two shared registries:
 
 | table | contents |
 |-------|----------|
-| `_datasets` | registry: one row per dataset — `name` (PK), `tbl_key`, `source`, `tz`, `units_*`, `n_rows`, `n_segments`, `date_min/max`, `has_geometry`, `has_aadt`, `schema_version`, `ingested_at` |
-| `obs_<key>` | the `io.load_data` time-series frame verbatim (`Date Time` as `TIMESTAMPTZ`) |
-| `meta_<key>` | the `io.load_metadata` frame (Segment ID as a column; `Combined` included) |
-| `geo_<key>` | the **processed** GIS join: `Segment ID`, `source`, the `join_aadt` columns (`AADT` / `aadt_source` / `aadt_dist_m` / `Route` / `Commercial`), and geometry as a WKB blob (`_geom_wkb`, `NULL` for a `missing` segment). This is what makes the Item 18 spatial join run **once at ingest**, not per load. |
+| `_areas` | registry: one row per area — `area_key` (PK), `area_name`, `corridors` (JSON), `units_*`, `n_segments`, `date_min/max`, `has_geometry`, `has_aadt`, `schema_version`, `created_at`, `updated_at` |
+| `_ingests` | provenance: one row per ingested export — `area_key`, `source`, `bin_minutes`, `n_rows_added`, `date_min/max`, `ingested_at` |
+| `obs_<area_key>` | the merged `io.load_data` rows for the area + a `bin_minutes` partition column (`Date Time` as `TIMESTAMPTZ`) |
+| `meta_<area_key>` | the merged `io.load_metadata` frame (Segment ID as a column; `Combined` included) |
+| `geo_<area_key>` | the **processed** GIS join: `Segment ID`, `source`, the `join_aadt` columns (`AADT` / `aadt_source` / `aadt_dist_m` / `Route` / `Commercial`), geometry as a WKB blob (`_geom_wkb`, `NULL` for a `missing` segment). Cached at ingest so the Item 18 spatial join runs **once**, not per load. |
 
-**Round-trip fidelity (must equal the file loaders):**
+Exports whose column sets differ (an extra column) still merge — a missing column
+fills `NULL`, a new one is added via `ALTER TABLE ADD COLUMN` (`_align_columns`), and
+the anti-join insert uses `INSERT … BY NAME`.
+
+**Round-trip fidelity (a single-export area must equal the file loaders):**
 
 - **Timezone.** `io.load_data` returns `Date Time` as tz-aware **UTC**
   (`datetime64[ns, UTC]`). DuckDB stores `TIMESTAMPTZ` and, on read, materializes it
   in the *session* zone at μs resolution — so the connection pins `SET
   TimeZone='UTC'` and `load_export` normalizes back to `datetime64[ns, UTC]`. Units
-  (`df.attrs['units']`) are restored from the registry.
+  (`df.attrs['units']`) are restored from the `_areas` row.
 - **Geometry.** WKB in / `shapely.wkb` out, into a WGS84 GeoDataFrame indexed by
   `Segment ID` — matching `geometry.segment_geometry` plus the cached AADT columns.
 - **Object NULLs.** A NULL string/object cell round-trips as `None` (not `NaN`), so
   parity holds only where the source frame has no missing string cells; numeric NaN
   round-trips as NaN. (Not an issue for the covered frames.)
 
-**Versioning / migration.** Every dataset row stamps `schema_version`
-(`store.SCHEMA_VERSION`, currently **1**). There is no in-place migrator yet — the
-store is a *cache*, so the migration policy is **re-ingest**: bump `SCHEMA_VERSION`
-when the layout changes, and a stale-version dataset is simply re-ingested from its
-`source` (recorded in the registry). Add a real migrator only if an ingest ever
-becomes expensive enough that a re-run is unacceptable.
+**Versioning / migration.** Every area row stamps `schema_version`
+(`store.SCHEMA_VERSION`, now **2** — the area/merge model; **1** was the Item-21
+one-dataset-per-export layout). There is no in-place migrator — the store is a
+*cache*, so the migration policy is **re-ingest**: bump the version, delete the
+`.duckdb` file, and re-run ingest (a v1 store's old `obs_<key>`/`_datasets` tables are
+simply ignored by v2 code, so an existing file keeps working but its old data won't
+appear as an area until re-ingested).
 
 ## Known quirks / open questions
 

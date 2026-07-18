@@ -27,9 +27,11 @@ session so nothing is orphaned. **Items 19+ are a new owner-requested batch**
 scoped 2026-07-17 (DESIGN_HISTORY Session 23); they refine the working explorer
 rather than adding to the core pipeline. **Item 19 (the interactive segment table)
 is done** (Session 24), **Item 20 (GUI map & layout display polish) is done**
-(Session 25), and **Item 21 (DB-backed storage & ingest) is now done** (Session 26).
-The batch (Items 19–21) is complete; remaining work is all in **Future** (needs a
-planning pass).
+(Session 25), and **Item 21 (DB-backed storage & ingest) is done** (Session 26).
+An owner follow-on, **Item 23 (area-based store: merge exports by corridor set +
+bin-length partition), is now done** (Session 27), superseding Item 21's
+one-dataset-per-export model. The batch (Items 19–21, 23) is complete; remaining
+work is all in **Future** (needs a planning pass).
 
 ---
 
@@ -68,6 +70,9 @@ sessions.
 - **21** — DB-backed storage & ingest (`store.py`, DuckDB) + GUI intake/select
   (ingest once, run from the DB; the Item 18 spatial join cached at ingest) —
   DESIGN_HISTORY Session 26
+- **23** — Area-based store (owner follow-on to Item 21): merge exports by
+  **corridor set** into a persistent *area* (keep-first dedup), partition by
+  auto-detected **bin length**, GUI area + bin selectors — DESIGN_HISTORY Session 27
 
 Post-batch correctness review of Items 15–18 and its fixes: Sessions 20–22.
 
@@ -191,6 +196,41 @@ Scope:
       ingest/round-trip *and* the GUI intake/select rewiring in one session.
 
 </details>
+
+---
+
+## 23 — (done 2026-07-17 — area-based store: merge by corridor set + bin partition) — see Completed index + DESIGN_HISTORY Session 27
+
+Owner follow-on to Item 21, changing the store's **data model** from one silo per
+export to a persistent **area**. Owner decisions (recorded Session 27): area identity
+= **corridor set** (same `Corridor/Region Name` set → same area, exports merge);
+differing bin-lengths = **partition + selector** (auto-detected `bin_minutes`);
+overlap = **keep-first** (a later export never overwrites a stored value).
+
+Delivered:
+- [x] `store.py` rewritten to the area model (`SCHEMA_VERSION=2`): `area_identity`
+      (corridor-set key, Segment-ID fallback), `detect_bin_minutes` (modal spacing),
+      `ingest_export`/`put_export` merging **keep-first** on
+      `(Segment ID, Date Time, bin_minutes)` via an anti-join `INSERT … BY NAME`
+      (column-drift tolerant), `list_areas`/`area_bins`/`area_names`,
+      `load_export`/`load_metadata`/`load_geometry`/`load_dataset(area, bin)`,
+      `remove_area`; `_areas` + `_ingests` registries; metadata & geometry+AADT merged
+      keep-first per `Segment ID` and persisting with the area.
+- [x] GUI: the "Saved datasets" dropdown replaced by an **Area** dropdown + a
+      **Bin length** dropdown; ingest merges into the auto-derived area and selects
+      it (which populates bins and loads); file-path loading unchanged.
+- [x] DATA_FORMAT "Database store" section rewritten (area model, corridor-set rule,
+      keep-first merge, bin partition, v2 + re-ingest migration note).
+- [x] pytest: bin detection; corridor-set grouping (same set merges, subset/other =
+      new area); keep-first overlap dedup + idempotent re-ingest; two bin-lengths
+      coexist + selectable; geometry/metadata union; single-export load parity; GUI
+      area+bin round-trip with the join cache-hit; self-skipping real-export. **265
+      passing**; real Myrtle export verified end-to-end (area by corridor set, +2.19M
+      rows, re-ingest +0, DB load 3.3 s vs 12.8 s file).
+
+**Migration note:** an existing Item-21 (`v1`) `inrix_store.duckdb` isn't read by the
+`v2` code (its old tables are ignored) — delete the file and re-ingest, or just
+re-ingest into the fresh area tables.
 
 ---
 

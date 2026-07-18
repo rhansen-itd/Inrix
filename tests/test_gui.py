@@ -73,8 +73,8 @@ def test_build_app_layout_headless():
                    "segment-table", "corridor-members", "save-names", "table-status",
                    # Item 20 directional-display controls
                    "dir-compass", "dir-offset",
-                   # Item 21 DB intake/select controls
-                   "dataset", "ingest-export", "ingest-status"):
+                   # Items 21/23 DB intake/select controls
+                   "area", "area-bin", "ingest-export", "ingest-status"):
         assert needed in ids, f"missing layout component: {needed}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
@@ -1291,13 +1291,16 @@ def test_ingest_then_db_load_matches_file_and_reuses_join(export_zip, db_env):
     assert file_ds.aadt is not None
 
     # Ingest into the DB (builds the geo again — the once-at-ingest spatial join).
-    name = gapp.ingest_to_db(str(export_zip))
+    info = gapp.ingest_to_db(str(export_zip))
     assert db_env["n"] == 2
-    assert name in gapp.store.dataset_names(gapp._db())
-    assert {o["value"] for o in gapp._dataset_options()} == {name}
+    area_key = info["area_key"]
+    assert (area_key, info["area_name"]) in gapp.store.area_names(gapp._db())
+    assert {o["value"] for o in gapp._area_options()} == {area_key}
+    assert [o["value"] for o in gapp._bin_options(area_key)] == [info["bin_minutes"]]
 
     # DB load reads the cached join — _build_geo is NOT called again.
-    db_ds = gapp.load_dataset("", gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE, dataset_name=name)
+    db_ds = gapp.load_dataset("", gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE,
+                              area_key=area_key, bin_minutes=info["bin_minutes"])
     assert db_env["n"] == 2                       # cache hit, no recompute
     assert _aadt.AADT_COL in db_ds.geo.columns
     assert db_ds.aadt is not None
@@ -1310,8 +1313,8 @@ def test_ingest_then_db_load_matches_file_and_reuses_join(export_zip, db_env):
     assert gapp.geometry.DIR_GROUP_COL in db_ds.geo.columns
 
 
-def test_dataset_options_empty_without_db(tmp_path, monkeypatch):
-    """No DB file yet -> the Saved-datasets dropdown is empty (headless-safe)."""
+def test_area_options_empty_without_db(tmp_path, monkeypatch):
+    """No DB file yet -> the Area dropdown is empty (headless-safe)."""
     monkeypatch.setattr(gapp, "DEFAULT_DB", str(tmp_path / "absent.duckdb"))
     gapp._DB.update(path=None, con=None)
-    assert gapp._dataset_options() == []
+    assert gapp._area_options() == []

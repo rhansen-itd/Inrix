@@ -1,11 +1,20 @@
-"""Database-backed storage & ingest for INRIX exports.  (ROADMAP Item 21)
+"""Database-backed storage & ingest for INRIX exports.  (ROADMAP Items 21, 23)
 
-Move from re-parsing the export ``.zip`` and the GIS shapefiles every session to a
-**persistent local database**. An export (the typed tz-aware time series + its
-metadata) and the *processed* GIS layers (segment → geometry, segment → AADT with
-the Item 18 match flags) are ingested **once**; thereafter a session **selects** an
-ingested dataset instead of re-parsing, and the expensive spatial join is read back
-from the cache rather than recomputed.
+A persistent local **DuckDB** store, organized around a persistent **area** — a
+group of corridors — rather than one silo per export (the Item 23 redesign):
+
+- An export's **area** is derived from the set of ``Corridor/Region Name`` values it
+  carries (same corridor set → same area). Ingesting several exports of the same
+  corridors **merges** them into one growing area, so a session picks an *area* (not
+  a file) and sees everything ever ingested for it.
+- Rows are **de-duplicated keep-first** on ``(Segment ID, Date Time, bin_minutes)``:
+  re-ingesting an overlapping export is idempotent, and a later export's value never
+  overwrites one already stored (the owner's choice).
+- Different **time bin-lengths** (5-min / 15-min / hourly) coexist in one area,
+  partitioned by an auto-detected ``bin_minutes`` column; the GUI selects the bin.
+- Segment **metadata** and the processed **geometry + AADT join** (Item 18) are
+  merged per area (keep-first per ``Segment ID``) and **persist** with the area, so
+  the expensive spatial join runs once and is reused across every later export.
 
 Pure core, per CLAUDE.md: **no GUI imports, no hardcoded paths** (the DB path /
 connection is always a parameter). The file loaders (:mod:`inrix_tools.io`,
@@ -14,35 +23,26 @@ DB is *optional*, an accelerator, not a new requirement.
 
 Why DuckDB (decision recorded 2026-07-17, DESIGN_HISTORY Session 26)
 -------------------------------------------------------------------
-**DuckDB**, not SQLite. It is already a transitive dependency (via
-``traffic-anomaly``'s ``ibis-framework[duckdb]``), so nothing new is pulled in, and
-its columnar engine is the natural fit for the analytic scans of a ~2M-row export.
-DuckDB's ``spatial`` extension is **not** used: the GIS layers here are a small
-per-segment table (a few hundred rows), so their geometry is serialized as **WKB
-blobs** and rehydrated with :mod:`shapely` — no in-DB spatial predicates are needed,
-which keeps ``connect`` offline (no extension download) and the schema portable.
-SQLite would also serve the small tables but loses on the big observations scan, so
-DuckDB is chosen on the *query* need, per the ROADMAP.
+**DuckDB**, not SQLite: already a transitive dependency (via ``traffic-anomaly``'s
+``ibis-framework[duckdb]``), and its columnar engine fits the analytic scans of a
+~2M-row export. The DuckDB ``spatial`` extension is **not** used — the GIS layers
+are a small per-segment table, so geometry is serialized as **WKB blobs** and
+rehydrated with :mod:`shapely`; no in-DB spatial predicates, so ``connect`` stays
+offline and the schema is portable.
 
-Round-trip fidelity (see the tests):
-
-- **Timezones.** ``io.load_data`` returns ``Date Time`` as tz-aware **UTC**
-  (``datetime64[ns, UTC]``). DuckDB stores it as ``TIMESTAMP WITH TIME ZONE`` and,
-  on read, materializes it in the *session* zone at μs resolution; the connection
-  pins ``SET TimeZone='UTC'`` and :func:`load_export` normalizes back to
-  ``datetime64[ns, UTC]`` so the loaded frame **equals** the file loader's.
-- **Geometry.** Stored as WKB (``NULL`` for a ``missing`` segment) and reloaded
-  through ``shapely.wkb`` into a WGS84 GeoDataFrame indexed by ``Segment ID`` —
-  matching :func:`inrix_tools.geometry.segment_geometry` output plus any cached
-  AADT-join columns.
+Round-trip fidelity (see the tests): ``io.load_data`` returns ``Date Time`` as
+tz-aware **UTC** (``datetime64[ns, UTC]``); DuckDB stores ``TIMESTAMPTZ`` and reads
+it back in the *session* zone at μs resolution, so ``connect`` pins ``SET
+TimeZone='UTC'`` and :func:`load_export` normalizes back to ``datetime64[ns, UTC]``.
 
 Schema + versioning live in DATA_FORMAT.md; :data:`SCHEMA_VERSION` is stamped on
-every dataset row so a future migration can detect an older store.
+every area row. The store is a *cache*: the migration policy is **re-ingest** (bump
+the version, drop the file, re-run), not an in-place migrator.
 """
 from __future__ import annotations
 
 import hashlib
-import re
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -50,18 +50,18 @@ import pandas as pd
 
 from . import io as _io
 from .geometry import WGS84
-from .io import DATETIME_COL, SEGMENT_COL
+from .io import CORRIDOR_COL, DATETIME_COL, SEGMENT_COL
 
-# Bump when the on-disk layout changes in a way that needs a migration; stamped on
-# every dataset row (see DATA_FORMAT.md "Database store").
-SCHEMA_VERSION = 1
+# Bump when the on-disk layout changes; stamped on every area row. v2 = the Item 23
+# area/merge model (v1 was the Item 21 one-dataset-per-export layout).
+SCHEMA_VERSION = 2
 
-REGISTRY_TABLE = "_datasets"          # dataset registry (one row per ingested name)
-GEOM_WKB_COL = "_geom_wkb"            # BLOB column holding each segment's WKB
-_GEOMETRY_NAME = "geometry"           # active geometry column on the reloaded frame
+AREAS_TABLE = "_areas"                # area registry (one row per corridor-group)
+INGESTS_TABLE = "_ingests"           # provenance: one row per ingested export
+GEOM_WKB_COL = "_geom_wkb"           # BLOB column holding each segment's WKB
+BIN_COL = "bin_minutes"              # time-bin partition column on the obs table
 
-# Columns the AADT join contributes to the cached geo layer (Item 18). Kept explicit
-# so :func:`ingest_aadt` knows exactly which columns to (re)write.
+# Columns the AADT join contributes to the cached geo layer (Item 18).
 _AADT_JOIN_COLS = ("AADT", "aadt_source", "aadt_dist_m", "Route", "Commercial")
 
 
@@ -72,17 +72,9 @@ def connect(db_path, *, read_only: bool = False):
     """Open (or create) the DuckDB store at ``db_path`` and return the connection.
 
     ``db_path`` is a **parameter** — the module never hardcodes a location. Use
-    ``":memory:"`` for a throwaway/test store. The session timezone is pinned to
-    UTC so ``TIMESTAMPTZ`` columns read back as UTC (see the module docstring); the
-    dataset registry is created if absent.
-
-    Args:
-        db_path: filesystem path to the ``.duckdb`` file, or ``":memory:"``.
-        read_only: open the file read-only (for a pure select-from-ingested run;
-            the registry must already exist).
-
-    Returns:
-        A ``duckdb.DuckDBPyConnection``.
+    ``":memory:"`` for a throwaway/test store. The session timezone is pinned to UTC
+    (so ``TIMESTAMPTZ`` reads back as UTC); the area + ingest registries are created
+    if absent.
     """
     import duckdb
 
@@ -94,38 +86,39 @@ def connect(db_path, *, read_only: bool = False):
 
 
 def _ensure_registry(con) -> None:
-    """Create the dataset registry table if it does not yet exist."""
+    """Create the area + ingest registry tables if they do not yet exist."""
     con.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS "{REGISTRY_TABLE}" (
-            name           VARCHAR PRIMARY KEY,
-            tbl_key        VARCHAR,
-            source         VARCHAR,
-            tz             VARCHAR,
+        CREATE TABLE IF NOT EXISTS "{AREAS_TABLE}" (
+            area_key       VARCHAR PRIMARY KEY,
+            area_name      VARCHAR,
+            corridors      VARCHAR,          -- JSON list of Corridor/Region Name
             units_speed    VARCHAR,
             units_travel_time VARCHAR,
-            n_rows         BIGINT,
             n_segments     BIGINT,
-            date_min       DATE,
-            date_max       DATE,
+            date_min       TIMESTAMP WITH TIME ZONE,
+            date_max       TIMESTAMP WITH TIME ZONE,
             has_geometry   BOOLEAN,
             has_aadt       BOOLEAN,
             schema_version INTEGER,
-            ingested_at    TIMESTAMP
+            created_at     TIMESTAMP,
+            updated_at     TIMESTAMP
         )
         """
     )
-
-
-def _dataset_key(name: str) -> str:
-    """Deterministic, collision-safe table suffix for a dataset ``name``.
-
-    A sanitized prefix keeps table names human-readable; a short hash of the *full*
-    name disambiguates two names that sanitize to the same token. Same name → same
-    key (so re-ingest overwrites the same tables — idempotent)."""
-    slug = re.sub(r"[^0-9A-Za-z]+", "_", str(name)).strip("_").lower()[:40] or "ds"
-    h = hashlib.md5(str(name).encode("utf-8")).hexdigest()[:8]
-    return f"{slug}_{h}"
+    con.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS "{INGESTS_TABLE}" (
+            area_key     VARCHAR,
+            source       VARCHAR,
+            bin_minutes  INTEGER,
+            n_rows_added BIGINT,
+            date_min     TIMESTAMP WITH TIME ZONE,
+            date_max     TIMESTAMP WITH TIME ZONE,
+            ingested_at  TIMESTAMP
+        )
+        """
+    )
 
 
 def _obs_table(key: str) -> str:
@@ -140,138 +133,210 @@ def _geo_table(key: str) -> str:
     return f"geo_{key}"
 
 
+def _table_exists(con, table: str) -> bool:
+    return con.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [table]
+    ).fetchone() is not None
+
+
 # ---------------------------------------------------------------------------
-# Ingest
+# Area identity + bin detection
 # ---------------------------------------------------------------------------
-def ingest_export(con, name: str, source, *, ingested_at: datetime | None = None) -> str:
-    """Ingest an INRIX export (``source``) into the store under ``name``.
+def area_identity(df: pd.DataFrame) -> tuple[str, str, list[str]]:
+    """Derive an export's persistent **area** from its corridor set.
 
-    Reads the export with the **file loaders** (:func:`io.load_data` /
-    :func:`io.load_metadata`) — so the stored frames carry exactly the file
-    loaders' types/units — and writes them to per-dataset tables. Idempotent:
-    re-ingesting the same ``name`` **replaces** its observation + metadata tables
-    and updates the registry row (the geometry/AADT cache is left as-is; refresh it
-    with :func:`ingest_geometry` / :func:`ingest_aadt`).
+    The area is the sorted set of distinct ``Corridor/Region Name`` values — so two
+    exports covering the same corridors resolve to the **same** ``area_key`` and
+    merge. Returns ``(area_key, area_name, corridors)``. When the export carries no
+    corridor column/values, the area falls back to the sorted **Segment ID set**
+    (still stable across re-exports of the same segments), named ``"segments(N)"``.
+    """
+    corridors: list[str] = []
+    if CORRIDOR_COL in df.columns:
+        corridors = sorted({str(c) for c in df[CORRIDOR_COL].dropna().unique()})
+    if corridors:
+        canon = "corridors:" + "|".join(corridors)
+        name = ", ".join(corridors)
+    else:
+        seg_ids = sorted({int(s) for s in df[SEGMENT_COL].dropna().unique()}) \
+            if SEGMENT_COL in df.columns else []
+        canon = "segments:" + ",".join(map(str, seg_ids))
+        name = f"segments({len(seg_ids)})"
+    key = hashlib.md5(canon.encode("utf-8")).hexdigest()[:12]
+    return key, name, corridors
 
-    Args:
-        con: a connection from :func:`connect`.
-        name: the dataset label the GUI selects by (e.g. the export stem).
-        source: anything :func:`io.load_data` accepts (``.zip`` / dir / ``.csv`` /
-            list of parts).
-        ingested_at: override the ingest timestamp (defaults to ``now`` UTC).
 
-    Returns:
-        The dataset ``name`` (for chaining).
+def detect_bin_minutes(df: pd.DataFrame) -> int | None:
+    """Auto-detect the export's time bin-length (minutes) from the **modal**
+    consecutive-``Date Time`` spacing within each segment.
+
+    5-min INRIX data → ``5``; a 15-min export → ``15``. Robust to gaps (the mode,
+    not the mean) and to a mixed frame (one segment's regular cadence dominates).
+    ``None`` when the frame is too small to have a spacing (e.g. one row/segment).
+    """
+    if DATETIME_COL not in df.columns or SEGMENT_COL not in df.columns:
+        return None
+    work = df[[SEGMENT_COL, DATETIME_COL]].dropna()
+    if len(work) < 2:
+        return None
+    work = work.sort_values([SEGMENT_COL, DATETIME_COL])
+    deltas = work.groupby(SEGMENT_COL, observed=True)[DATETIME_COL].diff().dropna()
+    secs = deltas.dt.total_seconds()
+    secs = secs[secs > 0]
+    if secs.empty:
+        return None
+    return int(round(float(secs.mode().iloc[0]) / 60.0))
+
+
+# ---------------------------------------------------------------------------
+# Ingest (merge into an area)
+# ---------------------------------------------------------------------------
+def ingest_export(con, source, *, ingested_at: datetime | None = None) -> dict:
+    """Ingest an INRIX export (``source``) — merging it into its corridor **area**.
+
+    Reads with the file loaders (:func:`io.load_data` / :func:`io.load_metadata`),
+    derives the area from the corridor set and the bin-length from the timestamp
+    spacing, then merges the rows **keep-first** into the area's tables. Returns a
+    summary dict: ``area_key`` / ``area_name`` / ``bin_minutes`` / ``n_rows_added``.
     """
     df = _io.load_data(source)
     metadata = _io.load_metadata(source)
-    return put_export(con, name, df, metadata,
-                      source=str(source), ingested_at=ingested_at)
+    return put_export(con, df, metadata, source=str(source), ingested_at=ingested_at)
 
 
-def put_export(con, name: str, df: pd.DataFrame, metadata: pd.DataFrame, *,
-               source: str | None = None, ingested_at: datetime | None = None) -> str:
-    """Persist an already-loaded export frame + metadata under ``name``.
+def put_export(con, df: pd.DataFrame, metadata: pd.DataFrame, *,
+               source: str | None = None, ingested_at: datetime | None = None) -> dict:
+    """Merge an already-loaded export frame + metadata into its area.
 
-    The lower-level entry behind :func:`ingest_export` — useful when the caller
-    already holds the :func:`io.load_data` / :func:`io.load_metadata` frames (the
-    GUI builds them once for the geometry/AADT join, then hands them straight here
-    without re-reading the zip). Idempotent per ``name``.
+    The lower-level entry behind :func:`ingest_export` — the GUI already holds the
+    frames (it builds them for the geometry join), so it calls this directly. New
+    rows are those whose ``(Segment ID, Date Time, bin_minutes)`` are not already in
+    the area (keep-first); segment metadata is merged keep-first per ``Segment ID``.
     """
     _ensure_registry(con)
-    key = _dataset_key(name)
-    obs, meta = _obs_table(key), _meta_table(key)
+    area_key, area_name, corridors = area_identity(df)
+    bin_minutes = detect_bin_minutes(df)
+    obs = _obs_table(area_key)
 
-    # Observations: store the frame verbatim (tz-aware Date Time -> TIMESTAMPTZ).
-    con.register("_obs_src", df)
-    con.execute(f'CREATE OR REPLACE TABLE "{obs}" AS SELECT * FROM _obs_src')
-    con.unregister("_obs_src")
+    frame = df.copy()
+    frame[BIN_COL] = bin_minutes
+    n_added = _merge_frame(con, obs, frame,
+                           keys=[SEGMENT_COL, DATETIME_COL, BIN_COL])
 
-    # Metadata: the frame is indexed by Segment ID; store it as a plain column.
+    # Metadata: merge keep-first by Segment ID (union of segments seen in the area).
     meta_flat = metadata.reset_index() if metadata.index.name else metadata.copy()
-    con.register("_meta_src", meta_flat)
-    con.execute(f'CREATE OR REPLACE TABLE "{meta}" AS SELECT * FROM _meta_src')
-    con.unregister("_meta_src")
+    _merge_frame(con, _meta_table(area_key), meta_flat, keys=[SEGMENT_COL])
 
+    _upsert_area(con, area_key, area_name, corridors, df, ingested_at)
+    _log_ingest(con, area_key, source, bin_minutes, n_added, df, ingested_at)
+    return {"area_key": area_key, "area_name": area_name,
+            "bin_minutes": bin_minutes, "n_rows_added": n_added}
+
+
+def _merge_frame(con, table: str, frame: pd.DataFrame, keys: list[str]) -> int:
+    """Insert ``frame`` into ``table``, **keep-first** on ``keys`` (rows whose key
+    tuple already exists are skipped). Creates the table on first write. Tolerates
+    column drift between exports (missing columns fill NULL; new columns are added).
+    Returns the number of rows actually inserted."""
+    con.register("_merge_src", frame)
+    try:
+        if not _table_exists(con, table):
+            con.execute(f'CREATE TABLE "{table}" AS SELECT * FROM _merge_src')
+            return len(frame)
+        _align_columns(con, table, "_merge_src")
+        on = " AND ".join(f'o."{k}" = n."{k}"' for k in keys)
+        anti = (f'SELECT n.* FROM _merge_src n '
+                f'LEFT JOIN "{table}" o ON {on} WHERE o."{keys[0]}" IS NULL')
+        n_added = con.execute(f'SELECT count(*) FROM ({anti})').fetchone()[0]
+        if n_added:
+            con.execute(f'INSERT INTO "{table}" BY NAME {anti}')
+        return int(n_added)
+    finally:
+        con.unregister("_merge_src")
+
+
+def _align_columns(con, table: str, view: str) -> None:
+    """Add any columns present in ``view`` but missing from ``table`` (so an export
+    that carries an extra column merges instead of erroring)."""
+    existing = {r[0] for r in con.execute(f'DESCRIBE "{table}"').fetchall()}
+    for row in con.execute(f'DESCRIBE "{view}"').fetchall():
+        name, coltype = row[0], row[1]
+        if name not in existing:
+            con.execute(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {coltype}')
+
+
+def _upsert_area(con, area_key, area_name, corridors, df, ingested_at) -> None:
+    """Create/refresh the area registry row: units, span, and segment count are
+    recomputed from the merged obs; ``created_at`` is preserved on update."""
     units = (df.attrs.get("units") or {}) if hasattr(df, "attrs") else {}
-    if DATETIME_COL in df and len(df):
-        d = df[DATETIME_COL].dt.tz_convert("UTC")
-        date_min, date_max = d.min().date(), d.max().date()
-    else:
-        date_min = date_max = None
-    n_segments = (int(metadata.shape[0]) if metadata is not None
-                  else int(df[SEGMENT_COL].nunique()) if SEGMENT_COL in df else 0)
+    obs = _obs_table(area_key)
+    span = con.execute(
+        f'SELECT min("{DATETIME_COL}"), max("{DATETIME_COL}"), '
+        f'count(DISTINCT "{SEGMENT_COL}") FROM "{obs}"').fetchone()
+    date_min, date_max, n_seg = span
     ts = ingested_at or datetime.now(timezone.utc)
-
-    con.execute(f'DELETE FROM "{REGISTRY_TABLE}" WHERE name = ?', [name])
+    existing = con.execute(
+        f'SELECT created_at, has_geometry, has_aadt FROM "{AREAS_TABLE}" '
+        f'WHERE area_key = ?', [area_key]).fetchone()
+    created_at = existing[0] if existing else ts
+    has_geom = bool(existing[1]) if existing else False
+    has_aadt = bool(existing[2]) if existing else False
+    con.execute(f'DELETE FROM "{AREAS_TABLE}" WHERE area_key = ?', [area_key])
     con.execute(
-        f'INSERT INTO "{REGISTRY_TABLE}" VALUES '
-        f'(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-        [name, key, source, _frame_tz(df),
+        f'INSERT INTO "{AREAS_TABLE}" VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [area_key, area_name, json.dumps(corridors),
          units.get("speed"), units.get("travel_time"),
-         int(len(df)), n_segments, date_min, date_max,
-         False, False, SCHEMA_VERSION, ts],
-    )
-    return name
+         int(n_seg), date_min, date_max, has_geom, has_aadt,
+         SCHEMA_VERSION, created_at, ts])
 
 
-def _frame_tz(df: pd.DataFrame) -> str | None:
-    """The dataset tz recorded on the frame (``io.to_local`` sets ``attrs['tz']``);
-    ``io.load_data`` output is UTC, so this is typically ``None`` -> the GUI applies
-    its own tz on load, exactly as on the file path."""
-    return (df.attrs or {}).get("tz") if hasattr(df, "attrs") else None
+def _log_ingest(con, area_key, source, bin_minutes, n_added, df, ingested_at) -> None:
+    if DATETIME_COL in df.columns and len(df):
+        d = df[DATETIME_COL]
+        dmin, dmax = d.min(), d.max()
+    else:
+        dmin = dmax = None
+    con.execute(
+        f'INSERT INTO "{INGESTS_TABLE}" VALUES (?,?,?,?,?,?,?)',
+        [area_key, source, bin_minutes, int(n_added), dmin, dmax,
+         ingested_at or datetime.now(timezone.utc)])
 
 
-def ingest_geometry(con, name: str, geo) -> str:
-    """Cache the **processed** segment geometry (and any columns it already carries,
-    e.g. an AADT join) for dataset ``name``.
-
-    ``geo`` is a GeoDataFrame indexed by ``Segment ID`` — typically
-    :func:`inrix_tools.geometry.segment_geometry` output, optionally already passed
-    through :func:`inrix_tools.aadt.join_aadt`. The geometry is stored as WKB
-    (``NULL`` for a ``missing`` segment) so the layer round-trips without the DuckDB
-    spatial extension; non-geometry columns are stored as-is. Idempotent: replaces
-    the dataset's geo table. This is what makes the Item 18 spatial join run **once
-    at ingest**, not per session load.
-    """
-    key = _dataset_key(name)
+def ingest_geometry(con, area_key: str, geo) -> str:
+    """Merge the **processed** segment geometry (+ any AADT-join columns it carries)
+    into an area — **keep-first** per ``Segment ID``, so a segment's geometry is
+    cached once and reused across every later export of the area. Geometry is stored
+    as WKB (``NULL`` for a ``missing`` segment)."""
     flat = _geo_to_frame(geo)
-    con.register("_geo_src", flat)
-    con.execute(f'CREATE OR REPLACE TABLE "{_geo_table(key)}" AS SELECT * FROM _geo_src')
-    con.unregister("_geo_src")
-
+    _merge_frame(con, _geo_table(area_key), flat, keys=[SEGMENT_COL])
     has_aadt = any(c in geo.columns for c in _AADT_JOIN_COLS)
     con.execute(
-        f'UPDATE "{REGISTRY_TABLE}" SET has_geometry = TRUE, has_aadt = ? '
-        f'WHERE name = ?', [bool(has_aadt), name])
-    return name
+        f'UPDATE "{AREAS_TABLE}" SET has_geometry = TRUE, '
+        f'has_aadt = (has_aadt OR ?) WHERE area_key = ?', [bool(has_aadt), area_key])
+    return area_key
 
 
-def ingest_aadt(con, name: str, aadt_geo) -> str:
-    """(Re)write the AADT-join columns onto the cached geo layer for ``name``.
-
-    A companion to :func:`ingest_geometry` for the case where geometry was ingested
-    first and the AADT match is added (or refreshed) later. ``aadt_geo`` is a frame
-    keyed by ``Segment ID`` carrying the :func:`inrix_tools.aadt.join_aadt` columns
-    (``AADT`` / ``aadt_source`` / ``aadt_dist_m`` / ``Route`` / ``Commercial``);
-    only those columns are merged onto the stored geometry (the geometry itself is
-    untouched). Requires geometry to have been ingested already.
-    """
-    geo = load_geometry(con, name)
+def ingest_aadt(con, area_key: str, aadt_geo) -> str:
+    """(Re)write the AADT-join columns onto the cached geo layer for an area. A
+    companion to :func:`ingest_geometry` for when geometry was cached first and the
+    AADT match is added later; only the join columns are updated (geometry kept)."""
+    geo = load_geometry(con, area_key)
     if geo is None:
-        raise ValueError(f"No geometry cached for dataset {name!r}; "
+        raise ValueError(f"No geometry cached for area {area_key!r}; "
                          "call ingest_geometry first.")
     src = aadt_geo if aadt_geo.index.name == SEGMENT_COL else aadt_geo.set_index(SEGMENT_COL)
     for col in _AADT_JOIN_COLS:
         if col in src.columns:
             geo[col] = src[col].reindex(geo.index)
-    return ingest_geometry(con, name, geo)
+    con.execute(f'DROP TABLE IF EXISTS "{_geo_table(area_key)}"')
+    con.execute(f'UPDATE "{AREAS_TABLE}" SET has_geometry = FALSE, has_aadt = FALSE '
+                f'WHERE area_key = ?', [area_key])
+    return ingest_geometry(con, area_key, geo)
 
 
 def _geo_to_frame(geo) -> pd.DataFrame:
-    """Flatten a GeoDataFrame (indexed by ``Segment ID``) into a plain DataFrame
-    with a WKB blob column, suitable for a DuckDB table. Object columns carrying
-    ``pd.NA`` are coerced to ``None`` so DuckDB accepts them."""
+    """Flatten a GeoDataFrame (indexed by ``Segment ID``) into a plain DataFrame with
+    a WKB blob column. Object columns carrying ``pd.NA`` are coerced to ``None``."""
     geom_name = geo.geometry.name
     out = pd.DataFrame({SEGMENT_COL: [int(s) for s in geo.index]})
     for col in geo.columns:
@@ -291,84 +356,110 @@ def _geo_to_frame(geo) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Query / load
 # ---------------------------------------------------------------------------
-def list_datasets(con) -> pd.DataFrame:
-    """The ingested datasets as a DataFrame (most-recent first).
+def list_areas(con) -> pd.DataFrame:
+    """The ingested areas as a DataFrame (most-recently-updated first).
 
-    Columns: ``name``, ``source``, ``n_rows``, ``n_segments``, ``date_min``,
-    ``date_max``, ``has_geometry``, ``has_aadt``, ``schema_version``,
-    ``ingested_at``. Empty (with those columns) when nothing is ingested yet.
+    Columns: ``area_key``, ``area_name``, ``corridors`` (JSON), ``n_segments``,
+    ``date_min``, ``date_max``, ``has_geometry``, ``has_aadt``, ``schema_version``,
+    ``updated_at``, plus ``bins`` — the list of bin-lengths present in each area.
     """
     _ensure_registry(con)
-    return con.execute(
-        f'SELECT name, source, n_rows, n_segments, date_min, date_max, '
-        f'has_geometry, has_aadt, schema_version, ingested_at '
-        f'FROM "{REGISTRY_TABLE}" ORDER BY ingested_at DESC, name'
+    df = con.execute(
+        f'SELECT area_key, area_name, corridors, n_segments, date_min, date_max, '
+        f'has_geometry, has_aadt, schema_version, updated_at '
+        f'FROM "{AREAS_TABLE}" ORDER BY updated_at DESC, area_name'
     ).df()
+    df["bins"] = [area_bins(con, k) for k in df["area_key"]]
+    return df
 
 
-def dataset_names(con) -> list[str]:
-    """Just the ingested dataset names (most-recent first) — for a GUI dropdown."""
+def area_names(con) -> list[tuple[str, str]]:
+    """``[(area_key, area_name), ...]`` for a GUI dropdown (most-recent first)."""
     _ensure_registry(con)
     rows = con.execute(
-        f'SELECT name FROM "{REGISTRY_TABLE}" ORDER BY ingested_at DESC, name'
-    ).fetchall()
-    return [r[0] for r in rows]
+        f'SELECT area_key, area_name FROM "{AREAS_TABLE}" '
+        f'ORDER BY updated_at DESC, area_name').fetchall()
+    return [(r[0], r[1]) for r in rows]
 
 
-def _registry_row(con, name: str) -> dict | None:
+def area_bins(con, area_key: str) -> list[int]:
+    """The time bin-lengths (minutes) present in an area, ascending."""
+    obs = _obs_table(area_key)
+    if not _table_exists(con, obs):
+        return []
+    rows = con.execute(
+        f'SELECT DISTINCT "{BIN_COL}" FROM "{obs}" '
+        f'WHERE "{BIN_COL}" IS NOT NULL ORDER BY 1').fetchall()
+    return [int(r[0]) for r in rows]
+
+
+def _area_row(con, area_key: str) -> dict | None:
     _ensure_registry(con)
     df = con.execute(
-        f'SELECT * FROM "{REGISTRY_TABLE}" WHERE name = ?', [name]).df()
+        f'SELECT * FROM "{AREAS_TABLE}" WHERE area_key = ?', [area_key]).df()
     return None if len(df) == 0 else df.iloc[0].to_dict()
 
 
-def load_export(con, name: str) -> pd.DataFrame:
-    """Load dataset ``name``'s time-series frame — **equal to** what
-    :func:`io.load_data` produced at ingest.
+def load_export(con, area_key: str, bin_minutes: int | None = None) -> pd.DataFrame:
+    """Load an area's merged time-series frame for one bin-length — the same typed,
+    tz-aware **UTC** shape :func:`io.load_data` produces (the ``bin_minutes``
+    partition column is dropped and ``df.attrs['units']`` restored).
 
-    ``Date Time`` is normalized back to ``datetime64[ns, UTC]`` and
-    ``df.attrs['units']`` is restored, so the frame is a drop-in for the file
-    loader's output (see the parity test)."""
-    row = _registry_row(con, name)
+    ``bin_minutes`` selects the partition; if ``None`` and the area has exactly one
+    bin, that one is used (else a :class:`ValueError` names the choices).
+    """
+    row = _area_row(con, area_key)
     if row is None:
-        raise KeyError(f"No dataset named {name!r} in the store.")
-    obs = _obs_table(_dataset_key(name))
-    df = con.execute(f'SELECT * FROM "{obs}"').df()
+        raise KeyError(f"No area {area_key!r} in the store.")
+    bin_minutes = _resolve_bin(con, area_key, bin_minutes)
+    obs = _obs_table(area_key)
+    df = con.execute(
+        f'SELECT * EXCLUDE ("{BIN_COL}") FROM "{obs}" WHERE "{BIN_COL}" = ?',
+        [bin_minutes]).df()
     if DATETIME_COL in df.columns:
         df[DATETIME_COL] = (
-            df[DATETIME_COL].dt.tz_convert("UTC").astype("datetime64[ns, UTC]")
-        )
+            df[DATETIME_COL].dt.tz_convert("UTC").astype("datetime64[ns, UTC]"))
     df.attrs["units"] = {"speed": row.get("units_speed"),
                          "travel_time": row.get("units_travel_time")}
     return df
 
 
-def load_metadata(con, name: str) -> pd.DataFrame:
-    """Load dataset ``name``'s metadata frame — indexed by ``Segment ID``, equal to
-    :func:`io.load_metadata` output (``Combined`` label included)."""
-    if _registry_row(con, name) is None:
-        raise KeyError(f"No dataset named {name!r} in the store.")
-    meta = _meta_table(_dataset_key(name))
-    dfm = con.execute(f'SELECT * FROM "{meta}"').df()
+def _resolve_bin(con, area_key: str, bin_minutes: int | None) -> int:
+    bins = area_bins(con, area_key)
+    if bin_minutes is not None:
+        if bin_minutes not in bins:
+            raise ValueError(
+                f"Area {area_key!r} has no {bin_minutes}-min data; bins: {bins}.")
+        return bin_minutes
+    if len(bins) == 1:
+        return bins[0]
+    raise ValueError(
+        f"Area {area_key!r} holds multiple bins {bins}; pass bin_minutes.")
+
+
+def load_metadata(con, area_key: str) -> pd.DataFrame:
+    """Load an area's merged metadata frame — indexed by ``Segment ID``, the same
+    shape :func:`io.load_metadata` produces (``Combined`` label included)."""
+    if _area_row(con, area_key) is None:
+        raise KeyError(f"No area {area_key!r} in the store.")
+    dfm = con.execute(f'SELECT * FROM "{_meta_table(area_key)}"').df()
     if SEGMENT_COL in dfm.columns:
         dfm[SEGMENT_COL] = dfm[SEGMENT_COL].astype("int64")
         dfm = dfm.set_index(SEGMENT_COL)
     return dfm
 
 
-def load_geometry(con, name: str):
-    """Load dataset ``name``'s cached geometry layer as a GeoDataFrame indexed by
-    ``Segment ID`` (WGS84), or ``None`` when no geometry was ingested.
-
-    Carries the same columns that were cached — ``source`` and any AADT-join
-    columns — so the Item 18 spatial join is **read**, not recomputed."""
+def load_geometry(con, area_key: str):
+    """Load an area's cached geometry layer as a GeoDataFrame indexed by
+    ``Segment ID`` (WGS84), or ``None`` when no geometry was ingested. Carries the
+    cached AADT-join columns, so the Item 18 join is **read**, not recomputed."""
     import geopandas as gpd
     from shapely import wkb
 
-    row = _registry_row(con, name)
+    row = _area_row(con, area_key)
     if row is None or not row.get("has_geometry"):
         return None
-    geot = _geo_table(_dataset_key(name))
+    geot = _geo_table(area_key)
     flat = con.execute(f'SELECT * FROM "{geot}"').df()
     # A missing segment's WKB is stored NULL and comes back as None / pd.NA.
     geoms = [wkb.loads(bytes(b)) if isinstance(b, (bytes, bytearray, memoryview))
@@ -382,47 +473,47 @@ def load_geometry(con, name: str):
 
 @dataclass
 class StoredDataset:
-    """The frames a session needs, read back from the store — the DB counterpart of
+    """The frames a session needs, read back from an area — the DB counterpart of
     what the file loaders produce (:func:`io.load_data` / :func:`io.load_metadata` /
-    :func:`geometry.segment_geometry` + the cached AADT join)."""
-    name: str
+    :func:`geometry.segment_geometry` + the cached AADT join), for one bin-length."""
+    area_key: str
+    area_name: str
+    bin_minutes: int
     df: pd.DataFrame
     metadata: pd.DataFrame
     geo: object = None                 # GeoDataFrame or None
-    source: str | None = None
-    tz: str | None = None
     units: dict = field(default_factory=dict)
     has_aadt: bool = False
 
 
-def load_dataset(con, name: str, *, with_geometry: bool = True) -> StoredDataset:
-    """Load everything cached for dataset ``name`` in one call.
+def load_dataset(con, area_key: str, bin_minutes: int | None = None, *,
+                 with_geometry: bool = True) -> StoredDataset:
+    """Load everything cached for an area + bin-length in one call.
 
-    Returns a :class:`StoredDataset` whose ``df`` / ``metadata`` are **equal to**
-    the file loaders' output and whose ``geo`` is the cached (already-joined)
-    geometry layer — so a session runs from the DB without re-parsing the export or
-    repeating the spatial join. Pass ``with_geometry=False`` to skip the geo read.
+    Returns a :class:`StoredDataset` whose ``df`` / ``metadata`` equal the file
+    loaders' output and whose ``geo`` is the cached (already-joined) geometry — so a
+    session runs from the DB without re-parsing the export or repeating the spatial
+    join. Pass ``with_geometry=False`` to skip the geo read.
     """
-    row = _registry_row(con, name)
+    row = _area_row(con, area_key)
     if row is None:
-        raise KeyError(f"No dataset named {name!r} in the store.")
-    df = load_export(con, name)
-    metadata = load_metadata(con, name)
-    geo = load_geometry(con, name) if with_geometry else None
+        raise KeyError(f"No area {area_key!r} in the store.")
+    bin_minutes = _resolve_bin(con, area_key, bin_minutes)
+    df = load_export(con, area_key, bin_minutes)
+    metadata = load_metadata(con, area_key)
+    geo = load_geometry(con, area_key) if with_geometry else None
     return StoredDataset(
-        name=name, df=df, metadata=metadata, geo=geo,
-        source=row.get("source"), tz=row.get("tz"),
-        units=df.attrs.get("units", {}), has_aadt=bool(row.get("has_aadt")),
-    )
+        area_key=area_key, area_name=row.get("area_name"), bin_minutes=bin_minutes,
+        df=df, metadata=metadata, geo=geo,
+        units=df.attrs.get("units", {}), has_aadt=bool(row.get("has_aadt")))
 
 
-def remove_dataset(con, name: str) -> bool:
-    """Drop a dataset's tables and registry row. Returns ``True`` if it existed."""
-    row = _registry_row(con, name)
-    if row is None:
+def remove_area(con, area_key: str) -> bool:
+    """Drop an area's tables and registry rows. Returns ``True`` if it existed."""
+    if _area_row(con, area_key) is None:
         return False
-    key = _dataset_key(name)
-    for tbl in (_obs_table(key), _meta_table(key), _geo_table(key)):
+    for tbl in (_obs_table(area_key), _meta_table(area_key), _geo_table(area_key)):
         con.execute(f'DROP TABLE IF EXISTS "{tbl}"')
-    con.execute(f'DELETE FROM "{REGISTRY_TABLE}" WHERE name = ?', [name])
+    con.execute(f'DELETE FROM "{AREAS_TABLE}" WHERE area_key = ?', [area_key])
+    con.execute(f'DELETE FROM "{INGESTS_TABLE}" WHERE area_key = ?', [area_key])
     return True
