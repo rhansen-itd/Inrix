@@ -28,6 +28,13 @@ data.csv
 *.duckdb
 *.duckdb.wal
 
+# --- external travel-time reference (Item 29) ---
+# The TT Logger workbook is raw logged input (Google Maps travel times) that grows
+# every week the logger runs, so it is treated like the INRIX exports: kept locally,
+# never committed. tests/ build a synthetic workbook of the same shape; the
+# real-file tests skip when it is absent.
+/TT Logger.xlsx
+
 # --- Python / packaging ---
 __pycache__/
 *.py[cod]

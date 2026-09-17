@@ -115,6 +115,31 @@ The GUI is a thin shell: `gui/figures.py` turns compute-core DataFrames into
 figures and `gui/app.py` only wires inputs to them — all statistics stay in
 `src/inrix_tools/` (see [CLAUDE.md](CLAUDE.md)).
 
+## Build the INRIX-vs-reference validation report
+
+An external travel-time log (the TT Logger workbook) is compared to INRIX corridor
+by corridor and written out as a small static site:
+
+```bash
+python scripts/build_validation_report.py \
+    --export out/extracted_query_segments_2026.csv \
+    --workbook "TT Logger.xlsx" \
+    --network USA_Idaho_shapefile.zip \
+    --network-cache geometry_cache/d3_validation_network.geoparquet \
+    --route-segments scripts/d3_place_name_routes.json \
+    --bbox -116.9 43.40 -115.80 44.65 \
+    --out-dir out/validation_report
+```
+
+The script is wiring only: chains, statistics and gates come from
+`inrix_tools.{corridors,reference,agreement}`, `gui/validation_figures.py` and
+`gui/validation_report.py` place those values in figures and pages, and the summary
+tables are written beside the HTML as CSV. `--route-segments` is for reference
+sheets whose endpoints are place names rather than coordinates (see
+[DATA_FORMAT.md](DATA_FORMAT.md)); omit it and those sheets are skipped, with the
+bbox then derived from the coordinate routes. Output lands under `out/`, which is
+gitignored — regenerate it rather than committing it.
+
 ## Documents
 
 - [ROADMAP.md](ROADMAP.md) — planned work as named, numbered, session-sized

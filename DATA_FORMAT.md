@@ -59,6 +59,34 @@ hard-coded constant — expose the threshold and record it in results so a study
 is reproducible. Filtering on CValue interacts with missing-data handling: a
 segment with sparse live coverage will lose more rows.
 
+**A null `CValue` is the imputation marker, and it is common.** In the 2026 D3
+export 1,182,246 of 5,457,816 rows (**21.7%**) carry no `CValue` at all, and
+**88.3%** of those have `Speed(miles/hour)` **exactly equal** to
+`Hist Av Speed(miles/hour)` (against 11.3% of rows that do carry a CValue).
+Those rows are historical backfill, not observation. A `CValue > 80` filter
+drops them by default because the comparison is false for NaN — but only if the
+filter is applied; nothing in the pipeline applies one automatically, so a
+corridor sum that never gates on CValue is silently part historical average.
+
+Where the backfill sits matters more than how much of it there is: it is
+concentrated **overnight and in the early morning**, and it is **route-dependent**.
+Measured per hour on the 2026 D3 export, the signalised arterials are ~0% imputed
+through the whole 05:00–17:00 window (Eagle Rd NB 3.5% overall, 0% at every
+daytime hour), while rural Cascade–HSB is **57% imputed at 05:00 and 38% at
+06:00** (26% overall). So a daytime arterial study is untouched by the gate,
+while an early-morning rural comparison can be largely comparing against INRIX's
+own historical average — which is smooth by construction and will agree with
+almost anything. (Re-running the 2026-09-17 reference comparison on bins with
+<5% imputed members moved every corridor's bias by ≤0.3 min, so the gate changed
+no conclusion *there*; the point is that it has to be checked, not assumed.)
+
+**`Speed(miles/hour)` is integer-valued.** Every non-null speed in the 2026 D3
+export is a whole number, with an observed floor of **5 mph** (0.1st percentile
+12 mph). Quantisation is negligible at highway speed and about ±3% at a
+congested-arterial 15 mph; it is not large enough to explain a travel-time
+disagreement of any consequence, but it does mean derived speeds should not be
+reported to more precision than the input carries.
+
 ## `metadata.csv` columns
 
 ```
@@ -189,6 +217,227 @@ and the statewide file fully covers the Ada County study area (zero unmatched).
 
 **License:** INRIX/NPMRDS geometry — treat like the data exports: gitignored,
 not redistributed.
+
+## Corridor chain assembly, endpoint trim & proration (Item 28)
+
+A **chain** is the ordered run of XD segments between two query points — how an
+external route (a Google Maps travel-time log, a study corridor described by its
+end coordinates) is turned into a set of `Segment ID`s. `corridors.py` is the code
+contract; the facts that bite are these.
+
+- **Snap in a projected CRS, never in degrees.** At this latitude a degree of
+  longitude is only ~0.72 of a degree of latitude on the ground, so a degree-space
+  "nearest segment" is ~28% anisotropic and can pick the wrong road.
+  `corridors.project_network` defaults to the network's own UTM zone
+  (`estimate_utm_crs`); snap distances are reported in **feet**.
+- **The nearest segment may be the wrong direction.** Opposing carriageways share
+  the road's geometry (see the direction section), so `build_chain` tries the *k*
+  nearest candidates **within `max_snap_feet`** (default 500 ft) at each end and
+  keeps the pair that actually **reaches** the target, cheapest snap first. The
+  distance guard is load-bearing: without it a far-but-connecting candidate beats
+  the true snap, and a 2-mile route can collapse onto one nearby segment while
+  still reporting `reached_target=True`.
+- **Try more candidates than feels necessary.** The default is the 8 nearest
+  segments per endpoint, and that is empirical: at a signalised arterial
+  intersection the cross-street approaches, the opposing carriageway and the turn
+  stubs routinely put **six** segments nearer the query point than the one the
+  route runs on. At `k = 4` two of ten measured routes silently returned the wrong
+  chain — SH-69 SB stopped after 0.41 mi (against 7.17 mi northbound) and VSL SB
+  walked 8.07 mi past its target; at `k = 8` both resolve to their northbound
+  mirror image (7.167 mi and 3.007 mi) with zero missing segments.
+- **A chain that doesn't connect is data, not an exception.** `reached_target` +
+  `stop_reason` (`target` / `dead_end` / `off_network` / `cycle` / `max_steps`)
+  ride on the result. `off_network` means the next `NextXDSegI` isn't in the
+  network *subset* that was loaded — widen the bbox/id filter, it is not a
+  terminal segment.
+
+**The trim, and what we do about it.** `NextXDSegI` walking returns **whole**
+segments, but a query point lands wherever it lands — usually mid-segment. The
+un-trimmed chain therefore overshoots the requested extent, and asymmetrically,
+because the two directions of a road are cut at different places:
+
+| chain (measured 2026-09-17) | whole segments | requested extent | ratio |
+|---|---|---|---|
+| Franklin EB | 2.993 mi | 2.763 mi | 1.08 |
+| Franklin WB | 3.453 mi | 2.764 mi | 1.25 |
+| VSL NB AM   | 3.635 mi | 3.006 mi | 1.21 |
+
+Franklin EB and WB cover the *same physical extent*; untrimmed they differ by
+0.46 mi (0.57 mi of it a single overshooting end segment), and trimmed they agree
+to **0.001 mi**. A travel-time comparison scored on the untrimmed chain is
+comparing two different roads' worth of pavement.
+
+**Decision (Session 34): prorate by default for comparison work; report always.**
+`build_chain` always reports `trim_start_miles` / `trim_end_miles`, the per-member
+`in_extent_fraction`, and the `chain_miles` ÷ `requested_miles` ratio — nothing is
+silently rescaled. `corridors.chain_travel_time(df, chain)` then credits each end
+segment the covered fraction of its travel time (`prorate=True`, the default), and
+reports `Length(Miles)` as the requested extent.
+
+- **Assumption, stated:** proration assumes **uniform speed within a segment**.
+  That is weakest exactly where it is used most — an end segment cut at an
+  intersection, where the delay is concentrated at the stop bar. Proration removes
+  a length bias (which is large, systematic, and directional) at the cost of a
+  within-segment distribution assumption (smaller, and unbiased in sign).
+- `prorate=False` gives the whole-segment sum, which is the right choice when the
+  chain's own extent is the thing being described (e.g. a corridor defined *by*
+  its segments) rather than compared against an outside route.
+
+**Missing-segment accounting.** `corridors.chain_coverage(chain, df)` returns one
+row per member with `Miles`, `extent_miles`, `n_obs`, and `observed`, plus
+`attrs`: `n_missing`, `missing_miles`, `observed_miles`, `miles_covered_fraction`.
+Chain travel time keeps the **complete-set rule** over exactly the chain's members
+(`expected="total"`), so an absent segment drops the timestamp rather than
+shortening the sum. There is **no silent fallback** to "whatever reported" — the
+2026-09-17 outside pass compared 17 of 20 Eagle Rd NB segments with a `17/20`
+string as the only evidence, and the absent members were the short signalised
+stubs where the delay lives (0.25–0.29 mi each).
+
+## External travel-time reference (TT Logger workbook, Item 29)
+
+A second, independent measurement of the same corridors: a Google-Maps-style
+travel-time logger, delivered as an `.xlsx` with **one sheet per route**.
+`reference.py` is the code contract; `agreement.py` compares it to INRIX.
+
+**Sheet layout.** Five header rows (`Origin`, `Destination`, `Days`, `Start`,
+`End`) in columns A/B, a blank row, then a table starting at the row whose first
+cell is `Timestamp`:
+
+| column              | notes                                               |
+|---------------------|-----------------------------------------------------|
+| `Timestamp`         | **naive local wall clock** — no offset in the cell   |
+| `Travel Time (s)`   | the precise value; minutes are derived from this     |
+| `Travel Time (min)` | the same number, already rounded                     |
+| `Extra TT (Min)`    | the provider's own delay-over-typical figure         |
+
+**Header dialects — the same workbook mixes them.** `Origin`/`Destination` is
+**either** a `lat,lon` pair (with or without a space after the comma) **or** a
+place name — and a place name *also* contains a comma ("Garden Valley, ID"), so
+the parse is by value, not by separator. A place-name route is whatever the
+provider's geocoder chose, so it **cannot be chain-matched** to XD segments; the
+route table marks this as `chain_matchable` (3 of 15 sheets are city-to-city).
+`Start`/`End` arrives as a real time, as an `"HH:MM"` string, **or as an Excel day
+fraction** (`0.625` → 15:00, from a cell formatted as a time but stored as a
+number). These windows are what the sheet *claims*; they sit about an hour off the
+observed timestamps, which is why clock agreement is measured, not assumed.
+
+**Timezone.** The timestamps are naive local wall clock, so the zone is supplied
+explicitly (`America/Denver`) and localized DST-correctly — never sliced off a
+string. This matters in both directions: the logger samples straight through the
+**fall-back fold** (01:15 and 01:45 on 2025-11-02 occur twice, on 9 of 15 sheets),
+so those samples are dropped and **counted** in `attrs['n_ambiguous_dropped']`
+rather than being assigned a guessed offset.
+
+**Cadence and binning.** Samples land roughly **every 30 minutes**, about 50 s
+past a quarter hour. They are **floored** to the bin, never rounded: an INRIX bin
+is labelled by its *start*, so a sample belongs to the bin containing it. On the
+current workbook the two rules disagree on 17 of 62,321 samples (a sample at
+:58:50 floors to `:45` and rounds to the next hour) — small, but the rule is what
+the label means, not what the arithmetic happens to agree on today. Several
+samples can share a bin; `agreement.match_bins` averages them and keeps
+`n_ref_samples`.
+
+**Reference-side gates (run these before comparing anything).**
+
+- `nesting_gate` — a sub-route cannot exceed the route that contains it. Measured
+  on this workbook: "Franklin WB - No Mid" exceeds its own full "Franklin WB" in
+  **99.9% of 4,524 shared bins** (6.40 vs 5.68 min) — physically impossible, and
+  previously published as a 32.2% INRIX error. The EB pair is clean (0%), so it is
+  the reference that is wrong, not the check. Nesting is derived from the
+  assembled **chains** (segment-set containment), not from sheet names.
+- `coverage_gate` — per-route first/last/`n_days` plus, against a study window,
+  `days_in_window` / `window_covered_fraction` / `covers_window`. One route's
+  coverage cannot be described by another's banner.
+- `lag_scan` / `lag_summary` — shift the reference ±90 min and find the best
+  alignment. The statistic is `sd_diff` (**bias removed**), because a lag scan
+  reads shape: on raw RMSE a large systematic bias moved the apparent best lag to
+  +30/+60 min on half the routes, while the bias-free scan puts **every** route at
+  lag 0. That is the evidence the two clocks agree.
+
+**Agreement statistics** (`agreement.compare`, one row per route): bias with a
+**day-blocked** 95% CI (15-minute bins are autocorrelated; the per-bin interval is
+reported beside it as `*_naive`, and `ci_width_ratio` shows the inflation — up to
+2.4× on these corridors), MAE / RMSE / MAPE, **SD ratio**, **delay ratio** (mean
+delay above *each source's own* free-flow percentile), Bland-Altman limits of
+agreement, and correlation reported last on purpose. `independent_totals` reports
+distinct days and **distinct pavement** beside the naive sums, because overlapping
+sub-routes of one road are not independent evidence: on ten routes here, 28,431
+matched bins span only 4,411 distinct quarter hours, and 43.84 summed chain-miles
+are 33.63 distinct miles.
+
+**Source hygiene (decided Session 35).** The workbook is **raw logged input** and
+grows every week the logger runs, so it follows the raw-export rule: gitignored
+(`/TT Logger.xlsx`), kept locally, never committed. Tests build a synthetic
+workbook of the same shape in `tmp_path`; the real-file tests skip when it is
+absent, exactly like the XD shapefile tests.
+
+## INRIX vs. the external reference: arterial delay compression (Item 30)
+
+The finding from the 2026-09-17 validation run (`scripts/build_validation_report.py`
+over the 2026 D3 15-minute export, 15 TT Logger routes, 38,873 matched bins):
+**on signalised arterials INRIX reports roughly half to two-thirds of the delay the
+external reference does, while on rural free-flow highway the two agree to within
+about a minute over 50 miles.**
+
+| route | bias (INRIX − ref), min | day-blocked 95% CI | delay ratio | SD ratio | MAPE |
+|---|---|---|---|---|---|
+| Eagle Rd NB | −8.38 | [−8.47, −8.23] | 0.54 | 0.58 | 37.6% |
+| Eagle Rd SB | −5.46 | [−5.55, −5.34] | 0.54 | 0.57 | 28.7% |
+| SH-69 SB | −6.04 | [−6.12, −5.93] | 0.37 | 0.36 | 38.2% |
+| SH-69 NB | −1.43 | [−1.46, −1.40] | 0.64 | 0.66 | 12.2% |
+| Franklin EB / WB | −1.08 / −1.08 | [−1.10, −1.05] both | 0.53 / 0.57 | 0.57 / 0.65 | ~19% |
+| VSL section (4 sheets) | −1.11 … −3.05 | see report | 0.59–0.95 | 0.60–0.88 | 18–30% |
+| **Cascade→HSB (rural, 50.8 mi)** | **−0.16** | **[−0.84, +0.55]** | **1.08** | 0.76 | **2.5%** |
+| **HSB→Cascade (rural, 50.8 mi)** | **+0.48** | **[−0.20, +1.19]** | **1.09** | 0.45 | **2.6%** |
+
+Across the 11 usable arterial routes the **delay ratio** (mean delay above *each
+source's own* 10th-percentile free-flow) has a **median of 0.59** (range
+0.37–0.95) and the **SD ratio** a median of **0.62** (range 0.36–0.88). The two
+agreeing matters: the SD ratio is symmetric, so this is compression of the
+congested tail, not regression dilution. Both rural routes' CIs include zero — INRIX
+and the reference do not measurably disagree on rural free-flow travel time, and
+their delay ratios sit slightly **above** 1.
+
+**Two consequences to carry into any study.**
+
+1. **A before/after evaluation scored on INRIX will report roughly half the effect
+   size in minutes** that this reference would credit, on signalised arterials.
+   Report INRIX-derived minutes of delay saved as a lower bound and name the
+   source. A *relative* change may survive the compression (if both periods are
+   scaled by the same factor, the ratio is preserved) — but that is a separate
+   claim, and nothing measured here establishes that the factor is constant across
+   congestion levels.
+2. **The published explanation for the largest biases is not supported.** The
+   outside pass stated that its spatial analysis "proves" the Eagle Rd / SH-69 SB
+   gaps are query-geometry mismatch — reference queries reaching south of I-84 and
+   capturing off-ramp queues. Measured here: the query points snap **5/4 ft**
+   (Eagle Rd NB), **4/5 ft** (Eagle Rd SB), **18/2 ft** (SH-69 NB) and **64/18 ft**
+   (SH-69 SB) from their chain ends — there is no extra extent. And the gap is
+   already there at free flow: at **05:00** SH-69 **SB** runs 3.94 min below the
+   reference while **NB** — the same endpoints reversed — is 0.37 min off. No
+   queuing story explains that. Something route-specific may be happening at that
+   interchange; it has not been identified.
+
+**What the comparison does not say.** The reference is one commercial provider's
+route-level estimate, not ground truth: this measures *disagreement* and locates
+it, it does not adjudicate. Two routes are excluded from the headline by the gates
+and kept visible with their reasons — "Franklin WB - No Mid" (its reference data
+exceeds its own containing route in 99.9% of shared bins) and "Garden Valley-HSB"
+(the chain dead-ends after 11.08 mi, so the INRIX side is not that route).
+
+**Extent for the place-name routes.** The three rural sheets name cities rather
+than coordinates, so `reference.route_endpoints` refuses them. They are carried via
+`corridors.chain_between_segments` from an **operator-stated pair of terminal
+segments** (`scripts/d3_place_name_routes.json`): whole end segments, no trim, no
+proration, `snap_*_feet` NaN. The two ID-55 chains reproduce the corridor at
+**50.76 / 50.78 mi**. Rural numbers therefore rest on an operator's extent
+assertion, which the arterial numbers do not.
+
+**Cadence, stated because it was measured.** The reference's median sample gap on
+this workbook is **30 minutes** (~25 samples on a typical logged day) against
+INRIX's 15-minute bins; per-route coverage of the export window runs 30–71%. A
+report that prints "Data Resolution: 15-Minute Intervals" over both sources is
+describing only one of them.
 
 ## Delay vs free-flow travel time (derived)
 
