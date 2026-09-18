@@ -3931,3 +3931,73 @@ selection by default and by explicit `windows=`; the breakout's index and its ce
 summing to their total; and the ranked ordering being followed.
 `test_run_district_screening.py` +4, including the AADT-less fallback firing and
 announcing itself. **Full suite: 540 passed, 2 skipped** (was 528/2 at Session 49).
+
+---
+
+## Session 51 — The export's segment set, resolved with the owner (ROADMAP Item 42) (2026-09-18)
+
+A correction session. Reading the first district ranking, the owner asked why corridors
+they knew to be congested were absent. My first answer was wrong in two ways and the
+owner corrected both; this records what is actually true, because the wrong version was
+briefly written into ROADMAP Item 42 and would otherwise have been inherited.
+
+**Wrong answer #1: "354 miles of arterial are missing from the export."** Ustick,
+Orchard, Linder, Overland, Ten Mile and the rest are **off-system** — county and city
+jurisdiction, not ITD's. The route-number query was right to exclude them. ITD's own
+route inventory agrees: every one of them matches only `OH000` ("other highway") records
+in the cumulative AADT layer.
+
+**Wrong answer #2: "Karcher Rd is 2 of 46 segments in the export."** It is **92 of 92**.
+The error was searching XD's `RoadName` — 46 segments contain the string "Karcher" and
+only 2 carry a `RoadNumber` of 55 — instead of reading
+`out/highways/SH-55_Karcher_ALL.txt`, which had the corridor inventoried correctly all
+along. The lesson generalises: `out/highways/` holds a per-corridor segment-id list for
+every D3 state route, `District_3_ALL_Highways.txt` collects **3,947** of them, the export
+observed **3,905**, and **nothing was observed that the list did not ask for**. The prior
+inventory was sound and I should have checked it before measuring against XD attributes.
+
+**What remained after that was 99 segments, and the owner resolved both halves as
+deliberate:**
+
+- **SH-55 Eagle Rd, 57 segments / 18.86 mi — deleted on purpose.** They are not the SH-55
+  part of Eagle Rd. Checked against the corridor's own extent (43.59627 → 43.69094):
+  **38** segments / 12.94 mi sit **south of I-84** and belong to ACHD, **14** / 5.37 mi
+  sit north of State St, and the remaining **5** / 0.55 mi are edge stubs just beyond each
+  end. All correctly excluded.
+- **I-84B Caldwell, 42 segments / 14.81 mi — excluded on purpose.** The corridor was
+  relinquished to the City of Caldwell about a decade ago. (The store's own evidence
+  supports this reading: `District_3_ALL_Highways_No_Caldwell_I84B.txt` holds exactly the
+  3,905 ids that were observed.)
+
+**One thing the exclusion took with it that it should not have.** SH-19 between I-84 and
+Simplot Blvd is carried in the XD data as **Centennial Way with `RoadNumber` 84** — still
+classified as I-84 Business — so it left with the rest of the Caldwell corridor. The
+route is SH-19, it is on-system, and it belongs in the export. That is **7 segments,
+1.89 mi**, and it is the entire remaining gap:
+
+```
+440866307,440866308,440894666,440894667,484346940,1187396492,1187525172
+```
+
+`out/segments_to_add_to_export.txt` now holds exactly that, in the paste format
+`out/highways/*.txt` uses, with the per-segment geometry and the list of what was checked
+and is correctly absent. The 483 "spatial-join candidates" from the earlier pass are
+dropped: they came from a 40 m join with no preference for a numbered route over an `OH`
+record, so they are frontage roads, ramps and connector stubs near state routes — median
+length 0.076 mi, 130 of them under 0.05 mi. Giving `join_aadt` that preference remains
+Item 42's real work; the candidate list should be re-derived from it rather than from
+this pass.
+
+**And a correction to Item 40/41's couplet claim.** Session 50 recorded Myrtle/Front as
+"the ONLY one-way couplet in the District 3 catalogue" and the catalogue said so. The
+owner corrected it: **I-84 Business through downtown Nampa is a second couplet**,
+westbound on 2nd St S and eastbound on 3rd St S. Its 35 segments are already in the export
+(`out/highways/I-84B_Nampa_ALL.txt`, 7.71 mi) and it has no catalogue entry yet, so the
+flag has nowhere to be set — but `one_way_couplet` is not a Boise-only quirk, and any
+I-84B Nampa entry needs it. DATA_FORMAT now carries both couplets in a table, the
+catalogue's `boise-couplet` description says "the only one currently in this catalogue"
+rather than "the only one in the district", and ROADMAP Item 44 carries the instruction.
+
+No code changed. The lesson worth keeping is procedural: three of the four wrong claims in
+this session came from measuring against XD's attributes when a hand-built inventory of
+the same thing was already sitting in `out/`.

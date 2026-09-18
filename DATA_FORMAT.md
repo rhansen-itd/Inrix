@@ -447,9 +447,20 @@ clothes.
 
 **One-way couplets.** For a divided or undivided road the two directions run over the
 *same ground*, so `directional_miles` is travel-miles (the ground driven twice), not
-centre-line miles. For a one-way couplet — D3 has exactly one, Myrtle St EB and Front
-St WB, and its two legs are different streets — the same number is *also* distinct
-centre-line pavement. Either way it is the distance a round trip covers, which is
+centre-line miles. For a one-way couplet — whose two legs are different streets — the
+same number is *also* distinct centre-line pavement.
+
+District 3 has **at least two** couplets on the state system, and only one is in the
+catalogue so far:
+
+| couplet | EB/NB leg | WB/SB leg | in the catalogue |
+|---|---|---|---|
+| downtown Boise, US-20/26 | Myrtle St | Front St | yes (`boise-couplet`) |
+| downtown Nampa, I-84 Business | 3rd St S | 2nd St S | **not yet** — segments are in the export (`out/highways/I-84B_Nampa_ALL.txt`, 35 segments / 7.71 mi) but no entry exists |
+
+So `one_way_couplet` is **not** a one-off flag for a single quirk of downtown Boise, and
+an earlier note in this repo that called Myrtle/Front "the only couplet in the district"
+was wrong. Any new entry on I-84B through Nampa needs the flag set. Either way it is the distance a round trip covers, which is
 what every rate divides by, so the ranking stays comparable; the
 `one_way_couplet` flag on the reporting corridor exists so nobody reads the column as
 centre-line mileage for the fifteen-mile freeway. It changes no arithmetic.

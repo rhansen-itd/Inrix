@@ -151,9 +151,12 @@ first district ranking: the corridors they expected to see were not in it. The c
 segment ids, the export observed 3,905 of them, and **nothing was observed that the list
 did not ask for**. (An earlier pass of this session claimed Karcher Rd and 354 miles of
 arterial were missing; both were wrong — Karcher is 92 of 92 present, and the arterials
-are off-system county roads, correctly excluded. The genuine gap is **99 segments**: 57 on
-SH-55 Eagle Rd that never reached the master list, and 42 on I-84B Caldwell that were
-requested and came back empty.) The cause is the **catalogue**: it covers 9.4% of the
+are off-system county roads, correctly excluded. What looked like a 99-segment gap was
+resolved with the owner and is **7**: the SH-55 Eagle Rd segments were deleted on purpose
+as ACHD, the I-84B Caldwell corridor was excluded on purpose as relinquished to the city,
+and the only thing missed in excluding it is that **SH-19 between I-84 and Simplot Blvd is
+still carried in the data as Centennial Way with `RoadNumber` 84** and went out with it.)
+The cause is the **catalogue**: it covers 9.4% of the
 store, roughly 1,190 miles of numbered state highway — US-95, SH-21, SH-51, SH-78, SH-52
 and more — carry no entry at all, and the extents that do exist are drawn from junctions
 and city limits rather than from the congestion. SH-45 is one 17.4-mile corridor of which
@@ -1661,10 +1664,16 @@ Scope:
 - [ ] **Reconcile every `out/highways/*_ALL.txt` against the master list** and record which
       per-corridor ids never reached it. SH-55 is the one found so far; the check is cheap
       and should be run over all 32 files rather than assuming it is the only one.
-- [ ] **Re-request the 99** (`out/segments_to_add_to_export.txt`, section 1, paste-ready)
-      and record what comes back. If I-84B Caldwell is empty a second time, write that
-      down in DATA_FORMAT as a known coverage hole rather than leaving it to be
-      rediscovered a third time.
+- [x] **Resolved with the owner: the true gap is 7 segments, not 99.** The 57 SH-55 Eagle
+      Rd segments were deleted **on purpose** — 38 are south of I-84 and belong to ACHD,
+      14 are north of State St, and the remaining 5 are edge stubs just beyond each end of
+      the SH-55 extent. The 42 I-84B Caldwell segments were excluded **on purpose** too:
+      that corridor was relinquished to the City of Caldwell about a decade ago. What was
+      missed in excluding it is that **SH-19 between I-84 and Simplot Blvd is still
+      carried in the XD data as Centennial Way with `RoadNumber` 84** — classified as
+      I-84B — so it went out with the rest. Those 7 segments (1.89 mi) are the only ones
+      to add, and they are in `out/segments_to_add_to_export.txt`, paste-ready. The
+      Blaine/Cleveland/Caldwell Blvd remainder stays out.
 - [ ] **Fix `join_aadt`'s route-class preference.** Item 34 taught it to prefer mainline
       over ramp; it has no preference for a **numbered** route over an `OH` record, so an
       on-system classification flips with the candidate set — W Karcher Rd classifies `SH`
@@ -1777,8 +1786,12 @@ existing 20 entries stop being the catalogue and become a **check** on it. Scope
       Expect most of it to produce **no** candidate, which is the correct answer for a
       rural state highway and is itself worth recording.
 - [ ] **Keep the reporting-corridor grouping honest as it grows**: `corridor` +
-      `direction` on every entry, both directions per group or a stated reason, and the
-      one-way-couplet flag staying at exactly one entry unless a second is found.
+      `direction` on every entry, and both directions per group or a stated reason.
+      **A second one-way couplet is already known** — I-84 Business through downtown
+      Nampa runs westbound on 2nd St S and eastbound on 3rd St S, all 35 segments in the
+      export — so `one_way_couplet` is not a Boise-only flag and any I-84B Nampa entry
+      needs it set. Watch for more; the earlier claim that Myrtle/Front was the district's
+      only couplet was wrong.
 - [ ] **Re-run the district screening and record how the ranking moves.** Ten corridors
       over 9.4% of the store is not a district screen; the number that replaces it is the
       deliverable.
