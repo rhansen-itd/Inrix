@@ -6,25 +6,28 @@ appear — the dropdown, map hover, forest rows, panel titles. That string is
 accurate but noisy: the road repeats, the intersection carries route
 designations, and the leading cardinal direction rarely helps a reader.
 
-This module gives each segment a **readable name**, driven by a user-editable
-CSV rather than an opaque auto-ID:
+This module gives each segment a **readable name** rather than an opaque auto-ID:
 
 - ``seed_names`` turns the INRIX labels into a simplified starting point
   (``N 9th St S 9th St / Idaho St`` → ``9th St & Idaho St``) — heuristic, not
-  perfect; the point is a good hand-edit seed.
-- ``write_names_template`` / ``load_names`` round-trip that seed to/from a CSV
-  the user hand-edits (stable ``Segment ID`` key, ``name`` column authoritative).
+  perfect; the point is a good editable seed.
 - ``apply_names`` resolves the single ``Segment ID -> name`` mapping the GUI
-  reads from, layering the user CSV over the seed with sensible fallbacks. The
+  reads from, layering user **overrides** over the seed with sensible fallbacks. The
   raw ``Combined`` label is kept alongside (the GUI shows it as a hover subtitle)
   so nothing is lost.
+
+The override frame ``apply_names`` layers used to come from a hand-edited CSV; as
+of ROADMAP Item 27 it comes from the DuckDB store (``store.load_names`` /
+``store.save_names``, last-write-wins, applied automatically on load). The retired
+CSV round-trip (``write_names_template`` / ``write_names`` / ``load_names``) moved to
+``legacy/names_csv.py`` — ``apply_names`` is agnostic to the override's source (any
+``Segment ID``-indexed frame with a ``name`` column works).
 
 Pure Python — no plotting, no GUI, no hardcoded paths (see CLAUDE.md).
 """
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pandas as pd
 
@@ -153,81 +156,20 @@ def seed_names(metadata: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=[SEGMENT_COL, INRIX_LABEL_COL, NAME_COL])
 
 
-def write_names_template(metadata: pd.DataFrame, path) -> Path:
-    """Write the ``seed_names`` table to ``path`` as a CSV for the user to edit.
-
-    Overwrites ``path`` (a fresh template mirrors the current export's segments).
-    Returns the written path.
-    """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    seed_names(metadata).to_csv(path, index=False)
-    return path
-
-
-def write_names(names_df: pd.DataFrame, path) -> Path:
-    """Write an edited ``Segment ID -> name`` table to ``path`` as a names CSV that
-    ``load_names`` reads back verbatim (ROADMAP Item 19's in-app editor path).
-
-    Unlike ``write_names_template`` (which regenerates the *seed* from metadata),
-    this persists names the user has already edited — e.g. the rows of the GUI
-    segment table. ``names_df`` needs a ``Segment ID`` and a ``name`` column
-    (``inrix_label`` optional, blanked if absent); the output column order matches
-    the template so the store stays a single portable format. Returns the path.
-    """
-    if SEGMENT_COL not in names_df.columns or NAME_COL not in names_df.columns:
-        raise ValueError(
-            f"names_df must have '{SEGMENT_COL}' and '{NAME_COL}' columns; "
-            f"got {list(names_df.columns)}"
-        )
-    out = pd.DataFrame({
-        SEGMENT_COL: names_df[SEGMENT_COL].astype("int64"),
-        INRIX_LABEL_COL: (names_df[INRIX_LABEL_COL].fillna("").astype(str)
-                          if INRIX_LABEL_COL in names_df.columns else ""),
-        NAME_COL: names_df[NAME_COL].fillna("").astype(str).str.strip(),
-    })
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(path, index=False)
-    return path
-
-
-def load_names(path) -> pd.DataFrame:
-    """Read a names CSV written by ``write_names_template`` (or hand-authored).
-
-    Requires a ``Segment ID`` column and a ``name`` column; ``inrix_label`` is
-    optional. ``Segment ID`` is typed to int and set as the index. Blank/whitespace
-    ``name`` cells become empty strings (``apply_names`` treats them as unset and
-    falls back to the seed). No hardcoded paths — the caller supplies ``path``.
-    """
-    # keep_default_na=False: a road genuinely named "NA"/"None"/"null" is a
-    # name, not a missing value — pandas' NA sentinels would silently blank it.
-    df = pd.read_csv(path, keep_default_na=False)
-    if SEGMENT_COL not in df.columns or NAME_COL not in df.columns:
-        raise ValueError(
-            f"names CSV {path} must have '{SEGMENT_COL}' and '{NAME_COL}' columns; "
-            f"got {list(df.columns)}"
-        )
-    df[SEGMENT_COL] = df[SEGMENT_COL].astype("int64")
-    df[NAME_COL] = df[NAME_COL].fillna("").astype(str).str.strip()
-    if INRIX_LABEL_COL not in df.columns:
-        df[INRIX_LABEL_COL] = ""
-    return df.set_index(SEGMENT_COL)
-
-
 def apply_names(metadata: pd.DataFrame, names: pd.DataFrame | None = None) -> dict[int, str]:
     """Resolve the single ``Segment ID -> name`` mapping the GUI labels read from.
 
     Layers, per segment, in priority order:
-      1. the user CSV ``name`` (``names``, from ``load_names``) when non-blank,
+      1. the user override ``name`` (``names``, from ``store.load_names`` — or the
+         retired ``legacy.names_csv.load_names``) when non-blank,
       2. the simplified ``seed_names`` name,
       3. the raw ``Combined`` label,
       4. ``str(Segment ID)``.
 
-    ``names`` rows for segments not in ``metadata`` are ignored; segments absent
-    from ``names`` (or with a blank name there) fall through to the seed. This is
-    the single source of truth that replaces the ad-hoc ``Combined`` dict the GUI
-    used before.
+    ``names`` is any ``Segment ID``-indexed frame with a ``name`` column; rows for
+    segments not in ``metadata`` are ignored, and segments absent from ``names`` (or
+    with a blank name there) fall through to the seed. This is the single source of
+    truth that replaces the ad-hoc ``Combined`` dict the GUI used before.
     """
     seed = seed_names(metadata).set_index(SEGMENT_COL)
     overrides = {}

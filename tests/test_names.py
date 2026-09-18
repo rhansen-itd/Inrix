@@ -1,4 +1,10 @@
-"""Tests for inrix_tools.names (ROADMAP Item 10)."""
+"""Tests for inrix_tools.names (ROADMAP Item 10).
+
+Covers the seed simplifier and the ``apply_names`` resolver. The CSV round-trip that
+used to live here retired to ``legacy/names_csv.py`` (Item 27 moved names into the
+DuckDB store) — its tests are in ``tests/test_legacy_names_csv.py``. ``apply_names`` is
+source-agnostic, so these build the override frame directly (indexed by Segment ID).
+"""
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +35,13 @@ REPRESENTATIVE = _meta([
     (448695927, "20 / W Myrtle St", "E", "US-20 Myrtle St / Capitol Blvd"),
     (119675609, "S 5th St", "N", None),                         # no intersection
 ])
+
+
+def _overrides(mapping: dict[int, str]) -> pd.DataFrame:
+    """A Segment-ID-indexed override frame (``name`` column) — the shape
+    ``store.load_names`` returns and ``apply_names`` layers over the seed."""
+    return pd.DataFrame({names.NAME_COL: list(mapping.values())},
+                        index=pd.Index(list(mapping), name=SEGMENT_COL))
 
 
 # --- seed simplification ----------------------------------------------------
@@ -70,58 +83,7 @@ def test_seed_name_falls_back_to_segment_id_when_unrecoverable():
     assert seed.loc[555, names.NAME_COL] == "555"
 
 
-# --- CSV round-trip ---------------------------------------------------------
-def test_write_and_load_round_trip(tmp_path):
-    path = tmp_path / "segment_names.csv"
-    written = names.write_names_template(REPRESENTATIVE, path)
-    assert written == path and path.exists()
-
-    loaded = names.load_names(path)
-    assert loaded.index.name == SEGMENT_COL
-    assert loaded.index.dtype == "int64"
-    assert loaded.loc[440882720, names.NAME_COL] == "9th St & Idaho St"
-
-
-def test_load_names_requires_columns(tmp_path):
-    bad = tmp_path / "bad.csv"
-    pd.DataFrame({"foo": [1], "bar": [2]}).to_csv(bad, index=False)
-    with pytest.raises(ValueError, match="must have"):
-        names.load_names(bad)
-
-
-# --- write_names: the in-app editor round-trip (Item 19) --------------------
-def test_write_names_round_trips_edited_table(tmp_path):
-    """The GUI segment table's edited names persist through write_names and read
-    back verbatim via load_names (the in-app editor supersedes hand-editing)."""
-    edited = pd.DataFrame({
-        SEGMENT_COL: [440882720, 1187539993],
-        names.INRIX_LABEL_COL: ["N 9th St S 9th St / Idaho St", "S 9th St S 9th St"],
-        names.NAME_COL: ["Idaho @ 9th (edited)", "  9th St  "],   # trimmed on write
-    })
-    path = names.write_names(edited, tmp_path / "segment_names.csv")
-    assert path.exists()
-    loaded = names.load_names(path)
-    assert loaded.loc[440882720, names.NAME_COL] == "Idaho @ 9th (edited)"
-    assert loaded.loc[1187539993, names.NAME_COL] == "9th St"       # whitespace stripped
-    # the resolved mapping picks up the edited name over the seed.
-    mapping = names.apply_names(REPRESENTATIVE, loaded)
-    assert mapping[440882720] == "Idaho @ 9th (edited)"
-
-
-def test_write_names_requires_columns(tmp_path):
-    with pytest.raises(ValueError, match="must have"):
-        names.write_names(pd.DataFrame({"foo": [1]}), tmp_path / "x.csv")
-
-
-def test_write_names_optional_inrix_label(tmp_path):
-    """inrix_label is optional on input; a Segment ID + name table still round-trips."""
-    minimal = pd.DataFrame({SEGMENT_COL: [7], names.NAME_COL: ["Seven"]})
-    loaded = names.load_names(names.write_names(minimal, tmp_path / "m.csv"))
-    assert loaded.loc[7, names.NAME_COL] == "Seven"
-    assert loaded.loc[7, names.INRIX_LABEL_COL] == ""
-
-
-# --- apply_names: user CSV over seed, with fallbacks ------------------------
+# --- apply_names: user override over seed, with fallbacks -------------------
 def test_apply_names_seed_only():
     mapping = names.apply_names(REPRESENTATIVE)
     assert mapping[440882720] == "9th St & Idaho St"
@@ -131,32 +93,18 @@ def test_apply_names_seed_only():
 
 
 def test_apply_names_user_override_wins():
-    user = pd.DataFrame({
-        SEGMENT_COL: [440882720, 1187539993],
-        names.NAME_COL: ["Idaho @ 9th (my label)", "   "],  # 2nd is blank -> seed
-    })
-    mapping = names.apply_names(REPRESENTATIVE, names.load_names(_to_csv(user)))
+    # 2nd is blank -> apply_names treats it as unset and falls back to the seed.
+    over = _overrides({440882720: "Idaho @ 9th (my label)", 1187539993: "   "})
+    mapping = names.apply_names(REPRESENTATIVE, over)
     assert mapping[440882720] == "Idaho @ 9th (my label)"     # override wins
     assert mapping[1187539993] == "9th St"                    # blank -> seed fallback
 
 
 def test_apply_names_ignores_unknown_segment_rows():
-    user = pd.DataFrame({SEGMENT_COL: [999999], names.NAME_COL: ["ghost"]})
-    mapping = names.apply_names(REPRESENTATIVE, names.load_names(_to_csv(user)))
+    over = _overrides({999999: "ghost"})
+    mapping = names.apply_names(REPRESENTATIVE, over)
     assert 999999 not in mapping
     assert mapping[440882720] == "9th St & Idaho St"          # untouched
-
-
-# helper: materialize a DataFrame to a temp CSV and load it back through the API
-_TMP = {"n": 0}
-
-
-def _to_csv(df: pd.DataFrame) -> Path:
-    import tempfile
-    _TMP["n"] += 1
-    p = Path(tempfile.gettempdir()) / f"inrix_names_test_{_TMP['n']}.csv"
-    df.to_csv(p, index=False)
-    return p
 
 
 # --- real Myrtle fixture (self-skipping) ------------------------------------
@@ -169,20 +117,3 @@ def test_seed_on_real_myrtle_export():
     assert not seed[names.NAME_COL].str.contains(r"US-\d+ ", regex=True).any()
     # spot-check the documented case survives the real pipeline
     assert seed.loc[440882720, names.NAME_COL] == "9th St & Idaho St"
-
-
-def test_load_names_keeps_na_like_strings():
-    """A road genuinely named "NA" (or "None"/"null") is a name, not a missing
-    value — pandas' default NA sentinels must not silently blank it back to the
-    seed."""
-    import tempfile
-
-    p = Path(tempfile.gettempdir()) / "inrix_names_test_na.csv"
-    pd.DataFrame({SEGMENT_COL: [101], "name": ["NA"]}).to_csv(p, index=False)
-    loaded = names.load_names(p)
-    assert loaded.loc[101, names.NAME_COL] == "NA"
-    meta = pd.DataFrame(
-        {"Road": ["N 9th St"], "Intersection": ["Idaho St"], "Combined": ["x"]},
-        index=pd.Index([101], name=SEGMENT_COL))
-    assert names.apply_names(meta, loaded)[101] == "NA"
-    p.unlink()

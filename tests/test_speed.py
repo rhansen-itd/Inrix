@@ -343,6 +343,47 @@ def test_corridor_members_override_changes_aggregate(binned):
     assert set(only_1001[TT].round(1)) >= {1.0, 1.1, 1.2}
 
 
+def test_corridor_requested_membership_beats_observed(binned):
+    """ROADMAP Item 31. Without ``members`` the complete-set size is whatever the
+    data happens to contain, so a segment that never reports cannot fail the
+    check; with ``members`` the requested size is known and the shortfall is
+    reported instead of disappearing."""
+    observed = speed.corridor_travel_time(binned)
+    assert (observed["n_requested"] == observed["expected_segments"]).all()
+    assert not observed["short"].any()          # nothing was *requested*, so nothing short
+
+    # 1003 is a requested member the export never supplies.
+    asked = speed.corridor_travel_time(binned, members=[1001, 1002, 1003])
+    assert (asked["n_requested"] == 3).all()
+    assert (asked["n_absent"] == 1).all()
+    assert (asked["expected_segments"] == 2).all()
+    assert asked["short"].all()
+    # the sum is unchanged — what changed is that it no longer claims to be whole
+    assert asked[TT].tolist() == pytest.approx(observed[TT].tolist())
+
+
+def test_corridor_on_absent_drop_is_available_and_explicit(binned):
+    dropped = speed.corridor_travel_time(binned, members=[1001, 1002, 1003],
+                                         on_absent="drop")
+    assert dropped.empty
+    kept = speed.corridor_travel_time(binned, members=[1001, 1002, 1003],
+                                      on_absent="drop", require_complete=False)
+    assert (kept["expected_segments"] == 3).all() and not kept["complete"].any()
+    with pytest.raises(ValueError, match="on_absent"):
+        speed.corridor_travel_time(binned, members=[1001], on_absent="ignore")
+
+
+def test_corridor_requested_membership_is_value_aware(binned):
+    """A requested member with rows but no values is absent for summing, and is
+    counted as absent — the same standard ``n_segments`` is counted by."""
+    df = binned.copy()
+    df.loc[df["Segment ID"] == 1002, TT] = float("nan")
+    out = speed.corridor_travel_time(df, members=[1001, 1002], require_complete=False)
+    assert (out["n_absent"] == 1).all()
+    assert (out["expected_segments"] == 1).all()
+    assert out["short"].all()
+
+
 # --- rolling_average --------------------------------------------------------
 def test_rolling_trailing_known_values(binned):
     r = speed.rolling_average(binned, value=SPEED, window=2)

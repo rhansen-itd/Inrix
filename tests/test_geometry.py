@@ -51,6 +51,31 @@ def test_segment_geometry_fallback_flagged():
     assert geo.loc[9999, "geometry"] is None
 
 
+def test_segment_geometry_carries_xd_identity_columns():
+    """Item 34: the AADT join ranks on the road's *identity* (route number, mainline
+    vs ramp), which the polyline can't answer — so the XD attributes ride along,
+    typed, and are ``NaN`` for a segment the network didn't have."""
+    net = _toy_network()
+    net["FRC"] = pd.array([1, 5], dtype="Int64")
+    net["RoadNumber"] = ["84", None]
+    net["RoadName"] = ["I-84 W", "W 12th St"]
+    meta = pd.DataFrame(
+        {"Start Longitude": [-116.30], "Start Latitude": [43.50],
+         "End Longitude": [-116.31], "End Latitude": [43.51]},
+        index=pd.Index([2001], name="Segment ID"),
+    )
+    geo = geometry.segment_geometry(net, segment_ids=[1001, 1002, 2001], metadata=meta)
+
+    assert geo.loc[1001, "RoadNumber"] == "84"
+    assert geo.loc[1001, "RoadName"] == "I-84 W"
+    assert geo.loc[1001, "FRC"] == 1 and geo["FRC"].dtype == "Int64"
+    assert pd.isna(geo.loc[1002, "RoadNumber"])
+    assert pd.isna(geo.loc[2001, "FRC"])           # fallback geometry, no XD row
+    # a network without them stays exactly as before.
+    plain = geometry.segment_geometry(_toy_network(), segment_ids=[1001])
+    assert list(plain.columns) == ["geometry", "source"]
+
+
 def test_connectivity_table_synthetic():
     conn = geometry.connectivity_table(_toy_network())
     # only 1001 has a downstream neighbour (1002); 1002 is terminal -> dropped

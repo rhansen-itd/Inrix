@@ -292,6 +292,7 @@ def corridor_travel_time(
     value: str | None = None,
     expected: str = "max",
     members: Sequence[int] | None = None,
+    on_absent: str = "short",
 ) -> pd.DataFrame:
     """Sum member-segment travel time to a corridor total per timestamp, applying
     the **complete-set rule** from DATA_FORMAT.md: only timestamps where every
@@ -331,14 +332,46 @@ def corridor_travel_time(
             them *before* the complete-set rule runs, so a user can deselect a
             chronically-missing segment (``segment_coverage``) and recover the
             timestamps its absence was costing. ``None`` (default) keeps the
-            ``corridor_col`` grouping's observed membership. Additive — the existing
-            behaviour is unchanged when omitted.
+            ``corridor_col`` grouping's observed membership. Passing ``members``
+            also switches the complete-set size from **observed** to **requested**
+            (see below) — the point of ROADMAP Item 31.
+        on_absent: what to do about a requested member that has **no valued row
+            anywhere** in the frame (``members`` only). ``"short"`` (default)
+            measures completeness against the *achievable* set and marks every row
+            of that corridor ``short=True``, carrying ``n_requested`` /
+            ``n_absent`` beside it. ``"drop"`` measures it against the full
+            requested set, so a structurally-absent member drops **every**
+            timestamp. See the note below.
 
     Returns:
         One row per (corridor, timestamp): ``[corridor_col, Date Time,
-        <value>, n_segments, expected_segments, complete]`` (+ length /
-        speed when metadata is supplied and ``value`` is travel time).
-        ``corridor_col`` keeps its own name.
+        <value>, n_segments, n_requested, n_absent, expected_segments, short,
+        complete]`` (+ length / speed when metadata is supplied and ``value`` is
+        travel time). ``corridor_col`` keeps its own name.
+
+    Note:
+        **Requested vs. observed membership** (ROADMAP Item 31). Without
+        ``members`` the complete-set size comes from the data, so a member with
+        zero rows never enters the count and therefore cannot fail it: Eagle Rd NB
+        is missing 3 of its 20 members from the 2026 D3 export entirely, ran with
+        ``expected_segments = 17``, and every one of its 2,633 bins was marked
+        complete while summing 17/20 of the route. With ``members`` the requested
+        size is known, so the three cases are separated and all three are
+        reported, none of them silently:
+
+        - a member that is **sometimes** missing drops that timestamp
+          (``complete=False``) — the original rule, unchanged;
+        - a member that is **never** present makes the corridor ``short=True``
+          with ``n_absent > 0`` — the sum is reported, and reported as short,
+          because dropping every timestamp of a 17/20 route is
+          correct-but-useless (pass ``on_absent="drop"`` for exactly that);
+        - the full set present is ``complete=True, short=False``, and only that
+          combination means the sum covers what was asked for.
+
+        ``n_segments`` is **value-aware** throughout, so "present" means "carries a
+        value here", not "has a row here". Miles are the caller's job:
+        :func:`corridors.chain_travel_time` turns ``n_absent`` into the missing
+        mileage and stops crediting it to the corridor's length.
     """
     tt = value or metric_columns(df)["travel_time"]
     if tt is None:
@@ -348,13 +381,18 @@ def corridor_travel_time(
     if corridor_col not in df.columns:
         raise ValueError(f"Corridor column {corridor_col!r} not in df; see DATA_FORMAT.md.")
 
+    if on_absent not in ("short", "drop"):
+        raise ValueError(f"on_absent must be 'short' or 'drop', got {on_absent!r}.")
+
     # Explicit membership (Item 19): restrict the sum to exactly the selected
     # segments *before* the complete-set rule runs, so completeness is measured
     # against the chosen member set — deselecting a chronically-missing segment
     # both drops it from the sum and stops it from starving the complete-set count.
     sub = df
+    requested: list[int] | None = None
     if members is not None:
-        sub = df[df[SEGMENT_COL].isin([int(m) for m in members])]
+        requested = sorted({int(m) for m in members})
+        sub = df[df[SEGMENT_COL].isin(requested)]
 
     marked = mark_complete_timestamps(sub, corridor_col=corridor_col, expected=expected)
     # A row whose value is NaN (e.g. Delay where the free-flow speed couldn't be
@@ -377,6 +415,9 @@ def corridor_travel_time(
     )
     # pandas sums an all-NaN group to 0.0; report it as NaN (no data, not zero).
     summed.loc[summed["n_segments"] == 0, tt] = float("nan")
+    summed = _apply_requested_membership(
+        summed, marked, requested, corridor_col, on_absent,
+    )
     summed["complete"] = summed["n_segments"] >= summed["expected_segments"]
     if require_complete:
         summed = summed[summed["complete"]].reset_index(drop=True)
@@ -387,6 +428,51 @@ def corridor_travel_time(
 
     summed.attrs = dict(df.attrs)
     return summed
+
+
+def _apply_requested_membership(
+    summed: pd.DataFrame,
+    marked: pd.DataFrame,
+    requested: list[int] | None,
+    corridor_col: str,
+    on_absent: str,
+) -> pd.DataFrame:
+    """Set ``expected_segments`` from the **requested** membership and record what
+    the requested set could never deliver (ROADMAP Item 31).
+
+    Without ``requested`` the observed-membership behaviour is kept exactly, and
+    the accounting columns are filled in so the output schema does not depend on
+    which call site produced it (``n_requested`` == ``expected_segments``,
+    ``n_absent`` == 0, ``short`` == False).
+    """
+    if requested is None:
+        summed["n_requested"] = summed["expected_segments"]
+        summed["n_absent"] = 0
+        summed["short"] = False
+        return _order_membership_cols(summed)
+
+    n_requested = len(requested)
+    # "Achievable" = the requested members that carry a value *somewhere* in this
+    # corridor. A member with rows but no values is absent for summing purposes,
+    # which is the same standard ``n_segments`` is counted by.
+    achievable = (
+        marked.groupby(corridor_col, observed=True)["_value_seg"].nunique()
+        .reindex(summed[corridor_col]).fillna(0).astype("int64").to_numpy()
+    )
+    summed["n_requested"] = n_requested
+    summed["n_absent"] = n_requested - achievable
+    summed["short"] = summed["n_absent"] > 0
+    summed["expected_segments"] = n_requested if on_absent == "drop" else achievable
+    return _order_membership_cols(summed)
+
+
+_MEMBERSHIP_COLS = ("n_segments", "n_requested", "n_absent", "expected_segments", "short")
+
+
+def _order_membership_cols(summed: pd.DataFrame) -> pd.DataFrame:
+    """Keep the accounting columns adjacent and in a readable order."""
+    rest = [c for c in summed.columns if c not in _MEMBERSHIP_COLS]
+    return summed[[*rest, *_MEMBERSHIP_COLS]]
 
 
 def _attach_corridor_length_speed(
@@ -426,6 +512,7 @@ def network_travel_time(
     value: str | None = None,
     expected: str = "total",
     members: Sequence[int] | None = None,
+    on_absent: str = "short",
 ) -> pd.DataFrame:
     """Sum **every** segment's travel time to a single network total per timestamp
     — the corridor sum (``corridor_travel_time``) over one synthetic all-segments
@@ -476,7 +563,7 @@ def network_travel_time(
     out = corridor_travel_time(
         work, metadata=metadata, corridor_col=corridor_col,
         require_complete=require_complete, datetime_col=datetime_col, value=tt,
-        expected=expected, members=members,
+        expected=expected, members=members, on_absent=on_absent,
     )
     out.attrs = dict(df.attrs)
     return out

@@ -61,21 +61,33 @@ def geo_two():
 # ---------------------------------------------------------------------------
 # The headless layout smoke test (the required Item-7 check)
 # ---------------------------------------------------------------------------
+def _resolve_layout(app):
+    """The layout tree — ``build_app`` assigns the layout *function* (Item 24 / R2:
+    options re-evaluate per page load), so call it to get the component tree."""
+    return app.layout() if callable(app.layout) else app.layout
+
+
 def test_build_app_layout_headless():
     app = gapp.build_app()
     assert app.layout is not None
+    layout = _resolve_layout(app)
     # every dcc.Graph / control referenced by a callback exists in the layout tree
-    ids = {c.id for c in app.layout._traverse() if getattr(c, "id", None)}
+    ids = {c.id for c in layout._traverse() if getattr(c, "id", None)}
     for needed in ("map", "segment", "fig-ts", "fig-summary", "fig-ba", "fig-decomp",
                    "load", "before-range", "after-range", "export-kml", "data-token",
-                   "tod-window", "names-path", "write-names", "restrict-range",
+                   "tod-window", "restrict-range",
                    "scope", "corridor", "dow-days", "dow-status",
-                   "segment-table", "corridor-members", "save-names", "table-status",
+                   # Item 27 corridor-scoped table + names-in-DB
+                   "segment-table", "corridor-members", "corridor-excluded",
+                   "save-names", "table-status", "names-status",
                    # Item 20 directional-display controls
                    "dir-compass", "dir-offset",
                    # Items 21/23 DB intake/select controls
                    "area", "area-bin", "ingest-export", "ingest-status"):
         assert needed in ids, f"missing layout component: {needed}"
+    # Item 27 retired the CSV names workflow — those controls are gone.
+    for gone in ("names-path", "write-names"):
+        assert gone not in ids, f"retired CSV control still present: {gone}"
     assert len(app.callback_map) >= 5  # load, click-select, map, panels, export
 
 
@@ -111,7 +123,7 @@ def test_layout_reflow_charts_share_right_column_with_map(geo_two):
                 return inner
         return node
 
-    right_col = _smallest_with_both(app.layout)
+    right_col = _smallest_with_both(_resolve_layout(app))
     assert right_col is not None
     col_ids = _ids(right_col)
     assert {"map", "tabs", "segment-table"} <= col_ids
@@ -443,12 +455,15 @@ def test_end_to_end_real_export():
                                 ("2026-03-02", "2026-03-10"),
                                 ("2026-03-20", "2026-03-28"), "seg").data
 
-    # Item 19: the segment table lists every segment with coverage + complete-set
-    # cost, and an explicit member subset feeds the network aggregate (dropping the
-    # highest-cost segment recovers timestamps the complete-set rule was losing).
+    # Items 19 + 27: the segment table lists the scoped segments with coverage +
+    # complete-set cost, each row id-keyed and defaulting to Include; an excluded
+    # segment drops from the network aggregate (dropping the highest-cost segment
+    # recovers timestamps the complete-set rule was losing).
     from inrix_tools import speed as _speed19
-    rows = gapp._table_rows(ds)
+    rows = gapp._table_rows(ds, gapp._all_segment_ids(ds))
     assert len(rows) == 46 and all(gapp.TBL_COVERAGE in r for r in rows)
+    assert all(r["id"] == r[gapp.TBL_ID] for r in rows)                  # id-keyed (R10)
+    assert all(r[gapp.TBL_INCLUDE] == gapp.INCLUDE_VAL for r in rows)    # all Included
     cov = _speed19.segment_coverage(ds.df, value=col)
     worst = int(cov.iloc[0][SEGMENT_COL])                 # highest complete-set cost
     net_all = gapp._analysis_frame(ds, col, gapp.SCOPE_NETWORK, None)
@@ -1098,11 +1113,14 @@ def table_ds():
 
 def test_table_rows_flag_incomplete_segment(table_ds):
     """The table rows carry the friendly name + the completeness diagnostics; the
-    chronically-missing segment is flagged with a non-zero complete-set cost."""
-    rows = gapp._table_rows(table_ds)
+    chronically-missing segment is flagged with a non-zero complete-set cost. Each row
+    is id-keyed and defaults to Include (Item 27)."""
+    rows = gapp._table_rows(table_ds, gapp._all_segment_ids(table_ds))
     by_id = {r[gapp.TBL_ID]: r for r in rows}
     assert set(by_id) == {101, 202, 303}
     assert by_id[101][gapp.TBL_NAME] == "First"
+    assert all(r["id"] == r[gapp.TBL_ID] for r in rows)                  # id-keyed (R10)
+    assert all(r[gapp.TBL_INCLUDE] == gapp.INCLUDE_VAL for r in rows)    # all Included
     # 303 reports 20/40 timestamps -> 50% coverage, and dropping it recovers the
     # 20 timestamps it was the sole missing member at (exact cost).
     assert by_id[303][gapp.TBL_COVERAGE] == pytest.approx(50.0)
@@ -1110,23 +1128,40 @@ def test_table_rows_flag_incomplete_segment(table_ds):
     assert by_id[101][gapp.TBL_COST] == 0 and by_id[202][gapp.TBL_COST] == 0
 
 
-def test_table_columns_name_editable_others_not():
+def test_table_rows_scoped_to_a_corridor(table_ds):
+    """Corridor scope lists only that corridor's segments; Network/Segment list all."""
+    # add a second corridor so scoping is observable.
+    df2 = table_ds.df.copy()
+    df2.loc[df2[SEGMENT_COL] == 303, gapp.CORRIDOR_COL] = "Side"
+    ds = gapp.Dataset(df=df2, metadata=table_ds.metadata, geo=None,
+                      metric_cols=table_ds.metric_cols, tz=table_ds.tz, span=(None, None))
+    ds.labels = table_ds.labels
+    main = gapp._corridor_segment_ids(ds, gapp.SCOPE_CORRIDOR, "Main")
+    assert set(main) == {101, 202}                       # 303 is on "Side"
+    assert set(gapp._corridor_segment_ids(ds, gapp.SCOPE_NETWORK, "Main")) == {101, 202, 303}
+    assert set(gapp._corridor_segment_ids(ds, gapp.SCOPE_SEGMENT, None)) == {101, 202, 303}
+
+
+def test_table_columns_include_and_name_editable():
     cols = {c["id"]: c for c in gapp._table_columns()}
     assert cols[gapp.TBL_NAME]["editable"] is True
+    # the Include column is an editable dropdown-presentation cell (Item 27).
+    assert cols[gapp.TBL_INCLUDE]["editable"] is True
+    assert cols[gapp.TBL_INCLUDE]["presentation"] == "dropdown"
     for cid in (gapp.TBL_COMBINED, gapp.TBL_COVERAGE, gapp.TBL_COST, gapp.TBL_ID):
         assert cols[cid]["editable"] is False
 
 
-def test_rows_to_member_ids_and_row_index(table_ds):
-    data = gapp._table_rows(table_ds)
-    # selected_rows are positional indices into `data`.
-    picked = gapp._rows_to_member_ids(data, [0, 2])
-    assert picked == [int(data[0][gapp.TBL_ID]), int(data[2][gapp.TBL_ID])]
-    assert gapp._rows_to_member_ids(data, []) == []
-    # map-click -> row highlight: find the row carrying a Segment ID.
-    sid = int(data[1][gapp.TBL_ID])
-    assert gapp._segment_row_index(data, sid) == 1
-    assert gapp._segment_row_index(data, 999999) is None
+def test_excluded_rows_survive_sort(table_ds):
+    """Exclusions resolve by row id (Segment ID), so they survive a native sort that
+    reorders the data list — the R10 identity fix. Default is all-included."""
+    data = gapp._table_rows(table_ds, gapp._all_segment_ids(table_ds))
+    assert gapp._excluded_from_rows(data) == []           # all Included by default
+    for r in data:                                        # exclude id 202, wherever it is
+        if r[gapp.TBL_ID] == 202:
+            r[gapp.TBL_INCLUDE] = gapp.EXCLUDE_VAL
+    # a native sort would reorder the list; reversing simulates that — id still wins.
+    assert gapp._excluded_from_rows(list(reversed(data))) == [202]
 
 
 def test_norm_members_noop_vs_subset(table_ds):
@@ -1184,21 +1219,33 @@ def test_segment_map_dims_nonmembers(geo_two):
     assert all(o >= 0.85 for o in ops)
 
 
-def test_save_names_round_trips_table_edits(table_ds, tmp_path, monkeypatch):
-    """The Save-names path (write_names) persists the table's edited Name column so
-    load_names reads it back — exercised through the same code the callback runs."""
+def test_save_names_upserts_to_store_and_applies(table_ds):
+    """The Save-names path (Item 27 / R12) upserts the table's edited Name column into
+    the DuckDB store (last-write-wins); a reload's apply_names layers it over the seed.
+    Edit -> save -> reload applies; a blank clears the override back to the seed."""
+    pytest.importorskip("duckdb")
     from inrix_tools import names as _names
-    data = gapp._table_rows(table_ds)
-    # edit a name in the table data, as an inline edit would.
-    data[0][gapp.TBL_NAME] = "Renamed first"
-    names_df = pd.DataFrame({
-        SEGMENT_COL: [int(r[gapp.TBL_ID]) for r in data],
-        _names.INRIX_LABEL_COL: [str(r.get(gapp.TBL_COMBINED, "") or "") for r in data],
-        _names.NAME_COL: [str(r.get(gapp.TBL_NAME, "") or "") for r in data],
-    })
-    path = _names.write_names(names_df, tmp_path / "segment_names.csv")
-    loaded = _names.load_names(path)
-    assert loaded.loc[int(data[0][gapp.TBL_ID]), _names.NAME_COL] == "Renamed first"
+    from inrix_tools import store as _store
+    con = _store.connect(":memory:")
+    try:
+        data = gapp._table_rows(table_ds, gapp._all_segment_ids(table_ds))
+        sid0 = int(data[0][gapp.TBL_ID])                  # 101
+        data[0][gapp.TBL_NAME] = "Renamed first"
+        names_df = pd.DataFrame({
+            SEGMENT_COL: [int(r[gapp.TBL_ID]) for r in data],
+            _names.INRIX_LABEL_COL: [str(r.get(gapp.TBL_COMBINED, "") or "") for r in data],
+            _names.NAME_COL: [str(r.get(gapp.TBL_NAME, "") or "") for r in data],
+        })
+        _store.save_names(con, names_df)
+        applied = _names.apply_names(table_ds.metadata, _store.load_names(con))
+        assert applied[sid0] == "Renamed first"           # edit applies on reload
+        # blank it and re-save -> clears the override, falling back to the seed.
+        names_df.loc[names_df[SEGMENT_COL] == sid0, _names.NAME_COL] = ""
+        _store.save_names(con, names_df)
+        applied2 = _names.apply_names(table_ds.metadata, _store.load_names(con))
+        assert applied2[sid0] == "Seg 101"                # seed (Combined fallback)
+    finally:
+        con.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1318,3 +1365,218 @@ def test_area_options_empty_without_db(tmp_path, monkeypatch):
     monkeypatch.setattr(gapp, "DEFAULT_DB", str(tmp_path / "absent.duckdb"))
     gapp._DB.update(path=None, con=None)
     assert gapp._area_options() == []
+
+
+def test_stored_names_apply_on_db_load(export_zip, db_env):
+    """Item 27 / R12: a name saved in the store applies automatically on the next
+    load — ds.labels and the geo 'name' reflect it, no Names CSV involved."""
+    info = gapp.ingest_to_db(str(export_zip))
+    gapp.store.save_names(gapp._db(), pd.DataFrame({
+        SEGMENT_COL: [1001], gapp.names.NAME_COL: ["Ninth & Boise"]}))
+    ds = gapp.load_dataset("", gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE,
+                           area_key=info["area_key"], bin_minutes=info["bin_minutes"])
+    assert ds.labels[1001] == "Ninth & Boise"             # stored name applied on load
+    assert ds.geo.loc[1001, "name"] == "Ninth & Boise"
+    assert ds.labels[1002] != "Ninth & Boise"             # unnamed segment keeps its seed
+
+
+def test_db_hands_out_independent_utc_cursors(tmp_path, monkeypatch):
+    """Review R5: each ``_db()`` call returns a fresh cursor (not the one shared
+    connection) so threaded callbacks don't collide, and each cursor is UTC-pinned
+    (a cursor doesn't inherit the parent's session TimeZone)."""
+    pytest.importorskip("duckdb")
+    monkeypatch.setattr(gapp, "DEFAULT_DB", str(tmp_path / "cursors.duckdb"))
+    gapp._DB.update(path=None, con=None)
+    try:
+        c1, c2 = gapp._db(), gapp._db()
+        assert c1 is not c2                              # a fresh cursor each call
+        assert c1 is not gapp._DB["con"] and c2 is not gapp._DB["con"]
+        for c in (c1, c2):
+            assert c.execute("SELECT current_setting('TimeZone')").fetchone()[0] == "UTC"
+        # Both cursors see the same underlying database (parent's committed writes).
+        c1.execute("CREATE TABLE t(x INTEGER); INSERT INTO t VALUES (7)")
+        assert c2.execute("SELECT x FROM t").fetchone()[0] == 7
+    finally:
+        con = gapp._DB.get("con")
+        if con is not None:
+            con.close()
+        gapp._DB.update(path=None, con=None)
+
+
+# ---------------------------------------------------------------------------
+# Item 24 — DB-first intake: invert the data controls
+# ---------------------------------------------------------------------------
+def _find(node, pred):
+    """Depth-first search of a Dash component tree for the first node matching pred."""
+    if pred(node):
+        return node
+    ch = getattr(node, "children", None)
+    if ch is None:
+        return None
+    for c in (ch if isinstance(ch, (list, tuple)) else [ch]):
+        hit = _find(c, pred)
+        if hit is not None:
+            return hit
+    return None
+
+
+def _by_id(node, cid):
+    return _find(node, lambda n: getattr(n, "id", None) == cid)
+
+
+def test_load_provenance_db_vs_file():
+    """R4: the status provenance names the DB area + bin, or the file *name* (never
+    the full path), so a DB load never reads identically to a file load."""
+    assert gapp._load_provenance(True, "Myrtle", 5, None) == "area 'Myrtle' · 5-min"
+    assert gapp._load_provenance(False, None, None,
+                                 "/some/dir/Myrtle_5_min_part_1.zip") == \
+        "file 'Myrtle_5_min_part_1.zip'"
+
+
+def test_default_area_and_layout_autoselect_most_recent(export_zip, db_env, tmp_path):
+    """R1/R2: with a populated store the Area dropdown opens pre-selected on the
+    most-recently-updated area, so the app loads from the DB at startup. Building a
+    second area later makes *it* the default (most-recent-first ordering)."""
+    import zipfile
+    # empty store -> no default (headless-safe)
+    assert gapp._default_area() is None
+
+    first = gapp.ingest_to_db(str(export_zip))
+    assert gapp._default_area() == first["area_key"]
+    assert gapp._area_label(first["area_key"]) == first["area_name"]
+
+    # the layout's Area dropdown carries that default value + its options
+    layout = gapp._layout()
+    area_dd = _by_id(layout, "area")
+    assert area_dd.value == first["area_key"]
+    assert {o["value"] for o in area_dd.options} == {first["area_key"]}
+
+    # a second, different area (different corridor set) becomes the new default
+    rows = [_drow("2026-02-01T08:00:00-07:00", 2001, 30, 0.5, 95)]
+    meta = ("Segment ID,Road,Direction,Start Latitude,End Latitude,Start Longitude,"
+            "End Longitude,State/Region,District,Postal Code,Segment Length(Miles),"
+            "Intersection\n"
+            "2001,Front St,E,43.6,43.61,-116.2,-116.19,Idaho,Ada,83702,0.2,X\n")
+    z2 = tmp_path / "Other_5_min_part_1.zip"
+    with zipfile.ZipFile(z2, "w") as zf:
+        # a distinct corridor name -> a distinct area
+        zf.writestr("Other_5_min_part_1/data.csv",
+                    _DATA_HDR_21 + rows[0].replace(",9th\n", ",Front\n"))
+        zf.writestr("Other_5_min_part_1/metadata.csv", meta)
+    second = gapp.ingest_to_db(str(z2))
+    assert second["area_key"] != first["area_key"]
+    assert gapp._default_area() == second["area_key"]      # most-recent wins
+
+
+def test_load_callback_wires_db_first_intake():
+    """R2/R4 wiring: choosing an area's bin triggers _load (auto-load at startup and
+    on pick), and _load can clear the Area selection (mutually-exclusive intake)."""
+    app = gapp.build_app()
+    spec = next(k for k in app.callback_map if "data-token.data" in str(k))
+    entry = app.callback_map[spec]
+    inputs = {i["id"] + "." + i["property"] for i in entry["inputs"]}
+    outputs = str(entry["output"])
+    # the bin-length value drives the load (so setting it auto-loads from the DB)
+    assert "area-bin.value" in inputs
+    # _load owns an area.value output -> it can clear the DB selection on a file load
+    assert "area.value" in outputs
+
+
+def test_area_bins_autoloads_on_initial_render():
+    """R2: the area->bin callback fires on the initial page load (no
+    prevent_initial_call), so the layout's pre-selected area populates its bins and
+    sets the first — cascading into _load without a user click."""
+    app = gapp.build_app()
+    spec = next(k for k in app.callback_map
+                if "area-bin.options" in str(k) and "area-bin.value" in str(k))
+    entry = app.callback_map[spec]
+    inputs = {i["id"] + "." + i["property"] for i in entry["inputs"]}
+    assert "area.value" in inputs
+    # prevent_initial_call is False/absent -> the callback runs at startup
+    assert not entry.get("prevent_initial_call", False)
+
+
+def test_file_loader_demoted_into_collapsed_accordion():
+    """R1: the export path + Load button live inside a collapsed accordion ('Load /
+    ingest an export file'), and Load is no longer a primary-coloured button; the
+    Area/Bin dropdowns sit *outside* it, at the top of the panel."""
+    layout = gapp._layout()
+    acc = _find(layout, lambda n: type(n).__name__ == "Accordion")
+    assert acc is not None
+    item = _find(acc, lambda n: type(n).__name__ == "AccordionItem")
+    assert "Load / ingest an export file" in str(item.title)
+    # the demoted controls are inside the accordion
+    for cid in ("source", "load", "ingest-export"):
+        assert _by_id(acc, cid) is not None, f"{cid} should be inside the accordion"
+    # the DB-first controls are NOT inside the accordion (they lead the panel);
+    # Restrict-dates joined them at the top (Item 25) since it governs DB loads too.
+    for cid in ("area", "area-bin", "restrict-range"):
+        assert _by_id(acc, cid) is None, f"{cid} should be above the accordion"
+    load_btn = _by_id(layout, "load")
+    # dbc.Button defaults to color="primary" (blue) — demote it explicitly
+    assert getattr(load_btn, "color", None) not in (None, "primary")
+
+
+# ---------------------------------------------------------------------------
+# Item 25 — date push-down: Restrict-dates on DB loads
+# ---------------------------------------------------------------------------
+def test_restrict_dates_leads_panel_with_the_db_controls():
+    """Item 25 / R3: the Restrict-dates picker sits with the top-level Area/Bin data
+    control (a sibling above the file-loader accordion), because it now governs the
+    DB path — the primary intake — not just a file parse."""
+    controls = gapp._controls()
+    acc = _find(controls, lambda n: type(n).__name__ == "Accordion")
+    assert _by_id(acc, "restrict-range") is None            # not tucked in the file loader
+    assert _by_id(controls, "restrict-range") is not None   # still present in the panel
+
+
+def test_restrict_range_is_a_load_input():
+    """Item 25 / R3: the Restrict-dates picker feeds _load as an Input, so editing it
+    reloads the current source (a DB area is re-scanned with the new date bounds —
+    there is no Load button on the DB path to press)."""
+    app = gapp.build_app()
+    spec = next(k for k in app.callback_map if "data-token.data" in str(k))
+    entry = app.callback_map[spec]
+    inputs = {i["id"] + "." + i["property"] for i in entry["inputs"]}
+    assert "restrict-range.start_date" in inputs
+    assert "restrict-range.end_date" in inputs
+
+
+def test_db_load_pushes_date_restriction(export_zip, db_env):
+    """Item 25 / R3: a date restriction applies to a DB load — pushed into the scan —
+    trimming the loaded frame, while full_span still spans the whole area (from the
+    registry) so the Restrict-dates picker can widen again."""
+    info = gapp.ingest_to_db(str(export_zip))
+    key, b = info["area_key"], info["bin_minutes"]
+
+    def _days(ds):
+        return set(ds.df[DATETIME_COL].dt.tz_convert(gapp.DEFAULT_TZ).dt.date.astype(str))
+
+    # Unrestricted DB load sees both calendar days (the Jan and Jul rows).
+    full = gapp.load_dataset("", gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE,
+                             area_key=key, bin_minutes=b)
+    assert _days(full) == {"2026-01-15", "2026-07-15"}
+
+    # Restrict to the first half of the year -> only the January rows survive.
+    trimmed = gapp.load_dataset("", gapp.DEFAULT_TZ, gapp.DEFAULT_CVALUE,
+                                area_key=key, bin_minutes=b,
+                                date_start="2026-01-01", date_end="2026-06-01")
+    assert _days(trimmed) == {"2026-01-15"}
+    assert len(trimmed.df) < len(full.df)
+    # Picker bounds (full_span) come from the registry, spanning the whole area.
+    assert trimmed.full_span == full.full_span
+    assert trimmed.span != trimmed.full_span          # restriction recorded
+
+
+def test_compass_default_is_all_present_groups_a_noop_filter(geo_two):
+    """R7: _load initialises the compass checklist to every present group (not []),
+    which is still a no-op filter — the map renders all directions, but the control
+    reads as 'all selected' instead of 'nothing selected'."""
+    from inrix_tools import geometry
+    g = geometry.attach_directions(geo_two, {101: "N", 202: "S"})
+    ds = gapp.Dataset(df=pd.DataFrame(), metadata=pd.DataFrame(), geo=g,
+                      metric_cols={}, tz="America/Denver", span=(None, None))
+    default_value = [o["value"] for o in gapp._direction_options(ds)]
+    assert default_value == ["N", "S"]                       # all present, not []
+    # selecting every present group renders all segments (behaviourally == [])
+    assert set(gapp._display_geo(ds, default_value).index) == {101, 202}

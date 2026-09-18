@@ -189,12 +189,21 @@ _DB = {"path": None, "con": None}
 
 
 def _db(path: str | None = None):
-    """The shared store connection (opened on first use, reused thereafter)."""
+    """A per-call cursor over the shared store connection.
+
+    The underlying connection is opened lazily on first use and reused; each call
+    returns a fresh ``con.cursor()`` so concurrent Dash callbacks don't share one
+    connection object (review R5 — Dash's dev server is threaded, and DuckDB
+    connections aren't safe for concurrent queries; cursors over the same database
+    are the sanctioned per-thread pattern). ``TimeZone`` is re-pinned to UTC because
+    a cursor does **not** inherit the parent connection's session setting."""
     path = path or DEFAULT_DB
     if _DB["con"] is None or _DB["path"] != path:
         _DB["con"] = store.connect(path)
         _DB["path"] = path
-    return _DB["con"]
+    cur = _DB["con"].cursor()
+    cur.execute("SET TimeZone='UTC'")
+    return cur
 
 
 def _area_options() -> list[dict]:
@@ -216,6 +225,50 @@ def _bin_options(area_key) -> list[dict]:
         return [{"label": f"{b}-min", "value": b} for b in store.area_bins(_db(), area_key)]
     except Exception:
         return []
+
+
+def _default_area():
+    """The area to select at startup so the app opens loaded from the DB (Item 24 /
+    review R2): the most-recently-updated area (``store.area_names`` orders
+    most-recent first). ``None`` when the store is empty/absent — then the app opens
+    blank and the file loader is the only path."""
+    opts = _area_options()
+    return opts[0]["value"] if opts else None
+
+
+def _area_label(area_key) -> str | None:
+    """The friendly area name for ``area_key`` (for the load-status provenance line),
+    or ``None`` if it can't be looked up."""
+    if not area_key:
+        return None
+    try:
+        return dict(store.area_names(_db())).get(area_key)
+    except Exception:
+        return None
+
+
+def _stored_names():
+    """The friendly names saved in the DuckDB store (Item 27 / R12) as the
+    ``Segment ID``-indexed override frame :func:`names.apply_names` layers over the
+    seed — applied on **every** load so a saved name shows without a Names CSV.
+    Global by Segment ID, so the same names apply on the file path too. Degrades to
+    ``None`` (seed only) when the store is absent/unreadable, keeping loads DB-free."""
+    try:
+        if not Path(DEFAULT_DB).exists():
+            return None
+        stored = store.load_names(_db())
+        return stored if len(stored) else None
+    except Exception:
+        return None
+
+
+def _load_provenance(from_db: bool, area_name, bin_value, source) -> str:
+    """The provenance phrase for the load-status line (Item 24 / R4) — names the DB
+    area + bin the data came from, or the export file name — so a DB load never reads
+    identically to a file load."""
+    if from_db:
+        return f"area '{area_name}' · {bin_value}-min"
+    return f"file '{Path(source).name}'"
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +325,6 @@ def _decorate_geo(geo, meta, labels):
 
 
 def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHAPEFILE,
-                 names_path: str | None = None,
                  date_start=None, date_end=None, freeflow="ref",
                  aadt_path: str | None = None,
                  area_key: str | None = None, bin_minutes: int | None = None) -> Dataset:
@@ -288,16 +340,21 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
       DuckDB store (:mod:`inrix_tools.store`), so the export isn't re-parsed and the
       spatial join isn't repeated.
 
-    ``names_path`` (optional) points at a user-edited names CSV
-    (``names.load_names``); the resolved ``Segment ID -> friendly name`` mapping
-    is stored on the ``Dataset`` and used everywhere a segment is labelled.
+    Friendly names come from the DuckDB store (Item 27): the seed simplified from the
+    INRIX labels, overlaid by any names saved in the ``_names`` table
+    (:func:`store.load_names`, global by ``Segment ID``). The resolved
+    ``Segment ID -> name`` mapping is stored on the ``Dataset`` and used everywhere a
+    segment is labelled; it degrades to seed-only when the store is absent.
 
     ``date_start`` / ``date_end`` (optional, Item 11) restrict the session to an
-    inclusive local calendar-date range via ``timebins.filter_date_range``, so
-    ``Dataset.df`` really carries fewer rows (memory + downstream speed), not just
-    a display filter. The **trimmed** span is recorded on ``span`` (the
-    before/after and time-of-day controls clamp to it); the untrimmed export span
-    is kept on ``full_span`` so the "Restrict dates" picker can widen again.
+    inclusive local calendar-date range, so ``Dataset.df`` really carries fewer rows
+    (memory + downstream speed), not just a display filter. On the **file** path the
+    cut is ``timebins.filter_date_range`` after localizing; on the **DB** path it is
+    **pushed down into the DuckDB scan** (Item 25 / R3), semantically identical but
+    without pulling an ever-growing area into memory whole. The **trimmed** span is
+    recorded on ``span`` (the before/after and time-of-day controls clamp to it); the
+    untrimmed span is kept on ``full_span`` — from the frame (file) or the area
+    registry (DB) — so the "Restrict dates" picker can widen again.
 
     ``aadt_path`` (optional, Item 18) points at the ITD AADT layer
     (``Cumulative_AADT.zip``); on the file path ``aadt.load_aadt`` reads the 2024
@@ -309,29 +366,32 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     """
     if area_key:
         # DB path: the area's merged frames for this bin + the cached geometry/AADT
-        # join (no re-parse, no repeated spatial join).
-        sd = store.load_dataset(_db(), area_key, bin_minutes)
+        # join (no re-parse, no repeated spatial join). The Restrict-dates range is
+        # **pushed down into the scan** (Item 25 / R3) — an area accumulates
+        # indefinitely under the Item 23 model, so pulling it whole then trimming in
+        # pandas is what the push-down avoids. The untrimmed span (for the picker's
+        # widen-again bounds) comes from the area registry, not the trimmed frame.
+        sd = store.load_dataset(_db(), area_key, bin_minutes,
+                                date_start=date_start, date_end=date_end, tz=tz)
         raw, meta, geo = sd.df, sd.metadata, sd.geo
+        local = io.to_local(raw, tz)
+        filt = io.filter_cvalue(local, cvalue)   # already date-restricted in SQL
+        full_span = store.area_local_span(_db(), area_key, tz)
     else:
         raw = io.load_data(source)
         meta = io.load_metadata(source)
         geo = _build_geo(meta, shapefile, aadt_path, Path(source).stem)
+        local = io.to_local(raw, tz)
+        full = io.filter_cvalue(local, cvalue)
+        # Untrimmed span first (drives the Restrict-dates picker bounds), then trim.
+        full_dates = full[DATETIME_COL].dt.date
+        full_span = (full_dates.min(), full_dates.max())
+        filt = filter_date_range(full, date_start, date_end) if (date_start or date_end) else full
 
-    local = io.to_local(raw, tz)
-    full = io.filter_cvalue(local, cvalue)
-    # Untrimmed span first (drives the Restrict-dates picker bounds), then trim.
-    full_dates = full[DATETIME_COL].dt.date
-    full_span = (full_dates.min(), full_dates.max())
-    if date_start or date_end:
-        filt = filter_date_range(full, date_start, date_end)
-    else:
-        filt = full
-
-    # Friendly names (Item 10): seed from the INRIX labels, overlaid by the user's
-    # CSV when supplied. A single mapping is the source of truth for the dropdown,
-    # map hover title, table rows, and panel titles.
-    names_df = names.load_names(names_path) if names_path else None
-    labels = names.apply_names(meta, names_df)
+    # Friendly names (Items 10 + 27): seed from the INRIX labels, overlaid by any
+    # names saved in the DuckDB store. A single mapping is the source of truth for the
+    # dropdown, map hover title, table rows, and panel titles.
+    labels = names.apply_names(meta, _stored_names())
     geo = _decorate_geo(geo, meta, labels)
 
     # Delay metric (Item 17): a per-row Delay(Minutes) = observed travel time −
@@ -538,6 +598,8 @@ TBL_NAME = names.NAME_COL     # "name" (editable)
 TBL_COMBINED = "Combined"     # raw INRIX label, reference
 TBL_COVERAGE = speed.COVERAGE_COL          # "coverage" (fraction, shown as %)
 TBL_COST = speed.COMPLETE_COST_COL         # "complete_set_cost"
+TBL_INCLUDE = "include"       # Include/Exclude membership column (Item 27 / R11)
+INCLUDE_VAL, EXCLUDE_VAL = "Include", "Exclude"
 
 
 def _all_segment_ids(ds: Dataset) -> list[int]:
@@ -568,23 +630,40 @@ def _members_key(members) -> str | tuple:
     return tuple(sorted(int(m) for m in members))
 
 
-def _table_rows(ds: Dataset, members=None, window=None, days=None) -> list[dict]:
-    """Build the segment-table records: friendly name, raw ``Combined`` label, and
-    the Item-19 completeness diagnostics (``coverage``, ``complete_set_cost``)
-    computed by ``speed.segment_coverage`` over the current member set within the
-    active ToD/DOW window. One row per export segment (non-members get coverage/cost
-    measured against the selected set so the table ranks what to drop)."""
+def _corridor_segment_ids(ds: Dataset, scope: str, corridor) -> list[int]:
+    """The Segment IDs the table lists (Item 27 / R11): the picked **corridor's**
+    segments in Corridor scope, or **all** segments in Segment / Network scope
+    (decision recorded — Network is the whole network, so it lists everything).
+    Metadata order for stability."""
+    all_ids = _all_segment_ids(ds)
+    if scope == SCOPE_CORRIDOR and corridor and CORRIDOR_COL in ds.df.columns:
+        in_corr = {int(s) for s in
+                   ds.df.loc[ds.df[CORRIDOR_COL] == corridor, SEGMENT_COL].unique()}
+        return [s for s in all_ids if s in in_corr]
+    return all_ids
+
+
+def _table_rows(ds: Dataset, seg_ids, excluded=None, window=None, days=None) -> list[dict]:
+    """Build the corridor-scoped segment-table records (Item 27): a per-row ``id`` =
+    ``Segment ID`` (so dash_table selection is *identity*-keyed, fixing R10), an
+    **Include/Exclude** membership cell (default Include; ``excluded`` marks Exclude),
+    the friendly name, the raw ``Combined`` label, and the Item-19 completeness
+    diagnostics (``coverage``, ``complete_set_cost``) over the shown set within the
+    active ToD/DOW window."""
     labels = _labels(ds)
     combined = ds.geo["Combined"] if (ds.geo is not None and "Combined" in ds.geo.columns) else None
-    member_ids = _norm_members(ds, members) or _all_segment_ids(ds)
+    excluded = {int(s) for s in (excluded or [])}
     tt = _metric_col(ds, "tt")
     frame = _apply_tod(ds.df, window, days)
-    cov = speed.segment_coverage(frame, members=member_ids, value=tt)
-    cov = cov.set_index(SEGMENT_COL)
+    # Coverage/cost are measured against the *included* members (shown minus excluded).
+    member_ids = [s for s in seg_ids if s not in excluded] or list(seg_ids)
+    cov = speed.segment_coverage(frame, members=member_ids, value=tt).set_index(SEGMENT_COL)
     rows = []
-    for sid in _all_segment_ids(ds):
+    for sid in seg_ids:
         c = cov.loc[sid] if sid in cov.index else None
         rows.append({
+            "id": sid,                       # dash_table row id — identity-keyed (R10)
+            TBL_INCLUDE: EXCLUDE_VAL if sid in excluded else INCLUDE_VAL,
             TBL_ID: sid,
             TBL_NAME: labels.get(sid, f"Segment {sid}"),
             TBL_COMBINED: ("" if combined is None else
@@ -597,9 +676,10 @@ def _table_rows(ds: Dataset, members=None, window=None, days=None) -> list[dict]
 
 
 def _table_columns() -> list[dict]:
-    """The dash_table column spec: an editable ``name``, then read-only reference +
-    completeness columns (sortable natively)."""
+    """The dash_table column spec: an editable Include/Exclude membership dropdown and
+    an editable ``name``, then read-only reference + completeness columns."""
     return [
+        {"name": "Include", "id": TBL_INCLUDE, "presentation": "dropdown", "editable": True},
         {"name": "Name", "id": TBL_NAME, "editable": True},
         {"name": "INRIX label", "id": TBL_COMBINED, "editable": False},
         {"name": "Coverage %", "id": TBL_COVERAGE, "type": "numeric", "editable": False},
@@ -608,21 +688,28 @@ def _table_columns() -> list[dict]:
     ]
 
 
-def _rows_to_member_ids(data, selected_rows) -> list[int]:
-    """Map dash_table ``selected_rows`` (positional indices) to ``Segment ID``s."""
-    if not data or not selected_rows:
+def _excluded_from_rows(data) -> list[int]:
+    """The Segment IDs marked Exclude in the table ``data`` — id-keyed, so it survives a
+    native sort (R10). Empty when everything is included (the default)."""
+    if not data:
         return []
-    return [int(data[i][TBL_ID]) for i in selected_rows if 0 <= i < len(data)]
+    return [int(r[TBL_ID]) for r in data if r.get(TBL_INCLUDE) == EXCLUDE_VAL]
 
 
-def _segment_row_index(data, segment_id) -> int | None:
-    """The table row index carrying ``segment_id`` (for map-click → row highlight)."""
-    if not data or segment_id is None:
-        return None
-    for i, r in enumerate(data):
-        if int(r[TBL_ID]) == int(segment_id):
-            return i
-    return None
+def _table_styles(selected=None) -> list[dict]:
+    """The table's conditional styles: flag complete-set-cost rows, mute excluded rows,
+    and (when a segment is selected) accent its row by **Segment ID** via a
+    ``filter_query`` — so the highlight tracks identity, not a positional index, and
+    survives a native sort (R10)."""
+    styles = [
+        {"if": {"filter_query": f"{{{TBL_COST}}} > 0"}, "backgroundColor": "#fff3cd"},
+        {"if": {"filter_query": f'{{{TBL_INCLUDE}}} = "{EXCLUDE_VAL}"'},
+         "color": "#adb5bd", "fontStyle": "italic"},
+    ]
+    if selected is not None:
+        styles.append({"if": {"filter_query": f"{{{TBL_ID}}} = {int(selected)}"},
+                       "backgroundColor": "#d7eaf7"})
+    return styles
 
 
 def _scope_label(ds: Dataset, scope: str, corridor) -> str:
@@ -784,50 +871,61 @@ def default_periods(lo, hi, warmup_days: int = DECOMP_WARMUP_DAYS):
 def _controls() -> dbc.Card:
     return dbc.Card(dbc.CardBody([
         html.H6("Data", className="text-muted"),
-        dbc.Label("Export (.zip / dir / data.csv)"),
-        dbc.Input(id="source", value=DEFAULT_SOURCE, size="sm", debounce=True),
-        dbc.Row([
-            dbc.Col([dbc.Label("Timezone"),
-                     dbc.Input(id="tz", value=DEFAULT_TZ, size="sm")], width=7),
-            dbc.Col([dbc.Label("CValue >"),
-                     dbc.Input(id="cvalue", type="number", value=DEFAULT_CVALUE, size="sm")], width=5),
-        ], className="mt-2"),
-        dbc.Label("Names CSV (optional)", className="mt-2"),
-        dbc.Input(id="names-path", value="", size="sm", debounce=True,
-                  placeholder="path to an edited segment_names.csv"),
-        # AADT volume layer (Item 18): points at the ITD Cumulative_AADT.zip;
-        # defaults to the in-repo copy. Applied at Load — enables the vehicle-hours
-        # map colouring and the corridor AADT-weighted-speed toggle. Blank it to
-        # turn the volume features off.
-        dbc.Label("AADT layer (optional)", className="mt-2"),
-        dbc.Input(id="aadt-path", value=DEFAULT_AADT, size="sm", debounce=True,
-                  placeholder="path to Cumulative_AADT.zip"),
-        # Restrict-dates (Item 11): trim the session to a calendar sub-range on
-        # Load so every downstream compute runs on the smaller frame. Defaults to
-        # the full export span (a no-op) once loaded; narrow it and re-Load to trim.
+        # DB-first intake (Item 24 / review R1, R2): the persistent store is the
+        # primary data control — pick an **area** (a corridor set merged across
+        # exports, Item 23) and its **bin length** and the app runs from the DuckDB
+        # store (no re-parse, no repeated spatial join). The Area value defaults to
+        # the most-recent area (``_default_area``) so the app opens loaded; choosing
+        # a bin triggers the DB load. The file loader below is the rare path now.
+        dbc.Label("Area"),
+        dcc.Dropdown(id="area", placeholder="Select a saved area",
+                     options=_area_options(), value=_default_area(), clearable=True),
+        dbc.Label("Bin length", className="mt-2"),
+        dcc.Dropdown(id="area-bin", placeholder="—", clearable=False),
+        # Restrict-dates (Items 11 + 25): trim the session to a calendar sub-range.
+        # It governs **both** intake paths now — a DB area is pushed down into the
+        # scan (Item 25 / R3), a file load trims after parse — so the picker lives
+        # with the top-level data control, not inside the file-loader accordion.
+        # Editing it reloads the current dataset; bounds track the selected source.
         dbc.Label("Restrict dates (optional)", className="mt-2"),
         dcc.DatePickerRange(id="restrict-range", className="d-block",
                             display_format="YYYY-MM-DD"),
-        dbc.Button("Load export", id="load", color="primary", size="sm", className="mt-2 w-100"),
         html.Div(id="load-status", className="small text-muted mt-1"),
-        dbc.Button("Write name template", id="write-names", color="link", size="sm",
-                   className="p-0 mt-1"),
-        html.Div(id="names-status", className="small text-muted"),
-        # Database-backed storage (Items 21/23): a low-visibility intake. "Ingest to
-        # DB" merges the current export into its corridor **area** in the DuckDB store
-        # (exports of the same corridors accumulate; same segment+timestamp is
-        # keep-first) and caches its GIS join *once*. Thereafter pick an **area** +
-        # **bin length** to run from the DB (no re-parse, no repeated spatial join).
-        # The file-path loader above still works unchanged.
-        dbc.Button("⤓ Ingest current export to DB", id="ingest-export", color="link",
-                   size="sm", className="p-0 mt-1 d-block",
-                   title="Merge this export into its corridor area + cache its geometry/AADT join"),
-        html.Div(id="ingest-status", className="small text-muted"),
-        dbc.Label("Area (DB)", className="mt-1 small text-muted"),
-        dcc.Dropdown(id="area", placeholder="Select a saved area",
-                     options=_area_options(), clearable=True),
-        dbc.Label("Bin length", className="mt-1 small text-muted"),
-        dcc.Dropdown(id="area-bin", placeholder="—", clearable=False),
+        # File loader, demoted (Item 24 / R1): the export-path box, its parse options
+        # (tz / CValue / Names / AADT / Restrict-dates), the Load button (no longer
+        # ``primary``), and the DB-ingest link live in a collapsed accordion — the
+        # daily workflow is area-select above; re-parsing a zip is the exception.
+        dbc.Accordion([
+            dbc.AccordionItem([
+                dbc.Label("Export (.zip / dir / data.csv)"),
+                dbc.Input(id="source", value=DEFAULT_SOURCE, size="sm", debounce=True),
+                dbc.Row([
+                    dbc.Col([dbc.Label("Timezone"),
+                             dbc.Input(id="tz", value=DEFAULT_TZ, size="sm")], width=7),
+                    dbc.Col([dbc.Label("CValue >"),
+                             dbc.Input(id="cvalue", type="number", value=DEFAULT_CVALUE,
+                                       size="sm")], width=5),
+                ], className="mt-2"),
+                # AADT volume layer (Item 18): points at the ITD Cumulative_AADT.zip;
+                # defaults to the in-repo copy. Applied at Load — enables the
+                # vehicle-hours map colouring and the corridor AADT-weighted-speed
+                # toggle. Blank it to turn the volume features off.
+                dbc.Label("AADT layer (optional)", className="mt-2"),
+                dbc.Input(id="aadt-path", value=DEFAULT_AADT, size="sm", debounce=True,
+                          placeholder="path to Cumulative_AADT.zip"),
+                dbc.Button("Load export", id="load", color="secondary", size="sm",
+                           className="mt-2 w-100"),
+                # Database intake (Items 21/23): "Ingest to DB" merges the current
+                # export into its corridor **area** in the DuckDB store (exports of
+                # the same corridors accumulate; same segment+timestamp is keep-first)
+                # and caches its GIS join *once*, then selects the area above.
+                dbc.Button("⤓ Ingest current export to DB", id="ingest-export",
+                           color="link", size="sm", className="p-0 mt-1 d-block",
+                           title="Merge this export into its corridor area + cache "
+                                 "its geometry/AADT join"),
+                html.Div(id="ingest-status", className="small text-muted"),
+            ], title="Load / ingest an export file"),
+        ], start_collapsed=True, flush=True, className="mt-2"),
         html.Hr(),
         html.H6("Metric", className="text-muted"),
         dbc.RadioItems(id="metric", value="tt", inline=True,
@@ -901,13 +999,13 @@ def _controls() -> dbc.Card:
 
 
 def _segment_table() -> dbc.Card:
-    """The interactive segment table (Item 19): edit friendly names inline, select
-    which segments belong to the active corridor (row checkboxes = membership), and
-    read the completeness diagnostics (coverage %, complete-set cost) so a
-    chronically-missing segment can be deselected for a more complete aggregate.
-    Two-way linked with the map (click a segment → its row highlights; select rows
-    → the map dims non-members and the corridor/network panels sum exactly the
-    selection)."""
+    """The interactive segment table (Items 19 + 27): edit friendly names inline (Save
+    persists them to the DuckDB store), and set corridor membership with the
+    **Include/Exclude** column — the table lists the picked corridor's segments (all
+    Included by default; flip to Exclude to drop the chronically-missing one). Row
+    identity is keyed on ``Segment ID`` (each row carries an ``id``), so selection and
+    the map highlight survive a native sort (R10 fix). Clicking a row selects that
+    segment for the panels + map; the map dims only *excluded* segments."""
     return dbc.Card(dbc.CardBody([
         dbc.Row([
             dbc.Col(html.H6("Segments", className="text-muted mb-0"), className="me-auto"),
@@ -915,35 +1013,38 @@ def _segment_table() -> dbc.Card:
                     width="auto", className="text-end"),
             dbc.Col(dbc.Button("Save names", id="save-names", color="link", size="sm",
                                className="p-0",
-                               title="Write the edited names to the names CSV"),
+                               title="Save the edited names to the database"),
                     width="auto"),
         ], className="align-items-center g-1"),
-        html.Div("Edit a name inline, then Save. Tick rows to set the corridor/network "
-                 "member set; a highlighted row costs the complete-set rule timestamps "
-                 "(deselect it for a more complete aggregate).",
+        html.Div(id="names-status", className="small text-muted"),
+        html.Div("Edit a name inline, then Save. Set Include/Exclude to choose the "
+                 "corridor member set; an excluded row leaves the aggregate (and dims "
+                 "on the map). A row flagged for cost sheds the complete-set rule "
+                 "timestamps — exclude it for a more complete aggregate.",
                  className="small text-muted mb-1"),
         dash_table.DataTable(
             id="segment-table",
             columns=_table_columns(),
             data=[],
             editable=True,
-            row_selectable="multi",
-            selected_rows=[],
+            # Include/Exclude is a per-cell dropdown presentation (Item 27 / R11).
+            dropdown={TBL_INCLUDE: {"options": [
+                {"label": INCLUDE_VAL, "value": INCLUDE_VAL},
+                {"label": EXCLUDE_VAL, "value": EXCLUDE_VAL}]}},
             sort_action="native",
             page_action="none",
-            fixed_rows={"headers": True},
+            # No ``fixed_rows`` (R10): the sticky-header + full-data-replace combination
+            # is the documented misrender-on-replace trigger; a plain scroll container
+            # avoids it. No ``row_selectable`` — membership is the Include column now.
             style_table={"maxHeight": "300px", "overflowY": "auto"},
             style_cell={"fontSize": "0.85rem", "padding": "2px 6px", "textAlign": "left",
                         "maxWidth": 220, "whiteSpace": "normal"},
             style_header={"fontWeight": "600"},
             # Flag the segments that cost the corridor/network complete-set rule
-            # timestamps (Item 19) so they're visible-not-silent; the active segment
-            # (map/dropdown selection) gets a stronger accent.
-            style_data_conditional=[
-                {"if": {"filter_query": f"{{{TBL_COST}}} > 0"},
-                 "backgroundColor": "#fff3cd"},
-                {"if": {"state": "active"}, "backgroundColor": "#d7eaf7"},
-            ],
+            # timestamps (Item 19) so they're visible-not-silent; excluded rows read
+            # muted, and the active segment (map/dropdown selection) gets an accent —
+            # the accent rule is refreshed by ``_highlight_row`` keyed on Segment ID.
+            style_data_conditional=_table_styles(),
         ),
     ]), className="mb-2")
 
@@ -951,9 +1052,13 @@ def _segment_table() -> dbc.Card:
 def _layout() -> dbc.Container:
     return dbc.Container([
         dcc.Store(id="data-token"),
-        # Explicit corridor membership (Item 19): the segment table's selected rows,
-        # as a Segment ID list, driving the aggregate panels + the map dimming.
+        # Corridor membership (Items 19 + 27): the *included* member set (corridor
+        # minus exclusions) as a Segment ID list, driving the aggregate panels; None
+        # when there's no exclusion (natural corridor/network grouping).
         dcc.Store(id="corridor-members"),
+        # The *excluded* Segment IDs (Item 27) — session state, drives map dimming
+        # (only excluded segments dim). Reset when the table rebuilds (corridor/scope).
+        dcc.Store(id="corridor-excluded"),
         html.H4("INRIX segment explorer", className="my-2"),
         # Layout reflow (Item 20-A): settings in a left column; the map, segment
         # table, and the chart panels stacked in one right column, so the charts sit
@@ -1019,13 +1124,18 @@ def build_app() -> Dash:
     """Construct the Dash app: the embedded map as the primary selector driving
     time-series / summary / before-after / decomposition panels, plus KML export.
     Builds its full layout without loading any data (data loads on the *Load*
-    button), so the layout is constructible headless for the smoke test."""
+    button or the startup DB auto-select), so the layout is constructible headless
+    for the smoke test."""
     app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP],
                title="INRIX segment explorer", suppress_callback_exceptions=True,
                # Explicit so the ToD-tooltip JS formatter (assets/tooltip.js) is
                # found whether the app runs as a script or is imported as gui.app.
                assets_folder=str(Path(__file__).resolve().parent / "assets"))
-    app.layout = _layout()
+    # Assign the layout *function*, not a built tree (Item 24 / R2): Dash calls it per
+    # page load, so the Area dropdown options (and its most-recent default) re-evaluate
+    # from the DB on every refresh — areas ingested by another process appear without a
+    # restart. Callers that introspect the tree should call ``_layout()`` directly.
+    app.layout = _layout
     _register_callbacks(app)
     return app
 
@@ -1056,48 +1166,55 @@ def _register_callbacks(app: Dash) -> None:
         Output("scope", "options"),
         Output("map-mode", "options"),
         Output("wspeed", "options"),
-        Output("segment-table", "data"),
-        Output("segment-table", "selected_rows"),
         Output("corridor-members", "data"),
         Output("dir-compass", "options"),
         Output("dir-compass", "value"),
+        # Mutually-exclusive intake (Item 24 / R4): a file load clears the Area
+        # selection so the two paths never both look "active". A DB load leaves it be.
+        Output("area", "value", allow_duplicate=True),
         Input("load", "n_clicks"),
         Input("area-bin", "value"),
+        Input("restrict-range", "start_date"),
+        Input("restrict-range", "end_date"),
         State("area", "value"),
         State("source", "value"),
         State("tz", "value"),
         State("cvalue", "value"),
         State("metric", "value"),
-        State("names-path", "value"),
-        State("restrict-range", "start_date"),
-        State("restrict-range", "end_date"),
         State("freeflow", "value"),
         State("aadt-path", "value"),
         prevent_initial_call=True,
     )
-    def _load(_n, bin_value, area_key, source, tz, cvalue, metric, names_path,
-              date_start, date_end, freeflow, aadt_path):
-        # Two triggers feed this callback (Items 21/23): the "Load export" button
-        # loads from the file path (``source``); choosing an area's bin-length loads
-        # that area+bin from the DuckDB store. A DB trigger with no area/bin is a no-op.
-        from_db = ctx.triggered_id == "area-bin"
-        if from_db and (not area_key or bin_value is None):
-            return tuple([no_update] * 28)
+    def _load(_n, bin_value, date_start, date_end, area_key, source, tz, cvalue,
+              metric, freeflow, aadt_path):
+        # Three triggers feed this callback: the "Load export" button (file path,
+        # Items 21/23), choosing an area's bin-length (DB path), and editing the
+        # Restrict-dates picker — which re-loads the *current* source with the new
+        # range (Item 25 / R3). The DB is the active source whenever an area is
+        # selected, except on an explicit file Load.
+        trig = ctx.triggered_id
+        from_db = bool(area_key) and trig != "load"
+        # No-op guard: an area/bin cascade with nothing selected (the area was
+        # cleared, or its bins aren't populated yet) must not fall through to a file
+        # parse.
+        if trig == "area-bin" and (not area_key or bin_value is None):
+            return tuple([no_update] * 27)
         # A cleared CValue input arrives as None/"" — default it rather than let
         # int(None) blow up with a cryptic message (Item 14 review B6).
         cv = DEFAULT_CVALUE if cvalue in (None, "") else int(cvalue)
-        # On a DB select, load the full ingested span (the Restrict-dates picker may
-        # still hold the previous export's range); the picker resets below.
-        r_ds, r_de = (None, None) if from_db else (date_start, date_end)
+        # Date restriction: a fresh area switch drops any stale restriction (the
+        # picker may still hold the previous area's range); the Load button and a
+        # picker edit both apply whatever the picker holds. Applied identically on
+        # both paths — pushed down into the DB scan, or trimmed after a file parse.
+        r_ds, r_de = (None, None) if trig == "area-bin" else (date_start, date_end)
         try:
             ds = load_dataset(source, tz or DEFAULT_TZ, cv,
-                              names_path=names_path or None,
                               date_start=r_ds, date_end=r_de,
                               freeflow=freeflow, aadt_path=aadt_path or None,
                               area_key=area_key if from_db else None,
                               bin_minutes=bin_value if from_db else None)
         except Exception as exc:  # surface the failure in the UI, don't crash
-            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 26)
+            return (no_update, f"⚠ Load failed: {exc}", *[no_update] * 25)
         token = _store(ds)
         labels = _labels(ds)
         options = [{"label": labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
@@ -1110,14 +1227,25 @@ def _register_callbacks(app: Dash) -> None:
         # Default windows: disjoint halves of the (possibly trimmed) span after the
         # decomposition warm-up (overlap biases effects toward zero — review B1).
         b_start, b_end, a_start, a_end = default_periods(lo, hi)
-        # Restrict-dates picker: bounds are the *untrimmed* export span (so the
-        # user can widen again), start/end echo the applied restriction, defaulting
-        # to the full span when none is set (Item 11).
+        # Restrict-dates picker (Items 11 + 25): its allowed bounds always track the
+        # selected source's *untrimmed* span (the DB span from the area registry, the
+        # file span from the frame) so the user can widen again. The start/end
+        # *values* are left alone on a picker edit (the user set them — don't fight it,
+        # and the picker is a self-Input, so echoing would loop) and on a file/DB Load
+        # (they already show what's applied); only a fresh area switch clears a
+        # now-stale restriction — a one-off that harmlessly re-fires as a picker event.
         full_lo, full_hi = ds.full_span
-        r_start = r_ds or full_lo
-        r_end = r_de or full_hi
-        trimmed = (lo, hi) != (full_lo, full_hi)
-        status = (f"✓ {len(ds.df):,} rows · {len(ds.metadata)} segments · "
+        if trig == "area-bin" and (date_start or date_end):
+            r_start_out, r_end_out = None, None
+        else:
+            r_start_out, r_end_out = no_update, no_update
+        trimmed = bool(r_ds or r_de) and (lo, hi) != (full_lo, full_hi)
+        # Provenance in the status line (Item 24 / R4): name the DB area + bin the
+        # data came from, or the export file name — so a DB load never reads
+        # identically to a file load (and the stale Export-path box can't mislead).
+        area_name = (_area_label(area_key) or area_key) if from_db else None
+        provenance = _load_provenance(from_db, area_name, bin_value, source)
+        status = (f"✓ {provenance} · {len(ds.df):,} rows · {len(ds.metadata)} segments · "
                   f"{lo}…{hi}{' (restricted)' if trimmed else ''} · {ds.tz}")
         # Analysis-scope options (Item 12): corridor needs the Corridor/Region Name
         # column; both aggregate scopes need a travel-time column (travel-time only).
@@ -1127,22 +1255,29 @@ def _register_callbacks(app: Dash) -> None:
         # resolved on this load.
         map_mode_opts = _map_mode_options(ds)
         wspeed_opts = _wspeed_options(ds)
-        # Segment table (Item 19): one row per segment (name / raw label / coverage
-        # / complete-set cost), no membership override yet (empty selection = the
-        # default corridor grouping / whole network). Reset the selection + member
-        # store on a fresh load so stale ids don't leak across exports.
-        table_data = _table_rows(ds)
+        # Segment table (Items 19 + 27): rebuilt by ``_build_table`` off the data token
+        # + scope + corridor, so it isn't produced here — a fresh load resets the
+        # member/exclusion stores below and the table rebuilds corridor-scoped.
         # Direction-display control (Item 20): populate the compass multiselect with
-        # only the directions present in this export; reset it to no filter (render
-        # all) on a fresh load so stale groups don't leak across exports.
+        # only the directions present in this export. Initialise it to *all present
+        # groups* (Item 24 / R7) — both [] and every-group are no-op filters (render
+        # all), but showing every box ticked matches the map instead of reading as
+        # "nothing selected".
         dir_opts = _direction_options(ds)
+        dir_value = [o["value"] for o in dir_opts]
+        # Mutually-exclusive intake (R4): clear the Area selection on a file load so
+        # it doesn't keep pointing at an area that's no longer on screen; a DB load
+        # keeps its selection (no_update).
+        area_out = no_update if from_db else None
         # Reset the segment selection: a new export's ids differ, so keeping the
         # old value would leave every panel on a stale/blank segment (review B5).
+        # ``corridor-members`` resets to None (no override); ``_build_table`` then
+        # rebuilds the table (which re-derives the members/exclusion stores).
         return (token, status, options, None, metric_options, metric_value,
                 lo, hi, b_start, b_end, lo, hi, a_start, a_end,
-                full_lo, full_hi, r_start, r_end,
+                full_lo, full_hi, r_start_out, r_end_out,
                 corr_opts, corr_val, scope_opts, map_mode_opts, wspeed_opts,
-                table_data, [], None, dir_opts, [])
+                None, dir_opts, dir_value, area_out)
 
     # Ingest the current export (+ its GIS join) into the DuckDB store, merging into
     # its corridor area (Item 23), then refresh the Area dropdown and select the area
@@ -1171,11 +1306,16 @@ def _register_callbacks(app: Dash) -> None:
     # Area selection -> populate the bin-length dropdown and default to the first bin
     # (which, as an Input to ``_load``, triggers the DB load). A cleared area empties
     # the bin control (its None value is a ``_load`` no-op).
+    #
+    # Fires on the **initial page load** too (no ``prevent_initial_call``): the Area
+    # dropdown opens pre-selected on the most-recent area (Item 24 / R2), so this
+    # populates its bins and sets the first, which cascades into ``_load`` — the app
+    # opens already loaded from the DB. With an empty/absent store the area is
+    # ``None`` and this is a harmless no-op.
     @app.callback(
         Output("area-bin", "options"),
         Output("area-bin", "value"),
         Input("area", "value"),
-        prevent_initial_call=True,
     )
     def _area_bins(area_key):
         if not area_key:
@@ -1238,11 +1378,11 @@ def _register_callbacks(app: Dash) -> None:
         Input("tod-window", "value"),
         Input("scope", "value"),
         Input("dow-days", "value"),
-        Input("corridor-members", "data"),
+        Input("corridor-excluded", "data"),
         Input("dir-compass", "value"),
         Input("dir-offset", "value"),
     )
-    def _map(token, metric, mode, selected, b0, b1, a0, a1, window, scope, days, members,
+    def _map(token, metric, mode, selected, b0, b1, a0, a1, window, scope, days, excluded,
              dir_groups, dir_offset):
         ds = _get(token)
         if ds is None:
@@ -1252,11 +1392,12 @@ def _register_callbacks(app: Dash) -> None:
         # nudged apart — so both directions are visible and clickable. The analytic
         # ds.geo (and every metric/coverage compute) is untouched.
         geo = _display_geo(ds, dir_groups, offset_on=bool(dir_offset) and "on" in set(dir_offset))
-        # Membership dimming (Item 19): when the segment table has a real subset
-        # selected, draw non-members faint so the corridor stands out. A no-op
-        # (empty / all) selection dims nothing.
-        member_ids = _norm_members(ds, members)
-        mset = set(member_ids) if member_ids is not None else None
+        # Exclusion dimming (Item 27 / R11): draw only the *excluded* segments faint —
+        # so the default (nothing excluded) dims nothing, and excluding one fades just
+        # it. ``member_ids`` in the figure = every segment except the excluded, so the
+        # excluded are the sole non-members drawn muted.
+        excluded_set = {int(s) for s in (excluded or [])}
+        mset = (set(_all_segment_ids(ds)) - excluded_set) if excluded_set else None
         # The map stays segment-level in every scope; corridor/network restrict the
         # metric to the ones that sum across segments (travel time / delay).
         col = _metric_col(ds, _agg_metric_key(metric) if scope in _AGG_SCOPES else metric)
@@ -1371,26 +1512,6 @@ def _register_callbacks(app: Dash) -> None:
             return f"⚠ Export failed: {exc}"
         return f"✓ Wrote {path}"
 
-    # Write a friendly-name template CSV from the loaded metadata (Item 10). The
-    # user edits it, then puts its path in "Names CSV" and reloads.
-    @app.callback(
-        Output("names-status", "children"),
-        Input("write-names", "n_clicks"),
-        State("data-token", "data"),
-        prevent_initial_call=True,
-    )
-    def _write_names(_n, token):
-        ds = _get(token)
-        if ds is None:
-            return "Load an export first."
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out = OUTPUT_DIR / "segment_names.csv"
-        try:
-            path = names.write_names_template(ds.metadata, out)
-        except Exception as exc:
-            return f"⚠ Failed: {exc}"
-        return f"✓ Wrote {path} — edit it, then set Names CSV and reload."
-
     # Time-of-day window: a plain-language status line under the slider.
     @app.callback(
         Output("tod-status", "children"),
@@ -1419,98 +1540,93 @@ def _register_callbacks(app: Dash) -> None:
         picked = [names[int(d)] for d in sorted(set(int(x) for x in days))]
         return "Analysing " + ", ".join(picked) + " only."
 
-    # Segment table row selection (Item 19) -> the corridor-member store, and refresh
-    # the coverage / complete-set-cost columns against the newly selected subset (a
-    # segment's cost is measured relative to the *chosen* set). Name edits in the
-    # ``data`` State are preserved — only the two computed columns are rewritten.
+    # Build the corridor-scoped segment table (Items 19 + 27): rows for the picked
+    # corridor's segments (all Included by default), rebuilt when the data token,
+    # analysis scope, or corridor changes. ToD/DOW are *States* (captured for the
+    # coverage columns) so moving a slider doesn't rebuild — which would wipe unsaved
+    # name edits and exclusions. Sole owner of ``segment-table.data``.
     @app.callback(
-        Output("corridor-members", "data"),
-        Output("segment-table", "data", allow_duplicate=True),
-        Output("table-status", "children"),
-        Input("segment-table", "selected_rows"),
-        State("segment-table", "data"),
-        State("data-token", "data"),
+        Output("segment-table", "data"),
+        Input("data-token", "data"),
+        Input("scope", "value"),
+        Input("corridor", "value"),
         State("tod-window", "value"),
         State("dow-days", "value"),
+    )
+    def _build_table(token, scope, corridor, window, days):
+        ds = _get(token)
+        if ds is None:
+            return []
+        seg_ids = _corridor_segment_ids(ds, scope, corridor)
+        return _table_rows(ds, seg_ids, window=window, days=days)
+
+    # Include/Exclude edits (Item 27 / R11) -> the member + exclusion stores + a status
+    # line. Derived from the table ``data`` (id-keyed, so it survives a native sort —
+    # R10) and does NOT rewrite ``data`` (the per-toggle full rewrite was the
+    # disappearing-rows trigger). No exclusion -> members None (natural corridor /
+    # network grouping); any exclusion -> the included subset overrides the sum, and
+    # the excluded set drives the map dimming.
+    @app.callback(
+        Output("corridor-members", "data"),
+        Output("corridor-excluded", "data"),
+        Output("table-status", "children"),
+        Input("segment-table", "data"),
+        State("data-token", "data"),
         prevent_initial_call=True,
     )
-    def _members_changed(selected_rows, data, token, window, days):
+    def _exclusions_changed(data, token):
         ds = _get(token)
         if ds is None or not data:
-            return no_update, no_update, no_update
-        member_ids = _rows_to_member_ids(data, selected_rows)
-        # Coverage is measured against the effective member set (the selection, or
-        # every segment when nothing is ticked / all are).
-        eff = _norm_members(ds, member_ids) or _all_segment_ids(ds)
-        cov = speed.segment_coverage(_apply_tod(ds.df, window, days),
-                                     members=eff, value=_metric_col(ds, "tt"))
-        cov = cov.set_index(SEGMENT_COL)
-        updated = [dict(r) for r in data]
-        for r in updated:
-            sid = int(r[TBL_ID])
-            if sid in cov.index:
-                c = cov.loc[sid]
-                r[TBL_COVERAGE] = (round(float(c[TBL_COVERAGE]) * 100, 1)
-                                   if pd.notna(c[TBL_COVERAGE]) else None)
-                r[TBL_COST] = int(c[TBL_COST])
-        n = len(member_ids)
-        override = _norm_members(ds, member_ids) is not None
-        status = (f"{n} of {len(data)} segments — corridor member set"
-                  if override else "No membership override (all segments)")
-        return (member_ids or None), updated, status
+            return None, None, ""
+        excluded = _excluded_from_rows(data)
+        if excluded:
+            included = [int(r[TBL_ID]) for r in data if r.get(TBL_INCLUDE) != EXCLUDE_VAL]
+            return (included or None), excluded, (
+                f"{len(excluded)} excluded · {len(included)} of {len(data)} in the member set")
+        return None, None, f"All {len(data)} segments included"
 
-    # Map click / dropdown selection -> highlight (scroll to) the segment's table row.
-    # ``active_cell`` both highlights the row and scrolls it into view; guard on the
-    # current row so this doesn't ping-pong with the reverse callback below.
+    # Segment selection -> accent its table row (the map/dropdown link). Rewrites the
+    # table's conditional styles with a Segment-ID ``filter_query`` (R10): the accent
+    # tracks identity, so it lands on the right row under any sort and never ping-pongs
+    # with a positional ``active_cell`` write.
     @app.callback(
-        Output("segment-table", "active_cell"),
+        Output("segment-table", "style_data_conditional"),
         Input("segment", "value"),
-        State("segment-table", "data"),
-        State("segment-table", "active_cell"),
         prevent_initial_call=True,
     )
-    def _highlight_row(selected, data, active):
-        idx = _segment_row_index(data, selected)
-        if idx is None:
-            return no_update
-        if active and active.get("row") == idx:
-            return no_update
-        return {"row": idx, "column": 0, "column_id": TBL_NAME}
+    def _highlight_row(selected):
+        return _table_styles(selected)
 
-    # Clicking a table row cell selects that segment for the panels + the map ring
-    # (the reverse link). Guarded on the current selection so it settles at a
-    # fixpoint with ``_highlight_row`` rather than looping.
+    # Clicking a table row selects that segment for the panels + the map ring. Reads
+    # the row's ``id`` via ``active_cell["row_id"]`` (identity, not a positional index
+    # into ``data``) — the R10 fix. Guarded on the current selection so it settles.
     @app.callback(
         Output("segment", "value", allow_duplicate=True),
         Input("segment-table", "active_cell"),
-        State("segment-table", "data"),
         State("segment", "value"),
         prevent_initial_call=True,
     )
-    def _row_selects_segment(active, data, current):
-        if not active or not data:
+    def _row_selects_segment(active, current):
+        if not active or active.get("row_id") is None:
             return no_update
-        row = active.get("row")
-        if row is None or not (0 <= row < len(data)):
-            return no_update
-        sid = int(data[row][TBL_ID])
+        sid = int(active["row_id"])
         if current is not None and int(current) == sid:
             return no_update
         return sid
 
-    # Save the inline-edited names (Item 19): write the table's Name column to the
-    # names CSV (the same portable store load_names reads), and update the live
-    # label mapping so the dropdown / map hover reflect the edits without a reload.
+    # Save the inline-edited names (Items 19 + 27 / R12): upsert the table's Name column
+    # into the DuckDB store (last-write-wins, global by Segment ID) so a reload applies
+    # them automatically, and update the live label mapping so the dropdown / map hover
+    # reflect the edits without a reload.
     @app.callback(
         Output("names-status", "children", allow_duplicate=True),
         Output("segment", "options", allow_duplicate=True),
         Input("save-names", "n_clicks"),
         State("segment-table", "data"),
         State("data-token", "data"),
-        State("names-path", "value"),
         prevent_initial_call=True,
     )
-    def _save_names(_n, data, token, names_path):
+    def _save_names(_n, data, token):
         ds = _get(token)
         if ds is None or not data:
             return "Load an export first.", no_update
@@ -1519,20 +1635,21 @@ def _register_callbacks(app: Dash) -> None:
             names.INRIX_LABEL_COL: [str(r.get(TBL_COMBINED, "") or "") for r in data],
             names.NAME_COL: [str(r.get(TBL_NAME, "") or "") for r in data],
         })
-        out_path = Path(names_path) if names_path else (OUTPUT_DIR / "segment_names.csv")
         try:
-            path = names.write_names(names_df, out_path)
+            n = store.save_names(_db(), names_df)
         except Exception as exc:
             return f"⚠ Save failed: {exc}", no_update
-        # Update the live label mapping + geo so labels refresh without reloading.
-        new_labels = {int(r[TBL_ID]): (str(r[TBL_NAME]).strip() or f"Segment {int(r[TBL_ID])}")
-                      for r in data}
+        # Update the live label mapping + geo so labels refresh without reloading. A
+        # blank edit clears the store override (save_names) and falls back to the seed.
+        seed = names.apply_names(ds.metadata)
+        new_labels = {int(r[TBL_ID]): (str(r[TBL_NAME]).strip()
+                      or seed.get(int(r[TBL_ID]), f"Segment {int(r[TBL_ID])}")) for r in data}
         ds.labels.update(new_labels)
         if ds.geo is not None and "name" in ds.geo.columns:
             ds.geo["name"] = ds.geo.index.map(lambda s: ds.labels.get(int(s), f"Segment {int(s)}"))
         options = [{"label": ds.labels.get(int(s), f"Segment {int(s)}"), "value": int(s)}
                    for s in ds.metadata.index]
-        return f"✓ Saved {path} — set it as Names CSV to reuse across sessions.", options
+        return f"✓ Saved {n} names to the database.", options
 
 
 # --- panel builders (subset -> compute-core call -> figure) -----------------

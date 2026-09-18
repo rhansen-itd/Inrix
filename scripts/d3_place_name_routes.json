@@ -1,0 +1,6 @@
+{
+  "_note": "Terminal XD segments for the TT Logger sheets whose Origin/Destination cells are place names ('Cascade, ID'), which reference.route_endpoints refuses to snap because a geocoded extent is a guess. These are operator input: the two end segments of each route, taken from the 2026-09 hand mapping that produced the original outside comparison (out/query_segment_mapping.json) and re-verified here by walking NextXDSegI between them and checking the resulting road names and mileage against the route. A route built this way carries whole end segments - no endpoint trim, no proration, no snap distance - and the report labels it so.",
+  "Garden Valley-HSB": {"start_segment": 1187605680, "end_segment": 440867924},
+  "Cascade-HSB": {"start_segment": 1187333402, "end_segment": 440867924},
+  "HSB-Cascade": {"start_segment": 440855766, "end_segment": 1187333467}
+}
