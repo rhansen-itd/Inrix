@@ -37,10 +37,19 @@ _NAMED_COLORS = {
     "white": (255, 255, 255),
     "teal": (0, 128, 128),
     "magenta": (255, 0, 255),
+    "cyan": (0, 255, 255),
+    "pink": (255, 105, 180),   # hot pink — pale pink washes out over pavement/soil
+    "lime": (50, 205, 50),     # bright green, distinct in luminance from "green"
 }
-# Cycled for categorical color_by columns (e.g. Direction).
+# Cycled for categorical color_by columns (e.g. Direction, a corridor id). 12
+# hues chosen to stay distinguishable from each other *and* from the muted
+# greens/tans/greys of satellite basemap imagery (ROADMAP Item 37) — bright,
+# high-saturation colours were preferred over pastel/earth tones for exactly
+# that reason. ``_segment_colors`` raises rather than silently cycling this
+# default once a caller exceeds it; pass an explicit ``palette=`` to cycle on
+# purpose.
 _CATEGORICAL_PALETTE = ["blue", "red", "green", "orange", "purple", "teal",
-                        "magenta", "gray"]
+                        "magenta", "gray", "yellow", "cyan", "pink", "lime"]
 # Endpoints of the default numeric ramp (low -> high): cool blue -> hot red.
 _DEFAULT_RAMP = ((43, 131, 186), (215, 25, 28))
 
@@ -116,11 +125,22 @@ def _segment_colors(geo, color_by, default_color, palette, ramp):
         return colors, legend
 
     # categorical
+    uniq = [v for v in col.dropna().unique()]
     if isinstance(palette, dict):
         value_color = {v: _resolve_color(c) for v, c in palette.items()}
     else:
-        names = list(palette) if palette else _CATEGORICAL_PALETTE
-        uniq = [v for v in col.dropna().unique()]
+        if palette:
+            names = list(palette)          # explicit override: cycling is intentional
+        else:
+            names = _CATEGORICAL_PALETTE
+            if len(uniq) > len(names):
+                raise ValueError(
+                    f"{len(uniq)} distinct values in {color_by!r} exceed the "
+                    f"{len(names)}-colour default categorical palette — colours "
+                    "would repeat and the legend would show duplicate swatches "
+                    "without saying so. Pass an explicit `palette=` (a longer "
+                    "list, or a {value: colour} dict) if cycling is intended."
+                )
         value_color = {v: _resolve_color(names[k % len(names)])
                        for k, v in enumerate(uniq)}
     colors = {i: value_color.get(v, default) for i, v in col.items()}
@@ -156,7 +176,7 @@ def _add_line_style(document, style_id, kml_color, label_scale):
 # ---------------------------------------------------------------------------
 def geometry_to_kml(geo, out_path, *, label_segments=False, name_col=None,
                     color_by=None, default_color="blue", palette=None,
-                    ramp=None, document_name="INRIX segments"):
+                    ramp=None, folder_by=None, document_name="INRIX segments"):
     """Write a KML drawing each segment as its road-following polyline.
 
     Args:
@@ -169,17 +189,31 @@ def geometry_to_kml(geo, out_path, *, label_segments=False, name_col=None,
         out_path: destination ``.kml`` path.
         label_segments: if True, each segment's name is always visible (the seed's
             "always-on label, hidden pin" behaviour) instead of on-hover only.
-        name_col: column whose value labels each segment; defaults to the segment
-            id (the index). ``Combined`` from ``io.load_metadata`` is a good pick.
+        name_col: column whose value labels each segment. Defaults to the
+            friendly name :func:`inrix_tools.names.apply_names` derives from
+            whatever of ``Road``/``Direction``/``Intersection``/``Combined`` is
+            present on ``geo`` (falling back segment-by-segment to the raw
+            ``Combined`` label, then to the segment id when none of those columns
+            are present) — raw ``Segment ID`` is unreadable as a deliverable.
+            Pass an explicit column (e.g. ``"Combined"``) to bypass that and label
+            with it directly.
         color_by: column to colour by. ``None`` -> every segment
             ``default_color``. A non-numeric column -> a categorical palette (one
             colour per distinct value, e.g. ``Direction``). A numeric column -> a
-            continuous ``ramp`` over its min..max (the color-by-metric case).
+            continuous ``ramp`` over its min..max (the color-by-metric case). The
+            default categorical palette holds 12 hues and **raises** if
+            ``color_by`` has more distinct values than that (see ``palette``).
         default_color: colour for the no-``color_by`` case and NaN metric values.
             A named colour, ``#rrggbb``, ``(r, g, b)``, or KML ``aabbggrr``.
-        palette: categorical override — a list of colours to cycle, or a
-            ``{value: colour}`` dict for explicit control.
+        palette: categorical override — a list of colours to cycle (intentionally,
+            even past its own length), or a ``{value: colour}`` dict for explicit
+            control. Without it, more distinct ``color_by`` categories than the
+            default 12-hue palette raises rather than silently repeating colours.
         ramp: numeric ramp as ``((r, g, b), (r, g, b))`` low/high endpoints.
+        folder_by: column to group placemarks by. Each distinct value becomes a
+            KML ``<Folder>`` (independently toggleable in Google Earth); rows with
+            a missing/NaN value land in a ``"(none)"`` folder. ``None`` (default)
+            keeps the flat placemark list under ``<Document>``.
         document_name: KML ``<Document>`` name.
 
     Returns:
@@ -191,6 +225,14 @@ def geometry_to_kml(geo, out_path, *, label_segments=False, name_col=None,
     geo = geo.set_index(SEGMENT_COL)
 
     colors, legend = _segment_colors(geo, color_by, default_color, palette, ramp)
+
+    name_map = None
+    if name_col is None:
+        from . import names as _names  # local: avoids the import when unused
+        name_map = _names.apply_names(geo)
+
+    if folder_by is not None and folder_by not in geo.columns:
+        raise ValueError(f"folder_by column {folder_by!r} not found in geo")
 
     kml = ET.Element("kml", xmlns="http://www.opengis.net/kml/2.2")
     document = ET.SubElement(kml, "Document")
@@ -206,14 +248,38 @@ def geometry_to_kml(geo, out_path, *, label_segments=False, name_col=None,
     if legend:
         _add_legend(document, legend)
 
+    # One <Folder> per distinct folder_by value, in first-seen order; created up
+    # front (even if it ends up empty of visible geometry) so grouping is stable.
+    folders = {}
+    if folder_by is not None:
+        import pandas as pd
+
+        for raw in dict.fromkeys(geo[folder_by]):
+            group = "(none)" if pd.isna(raw) else str(raw)
+            if group not in folders:
+                folder_el = ET.SubElement(document, "Folder")
+                ET.SubElement(folder_el, "name").text = group
+                folders[group] = folder_el
+
     for sid, row in geo.iterrows():
         geom = row["geometry"]
         if geom is None or geom.is_empty:
             continue
-        label = str(row[name_col]) if name_col and name_col in geo.columns else str(sid)
+        if name_col and name_col in geo.columns:
+            label = str(row[name_col])
+        elif name_map is not None:
+            label = name_map.get(sid, str(sid))
+        else:
+            label = str(sid)
         kml_color = colors[sid]
 
-        placemark = ET.SubElement(document, "Placemark")
+        if folder_by is not None:
+            group = "(none)" if pd.isna(row[folder_by]) else str(row[folder_by])
+            parent = folders[group]
+        else:
+            parent = document
+
+        placemark = ET.SubElement(parent, "Placemark")
         ET.SubElement(placemark, "name").text = label
         desc = f"Segment ID: {sid}"
         if "source" in geo.columns:

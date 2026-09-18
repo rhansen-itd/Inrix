@@ -185,6 +185,50 @@ def filter_cvalue(df: pd.DataFrame, threshold: int = DEFAULT_CVALUE_THRESHOLD) -
     return out
 
 
+IMPUTED_COL = "Imputed"
+HIST_BACKFILL_COL = "Hist Backfill"
+
+
+def mark_imputed(df: pd.DataFrame) -> pd.DataFrame:
+    """Flag the rows a ``CValue`` gate would drop as *imputation*, not observation.
+
+    DATA_FORMAT.md: **a null ``CValue`` is the imputation marker** — 21.7% of the
+    2026 D3 validation export, of which 88.3% carry ``Speed`` exactly equal to
+    ``Hist Av Speed`` (historical backfill). ``filter_cvalue`` already removes
+    them (``NaN > 80`` is False), but it removes them *silently*; this marks them
+    so the share can be **measured and carried** rather than only gated away. The
+    share is strongly route- and hour-dependent (rural Cascade-HSB is 63% imputed
+    at 05:00 against 0.0% at every hour 07:00-13:00 on Eagle Rd NB), so a
+    study-wide "we gated" says very little on its own.
+
+    Adds two boolean columns:
+
+    - ``Imputed`` — ``CValue`` is null (the marker itself).
+    - ``Hist Backfill`` — ``Speed`` equals ``Hist Av Speed`` **exactly**, the
+      corroborating signature. Present only when both speed columns are; it is
+      evidence *about* the imputed rows, not a second definition of them.
+
+    Raises:
+        ValueError: if the frame carries no ``CValue`` column — being unable to
+        tell observation from backfill is not the same as having none.
+    """
+    if CVALUE_COL not in df.columns:
+        raise ValueError(
+            f"No {CVALUE_COL!r} column: this export cannot distinguish observed "
+            "rows from historical backfill (see DATA_FORMAT.md)."
+        )
+    out = df.copy()
+    out[IMPUTED_COL] = out[CVALUE_COL].isna()
+    # By prefix, not by attrs: the unit travels in the header (mph vs kmh) and a
+    # frame that lost its attrs must still be markable.
+    sp = next((c for c in out.columns if c.startswith("Speed(")), None)
+    hist = next((c for c in out.columns if c.startswith("Hist Av Speed(")), None)
+    if sp is not None and hist is not None:
+        out[HIST_BACKFILL_COL] = out[sp].eq(out[hist])
+    out.attrs = dict(df.attrs)
+    return out
+
+
 def mark_complete_timestamps(
     df: pd.DataFrame,
     corridor_col: str = CORRIDOR_COL,

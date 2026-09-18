@@ -33,7 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from gui import validation_report as vr                    # noqa: E402
 from inrix_tools import agreement, corridors, io, reference  # noqa: E402
-from inrix_tools.io import DATETIME_COL, DEFAULT_TZ, SEGMENT_COL  # noqa: E402
+from inrix_tools.io import (DATETIME_COL, DEFAULT_CVALUE_THRESHOLD, DEFAULT_TZ,  # noqa: E402
+                            SEGMENT_COL)
 from inrix_tools.reference import ROUTE_COL, TT_COL        # noqa: E402
 
 BIN_MINUTES = 15
@@ -52,6 +53,7 @@ def _bbox(routes: pd.DataFrame, margin: float = BBOX_MARGIN_DEG):
 def build_frames(export, workbook, network_source, *, tz: str = DEFAULT_TZ,
                  network_cache=None, bin_minutes: int = BIN_MINUTES,
                  sheets=None, route_segments=None, bbox=None,
+                 cvalue_threshold=DEFAULT_CVALUE_THRESHOLD,
                  verbose: bool = True) -> dict:
     """Run the whole comparison and return the frames the report renders.
 
@@ -68,6 +70,11 @@ def build_frames(export, workbook, network_source, *, tz: str = DEFAULT_TZ,
             ``extent_source="operator-specified terminal segments"`` and is shown
             that way in the report — the end segments are whole, so nothing is
             prorated and there is no snap distance to report.
+        cvalue_threshold: the INRIX-side CValue gate, applied per chain and
+            recorded on the summary (ROADMAP Item 31). ``CValue > 80`` by default
+            — the same strict comparison ``io.filter_cvalue`` and
+            ``screen.segment_screen`` use. ``None`` sums ungated, on purpose; the
+            imputation share is measured and reported either way.
         bbox: WGS84 ``(minx, miny, maxx, maxy)`` for the network read. Default:
             the coordinate endpoints' bbox — but a place-name route's segments can
             sit far outside it, so supplying ``route_segments`` without a bbox
@@ -129,12 +136,22 @@ def build_frames(export, workbook, network_source, *, tz: str = DEFAULT_TZ,
     log(f"  {len(df):,} rows on {df[SEGMENT_COL].nunique()} of "
         f"{len(member_ids)} chain member segments")
 
+    log(f"CValue gate: {'CValue > ' + str(cvalue_threshold) if cvalue_threshold is not None else 'none (ungated, explicitly)'}")
     coverage_frames, inrix_parts = {}, []
     for route, chain in chains.items():
-        coverage_frames[route] = corridors.chain_coverage(chain, df, value=TT_COL)
-        part = corridors.chain_travel_time(df, chain, label=route)
+        cov = corridors.chain_coverage(chain, df, value=TT_COL)
+        coverage_frames[route] = cov
+        part = corridors.chain_travel_time(
+            df, chain, label=route, cvalue_threshold=cvalue_threshold)
         inrix_parts.append(part.rename(columns={io.CORRIDOR_COL: ROUTE_COL}))
+        lengths = part.attrs["length"]
+        log(f"  {route:<22} {cov.attrs['n_missing']:>2} of {chain.n_segments:>3} members absent  "
+            f"{lengths['observed']:6.3f} mi summed / {lengths['requested']:6.3f} mi requested  "
+            f"({lengths['missing']:5.3f} mi missing)  "
+            f"imputed {cov.attrs['imputed_fraction']:.1%}")
     inrix = pd.concat(inrix_parts, ignore_index=True)
+    # concat does not reliably carry attrs; the gate must reach compare() either way.
+    inrix.attrs["cvalue_threshold"] = cvalue_threshold
 
     ref_binned = reference.align_to_bins(obs, bin_minutes=bin_minutes)
     matched = agreement.match_bins(inrix, ref_binned)
@@ -164,6 +181,7 @@ def build_frames(export, workbook, network_source, *, tz: str = DEFAULT_TZ,
             "network": str(network_source), "tz": tz, "bin_minutes": bin_minutes,
             "export_window": window,
             "n_ambiguous_dropped": obs.attrs["n_ambiguous_dropped"],
+            "cvalue_threshold": cvalue_threshold,
             "place_name_routes": tuple(skipped),
             "operator_specified_routes": tuple(named),
         },
@@ -212,6 +230,10 @@ def main(argv=None) -> int:
     p.add_argument("--bbox", nargs=4, type=float, default=None,
                    metavar=("MINX", "MINY", "MAXX", "MAXY"),
                    help="WGS84 bbox for the network read (default: the endpoints')")
+    p.add_argument("--cvalue-threshold", type=float, default=DEFAULT_CVALUE_THRESHOLD,
+                   help="INRIX CValue gate, strict (default: %(default)s)")
+    p.add_argument("--no-cvalue-gate", action="store_true",
+                   help="sum ungated — explicitly; the imputation share is still measured")
     args = p.parse_args(argv)
 
     route_segments = None
@@ -224,7 +246,9 @@ def main(argv=None) -> int:
                           network_cache=args.network_cache,
                           bin_minutes=args.bin_minutes, sheets=args.sheets,
                           route_segments=route_segments,
-                          bbox=tuple(args.bbox) if args.bbox else None)
+                          bbox=tuple(args.bbox) if args.bbox else None,
+                          cvalue_threshold=(None if args.no_cvalue_gate
+                                            else args.cvalue_threshold))
     written = write_report(frames, args.out_dir)
     print(f"\nWrote {len(written)} files to {Path(args.out_dir).resolve()}")
     for path in written:

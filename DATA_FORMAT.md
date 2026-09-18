@@ -60,20 +60,52 @@ is reproducible. Filtering on CValue interacts with missing-data handling: a
 segment with sparse live coverage will lose more rows.
 
 **A null `CValue` is the imputation marker, and it is common.** In the 2026 D3
-export 1,182,246 of 5,457,816 rows (**21.7%**) carry no `CValue` at all, and
-**88.3%** of those have `Speed(miles/hour)` **exactly equal** to
+*validation* export (the extracted query segments, 5.46 M rows) 1,182,246 of 5,457,816
+rows (**21.7%**) carry no `CValue` at all — and in the **full** 15-minute D3 download
+(91,054,384 rows, all 3,905 segments) it is **39.4%**, so the share is a property of
+which segments you asked for, not a constant. Of the validation export's null rows,
+**88.3%** have `Speed(miles/hour)` **exactly equal** to
 `Hist Av Speed(miles/hour)` (against 11.3% of rows that do carry a CValue).
 Those rows are historical backfill, not observation. A `CValue > 80` filter
-drops them by default because the comparison is false for NaN — but only if the
-filter is applied; nothing in the pipeline applies one automatically, so a
-corridor sum that never gates on CValue is silently part historical average.
+drops them by default because the comparison is false for NaN — but only where the
+filter is applied: `screen.segment_screen` gates by default and records the threshold
+(Item 35), the GUI's load does, and since Item 31 so does the validation path
+(`corridors.chain_travel_time(..., cvalue_threshold=80)`, which
+`scripts/build_validation_report.py` passes by default and records on the summary).
+`io.mark_imputed` marks the rows rather than removing them, so the share can be
+**measured** wherever it is not gated.
+
+**What the gate costs on the chain path, measured (Item 31, 2026-09-17).** Two facts,
+both worth knowing before reading a gated number:
+
+- **It never changes a retained bin's value.** Across all 15 validation chains and
+  ~270k complete-set bins, the gated sum equals the ungated sum on every bin the gate
+  retains — mean difference **0.0000 min, maximum absolute difference 0.0000 min**. The
+  reason is structural, not luck: a complete-set bin needs every member to report, so a
+  bin that loses any member to the gate fails the rule and drops out whole. The gate is
+  therefore a **selection on bins**, never a correction to a sum — provided no member is
+  gated away *entirely*, which on this export none was (`n_absent` is unchanged by the
+  gate on all 15 chains). If that ever stops holding, that member becomes absent and the
+  chain is marked `short`; it does not quietly shrink the sum.
+- **What it costs is bins, and the cost is route-dependent** — the share of complete-set
+  bins the gate removes: VSL 8.6–9.4%, Eagle Rd ~14.5%, Franklin 14.2–22.1%, SH-69
+  19.9–24.3%, Cascade–HSB 46.8%, HSB–Cascade 45.8%, **Garden Valley–HSB 77.4%**. A
+  three-quarters cut is not a detail a "we gated on CValue" sentence covers, which is
+  why the share is carried per route rather than asserted study-wide.
+
+Because the gate only selects, the difference between a gated and an ungated *mean* is a
+composition effect — the overnight backfill-heavy bins leaving. On the 2026 D3 export
+that moves the mean corridor travel time by +0.03 to +0.34 min on the arterials and
+−1.23 min on Cascade–HSB, the rural route whose nights are mostly backfill.
 
 Where the backfill sits matters more than how much of it there is: it is
 concentrated **overnight and in the early morning**, and it is **route-dependent**.
-Measured per hour on the 2026 D3 export, the signalised arterials are ~0% imputed
-through the whole 05:00–17:00 window (Eagle Rd NB 3.5% overall, 0% at every
-daytime hour), while rural Cascade–HSB is **57% imputed at 05:00 and 38% at
-06:00** (26% overall). So a daytime arterial study is untouched by the gate,
+Measured per hour on the 2026 D3 export over each route's assembled chain
+membership, the signalised arterials are ~0% imputed through the whole daytime
+window (Eagle Rd NB 3.5% overall — **0.0% at every hour from 07:00 to 13:00**,
+0.4% through 17:00, peaking at 25.4% at 02:00), while rural Cascade–HSB is
+**63% imputed at 05:00 and 39% at 06:00** (29% overall, 91% at 01:00, and 1.2% or
+less from 10:00 to 17:00). So a daytime arterial study is untouched by the gate,
 while an early-morning rural comparison can be largely comparing against INRIX's
 own historical average — which is smooth by construction and will agree with
 almost anything. (Re-running the 2026-09-17 reference comparison on bins with
@@ -155,6 +187,28 @@ If a future export were sparse enough to starve the decomposition, the fix is th
 Item 9 window guard (already auto-scaled) or relaxing `require_complete`, not
 abandoning the rule.
 
+**Requested vs. observed membership (Item 31).** Both definitions above read the
+complete-set size **out of the data**, and that is a hole: a member with *zero*
+rows never enters `nunique()`, so it cannot fail the check. Eagle Rd NB is missing
+3 of its 20 members from the 2026 D3 export entirely, ran with
+`expected_segments = 17`, and every one of its bins was marked **complete** while
+summing 17/20 of the route. Passing `members=` (which
+`corridors.chain_travel_time` now always does, from `chain.segment_ids`) makes the
+requested size known, and the three cases are then reported separately:
+
+| case | `complete` | `short` | meaning |
+|------|-----------|---------|---------|
+| whole set present | True | False | the sum covers what was asked for — **only this combination** |
+| a member missing *at this timestamp* | False | False | the original rule: the timestamp drops |
+| a member **never** present | True | True | the sum is reported *and labelled short*; `n_absent` says how many |
+
+Every row carries `n_requested`, `n_absent`, `expected_segments` and `short`
+beside `n_segments`. The third state is a deliberate choice: dropping all 2,633
+bins of a 17/20 route is correct but useless, so the sum is kept and the shortfall
+travels with it. `on_absent="drop"` takes the strict branch explicitly.
+"Present" is **value-aware** throughout — a member with rows but no values in the
+summed column is absent for summing, and is counted as absent.
+
 **Segment coverage + the "completeness cost" (Item 19).** Which segments are
 *costing* the corridor/network its complete-set timestamps is answerable directly:
 `speed.segment_coverage(df, members=...)` reports, per member segment over the
@@ -217,6 +271,52 @@ and the statewide file fully covers the Ada County study area (zero unmatched).
 
 **License:** INRIX/NPMRDS geometry — treat like the data exports: gitignored,
 not redistributed.
+
+### What `NextXDSegI` does and does not connect (Item 36)
+
+The topology table is real and usable — it is what `corridors.build_chain` walks —
+but it is **incomplete, and incomplete asymmetrically**. Measured on
+`USA_Idaho_shapefile.zip` (41,770 segments):
+
+- **38.3% of segments carry a null `NextXDSegI`**, and the rate tracks road class
+  almost perfectly: FRC 1 **0.9%**, FRC 2 1.8%, FRC 3 5.0%, FRC 4 28.9%, FRC 5
+  **88.9%**. Across District 3 the whole subset is 52.8% null but the *numbered*
+  routes are **2.8%** — so a highway corridor usually walks and a city-street one
+  usually does not.
+- **The gaps are two-sided.** Of the 15,997 null-`NextXDSegI` segments statewide,
+  **zero** are named by any other segment as its `PreviousXD`. A walker that fell
+  back to reversed upstream links would recover nothing; a break is a break.
+- **A route number is no guarantee.** I-184 (the Boise Connector) carries a null
+  `NextXDSegI` on **7 of its 20 segments (35%)** against 2.4% on I-84, so the
+  Connector cannot be walked end to end at all in this vintage.
+
+Three traps that a walk (or a bounding box) hits on real corridors, all found while
+resolving the District 3 catalogue:
+
+1. **The link can leave the highway for a parallel local street.** Eastbound SH-44
+   at State St & Ballantyne Rd points not at the SH-44 mainline (`XDGroup` 114772,
+   `Lanes` 2.2) but at a **different 1-lane W State St** a quarter-mile north
+   (`XDGroup` 3938033), which runs east past Eagle and dead-ends at S Edgewood Ln.
+   Same street name, same FRC, different road. `RoadNumber` and `Lanes` tell them
+   apart; the geometry does not.
+2. **The link can flip carriageway.** Westbound I-184 leaves the WB carriageway
+   after ~1.0 mi onto an unnamed link, crosses to W Chinden Blvd and returns
+   **eastbound** on I-184 E. A chain built without checking `reached_target` would
+   run both directions of one freeway in series.
+3. **Undivided arterials have coincident carriageways.** The E and W segments of an
+   undivided road (State St, SH-16) share one geometry, so a snap cannot prefer a
+   direction — `build_chain` resolves this by preferring the candidate pair that
+   *reaches the target*, which works whenever the chain resolves. When it does not,
+   the documented nearest-snap fallback may report the opposing direction, so for a
+   failed entry the `stop_reason` is the finding and the member list is not.
+   Route **concurrencies** do the same thing at a junction: SH-16 and SH-52 share
+   pavement through Emmett, and a query point at that junction is 1 ft from both.
+
+**Consequence for corridor definitions:** a corridor is stated as an endpoint pair
+and resolved, and an extent that will not walk is recorded with its `stop_reason` —
+never completed by sorting the segments in a bounding box by latitude or longitude.
+`scripts/d3_corridors.json` is the District 3 catalogue in that form and
+`corridors.load_catalogue` / `resolve_catalogue` are the code contract.
 
 ## Corridor chain assembly, endpoint trim & proration (Item 28)
 
@@ -285,13 +385,40 @@ reports `Length(Miles)` as the requested extent.
 
 **Missing-segment accounting.** `corridors.chain_coverage(chain, df)` returns one
 row per member with `Miles`, `extent_miles`, `n_obs`, and `observed`, plus
-`attrs`: `n_missing`, `missing_miles`, `observed_miles`, `miles_covered_fraction`.
+`attrs`: `n_missing`, `missing_miles`, `observed_miles`, `miles_covered_fraction`
+(and, when the frame carries `CValue`, `n_imputed` / `imputed_fraction` per member).
 Chain travel time keeps the **complete-set rule** over exactly the chain's members
-(`expected="total"`), so an absent segment drops the timestamp rather than
-shortening the sum. There is **no silent fallback** to "whatever reported" — the
-2026-09-17 outside pass compared 17 of 20 Eagle Rd NB segments with a `17/20`
-string as the only evidence, and the absent members were the short signalised
-stubs where the delay lives (0.25–0.29 mi each).
+against the **requested** membership (see "Requested vs. observed membership"
+above), so a sometimes-missing segment drops the timestamp and a never-present one
+marks the sum `short` rather than passing as whole. There is **no silent fallback**
+to "whatever reported" — the 2026-09-17 outside pass compared 17 of 20 Eagle Rd NB
+segments with a `17/20` string as the only evidence, and the absent members were
+the short signalised stubs where the delay lives (0.25–0.29 mi each).
+
+**The length a short chain reports (Item 31).** `Length(Miles)` is the extent
+**actually summed** — the requested (or whole-segment) miles less any member with no
+data — with `requested_length_miles`, `missing_length_miles` and a `length_basis`
+label (`"requested"` / `"observed"`) beside it. Before this, the length credited the
+full request even where an unobserved **end** segment had been prorated into a sum it
+contributed nothing to, so every derived `Corridor Speed(miles/hour)` on such a route
+was overstated by that fraction. Measured on the 2026 D3 export, 6 of the 15
+validation chains are short, and the correction is:
+
+| route | members absent | missing (in-extent) | requested | speed was overstated by |
+|-------|---------------:|--------------------:|----------:|------------------------:|
+| Eagle Rd NB | 3 of 20 | 0.149 mi | 6.938 mi | 2.1% |
+| Eagle Rd SB | 2 of 19 | 0.119 mi | 6.939 mi | 1.7% |
+| Franklin EB | 1 of 10 | 0.128 mi | 2.763 mi | 4.6% |
+| Franklin WB | 1 of 9 | 0.128 mi | 2.764 mi | 4.6% |
+| Franklin EB – No Mid | 1 of 8 | 0.128 mi | 2.100 mi | 6.1% |
+| Franklin WB – No Mid | 1 of 8 | 0.128 mi | 2.101 mi | 6.1% |
+
+The other nine chains (SH-69 both ways, all four VSL extents, Garden Valley–HSB,
+Cascade–HSB, HSB–Cascade) observe every requested member and are unchanged.
+**Note the units of "missing":** the Session 37 review quoted 0.290 mi for Eagle Rd NB
+and 0.250 mi for Franklin EB — those are the absent members' **whole-segment** lengths.
+A prorated sum is only ever credited the **in-extent** miles, which for a trimmed end
+segment is roughly half of that, so the correction is the smaller figure above.
 
 ## External travel-time reference (TT Logger workbook, Item 29)
 
@@ -464,6 +591,77 @@ free-flow travel time = Miles / free_flow_speed × 60
 - **Corridor/network delay is a sum** across member segments, exactly like travel
   time, under the same complete-set rule (`corridor_travel_time(..., value='Delay(Minutes)')`).
 
+## District-wide screening (`screen.py`, Item 35)
+
+Screening asks the question that comes *before* a corridor study: across every segment
+in an area, which corridors are worst. `segment_screen` reduces an area's whole time
+series to **one row per segment** — per-named-window mean travel time and speed, the
+free-flow `ref_speed`, and the CValue accounting — computed in DuckDB against the
+store's `obs_<area_key>` table. The 2026 D3 area (**91,054,384 rows**, 3,905 segments)
+screens in **≈12 s**.
+
+**Named windows are the `timebins` vocabulary.** A `PeakWindow` holds a
+`parse_time_bin` range string plus `parse_day_of_week` day specs, and its SQL predicate
+is **derived from that parse** — so a window means here exactly what it means in the
+GUI's time-of-day slider: half-open `[start, end)`, overnight ranges wrap, all-seven-
+days is a no-op gate, and DuckDB's `isodow` (1=Mon) maps onto pandas' `dayofweek`
+(0=Mon). `PeakWindow.filter()` is the same window as the pandas filters, and the tests
+assert the two paths agree row for row. The presets:
+
+| name | window | days | peak? |
+|------|--------|------|-------|
+| `am` | 07:00–09:00 | Mon–Fri | yes |
+| `pm` | 16:00–18:30 | Mon–Fri | yes |
+| `midday` | 10:00–14:00 | Mon–Fri | no (context) |
+| `night` | 22:00–05:00 | every day | no (the closest thing to an observed free-flow window) |
+
+Only `peak` windows compete for a corridor's `worst_peak`. They are **presets, not
+constants** — pass your own.
+
+**The CValue gate is applied, recorded, and costed.** `CValue > 80` by default (the
+strict comparison `io.filter_cvalue` uses), recorded on `attrs['cvalue_threshold']`,
+with the **surviving-row share carried per segment and per window** so a screened-in
+segment built from backfill is visible rather than indistinguishable. On the 2026 D3
+export: **39.4%** of rows carry a null CValue, the gate drops **40.1%** of all rows,
+**990 of 3,905** segments lose more than half their AM rows and **84 lose all of
+them** — yet across ten real corridors it moves delay by **≤0.33% on the eight urban
+ones** and 0.60% / 1.58% on the two rural SH-55 North extents (the backfill-heavy ones
+this file already flags). It changes almost nothing, *visibly*, which is the argument
+for gating explicitly rather than not at all. A gate on an export with no `CValue`
+column raises; `cvalue_threshold=None` screens ungated, on purpose.
+
+A 15-minute export gives **8 AM bins per weekday per segment**; the D3 export's 173
+weekdays therefore anchor at **1,384 AM observations per segment**, which 3,902 of its
+3,905 segments hit exactly.
+
+**Ranking (`rank_corridors`)** takes the screen plus assembled `ChainResult`s and
+reports `delay_min`, `tti`, `delay_per_mile`, `vhd`, `vhd_per_mile` and `worst_peak`
+per corridor × window, computed through `speed.segment_delay` and
+`aadt.vehicle_hours_of_delay` — so the AADT caveat above travels with the number
+instead of being restated as "veh-hrs/day". Three definitions, all recorded on `attrs`:
+
+- **Delay is floored once, at the segment** (`attrs['delay_floor'] == 'segment'`). A
+  segment faster than its free-flow reference contributes 0 and can never pay for a
+  congested one, and the *same* floored values feed `delay_min` and `vhd`, so the two
+  cannot disagree about a corridor.
+- **Only observed pavement is credited.** `miles` sums the in-extent miles of members
+  the screen actually observes; a member it never saw lands in `missing_miles`, so
+  `tti` and `delay_per_mile` are not deflated by pavement that contributed no travel
+  time.
+- **End segments are prorated** by the chain's extent fractions, the same proration
+  (and the same uniform-speed-within-a-segment assumption) as `chain_travel_time`.
+
+**What an export's segment set is — and is not.** A district download is a *query*,
+and the D3 one was built from the numbered-route lists: 3,905 segments, every one of
+which does carry observations (measured straight off the three zips: 91,054,384 rows,
+3,905 distinct `Segment ID`s, 59.9% of rows surviving `CValue > 80`). But segments with
+a null `RoadNumber` were never asked for, so a corridor that runs partly on an
+unnumbered city street is **requested but not observed** — the Front St leg of the
+downtown Boise couplet resolves as a 12-segment chain of which the three `RoadNumber`
+null `W Front St` members west of 15th St have no rows at all, leaving it **73.1%
+covered by mileage**. That is a finding about the download, not about the road, and it
+is why catalogue acceptance tests coverage as well as connectivity.
+
 ## AADT volume layer (ITD `Cumulative_AADT`)
 
 Annual Average Daily Traffic (traffic **volume**) is **not** in the INRIX export —
@@ -480,17 +678,90 @@ of delay, AADT-weighted corridor speed).
   an unfiltered read double-counts every road. **Use only 2024** (the latest) —
   `load_aadt` filters `Year == year` (default 2024) with a pushed-down WHERE.
 - **No `XDSegID`.** There is no INRIX join key, so the join to our `Segment ID` is
-  necessarily **spatial**: `aadt.join_aadt` matches each Item 8 segment polyline to
-  the nearest AADT line within a metre buffer, gated by an **endpoint-bearing check
-  (mod 180°)** that rejects the opposing-direction split and perpendicular
-  cross-streets. The result is flagged `matched` / `nearest` / `missing` with the
-  match distance, so a marginal join is visible, not silent. On the Myrtle export
-  the AADT centerlines coincide with the XD segments — 45/46 match at ~0 m.
+  necessarily **spatial**: `aadt.join_aadt` matches each Item 8 segment polyline to a
+  candidate AADT line within `max_distance_m` (default **60 m**), gated by a
+  **local-tangent bearing check (mod 180°)** that rejects the opposing-direction
+  split and perpendicular cross-streets. Among the candidates that pass, the winner
+  is chosen by a **ranked preference** — route number, then mainline over ramp, then
+  distance, then coverage — **not** by distance alone (see the divided-highway
+  subsection below). The result is flagged `matched` / `matched_ramp` / `nearest` /
+  `missing` with the match distance, so a marginal join is visible, not silent. On
+  the Myrtle export the AADT centerlines coincide with the XD segments — 45/46 match
+  at ~0 m, and the ranked join leaves those numbers unchanged.
 
-Fields kept (`_KEEP_COLS`): `Year`, `RouteID`, `Route`, `FromMeasur`, `ToMeasure`,
-`AADT`, `PassengerA`, `Commercial` (the truck split, for a future truck view).
-Route-measure identity (`RouteID`/`Route`/mileposts) is the layer's own linear
-reference; extras (`DHV`, `MADT1..12`) are dropped.
+Fields kept (`_KEEP_COLS`): `Year`, `RouteID`, `Route`, `Segment`, `FromMeasur`,
+`ToMeasure`, `AADT`, `PassengerA`, `Commercial` (the truck split, for a future truck
+view), `Descriptio`, `Descript_1`. Route-measure identity
+(`RouteID`/mileposts) is the layer's own linear reference; extras (`DHV`,
+`MADT1..12`) are dropped.
+
+- **`Route` and `Segment` are null on every Idaho row** — dead columns in the shipped
+  layer. The live identifier is **`RouteID`**: five digits of route-segment number, a
+  suffix letter, a two-letter class, a three-digit route number — `01010AIN084` is
+  I-84, `02150ASH069` is SH-69, `01540DUS095` is US-95. Class is `IN` / `SH` / `US` /
+  `OH`, and `OH` ("other highway", a local road) always carries route number `000`.
+  `aadt.load_aadt` parses it into `route_class` / `route_number` and **repopulates
+  `Route`** from it, so the column means something.
+- **`Descriptio` / `Descript_1`** are the record's from/to descriptions and are the
+  only facility-type signal the layer has: a ramp feature is written as the movement
+  it carries (`WB OFF EAGLE RD IC #46`), a mainline record as the cross-streets it
+  runs between (`EAGLE RD IC #46` → `JCT I-184 IC #49`). Both are **truncated in the
+  source** (max 40 chars; `SNAKE RIVER VIEW EB RA` is stored that way).
+
+### The divided-highway failure mode (ROADMAP Item 34)
+
+On a divided highway the layer carries **one mainline centerline** — which sits
+**22–30 m off each carriageway** — plus a **record per ramp movement**, and the ramp
+runs parallel to the carriageway 3–8 m away. Nearest-wins therefore gives one
+carriageway the mainline and the other a string of ramps, and nothing in the output
+says so: both used to report `aadt_source == "matched"`.
+
+Measured on the 2026 D3 export, I-84 **westbound** read
+`147500, 18000, 145500, 10500, 135000, 13000, 13500, 122000, 10500…` segment to
+segment while eastbound over the same ground was smooth and monotone
+(`114500 → 122000 → 135000 → 145500 → 147500`) — a length-weighted mean AADT of
+**61,410 WB against 122,813 EB**, near-halving the westbound vehicle-hours of delay.
+For segment `1187323545` the picked record was `08627AIN084` /
+`"WB OFF EAGLE RD IC #46"` (18,000) at 4.1 m; the right one was `01010AIN084` /
+`"EAGLE RD IC #46"` (147,500) at 25.9 m. The same mechanism let a **frontage road**
+record of 70 vehicles/day at 2.8 m out-compete the interstate at 28 m on rural I-84.
+
+What fixes it (`aadt.classify_aadt_records` + the ranked `join_aadt`):
+
+- Each record is labelled `mainline` / `ramp` / `connector` / `unknown` from
+  `Descriptio`, then **rolled up by `RouteID`**: ITD gives every ramp its own
+  route-segment number (I-84's mainline is all `01010AIN084`; its ramps are `01098`,
+  `08627`, `25580`, …), so a route whose records are *mostly* mainline descriptions is
+  a mainline route and its odd ramp-worded row — a carriageway between two gores,
+  legitimately written `EB ON COLE-OVERLAND IC` — is relabelled `mainline`. A route
+  with no mainline majority (a US-95 spur pairing one street with one ramp) keeps its
+  per-record labels. Note `RAMP` is matched **singular only**: the plural
+  (`I-15 NB RAMPS IC #108`) names the interchange a *mainline* record runs to, and
+  259 rows use it that way.
+- The route-number test is a **bonus, never a penalty** — a record that names the
+  wrong route ranks with one that names none. Penalising a mismatch sent SH-55 at New
+  Meadows (where US-95 carries it, a concurrency the XD side doesn't list) to a
+  130-vehicle substation road.
+- The 60 m default is only safe **because** ramps stop out-competing the mainline;
+  under nearest-wins it would have handed *more* segments to the ramps.
+- After the fix I-84 WB reads `114500 → 122000 → 135000 → 145500 → 147500` like the
+  other carriageway, a length-weighted **123,692** against EB's **124,203** (0.4%).
+  Across all 3,905 D3 segments 482 AADT values move, 112 of them from under 20k to
+  over 50k; D3 peak vehicle-hours of delay rise **+50.9%**. The one AADT-weighted pair
+  this repo has shipped (Myrtle, DESIGN_HISTORY Session 19: plain 20.1 mph vs weighted
+  23.8, ~617 vehicle-hours) is **unchanged** — Myrtle is an undivided downtown couplet.
+
+- **`matched_ramp` is a finding, not an error.** A segment that genuinely *is* a ramp
+  needs its ramp volume, so the preference labels rather than filters:
+  `aadt_source == "matched_ramp"` means the winning record is a ramp or connector.
+  On D3 that is 37 segments, nearly all of them unnamed FRC 3–4 XD stubs at
+  interchanges. `vehicle_hours_of_delay` **flags and keeps** those rows (the column is
+  carried through, `attrs['aadt_ramp_rows']` counts them) rather than dropping them —
+  dropping would silently zero real ramp impact. Filter on it when a corridor total
+  must be mainline-only.
+- **Rural divided sections can exceed 60 m.** 12 rural I-84 WB segments in D3 sit
+  61–85 m from the mainline centerline and come back `nearest` (no volume) — correct
+  behaviour, but raise `max_distance_m` if you need them.
 
 **AADT is a daily total.** Vehicle-hours of delay (`Delay/60 × AADT`) and the
 AADT-weighted mean speed use it as a **relative** weight, not an absolute VMT: the
@@ -537,9 +808,11 @@ An optional **persistent DuckDB store** lets a session *select* a previously ing
 time. It is an accelerator, not a requirement — the file loaders (`io` / `geometry` /
 `aadt`) keep working, and running straight from a path is unchanged.
 
-**Why DuckDB (not SQLite).** DuckDB is already a transitive dependency (via
-`traffic-anomaly`'s `ibis-framework[duckdb]`), and its columnar engine is the right
-fit for the analytic scans of a ~2M-row export. The DuckDB **`spatial` extension is
+**Why DuckDB (not SQLite).** Its columnar engine is the right fit for the analytic
+scans of a ~2M-row export, and it reads a CSV stream directly, which is what makes
+the district-scale streaming ingest below possible. It is declared as a **direct**
+dependency in `pyproject.toml` (Item 35) — `store.py` imports it — rather than left to
+arrive transitively via `traffic-anomaly`'s `ibis-framework[duckdb]`. The DuckDB **`spatial` extension is
 not used**: the GIS layers here are a small per-segment table, so geometry is
 serialized as **WKB blobs** and rehydrated with `shapely` — no in-DB spatial
 predicates, so `store.connect` stays offline (no extension download) and the schema
@@ -594,7 +867,7 @@ typed, tz-aware) frame. `area_local_span(area_key, tz)` reads the registry's
 | `_names` | friendly segment names (Item 27), **global** — `Segment ID` (PK), `name`, `inrix_label`, `updated_at`. Not keyed by area (INRIX Segment IDs are globally unique, so a name applies everywhere the segment appears). |
 | `obs_<area_key>` | the merged `io.load_data` rows for the area + a `bin_minutes` partition column (`Date Time` as `TIMESTAMPTZ`) |
 | `meta_<area_key>` | the merged `io.load_metadata` frame (Segment ID as a column; `Combined` included) |
-| `geo_<area_key>` | the **processed** GIS join: `Segment ID`, `source`, the `join_aadt` columns (`AADT` / `aadt_source` / `aadt_dist_m` / `Route` / `Commercial`), geometry as a WKB blob (`_geom_wkb`, `NULL` for a `missing` segment). Cached at ingest so the Item 18 spatial join runs **once**, not per load. |
+| `geo_<area_key>` | the **processed** GIS join: `Segment ID`, `source`, the XD identity columns (`FRC` / `RoadNumber` / `RoadName` / `RoadList` / `Bearing`), the `join_aadt` columns (`AADT` / `aadt_source` / `aadt_dist_m` / `aadt_record_kind` / `aadt_desc` / `RouteID` / `Route` / `Commercial`), geometry as a WKB blob (`_geom_wkb`, `NULL` for a `missing` segment). Cached at ingest so the Item 18 spatial join runs **once**, not per load. |
 
 Exports whose column sets differ (an extra column) still merge — a missing column
 fills `NULL`, a new one is added via `ALTER TABLE ADD COLUMN` (`_align_columns`), and
@@ -621,6 +894,48 @@ old `segment_names.csv` round-trip (the CSV writers moved to `legacy/names_csv.p
 - **Object NULLs.** A NULL string/object cell round-trips as `None` (not `NaN`), so
   parity holds only where the source frame has no missing string cells; numeric NaN
   round-trips as NaN. (Not an issue for the covered frames.)
+
+**Streaming ingest (`ingest_export_streaming`, Item 35).** `ingest_export` reads the
+whole export into pandas first, which a district download makes impossible: the 2026
+D3 export is **45.4 M rows in part 1 alone** (3.1 GB of CSV inside a 263 MB zip, split
+across parts **by segment**, not by date — every part carries the whole date range).
+The streaming path decompresses the zip member with `zipfile.ZipFile.open()` and feeds
+it to DuckDB's `read_csv` through a **named pipe** (`os.mkfifo`; a temp file where
+FIFOs don't exist), landing the *same table* `ingest_export` lands — same area, same
+keep-first merge, same column types, same row order — with no whole-frame read.
+
+Three things the implementation had to get right, all measured:
+
+- **Memory is bounded by chunking, not by laziness.** DuckDB buffers a statement's
+  appended rows until it commits, so a single `CREATE TABLE AS SELECT` over a part
+  grows to roughly the size of the CSV (1.8 GiB resident for 1.5 GB of input, then
+  killed). The member is therefore cut into line-aligned chunks (default 256 MiB,
+  `chunk_bytes=`), each staged and merged in its own committed statement, so peak
+  memory tracks the chunk size rather than the export. The scan is single-threaded
+  (`parallel=false` — a pipe cannot be split), which is also what keeps the stored row
+  order identical to the pandas path's.
+- **Column types come from the same rule pandas uses.** Every column is read as
+  `VARCHAR` (nothing may be sniffed — a pipe cannot be rewound) and cast in SQL by
+  `io.load_data`'s rules: `TRY_CAST` is `pd.to_numeric(errors='coerce')`, `nullstr=''`
+  is pandas' empty-field NaN, and `Road Closure` coalesces to `FALSE` (pandas'
+  `.astype(str)…eq("T")` on a missing value). A numeric column is then **narrowed to
+  `BIGINT` only when it holds no nulls and no fractions** — `pd.to_numeric`'s own
+  int64-vs-float64 rule — which is why the real Myrtle export round-trips with
+  `Ref Speed` as `BIGINT` and `Speed` as `DOUBLE` through both paths.
+- **A column's type is no longer fixed by the first export.** Merging now *widens* an
+  integer column to `DOUBLE` when the incoming rows are fractional (`_widen_columns`).
+  Without it, an export whose `Speed` read `30, 31` typed the column `BIGINT` and
+  DuckDB's insert cast silently truncated a later export's `30.5` to `31` — a latent
+  bug on **both** ingest paths, not just the new one.
+
+Two deliberate differences from the pandas path, both documented on the function: the
+**bin-length is detected from the first chunk** (the histogram is accumulated across
+the rest and a disagreement raises rather than mixing cadences under one label), and a
+duplicate `(Segment ID, Date Time)` **spanning two chunks or parts** is de-duplicated
+here where the pandas path inserts both copies (its anti-join sees the table, not the
+frame it is about to insert). Segment **metadata** comes from `source` alone in both
+paths — `io.load_metadata` reads a single source and does not walk the parts, so a
+part-split export stores part 1's metadata while ingesting every part's observations.
 
 **Versioning / migration.** Every area row stamps `schema_version`
 (`store.SCHEMA_VERSION`, now **2** — the area/merge model; **1** was the Item-21

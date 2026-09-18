@@ -31,6 +31,7 @@ Compute only — no plotting (see CLAUDE.md). Units: minutes, miles.
 from __future__ import annotations
 
 import math
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -47,9 +48,15 @@ MEAN_COL = "Mean(Minutes)"                # Bland-Altman x-axis
 # ---------------------------------------------------------------------------
 # Matching
 # ---------------------------------------------------------------------------
+# INRIX-side per-bin coverage columns carried through the match, so the CValue
+# gate's cost and the imputation share reach the scorecard instead of stopping at
+# the corridor sum (ROADMAP Item 31).
+CARRY_COLS = ("imputed_fraction", "cvalue_kept_fraction", "short", "n_absent")
+
+
 def match_bins(inrix: pd.DataFrame, reference: pd.DataFrame, key: str = ROUTE_COL,
                datetime_col: str = DATETIME_COL, value_inrix: str = TT_COL,
-               value_ref: str = TT_COL) -> pd.DataFrame:
+               value_ref: str = TT_COL, carry: Sequence[str] = CARRY_COLS) -> pd.DataFrame:
     """Inner-join the two sources bin for bin.
 
     Both frames must already be binned to the same cadence (``reference`` through
@@ -64,13 +71,24 @@ def match_bins(inrix: pd.DataFrame, reference: pd.DataFrame, key: str = ROUTE_CO
         Reference Travel Time(Minutes), Difference(Minutes), Mean(Minutes),
         n_ref_samples]`` — the per-bin frame every statistic below is computed
         from, and the frame a Bland-Altman or scatter figure consumes (the figure
-        computes nothing).
+        computes nothing) — plus whichever of ``carry`` the INRIX frame supplies
+        (mean per bin; booleans become the share of that bin that was flagged).
+
+    Args:
+        carry: INRIX-side per-bin columns to bring through the join
+            (:data:`CARRY_COLS` by default — the CValue gate's cost, the
+            imputation share, and the short-chain flags from
+            ``corridors.chain_travel_time``). A column the INRIX frame does not
+            have is skipped, not an error: this is diagnostic weight, and a frame
+            built without it still matches.
     """
     ref = (reference.groupby([key, datetime_col], observed=True)[value_ref]
            .agg(["mean", "size"]).reset_index()
            .rename(columns={"mean": REF_COL, "size": "n_ref_samples"}))
-    inr = (inrix.groupby([key, datetime_col], observed=True)[value_inrix]
-           .mean().reset_index().rename(columns={value_inrix: INRIX_COL}))
+    carried = [c for c in carry if c in inrix.columns]
+    agg = {INRIX_COL: (value_inrix, "mean"), **{c: (c, "mean") for c in carried}}
+    inr = (inrix.groupby([key, datetime_col], observed=True)
+           .agg(**agg).reset_index())
 
     out = inr.merge(ref, on=[key, datetime_col], how="inner")
     out = out[out[INRIX_COL].notna() & out[REF_COL].notna()].copy()
@@ -141,8 +159,18 @@ def compare(inrix: pd.DataFrame, reference: pd.DataFrame, key: str = ROUTE_COL,
           (mean difference ± 1.96 SD), the range a single bin's disagreement
           typically falls in.
         - ``r`` — Pearson correlation, reported last on purpose (G6).
+        - ``imputed_fraction``, ``cvalue_kept_fraction``, ``short_fraction``,
+          ``n_absent`` — INRIX-side coverage, present when the matched frame
+          carries it (ROADMAP Item 31). A bias is only as good as what was summed
+          to produce it: ``imputed_fraction`` is the share of member rows that
+          were historical backfill rather than observation (0% through the
+          daytime window on the arterials, 57% at 05:00 on rural Cascade-HSB), and
+          ``n_absent`` is how many requested chain members the export never
+          supplied. They belong beside the effect size for the same reason
+          ``n_days`` does.
 
-        ``attrs['matched']`` carries the per-bin frame.
+        ``attrs['matched']`` carries the per-bin frame; ``attrs['cvalue_threshold']``
+        the gate the INRIX side was summed under, when one was applied.
     """
     m = matched if matched is not None else match_bins(
         inrix, reference, key=key, datetime_col=datetime_col,
@@ -194,12 +222,33 @@ def compare(inrix: pd.DataFrame, reference: pd.DataFrame, key: str = ROUTE_COL,
             # divide-by-zero artifact (and it is the last column for a reason).
             "r": (float(grp[INRIX_COL].corr(grp[REF_COL]))
                   if len(grp) > 1 and sd_i > 0 and sd_r > 0 else float("nan")),
+            **_coverage_row(grp),
         })
 
     out = pd.DataFrame(rows)
     out.attrs = {"matched": m, "confidence": confidence,
-                 "free_flow_percentile": free_flow_percentile}
+                 "free_flow_percentile": free_flow_percentile,
+                 "cvalue_threshold": (inrix.attrs.get("cvalue_threshold")
+                                      if inrix is not None else None)}
     return out
+
+
+_COVERAGE_MEANS = {"imputed_fraction": "imputed_fraction",
+                   "cvalue_kept_fraction": "cvalue_kept_fraction",
+                   "short": "short_fraction"}
+
+
+def _coverage_row(grp: pd.DataFrame) -> dict:
+    """The INRIX-side coverage columns :func:`match_bins` carried through, reduced
+    to one number per route — omitted entirely when the matched frame has none,
+    rather than reported as a reassuring NaN."""
+    row = {}
+    for src, name in _COVERAGE_MEANS.items():
+        if src in grp.columns:
+            row[name] = float(grp[src].mean())
+    if "n_absent" in grp.columns:
+        row["n_absent"] = float(grp["n_absent"].max())
+    return row
 
 
 # ---------------------------------------------------------------------------

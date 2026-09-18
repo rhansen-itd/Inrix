@@ -28,6 +28,14 @@ _FLOAT_COLS = ["Miles", "Lanes", "StartLat", "StartLong", "EndLat", "EndLong"]
 SEGMENT_COL = "Segment ID"  # matches inrix_tools.io
 WGS84 = "EPSG:4326"
 
+# XD attributes carried through onto the segment-geometry layer (ROADMAP Item 34).
+# They are the road's *identity*, not its shape: the AADT join ranks candidate
+# volume records on the route number and on whether the segment is a mainline or a
+# ramp (``aadt.join_aadt``), and neither question is answerable from the polyline.
+# Carried only when the network actually has the column; ``NaN`` for a segment
+# resolved by the metadata fallback (there is no XD row to read them from).
+IDENTITY_COLS = ("FRC", "RoadNumber", "RoadName", "RoadList", "Bearing")
+
 
 # ---------------------------------------------------------------------------
 # Source resolution
@@ -124,34 +132,45 @@ def segment_geometry(network, segment_ids=None, metadata=None):
             used to build the straight-line fallback for missing segments.
 
     Returns:
-        GeoDataFrame indexed by ``Segment ID`` with ``geometry`` and a ``source``
-        column: ``"xd"`` (real polyline), ``"fallback"`` (straight endpoint line),
-        or ``"missing"`` (no geometry available).
+        GeoDataFrame indexed by ``Segment ID`` with ``geometry``, a ``source``
+        column — ``"xd"`` (real polyline), ``"fallback"`` (straight endpoint line),
+        or ``"missing"`` (no geometry available) — and whichever of
+        :data:`IDENTITY_COLS` the network carries (``NaN`` off the ``"xd"`` path).
     """
     import geopandas as gpd
     from shapely.geometry import LineString
 
     net = network.set_index("XDSegID") if "XDSegID" in network.columns else network
     ids = list(segment_ids) if segment_ids is not None else list(net.index)
+    ident = [c for c in IDENTITY_COLS if c in net.columns]
 
     records = []
     for sid in ids:
         sid = int(sid)
         if sid in net.index:
-            records.append((sid, net.loc[sid, "geometry"], "xd"))
+            row = net.loc[sid]
+            records.append((sid, row["geometry"], "xd",
+                            *(row[c] for c in ident)))
         elif metadata is not None and sid in metadata.index:
             m = metadata.loc[sid]
             geom = LineString([
                 (m["Start Longitude"], m["Start Latitude"]),
                 (m["End Longitude"], m["End Latitude"]),
             ])
-            records.append((sid, geom, "fallback"))
+            records.append((sid, geom, "fallback", *(None,) * len(ident)))
         else:
-            records.append((sid, None, "missing"))
+            records.append((sid, None, "missing", *(None,) * len(ident)))
 
     gdf = gpd.GeoDataFrame(
-        records, columns=[SEGMENT_COL, "geometry", "source"], crs=WGS84
+        records, columns=[SEGMENT_COL, "geometry", "source", *ident], crs=WGS84
     ).set_index(SEGMENT_COL)
+    for c in ident:
+        # Building row-by-row lands every carried column as ``object``; restore the
+        # network's dtype so ``FRC`` stays numeric (the AADT join compares it).
+        try:
+            gdf[c] = gdf[c].astype(net[c].dtype)
+        except (TypeError, ValueError):
+            pass
     return gdf
 
 

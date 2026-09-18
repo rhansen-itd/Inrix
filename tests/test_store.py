@@ -427,3 +427,175 @@ def test_real_export_ingest_roundtrip(tmp_path):
     assert loaded[DATETIME_COL].min() == direct[DATETIME_COL].min()
     assert loaded[DATETIME_COL].max() == direct[DATETIME_COL].max()
     con.close()
+
+
+# ---------------------------------------------------------------------------
+# Streaming ingest (ROADMAP Item 35): the zip member -> DuckDB path must land the
+# *same table* the pandas path lands, without the whole-frame read.
+# ---------------------------------------------------------------------------
+def _obs(con, key):
+    return con.execute(f'SELECT * FROM "{store._obs_table(key)}"').df()
+
+
+def test_streaming_ingest_matches_the_pandas_ingest(tmp_path, zip_a):
+    """The assertion the item asks for: identical tables, on a fixture small enough
+    to run both ways — same values, same column **types**, same row order."""
+    a, b = store.connect(":memory:"), store.connect(":memory:")
+    try:
+        pandas_info = store.ingest_export(a, zip_a)
+        stream_info = store.ingest_export_streaming(b, zip_a)
+        assert stream_info == pandas_info
+
+        key = pandas_info["area_key"]
+        pd.testing.assert_frame_equal(_obs(a, key), _obs(b, key))
+        assert (a.execute(f'DESCRIBE "{store._obs_table(key)}"').fetchall()
+                == b.execute(f'DESCRIBE "{store._obs_table(key)}"').fetchall())
+        pd.testing.assert_frame_equal(store.load_export(a, key, 5),
+                                      store.load_export(b, key, 5))
+        pd.testing.assert_frame_equal(store.load_metadata(a, key),
+                                      store.load_metadata(b, key))
+        cols = ["area_key", "area_name", "corridors", "n_segments", "date_min",
+                "date_max", "schema_version", "bins"]
+        pd.testing.assert_frame_equal(store.list_areas(a)[cols],
+                                      store.list_areas(b)[cols])
+    finally:
+        a.close(), b.close()
+
+
+def test_streaming_ingest_merges_keep_first_and_is_idempotent(con, tmp_path):
+    za = _make_zip(tmp_path, "A", _rows_5min(T5, [1001], speed=30), [1001])
+    zb = _make_zip(tmp_path, "B", _rows_5min(T5B, [1001], speed=99), [1001])
+    a = store.ingest_export_streaming(con, za)
+    b = store.ingest_export_streaming(con, zb)
+    assert b["area_key"] == a["area_key"] and b["n_rows_added"] == 2
+
+    df = store.load_export(con, a["area_key"], 5).sort_values(DATETIME_COL)
+    assert len(df) == 5
+    overlap = df[df[DATETIME_COL] == pd.Timestamp("2026-01-15T15:10:00Z")]
+    assert overlap["Speed(miles/hour)"].iloc[0] == 30      # keep-first, not 99
+    assert store.ingest_export_streaming(con, za)["n_rows_added"] == 0
+
+
+def test_streaming_ingest_handles_split_parts(tmp_path):
+    """A part-split download ingests as one area, and matches what the pandas path
+    (which concatenates the parts) stores."""
+    name = "Split_2026-01-15_5_min"
+    for part, segs in ((1, [1001]), (2, [1002])):
+        zpath = tmp_path / f"{name}_part_{part}.zip"
+        with zipfile.ZipFile(zpath, "w") as zf:
+            zf.writestr(f"{name}/data.csv", _DATA_HDR + "".join(_rows_5min(T5, segs)))
+            zf.writestr(f"{name}/metadata.csv", _meta(segs))
+    part1 = tmp_path / f"{name}_part_1.zip"
+
+    a, b = store.connect(":memory:"), store.connect(":memory:")
+    try:
+        pandas_info = store.ingest_export(a, part1)
+        stream_info = store.ingest_export_streaming(b, part1)
+        assert stream_info["n_rows_added"] == pandas_info["n_rows_added"] == 6
+        assert stream_info["area_key"] == pandas_info["area_key"]
+        key = stream_info["area_key"]
+        left = _obs(a, key).sort_values([SEGMENT_COL, DATETIME_COL], ignore_index=True)
+        right = _obs(b, key).sort_values([SEGMENT_COL, DATETIME_COL], ignore_index=True)
+        pd.testing.assert_frame_equal(left, right)
+    finally:
+        a.close(), b.close()
+
+
+def test_streaming_ingest_types_numerics_like_pandas(tmp_path):
+    """``pd.to_numeric`` yields int64 only for an all-integral, no-nulls column;
+    anything else is float64. The SQL path derives the same split from the staged
+    values, so the stored column types match column for column."""
+    rows = [_row(T5[0], 1001, 30, 0.5, 95), _row(T5[1], 1001, 31, 0.6, "")]
+    z = _make_zip(tmp_path, "T", rows, [1001])
+    a, b = store.connect(":memory:"), store.connect(":memory:")
+    try:
+        key = store.ingest_export(a, z)["area_key"]
+        store.ingest_export_streaming(b, z)
+        types = {r[0]: r[1] for r in
+                 b.execute(f'DESCRIBE "{store._obs_table(key)}"').fetchall()}
+        assert types["Speed(miles/hour)"] == "BIGINT"      # 30, 31 -> int64
+        assert types["Travel Time(Minutes)"] == "DOUBLE"
+        assert types["CValue"] == "DOUBLE"                 # one row is null
+        assert types["Road Closure"] == "BOOLEAN"
+        assert (a.execute(f'DESCRIBE "{store._obs_table(key)}"').fetchall()
+                == b.execute(f'DESCRIBE "{store._obs_table(key)}"').fetchall())
+    finally:
+        a.close(), b.close()
+
+
+def test_merge_widens_an_integer_column_rather_than_truncating(con, tmp_path):
+    """A column typed from the first export must not silently truncate a later one:
+    ``Speed`` of 30 then 30.5 has to end up DOUBLE, not BIGINT rounding to 31."""
+    za = _make_zip(tmp_path, "A", _rows_5min(T5, [1001], speed=30), [1001])
+    zb = _make_zip(tmp_path, "B", _rows_5min(T5B, [1001], speed=30.5), [1001])
+    key = store.ingest_export_streaming(con, za)["area_key"]
+    store.ingest_export_streaming(con, zb)
+    df = store.load_export(con, key, 5)
+    assert sorted(df["Speed(miles/hour)"].unique()) == [30.0, 30.5]
+
+
+@pytest.mark.skipif(not MYRTLE_ZIP.exists(), reason="real Myrtle export not present")
+def test_streaming_ingest_of_the_real_export_matches(tmp_path):
+    """The parity check that matters — 2.18 M real rows, both ways.
+
+    Both stores are on disk and the comparison is a two-way ``EXCEPT`` inside DuckDB:
+    pulling 2.18 M rows into pandas twice to diff them would cost more memory than the
+    ingest under test.
+    """
+    ref_db, stream_db = tmp_path / "pandas.duckdb", tmp_path / "stream.duckdb"
+    a = store.connect(ref_db)
+    try:
+        key = store.ingest_export(a, MYRTLE_ZIP)["area_key"]
+    finally:
+        a.close()
+    b = store.connect(stream_db)
+    try:
+        assert store.ingest_export_streaming(b, MYRTLE_ZIP)["area_key"] == key
+        obs = store._obs_table(key)
+        b.execute(f"ATTACH '{ref_db}' AS ref (READ_ONLY)")
+        # EXCEPT is set semantics, so check the counts too — that catches a row the
+        # streaming path duplicated rather than dropped.
+        n_ref, n_stream = b.execute(
+            f'SELECT (SELECT count(*) FROM ref."{obs}"), (SELECT count(*) FROM "{obs}")'
+        ).fetchone()
+        assert n_ref == n_stream > 2_000_000
+        missing = b.execute(f'SELECT count(*) FROM (SELECT * FROM ref."{obs}" '
+                            f'EXCEPT SELECT * FROM "{obs}")').fetchone()[0]
+        extra = b.execute(f'SELECT count(*) FROM (SELECT * FROM "{obs}" '
+                          f'EXCEPT SELECT * FROM ref."{obs}")').fetchone()[0]
+        assert (missing, extra) == (0, 0)
+        assert (b.execute(f'DESCRIBE ref."{obs}"').fetchall()
+                == b.execute(f'DESCRIBE "{obs}"').fetchall())
+    finally:
+        b.close()
+
+
+def test_streaming_ingest_chunks_agree_with_one_shot(tmp_path, zip_a):
+    """The chunked path is what bounds memory on a district export: forcing a tiny
+    chunk size must not change a byte of the result (nor the bin detection, which
+    reads the first chunk and is checked against the whole export's histogram)."""
+    a, b = store.connect(":memory:"), store.connect(":memory:")
+    try:
+        whole = store.ingest_export_streaming(a, zip_a)
+        chunked = store.ingest_export_streaming(b, zip_a, chunk_bytes=64)
+        assert chunked == whole and chunked["bin_minutes"] == 5
+        key = whole["area_key"]
+        pd.testing.assert_frame_equal(_obs(a, key), _obs(b, key))
+    finally:
+        a.close(), b.close()
+
+
+def test_streaming_ingest_rejects_an_empty_export(tmp_path):
+    """A data.csv with a header and no rows is a clear error, not an area named for
+    an empty segment set."""
+    name = "Empty_2026-01-15_5_min"
+    zpath = tmp_path / f"{name}_part_1.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr(f"{name}/data.csv", _DATA_HDR)
+        zf.writestr(f"{name}/metadata.csv", _meta([1001]))
+    con = store.connect(":memory:")
+    try:
+        with pytest.raises(ValueError, match="No observation rows"):
+            store.ingest_export_streaming(con, zpath)
+    finally:
+        con.close()

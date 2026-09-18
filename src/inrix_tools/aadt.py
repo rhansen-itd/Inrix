@@ -20,6 +20,14 @@ Two things are kept separate on purpose (see CLAUDE.md / ROADMAP Item 18):
   (Σ w·x / Σ w, weights = AADT) so a corridor speed reflects where the vehicles
   actually are.
 
+The match is **ranked, not nearest-wins** (ROADMAP Item 34). The ITD layer carries
+one mainline centerline per divided highway — 22–30 m off each carriageway — plus a
+record per ramp *movement*, and a parallel on/off ramp sits 3–8 m from the
+carriageway, so plain nearest picks the ramp and one direction of an interstate ends
+up weighted at a ramp's volume. :func:`classify_aadt_records` labels each record
+``mainline`` / ``ramp`` / ``connector`` and :func:`join_aadt` prefers a record whose
+route number matches the segment's before it prefers the near one. See DATA_FORMAT.md.
+
 Needs the ``geo`` extra (``geopandas`` / ``shapely`` / ``pyogrio`` / ``pyproj``),
 same as :mod:`inrix_tools.geometry`. Heavy imports happen inside functions so the
 package still imports without them.
@@ -27,6 +35,7 @@ package still imports without them.
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -38,14 +47,154 @@ from .io import DATETIME_COL, SEGMENT_COL
 # types already (unlike the all-C(255) XD shapefile), so no casting is needed — we
 # only subset the columns and reproject.
 _KEEP_COLS = [
-    "Year", "RouteID", "Route", "FromMeasur", "ToMeasure",
-    "AADT", "PassengerA", "Commercial",
+    "Year", "RouteID", "Route", "Segment", "FromMeasur", "ToMeasure",
+    "AADT", "PassengerA", "Commercial", "Descriptio", "Descript_1",
 ]
 
 DEFAULT_YEAR = 2024        # the layer is cumulative across years; use the latest.
 AADT_COL = "AADT"
-AADT_SOURCE_COL = "aadt_source"      # matched / nearest / missing
+AADT_SOURCE_COL = "aadt_source"      # matched / matched_ramp / nearest / missing
 AADT_DIST_COL = "aadt_dist_m"        # match distance in metres
+AADT_KIND_COL = "aadt_record_kind"   # record_kind of the chosen AADT record
+AADT_DESC_COL = "aadt_desc"          # Descriptio of the chosen record (diagnostic)
+
+RECORD_KIND_COL = "record_kind"      # on the AADT layer (classify_aadt_records)
+ROUTE_CLASS_COL = "route_class"      # IN / SH / US / OH, parsed from RouteID
+ROUTE_NUMBER_COL = "route_number"    # 84 / 69 / 20 ... (<NA> for an OH record)
+
+# ``RouteID`` is the layer's real route identifier: five digits of route-segment
+# number, a segment suffix letter, a two-letter class, a three-digit route number —
+# ``01010AIN084`` is I-84, ``02150ASH069`` is SH-69. (The shipped ``Route`` column is
+# null on every Idaho row; :func:`load_aadt` repopulates it from here.)
+_ROUTE_ID_RE = re.compile(r"^(\d{5})([A-Z])([A-Z]{2})(\d{3})$")
+_CLASS_PREFIX = {"IN": "I", "US": "US", "SH": "SH"}   # OH = "other highway", unnumbered
+
+# A record's own description tells a ramp from a mainline stretch: ITD writes the
+# movement (``WB OFF EAGLE RD IC #46``) for a ramp feature and the bounding
+# cross-streets (``EAGLE RD IC #46``) for a mainline one. ``RAMP`` is matched
+# **singular only** — the plural (``I-15 NB RAMPS IC #108``) names the interchange a
+# *mainline* record runs to, and 259 of the layer's rows use it that way.
+_DESC_RAMP_RE = re.compile(r"\b(?:NB|SB|EB|WB)\s+(?:ON|OFF)\b|\bRAMP\b|\bFLYOVER\b")
+_DESC_CONN_RE = re.compile(r"\bCONN\b|\bJCT\b")
+
+MAINLINE, RAMP, CONNECTOR, UNKNOWN = "mainline", "ramp", "connector", "unknown"
+# Preference order when the *segment* is mainline: a mainline record, then one we
+# can't read, then a connector, then a ramp.
+_KIND_RANK = {MAINLINE: 0, UNKNOWN: 1, CONNECTOR: 2, RAMP: 3}
+
+# An XD segment that is itself a ramp (so it *should* take a ramp's volume). The XD
+# network states this in ``RoadName`` / ``FRC``; D3's export carries no ramp segments
+# at all, but a future area may.
+_SEG_RAMP_RE = re.compile(r"\b(?:ramp|exit)\b|^\s*to\s", re.I)
+_SEG_RAMP_FRC = 6                    # FRC 6+ = local/minor; an interstate is FRC 1
+# Route numbers out of the XD ``RoadNumber`` / ``RoadList`` fields ("84",
+# "I-84|US-30", "S Eagle Rd|ID-55").
+_XD_ROUTE_RE = re.compile(r"\b(?:I|US|ID|SH|SR)[- ]?(\d{1,3})\b", re.I)
+
+
+# ---------------------------------------------------------------------------
+# Record identity: RouteID -> route, Descriptio -> record kind  (Item 34)
+# ---------------------------------------------------------------------------
+def parse_route_id(route_id) -> tuple[str | None, str | None, int | None]:
+    """Split a ``RouteID`` into ``(route_segment, class, number)``.
+
+    ``"01010AIN084"`` -> ``("01010", "IN", 84)``; ``"00163AOH000"`` ->
+    ``("00163", "OH", None)`` — an *other highway* record carries no route number.
+    ``(None, None, None)`` for anything that doesn't parse.
+    """
+    m = _ROUTE_ID_RE.match(str(route_id).strip().upper()) if route_id is not None else None
+    if m is None:
+        return (None, None, None)
+    num = int(m.group(4))
+    return (m.group(1), m.group(3), num if num > 0 else None)
+
+
+def route_label(route_id) -> str | None:
+    """Human-readable route for a ``RouteID`` — ``"01010AIN084"`` -> ``"I-84"``,
+    ``"02150ASH069"`` -> ``"SH-69"``. ``None`` for an unnumbered (``OH``) record."""
+    _, cls, num = parse_route_id(route_id)
+    prefix = _CLASS_PREFIX.get(cls)
+    return None if (prefix is None or num is None) else f"{prefix}-{num}"
+
+
+def _derive_route_fields(aadt):
+    """Add ``route_class`` / ``route_number`` and (re)populate ``Route`` from
+    ``RouteID``. No-op when the frame has no ``RouteID`` — a hand-built fixture's
+    own ``Route`` values are left alone."""
+    if "RouteID" not in aadt.columns:
+        return aadt
+    parsed = [parse_route_id(r) for r in aadt["RouteID"]]
+    aadt[ROUTE_CLASS_COL] = [cls for _, cls, _ in parsed]
+    aadt[ROUTE_NUMBER_COL] = pd.array([num for _, _, num in parsed], dtype="Int64")
+    labels = pd.Series([route_label(r) for r in aadt["RouteID"]], index=aadt.index,
+                       dtype=object)
+    existing = aadt["Route"] if "Route" in aadt.columns else None
+    aadt["Route"] = labels if existing is None else labels.where(labels.notna(), existing)
+    return aadt
+
+
+def _describe_kind(desc) -> str:
+    """Per-record kind from a single ``Descriptio`` string (before the route roll-up)."""
+    if not isinstance(desc, str):
+        return UNKNOWN
+    text = desc.strip().upper()
+    if not text or text == "NONE":
+        return UNKNOWN
+    if _DESC_RAMP_RE.search(text):
+        return RAMP
+    if _DESC_CONN_RE.search(text):
+        return CONNECTOR
+    return MAINLINE
+
+
+def classify_aadt_records(aadt):
+    """Label every AADT record ``mainline`` / ``ramp`` / ``connector`` / ``unknown``.
+
+    The ITD layer has no facility-type field, but it describes each record: a ramp
+    feature is written as the movement it carries (``"WB OFF EAGLE RD IC #46"``,
+    ``"EB ON RAMP CONN IC #42"``) while a mainline one is written as the cross-streets
+    it runs between (``"EAGLE RD IC #46"`` -> ``"JCT I-184 IC #49"``). So the first
+    pass reads ``Descriptio``.
+
+    That alone mislabels the mainline, though: a carriageway *between* two ramp gores
+    is legitimately described ``"EB ON COLE-OVERLAND IC"``, and I-84's mainline record
+    has three such rows. The **``RouteID`` band** resolves it — ITD gives each ramp its
+    own route-segment number (I-84's mainline is all ``01010AIN084``; its ramps are
+    ``01098``, ``08627``, ``25580``, …) — so a second pass rolls the labels up per
+    ``RouteID`` and relabels a *mainline route* (one whose records are mostly mainline
+    descriptions) wholly ``mainline``. A route that is genuinely half ramp (a short
+    ``US-95`` spur pairing one ramp with one street) keeps its per-record labels.
+
+    Nothing is dropped: a segment that really *is* a ramp still needs its ramp volume,
+    so this labels and lets :func:`join_aadt` decide.
+
+    Args:
+        aadt: GeoDataFrame/DataFrame from :func:`load_aadt` (needs ``Descriptio`` and
+            ``RouteID``; either missing just widens ``unknown``).
+
+    Returns:
+        A copy with ``record_kind`` plus the :func:`_derive_route_fields` columns
+        (``route_class`` / ``route_number`` / a populated ``Route``).
+    """
+    out = _derive_route_fields(aadt.copy())
+    desc = out["Descriptio"] if "Descriptio" in out.columns else pd.Series(
+        [None] * len(out), index=out.index, dtype=object)
+    kind = pd.Series([_describe_kind(d) for d in desc], index=out.index, dtype=object)
+
+    if "RouteID" in out.columns and len(out):
+        tally = pd.crosstab(out["RouteID"], kind)
+        for col in (MAINLINE, RAMP, CONNECTOR):
+            if col not in tally.columns:
+                tally[col] = 0
+        # Strict majority: a route whose mainline descriptions outnumber its
+        # ramp+connector ones is a mainline route, so its odd ramp-worded row is a
+        # mainline stretch. A tie (one street + one ramp) keeps the per-record read.
+        mainline_routes = set(tally.index[tally[MAINLINE] > tally[RAMP] + tally[CONNECTOR]])
+        on_mainline_route = out["RouteID"].isin(mainline_routes)
+        kind = kind.where(~on_mainline_route, MAINLINE)
+
+    out[RECORD_KIND_COL] = kind
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +213,8 @@ def _bbox_to_crs(bbox, src_crs, dst_crs):
     return (min(xs), min(ys), max(xs), max(ys))
 
 
-def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=None):
+def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=None,
+              classify=True):
     """Load (a subset of) the ITD cumulative AADT layer as a GeoDataFrame in WGS84.
 
     Args:
@@ -80,15 +230,25 @@ def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=Non
         columns: attribute columns to keep (default :data:`_KEEP_COLS`).
         cache_path: optional GeoParquet cache — read from it when it exists, else
             build and write it.
+        classify: also label each record ``mainline`` / ``ramp`` / ``connector``
+            (:func:`classify_aadt_records`, Item 34) — what :func:`join_aadt` ranks
+            on. Default ``True``; pass ``False`` for the raw layer.
 
     Returns:
         GeoDataFrame in EPSG:4326 with the kept AADT attributes and reprojected
-        ``LineString`` geometry (the source is in EPSG:8826).
+        ``LineString`` geometry (the source is in EPSG:8826), plus ``route_class`` /
+        ``route_number`` parsed from ``RouteID`` and a ``Route`` populated from it
+        (the shipped ``Route`` column is **null on every Idaho row**), and
+        ``record_kind`` unless ``classify=False``.
     """
     import geopandas as gpd
 
     if cache_path is not None and Path(cache_path).exists():
-        return gpd.read_parquet(cache_path)
+        cached = gpd.read_parquet(cache_path)
+        # A cache written before Item 34 has neither; classify on the way out so an
+        # old cache can't silently reinstate the nearest-wins behaviour.
+        return classify_aadt_records(cached) if (
+            classify and RECORD_KIND_COL not in cached.columns) else cached
 
     from pyogrio import read_dataframe, read_info
 
@@ -108,6 +268,7 @@ def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=Non
     elif gdf.crs is None:
         gdf = gdf.set_crs(WGS84)
     gdf = gdf.reset_index(drop=True)
+    gdf = classify_aadt_records(gdf) if classify else _derive_route_fields(gdf)
 
     if cache_path is not None:
         Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
@@ -168,55 +329,163 @@ def _local_bearing(line, point, eps: float = 5.0) -> float | None:
         return _line_bearing(line)
 
 
-def join_aadt(geo, aadt, max_distance_m=35.0, bearing_tol_deg=45.0):
+def _alongside_fraction(seg, line, tol: float, n: int = 11) -> float:
+    """Share of ``seg`` running within ``tol`` of ``line``, sampled at ``n`` points.
+
+    The tie-break the ranked join needs: on this layer several records sit *on* a
+    segment at distance 0.0 — the mainline centreline and, say, a rest-area ramp
+    record that clips one end — and distance cannot separate them. How much of the
+    segment the record actually runs beside can.
+    """
+    if n < 2 or seg.length == 0:
+        return 0.0
+    step = seg.length / (n - 1)
+    hits = sum(1 for k in range(n)
+               if line.distance(seg.interpolate(k * step)) <= tol)
+    return hits / n
+
+
+def _segment_route_numbers(geo) -> dict:
+    """``Segment ID -> {route numbers}`` from the XD ``RoadNumber`` / ``RoadList``
+    identity fields (Item 34, carried by ``geometry.segment_geometry``). An empty
+    set means the segment names no route, so the route test can't discriminate."""
+    out = {}
+    num = geo["RoadNumber"] if "RoadNumber" in geo.columns else None
+    lst = geo["RoadList"] if "RoadList" in geo.columns else None
+    for sid in geo.index:
+        nums = set()
+        if num is not None:
+            raw = num.loc[sid]
+            if raw is not None and not (isinstance(raw, float) and math.isnan(raw)):
+                text = str(raw).strip()
+                if text.isdigit():
+                    nums.add(int(text))
+        if lst is not None:
+            raw = lst.loc[sid]
+            if isinstance(raw, str):
+                nums.update(int(m) for m in _XD_ROUTE_RE.findall(raw))
+        out[sid] = nums
+    return out
+
+
+def _segment_kinds(geo) -> dict:
+    """``Segment ID -> "mainline" | "ramp"`` from the XD attributes.
+
+    Only the *segment* side, and only to decide whether the mainline preference
+    applies: a segment that is itself a ramp should take a ramp's volume, so it is
+    matched by distance as before. Read from ``RoadName`` (INRIX names a ramp for the
+    movement or the exit) and ``FRC``; anything unstated is mainline, which is the
+    conservative reading — the failure this fixes is a mainline taking a ramp's count.
+    """
+    name = geo["RoadName"] if "RoadName" in geo.columns else None
+    frc = pd.to_numeric(geo["FRC"], errors="coerce") if "FRC" in geo.columns else None
+    out = {}
+    for sid in geo.index:
+        is_ramp = False
+        if name is not None and isinstance(name.loc[sid], str):
+            is_ramp = bool(_SEG_RAMP_RE.search(name.loc[sid]))
+        if not is_ramp and frc is not None:
+            f = frc.loc[sid]
+            is_ramp = bool(pd.notna(f) and f >= _SEG_RAMP_FRC)
+        out[sid] = RAMP if is_ramp else MAINLINE
+    return out
+
+
+def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
+              prefer_mainline=True):
     """Attach an ``AADT`` value to each segment by spatial match to the AADT layer.
 
-    The AADT layer has no segment id, so the join is spatial: for each segment
-    geometry (Item 8), the nearest AADT line whose **local** bearing agrees
-    (rejecting the opposing-direction split or a perpendicular cross-street)
-    within ``max_distance_m`` is the match. Bearings are compared at the
-    nearest-point tangents of both lines (see ``_local_bearing``), so a curved
-    route-measure feature lying on the segment still matches. A bad or absent
-    match is **flagged, not dropped**, so it is visible downstream — but a
-    volume is attached **only for a real match**: a gate-rejected nearest line
-    is reported (its ``Route`` + distance, for diagnosis) with ``AADT`` NaN, so
-    a cross-street's volume can never leak into the weighted metrics.
+    The AADT layer has no segment id, so the join is spatial: candidates are the AADT
+    lines within ``max_distance_m`` of the segment (Item 8 geometry) whose **local**
+    bearing agrees with it, which rejects a perpendicular cross-street while letting a
+    curved route-measure feature lying on the segment through (see ``_local_bearing``;
+    bearings are compared at the two lines' nearest-point tangents).
+
+    Among those candidates the winner is chosen by a **ranked preference**, not by
+    distance alone (ROADMAP Item 34):
+
+    1. **Route.** A record whose ``RouteID`` route number matches one the segment
+       names (``RoadNumber`` / ``RoadList``) beats one that doesn't. This is a
+       *bonus, never a penalty*: a record that names no route and one that names the
+       wrong one rank together, because a concurrency the XD side doesn't list
+       (US-95 carrying SH-55 traffic at New Meadows) would otherwise push the real
+       route below an unnumbered side street.
+    2. **Facility.** For a mainline segment, a ``record_kind == "mainline"`` record
+       beats a connector, which beats a ramp (``prefer_mainline``; see
+       :func:`classify_aadt_records`). A segment that is itself a ramp skips this
+       step — it *should* take a ramp's volume.
+    3. **Distance**, to 0.1 m.
+    4. **Coverage.** Among records the same distance away — which is the common case,
+       since several of them lie *on* the segment — the one that stays alongside it
+       longest wins (:func:`_alongside_fraction`). A rest-area ramp record and the
+       mainline record are both 0.0 m from an interstate segment; only the mainline
+       one runs its whole length.
+
+    Nearest-wins alone is systematically wrong on a divided highway: the layer carries
+    one mainline centerline, 22–30 m off each carriageway, and a record per ramp
+    movement running parallel 3–8 m away — so the ramp passes the bearing gate and
+    wins. On the 2026 D3 export that read I-84 westbound as ``147500, 18000, 145500,
+    10500, 135000…`` segment to segment, a length-weighted 61,410 against 114,981 for
+    the same ground eastbound, halving the westbound vehicle-hours of delay everything
+    was ranked by. Ranking the route and the facility ahead of distance is also what
+    makes the ``60 m`` default safe: it is far enough to reach the mainline centerline
+    from either carriageway, which under nearest-wins would only have handed more
+    segments to the ramps.
+
+    A bad or absent match is **flagged, not dropped**, so it is visible downstream —
+    but a volume is attached **only for a real match**: a gate-rejected nearest line is
+    reported (route + distance, for diagnosis) with ``AADT`` NaN, so a cross-street's
+    volume can never leak into the weighted metrics.
 
     Args:
         geo: GeoDataFrame indexed by ``Segment ID`` with a ``geometry`` column
-            (from :func:`inrix_tools.geometry.segment_geometry`), EPSG:4326.
-        aadt: GeoDataFrame from :func:`load_aadt` (EPSG:4326).
+            (from :func:`inrix_tools.geometry.segment_geometry`), EPSG:4326. Its
+            ``RoadNumber`` / ``RoadList`` / ``RoadName`` / ``FRC`` columns, when
+            present, drive steps 1–2; without them the join falls back to distance.
+        aadt: GeoDataFrame from :func:`load_aadt` (EPSG:4326). Classified on the fly
+            if it doesn't already carry ``record_kind``.
         max_distance_m: a match must lie within this many metres of the segment.
         bearing_tol_deg: max undirected bearing difference for a match (≈45°
             cleanly separates same-road / opposing from a cross-street).
+        prefer_mainline: apply step 2. ``False`` reverts to route-then-distance.
 
     Returns:
         A copy of ``geo`` with added columns:
 
         * ``AADT`` — matched volume (float; ``NaN`` when the segment has no
           gate-passing match — including the ``nearest`` case),
-        * ``aadt_source`` — ``"matched"`` (within distance + bearing),
-          ``"nearest"`` (the geometrically nearest line failed the
+        * ``aadt_source`` — ``"matched"`` (a mainline/unreadable record won),
+          ``"matched_ramp"`` (the best record is a **ramp or connector** — the volume
+          is a ramp movement's, which is right for a ramp segment and a *finding* for
+          anything else), ``"nearest"`` (the geometrically nearest line failed the
           distance/bearing gate — identified but **not** used for a value), or
           ``"missing"`` (no AADT line / no segment geometry),
         * ``aadt_dist_m`` — distance to the chosen line in metres (``NaN`` when
           missing),
-        * ``Route`` — carried from the chosen line (also for ``nearest``, as a
-          diagnostic) / ``Commercial`` — carried only for a match.
+        * ``aadt_record_kind`` / ``aadt_desc`` — the chosen record's kind and
+          ``Descriptio``, so a questionable match names itself,
+        * ``RouteID`` / ``Route`` — carried from the chosen line (also for
+          ``nearest``, as a diagnostic) / ``Commercial`` — carried only for a match.
+
+        ``attrs['aadt_join']`` records the resolved policy and the source counts.
     """
-    import geopandas as gpd
     from shapely import STRtree
 
     out = geo.copy()
+    blank = {AADT_COL: float("nan"), AADT_SOURCE_COL: "missing",
+             AADT_DIST_COL: float("nan"), AADT_KIND_COL: None, AADT_DESC_COL: None,
+             "RouteID": None, "Route": None, "Commercial": pd.NA}
 
     valid_geo = out[out.geometry.notna() & ~out.geometry.is_empty]
     if len(valid_geo) == 0 or len(aadt) == 0:
-        out[AADT_COL] = float("nan")
-        out[AADT_SOURCE_COL] = "missing"
-        out[AADT_DIST_COL] = float("nan")
-        out["Route"] = None
-        out["Commercial"] = pd.NA
+        for col, val in blank.items():
+            out[col] = val
+        out.attrs["aadt_join"] = _join_policy(
+            max_distance_m, bearing_tol_deg, prefer_mainline, out[AADT_SOURCE_COL])
         return out
+
+    if RECORD_KIND_COL not in aadt.columns:
+        aadt = classify_aadt_records(aadt)
 
     # Distances/buffers need a metric CRS; estimate a UTM zone from the segments.
     from shapely.ops import nearest_points
@@ -228,15 +497,35 @@ def join_aadt(geo, aadt, max_distance_m=35.0, bearing_tol_deg=45.0):
     tree = STRtree(aadt_geoms)
 
     aadt_vals = aadt[AADT_COL].astype(float).to_numpy()
-    aadt_route = aadt["Route"].to_numpy() if "Route" in aadt.columns else None
-    aadt_comm = aadt["Commercial"].to_numpy() if "Commercial" in aadt.columns else None
+    rec_kind = aadt[RECORD_KIND_COL].to_numpy()
+    rec_num = (aadt[ROUTE_NUMBER_COL].to_numpy() if ROUTE_NUMBER_COL in aadt.columns
+               else [None] * len(aadt))
 
-    records = {}  # Segment ID -> (aadt, source, dist, route, commercial)
+    def _col_or_none(frame, col):
+        return frame[col].to_numpy() if col in frame.columns else None
+
+    aadt_route = _col_or_none(aadt, "Route")
+    aadt_route_id = _col_or_none(aadt, "RouteID")
+    aadt_desc = _col_or_none(aadt, "Descriptio")
+    aadt_comm = _col_or_none(aadt, "Commercial")
+
+    seg_routes = _segment_route_numbers(valid_geo)
+    seg_kinds = _segment_kinds(valid_geo)
+
+    def _take(arr, i, default=None):
+        return default if arr is None else arr[i]
+
+    records = {}
     for sid, seg_geom in seg_m.items():
+        seg_nums = seg_routes.get(sid, set())
+        apply_kind = prefer_mainline and seg_kinds.get(sid, MAINLINE) != RAMP
         # Candidate lines whose bounding box is within max_distance of the segment.
         cand = tree.query(seg_geom.buffer(max_distance_m))
-        best = None  # (dist, idx) among bearing-consistent lines within distance
+        # (route_rank, kind_rank, dist@0.1m, -coverage, dist, idx) — lexicographic,
+        # low wins; the last two only make the order total and reproducible.
+        best = None
         for i in cand:
+            i = int(i)
             d = seg_geom.distance(aadt_geoms[i])
             if d > max_distance_m:
                 continue
@@ -246,38 +535,67 @@ def join_aadt(geo, aadt, max_distance_m=35.0, bearing_tol_deg=45.0):
             p_seg, p_cand = nearest_points(seg_geom, aadt_geoms[i])
             seg_bearing = _local_bearing(seg_geom, p_cand)
             cand_bearing = _local_bearing(aadt_geoms[i], p_seg)
-            if _bearing_diff(seg_bearing, cand_bearing) <= bearing_tol_deg:
-                if best is None or d < best[0]:
-                    best = (d, int(i))
+            if _bearing_diff(seg_bearing, cand_bearing) > bearing_tol_deg:
+                continue
+            num = rec_num[i]
+            num = None if num is None or pd.isna(num) else int(num)
+            route_rank = 0 if (num is not None and num in seg_nums) else 1
+            kind_rank = _KIND_RANK.get(rec_kind[i], 1) if apply_kind else 0
+            key = (route_rank, kind_rank, round(d, 1),
+                   -_alongside_fraction(seg_geom, aadt_geoms[i], max_distance_m), d, i)
+            if best is None or key < best:
+                best = key
         if best is not None:
-            d, i = best
-            records[sid] = (
-                float(aadt_vals[i]), "matched", d,
-                None if aadt_route is None else aadt_route[i],
-                pd.NA if aadt_comm is None else aadt_comm[i],
-            )
+            d, i = best[4], best[5]
+            kind = rec_kind[i]
+            records[sid] = {
+                AADT_COL: float(aadt_vals[i]),
+                AADT_SOURCE_COL: "matched_ramp" if kind in (RAMP, CONNECTOR) else "matched",
+                AADT_DIST_COL: d,
+                AADT_KIND_COL: kind,
+                AADT_DESC_COL: _take(aadt_desc, i),
+                "RouteID": _take(aadt_route_id, i),
+                "Route": _take(aadt_route, i),
+                "Commercial": _take(aadt_comm, i, pd.NA),
+            }
         else:
             # Identify the geometrically nearest line so a failed join is
             # diagnosable (which road, how far) — but attach NO volume: a
             # gate-rejected line is by definition not trusted, and its AADT
             # must not flow into the weighted metrics.
             i = int(tree.nearest(seg_geom))
-            d = float(seg_geom.distance(aadt_geoms[i]))
-            records[sid] = (
-                float("nan"), "nearest", d,
-                None if aadt_route is None else aadt_route[i], pd.NA,
-            )
+            records[sid] = {
+                AADT_COL: float("nan"),
+                AADT_SOURCE_COL: "nearest",
+                AADT_DIST_COL: float(seg_geom.distance(aadt_geoms[i])),
+                AADT_KIND_COL: rec_kind[i],
+                AADT_DESC_COL: _take(aadt_desc, i),
+                "RouteID": _take(aadt_route_id, i),
+                "Route": _take(aadt_route, i),
+                "Commercial": pd.NA,
+            }
 
-    def _col(pos, default):
-        return [records.get(sid, default)[pos] for sid in out.index]
-
-    missing = (float("nan"), "missing", float("nan"), None, pd.NA)
-    out[AADT_COL] = _col(0, missing)
-    out[AADT_SOURCE_COL] = _col(1, missing)
-    out[AADT_DIST_COL] = _col(2, missing)
-    out["Route"] = _col(3, missing)
-    out["Commercial"] = _col(4, missing)
+    for col in blank:
+        out[col] = [records.get(sid, blank)[col] for sid in out.index]
+    out.attrs = dict(geo.attrs)
+    out.attrs["aadt_join"] = _join_policy(
+        max_distance_m, bearing_tol_deg, prefer_mainline, out[AADT_SOURCE_COL])
     return out
+
+
+def _join_policy(max_distance_m, bearing_tol_deg, prefer_mainline, source) -> dict:
+    """The resolved join policy + per-source counts, for ``attrs['aadt_join']`` —
+    the module's convention of recording *what was actually applied* (Item 34)."""
+    counts = source.value_counts().to_dict()
+    return {
+        "max_distance_m": float(max_distance_m),
+        "bearing_tol_deg": float(bearing_tol_deg),
+        "prefer_mainline": bool(prefer_mainline),
+        "preference": ("route number, then mainline over connector over ramp, "
+                       "then distance") if prefer_mainline else
+                      "route number, then distance",
+        "counts": {k: int(v) for k, v in counts.items()},
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +612,16 @@ def _aadt_series(aadt) -> pd.Series:
             s = aadt.set_index(SEGMENT_COL)[AADT_COL]
         return s.astype(float)
     raise TypeError("aadt must be a Segment ID-indexed Series or carry an 'AADT' column.")
+
+
+def _aadt_source_series(aadt):
+    """The ``aadt_source`` column of a :func:`join_aadt` frame, indexed by
+    ``Segment ID`` — or ``None`` when the caller passed a bare AADT Series."""
+    if isinstance(aadt, pd.Series) or AADT_SOURCE_COL not in getattr(aadt, "columns", []):
+        return None
+    if aadt.index.name != SEGMENT_COL and SEGMENT_COL in aadt.columns:
+        return aadt.set_index(SEGMENT_COL)[AADT_SOURCE_COL]
+    return aadt[AADT_SOURCE_COL]
 
 
 def _seg_series(values) -> pd.Series:
@@ -318,8 +646,17 @@ def vehicle_hours_of_delay(mean_delay_minutes, aadt) -> pd.DataFrame:
 
     Returns:
         DataFrame indexed by ``Segment ID`` with ``mean_delay_min``, ``AADT`` and
-        ``vehicle_hours``. Segments with a missing/≤0 AADT contribute ``0``
+        ``vehicle_hours`` — plus ``aadt_source`` when ``aadt`` is a
+        :func:`join_aadt` frame. Segments with a missing/≤0 AADT contribute ``0``
         vehicle-hours (kept as a row, not dropped).
+
+    **Ramp-weighted rows are flagged, not excluded** (Item 34). A ``matched_ramp``
+    row is weighted by a ramp movement's count, which is *correct* for a segment that
+    is itself a ramp and wrong for a mainline one — and this function can't tell them
+    apart, while the caller can (the ``aadt_source`` column is carried through and
+    ``attrs['aadt_ramp_rows']`` counts them). Dropping them here would silently zero
+    out real ramp impact; the visible flag is the safer default. Filter on
+    ``aadt_source != "matched_ramp"`` when a corridor total must be mainline-only.
 
     **Caveat (recorded on ``attrs['aadt_caveat']``):** AADT is a *daily total*, so
     this is vehicle-hours per an average day *at the window's mean delay* — a
@@ -336,6 +673,10 @@ def vehicle_hours_of_delay(mean_delay_minutes, aadt) -> pd.DataFrame:
         {"mean_delay_min": delay, AADT_COL: vol, "vehicle_hours": veh_hours}
     )
     out.index.name = SEGMENT_COL
+    src = _aadt_source_series(aadt)
+    if src is not None:
+        out[AADT_SOURCE_COL] = src.reindex(out.index)
+        out.attrs["aadt_ramp_rows"] = int((out[AADT_SOURCE_COL] == "matched_ramp").sum())
     out.attrs["aadt_caveat"] = (
         "AADT is a daily total; vehicle_hours is a relative weight at the window's "
         "mean delay, not absolute VMT unless the window is scaled to a full day."

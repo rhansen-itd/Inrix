@@ -91,6 +91,27 @@ def test_filter_cvalue_records_threshold(sample_zip):
     assert kept.attrs["cvalue_threshold"] == 80
 
 
+def test_mark_imputed_flags_null_cvalue_and_backfill(sample_zip):
+    """A null CValue is the imputation marker; ``Speed == Hist Av Speed`` exactly
+    is the corroborating signature, reported separately (DATA_FORMAT.md)."""
+    df = io.load_data(sample_zip)
+    marked = io.mark_imputed(df)
+    assert marked[io.IMPUTED_COL].tolist() == df[io.CVALUE_COL].isna().tolist()
+    assert len(marked) == len(df)                     # a marker, not a filter
+    if io.HIST_BACKFILL_COL in marked.columns:
+        sp = next(c for c in df.columns if c.startswith("Speed("))
+        hist = next(c for c in df.columns if c.startswith("Hist Av Speed("))
+        assert marked[io.HIST_BACKFILL_COL].tolist() == df[sp].eq(df[hist]).tolist()
+
+
+def test_mark_imputed_refuses_an_export_with_no_cvalue(sample_zip):
+    """No CValue column is not the same as no backfill — refuse rather than
+    report a reassuring 0%."""
+    df = io.load_data(sample_zip).drop(columns=[io.CVALUE_COL])
+    with pytest.raises(ValueError, match="CValue"):
+        io.mark_imputed(df)
+
+
 def test_mark_complete_timestamps(sample_zip):
     df = io.to_local(io.load_data(sample_zip))
     marked = io.mark_complete_timestamps(df)

@@ -18,6 +18,10 @@ dependencies = [
     # Robust decomposition / changepoint on multi-entity time series.
     # Depended on, not vendored (MIT, PyPI, CI-tested). See CLAUDE.md.
     "traffic-anomaly>=2.5.0",
+    # The DuckDB store (store.py) imports duckdb directly and screen.py computes in
+    # it, so it is declared here rather than relied on to arrive transitively via
+    # traffic-anomaly's ibis-framework[duckdb] (ROADMAP Item 35).
+    "duckdb>=0.10",
     # Excel reader for the external travel-time reference workbook (reference.py).
     "openpyxl>=3.1",
 ]

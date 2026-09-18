@@ -17,6 +17,46 @@ def _frame(values, start="2026-03-03 08:00", route="R", freq="15min", col=TT_COL
 # ---------------------------------------------------------------------------
 # Matching
 # ---------------------------------------------------------------------------
+def test_match_bins_carries_the_inrix_coverage_columns():
+    """ROADMAP Item 31: the CValue gate's cost and the imputation share have to
+    survive the join, or the scorecard reports a bias with no idea what was
+    summed to make it."""
+    inrix = _frame([5.0, 6.0]).assign(imputed_fraction=[0.0, 0.5],
+                                      cvalue_kept_fraction=[1.0, 0.5],
+                                      short=[False, True], n_absent=[0, 1])
+    m = agreement.match_bins(inrix, _frame([10.0, 12.0]))
+    assert m["imputed_fraction"].tolist() == pytest.approx([0.0, 0.5])
+    assert m["short"].tolist() == pytest.approx([0.0, 1.0])   # bool -> share of bin
+
+
+def test_match_bins_without_coverage_columns_still_matches():
+    m = agreement.match_bins(_frame([5.0, 6.0]), _frame([10.0, 12.0]))
+    assert len(m) == 2
+    assert not set(agreement.CARRY_COLS) & set(m.columns)
+
+
+def test_compare_reports_coverage_beside_the_effect_size():
+    inrix = _frame([5.0, 6.0, 7.0]).assign(imputed_fraction=[0.0, 0.3, 0.6],
+                                           cvalue_kept_fraction=[1.0, 0.7, 0.4],
+                                           short=[True, True, True], n_absent=[3, 3, 3])
+    inrix.attrs["cvalue_threshold"] = 80
+    summary = agreement.compare(inrix, _frame([10.0, 12.0, 14.0]))
+    row = summary.iloc[0]
+    assert row["imputed_fraction"] == pytest.approx(0.3)
+    assert row["cvalue_kept_fraction"] == pytest.approx(0.7)
+    assert row["short_fraction"] == pytest.approx(1.0)
+    assert row["n_absent"] == 3
+    assert summary.attrs["cvalue_threshold"] == 80
+
+
+def test_compare_omits_coverage_columns_when_there_are_none():
+    """Absent, not NaN: a column of NaNs reads as 'measured, nothing wrong'."""
+    summary = agreement.compare(_frame([5.0, 6.0, 7.0]), _frame([10.0, 12.0, 14.0]))
+    assert "imputed_fraction" not in summary.columns
+    assert summary.attrs["cvalue_threshold"] is None
+
+
+
 def test_match_bins_joins_and_averages_duplicate_reference_samples():
     inrix = _frame([5.0, 6.0, 7.0])
     reference = pd.concat([_frame([10.0, 12.0, 14.0]),

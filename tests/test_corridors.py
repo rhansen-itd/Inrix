@@ -1,4 +1,5 @@
-"""Tests for inrix_tools.corridors (ROADMAP Item 28)."""
+"""Tests for inrix_tools.corridors (ROADMAP Items 28 and 36)."""
+import json
 import math
 from pathlib import Path
 
@@ -282,6 +283,143 @@ def test_chain_travel_time_keeps_the_complete_set_rule():
     assert len(corridors.chain_travel_time(extra, ch)) == 2
 
 
+# ---------------------------------------------------------------------------
+# Requested vs. observed membership  (Item 31)
+# ---------------------------------------------------------------------------
+def test_chain_travel_time_marks_a_never_present_member_short():
+    """The Eagle Rd NB case: a member the export never supplies used to vanish
+    into the expected count, so a 2-of-3 sum passed as complete."""
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))   # members 1000-1002
+    df = _obs([1000, 1002])                                       # 1001 never appears
+
+    out = corridors.chain_travel_time(df, ch)
+    assert len(out) == 3                       # the sum is still reported...
+    assert (out["n_requested"] == 3).all()     # ...against the requested membership
+    assert (out["n_absent"] == 1).all()
+    assert (out["expected_segments"] == 2).all()
+    assert out["short"].all()                  # ...and it is labelled short
+    assert out["complete"].all()               # complete *of what is achievable*
+
+
+def test_chain_travel_time_on_absent_drop_collapses_the_series():
+    """The other explicit choice: measure against the full request and drop
+    everything. Correct, useless, and available on purpose."""
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))
+    df = _obs([1000, 1002])
+
+    out = corridors.chain_travel_time(df, ch, on_absent="drop")
+    assert out.empty
+    kept = corridors.chain_travel_time(df, ch, on_absent="drop", require_complete=False)
+    assert len(kept) == 3
+    assert (kept["expected_segments"] == 3).all()
+    assert not kept["complete"].any()
+
+
+def test_chain_travel_time_sometimes_missing_still_drops_the_timestamp():
+    """The distinction that matters: *sometimes* missing is not *never* present.
+    A member with one gap keeps the old rule and is not marked short."""
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))
+    df = _obs([1000, 1001, 1002])
+    df = df.drop(df[df["Segment ID"] == 1001].index[:1])
+
+    out = corridors.chain_travel_time(df, ch, require_complete=False)
+    assert not out["short"].any()
+    assert (out["n_absent"] == 0).all()
+    assert list(out["complete"]) == [False, True, True]
+
+
+def test_chain_travel_time_does_not_credit_unobserved_end_segment_miles():
+    """Eagle Rd NB's first and last members are both absent; crediting their
+    prorated pavement to the sum overstated the length — and the speed with it."""
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))   # 0.75 + 1.0 + 0.50
+    df = _obs([1001, 1002])                                       # the trimmed start is gone
+
+    out = corridors.chain_travel_time(df, ch)
+    assert out["requested_length_miles"].iloc[0] == pytest.approx(2.25, abs=2e-3)
+    assert out["missing_length_miles"].iloc[0] == pytest.approx(0.75, abs=2e-3)
+    assert out["Length(Miles)"].iloc[0] == pytest.approx(1.50, abs=2e-3)
+    assert (out["length_basis"] == "observed").all()
+    # 1.0 + 0.50 minutes over 1.50 miles is 60 mph; crediting the absent 0.75 mi
+    # would have reported 90.
+    assert out["Corridor Speed(miles/hour)"].iloc[0] == pytest.approx(60.0, abs=0.5)
+
+
+def test_chain_travel_time_length_basis_is_requested_when_nothing_is_missing():
+    """The correction must not move an intact chain's published length."""
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))
+    out = corridors.chain_travel_time(_obs([1000, 1001, 1002]), ch)
+    assert (out["length_basis"] == "requested").all()
+    assert out["Length(Miles)"].iloc[0] == pytest.approx(ch.requested_miles)
+    assert out["missing_length_miles"].iloc[0] == pytest.approx(0.0, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# The CValue gate on the chain path  (Item 31)
+# ---------------------------------------------------------------------------
+def _obs_cvalue(segment_ids, cvalues, n=3):
+    """``_obs`` plus a per-segment CValue (``None`` -> null, the imputation marker)."""
+    df = _obs(segment_ids, n=n)
+    df["CValue"] = df["Segment ID"].map(cvalues).astype("float64")
+    return df
+
+
+def test_chain_travel_time_gate_records_the_threshold_and_the_cost():
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))
+    # 1001 is historical backfill throughout: null CValue, so the gate drops it.
+    df = _obs_cvalue([1000, 1001, 1002], {1000: 95.0, 1001: None, 1002: 90.0})
+
+    gated = corridors.chain_travel_time(df, ch, cvalue_threshold=80)
+    assert gated.attrs["cvalue_threshold"] == 80
+    assert gated["imputed_fraction"].tolist() == pytest.approx([1 / 3] * 3)
+    assert gated["cvalue_kept_fraction"].tolist() == pytest.approx([2 / 3] * 3)
+    # the gated-away member is now absent, so the sum is short, not silently 2-of-3
+    assert gated["short"].all()
+    assert (gated["n_absent"] == 1).all()
+    assert gated["Length(Miles)"].iloc[0] == pytest.approx(1.25, abs=2e-3)
+
+
+def test_chain_travel_time_measures_imputation_even_when_ungated():
+    """The share is route- and hour-dependent, so it is measured whether or not
+    the gate is applied — 'we gated' on its own says very little."""
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))
+    df = _obs_cvalue([1000, 1001, 1002], {1000: 95.0, 1001: None, 1002: 90.0})
+
+    ungated = corridors.chain_travel_time(df, ch, cvalue_threshold=None)
+    assert ungated.attrs["cvalue_threshold"] is None
+    assert ungated["imputed_fraction"].tolist() == pytest.approx([1 / 3] * 3)
+    assert ungated["cvalue_kept_fraction"].tolist() == pytest.approx([1.0] * 3)
+    assert not ungated["short"].any()          # nothing was gated away
+    assert ungated["Length(Miles)"].iloc[0] == pytest.approx(2.25, abs=2e-3)
+
+
+def test_chain_travel_time_gate_requires_a_cvalue_column():
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))
+    df = _obs([1000, 1001, 1002])                      # no CValue column at all
+    with pytest.raises(ValueError, match="cvalue_threshold=None"):
+        corridors.chain_travel_time(df, ch, cvalue_threshold=80)
+    assert "imputed_fraction" not in corridors.chain_travel_time(df, ch).columns
+
+
+def test_chain_coverage_reports_the_imputed_share_per_member():
+    net = _chain_network(4)
+    ch = corridors.build_chain(net, _at(0.25, 0), _at(0.50, 2))
+    df = _obs_cvalue([1000, 1001, 1002], {1000: 95.0, 1001: None, 1002: 90.0})
+
+    cov = corridors.chain_coverage(ch, df, value="Travel Time(Minutes)")
+    assert cov.attrs["n_missing"] == 0                      # every member reports...
+    assert list(cov[corridors.NIMPUTED_COL]) == [0, 3, 0]   # ...one of them is backfill
+    assert list(cov[corridors.IMPUTED_FRACTION_COL]) == [0.0, 1.0, 0.0]
+    assert cov.attrs["imputed_fraction"] == pytest.approx(1 / 3)
+
+
 def test_chain_travel_time_rejects_a_missing_value_column():
     net = _chain_network(2)
     ch = corridors.build_chain(net, _at(0.0, 0), _at(1.0, 1))
@@ -413,3 +551,223 @@ def test_chain_description_reads_the_label_off_the_segments():
     assert desc["RoadNumber"] == ("55",)
     assert desc["County"] == ("Boise",)
     assert "Banks Lowman Hwy" in desc["road_label"] and "ID-55" in desc["road_label"]
+
+
+# ---------------------------------------------------------------------------
+# The corridor catalogue: load, validate, resolve, account  (Item 36)
+# ---------------------------------------------------------------------------
+D3_CATALOGUE = REPO_ROOT / "scripts" / "d3_corridors.json"
+
+
+def _entry(**kw):
+    """A valid catalogue entry dict, with fields overridable per test."""
+    return {
+        "id": kw.pop("id", "toy"),
+        "name": kw.pop("name", "Toy Rd NB"),
+        "start_latlon": kw.pop("start_latlon", list(_at(0.5, 0))),
+        "end_latlon": kw.pop("end_latlon", list(_at(0.5, 3))),
+        "description": kw.pop("description", "Why this extent is the one that matters."),
+        **kw,
+    }
+
+
+def _parallel_trap_network():
+    """The trap the bounding-box + geographic-sort approach walks into.
+
+    Four northbound mainline segments up a meridian (1000..1003) and a two-segment
+    frontage road ~30 m to the east (2000, 2001) that parallels the third. The
+    mainline's ``NextXDSegI`` leaves the mainline at 1001 and points at the frontage
+    road; 1002 is reachable from nothing. A chain from the south end to the north
+    end therefore *cannot* be walked — and anything that "completes" it by sorting
+    the segments in the box by latitude sums two parallel facilities in series.
+    """
+    main = _chain_network(4, next_ids=[1001, 2000, 1003, pd.NA])
+    frontage_lon = LON + 0.0004                       # ~32 m east at this latitude
+    frontage = gpd.GeoDataFrame(
+        {
+            "XDSegID": pd.array([2000, 2001], dtype="Int64"),
+            "NextXDSegI": pd.array([2001, pd.NA], dtype="Int64"),
+            "Miles": [0.5, 0.5],
+            "geometry": [
+                LineString([(frontage_lon, LAT0 + 2 * DLAT),
+                            (frontage_lon, LAT0 + 2.5 * DLAT)]),
+                LineString([(frontage_lon, LAT0 + 2.5 * DLAT),
+                            (frontage_lon, LAT0 + 3 * DLAT)]),
+            ],
+        },
+        crs=geometry.WGS84,
+    )
+    return gpd.GeoDataFrame(pd.concat([main, frontage], ignore_index=True),
+                            crs=geometry.WGS84)
+
+
+def test_parse_catalogue_accepts_a_well_formed_entry():
+    (entry,) = corridors.parse_catalogue({"corridors": [_entry(_comment="ignored")]})
+    assert entry.id == "toy" and entry.name == "Toy Rd NB"
+    assert entry.start_latlon == pytest.approx(_at(0.5, 0))
+    assert entry.description.startswith("Why this extent")
+    # a bare list is accepted too
+    assert len(corridors.parse_catalogue([_entry(), _entry(id="toy2")])) == 2
+
+
+@pytest.mark.parametrize("bad, match", [
+    ({"corridors": [_entry(description="  ")]}, "empty 'description'"),
+    ({"corridors": [_entry(), _entry()]}, "Duplicate catalogue id"),
+    ({"corridors": [{k: v for k, v in _entry().items() if k != "end_latlon"}]}, "missing"),
+    ({"corridors": [_entry(start_latlon=[-116.35, 43.6])]}, "out of range"),
+    ({"corridors": [_entry(start_latlong=[43.6, -116.35])]}, "unknown field"),
+    ({"corridors": [_entry(id="")]}, "has no 'id'"),
+    ({"corridors": []}, "non-empty list"),
+    ({"routes": [_entry()]}, "no 'corridors' key"),
+])
+def test_parse_catalogue_rejects_what_would_resolve_somewhere_else(bad, match):
+    """Every validation failure is loud. A silently ignored ``start_latlong`` is a
+    corridor resolved at whatever the *other* endpoint's default happened to be."""
+    with pytest.raises(ValueError, match=match):
+        corridors.parse_catalogue(bad)
+
+
+def test_load_catalogue_reads_json(tmp_path):
+    path = tmp_path / "cat.json"
+    path.write_text(json.dumps({"_note": "provenance", "corridors": [_entry()]}))
+    (entry,) = corridors.load_catalogue(path)
+    assert entry.id == "toy"
+
+
+def test_resolve_catalogue_accounts_for_every_entry():
+    net = _chain_network(4)
+    cat = [_entry(id="through"),
+           _entry(id="backwards", start_latlon=list(_at(0.5, 3)),
+                  end_latlon=list(_at(0.5, 0)))]      # walks away from its target
+    res = corridors.resolve_catalogue(net, cat)
+
+    assert list(res["id"]) == ["through", "backwards"]
+    assert [bool(v) for v in res["accepted"]] == [True, False]
+    assert list(res["stop_reason"]) == ["target", "dead_end"]
+    assert res.loc[0, "n_segments"] == 4
+    assert res.loc[0, "requested_miles"] == pytest.approx(3.0)
+    assert res.attrs["findings"] == ["backwards"]
+    assert res.attrs["n_entries"] == 2 and res.attrs["n_accepted"] == 1
+    assert res.attrs["coverage_evaluated"] is False
+    # the chains come back keyed by id, ready for screen.rank_corridors
+    assert set(res.attrs["chains"]) == {"through", "backwards"}
+    assert res.attrs["chains"]["through"].segment_ids == (1000, 1001, 1002, 1003)
+    assert not any(c in res.columns for c in corridors.COVERAGE_COLUMNS)
+
+
+def test_resolve_catalogue_does_not_bridge_a_parallel_facility():
+    """The through chain is broken and a frontage road runs beside it. The entry is
+    recorded as a finding — it is never completed by adding the segments that a
+    geographic sort would have swept up."""
+    net = _parallel_trap_network()
+    res = corridors.resolve_catalogue(net, [_entry(id="trap")])
+
+    row = res.iloc[0]
+    assert not row["accepted"] and not row["reached_target"]
+    assert row["stop_reason"] == "dead_end"
+    chain = res.attrs["chains"]["trap"]
+    # the walk left the mainline onto the frontage road and stopped there ...
+    assert chain.segment_ids == (1000, 1001, 2000, 2001)
+    # ... and the unreachable mainline segments were NOT bridged in behind it
+    assert 1002 not in chain.segment_ids and 1003 not in chain.segment_ids
+    assert chain.chain_miles == pytest.approx(3.0)   # not the 5.0 a sort would give
+
+
+def test_resolve_catalogue_coverage_decides_acceptance():
+    """Reaching the target is half the test: an entry whose export never observed a
+    member is a finding too, and the miles say how much is missing."""
+    net = _chain_network(4)
+    cat = [_entry(id="through")]
+    observed_all = corridors.resolve_catalogue(net, cat, observed=[1000, 1001, 1002, 1003])
+    assert observed_all.loc[0, "miles_covered_fraction"] == pytest.approx(1.0)
+    assert bool(observed_all.loc[0, "accepted"])
+    assert observed_all.attrs["coverage_evaluated"] is True
+
+    gap = corridors.resolve_catalogue(net, cat, observed=[1000, 1001, 1003])
+    assert bool(gap.loc[0, "reached_target"])          # the walk was fine ...
+    assert not gap.loc[0, "accepted"]                  # ... the coverage was not
+    assert gap.loc[0, "n_missing"] == 1
+    assert gap.loc[0, "missing_miles"] == pytest.approx(1.0)
+    assert gap.loc[0, "miles_covered_fraction"] == pytest.approx(1.0 / 3.0 * 2)
+    assert gap.attrs["findings"] == ["through"]
+    # the threshold is the caller's, and it is recorded
+    loose = corridors.resolve_catalogue(net, cat, observed=[1000, 1001, 1003],
+                                        min_coverage=0.5)
+    assert bool(loose.loc[0, "accepted"]) and loose.attrs["min_coverage"] == 0.5
+
+
+# ---------------------------------------------------------------------------
+# The District 3 catalogue itself
+# ---------------------------------------------------------------------------
+def test_d3_catalogue_loads_and_validates():
+    cat = corridors.load_catalogue(D3_CATALOGUE)
+    assert len(cat) >= 15
+    assert len({e.id for e in cat}) == len(cat)
+    for entry in cat:
+        lat0, lon0 = entry.start_latlon
+        lat1, lon1 = entry.end_latlon
+        # every extent is inside District 3 and is not a zero-length "corridor"
+        assert 42.9 <= lat0 <= 44.9 and -117.3 <= lon0 <= -115.4
+        assert 42.9 <= lat1 <= 44.9 and -117.3 <= lon1 <= -115.4
+        assert (lat0, lon0) != (lat1, lon1)
+        assert len(entry.description) > 80      # the *why*, not a label
+
+
+@pytest.mark.skipif(not XD_ZIP.exists(), reason="XD shapefile not available")
+def test_d3_catalogue_resolves_i84_mainline_only():
+    """I-84 EB (IC 35 -> IC 49) walks as mainline, which is the whole point: the
+    outside pass's bounding box swept in the Garrity Blvd frontage road and summed
+    1.37 mi of the same ground twice."""
+    cat = [e for e in corridors.load_catalogue(D3_CATALOGUE) if e.id == "i84-eb"]
+    net = geometry.load_xd_network(XD_ZIP, bbox=(-116.62, 43.55, -116.27, 43.65))
+    res = corridors.resolve_catalogue(net, cat)
+
+    row = res.iloc[0]
+    assert bool(row["accepted"]) and row["stop_reason"] == "target"
+    assert row["chain_miles"] == pytest.approx(15.12, abs=0.05)
+    assert max(row["snap_start_feet"], row["snap_end_feet"]) < 50
+    roads = corridors.chain_description(res.attrs["chains"]["i84-eb"], net)["RoadName"]
+    assert roads == ("I-84 E",)                 # no frontage road, no ramps
+
+
+@pytest.mark.skipif(not XD_ZIP.exists(), reason="XD shapefile not available")
+def test_d3_catalogue_records_the_state_street_break_as_a_finding():
+    """SH-44 west of Eagle is unreachable in this XD vintage (eastbound NextXDSegI
+    forks onto a parallel 1-lane State St at Ballantyne Rd; westbound the link ends
+    there). The catalogue splits at Eagle Rd and records the halves that will not
+    walk — it does not sort the segments into a corridor-shaped list."""
+    ids = {"sh44-eb-star-eagle", "sh44-eb-eagle-boise"}
+    cat = [e for e in corridors.load_catalogue(D3_CATALOGUE) if e.id in ids]
+    net = geometry.load_xd_network(XD_ZIP, bbox=(-116.47, 43.64, -116.26, 43.72))
+    res = corridors.resolve_catalogue(net, cat).set_index("id")
+
+    assert bool(res.loc["sh44-eb-eagle-boise", "accepted"])
+    assert res.loc["sh44-eb-eagle-boise", "chain_miles"] == pytest.approx(4.11, abs=0.05)
+    assert not res.loc["sh44-eb-star-eagle", "reached_target"]
+    assert res.loc["sh44-eb-star-eagle", "stop_reason"] in {"dead_end", "off_network"}
+    assert res.attrs["findings"] == ["sh44-eb-star-eagle"]
+
+
+def test_resolved_chains_feed_rank_corridors():
+    """``attrs['chains']`` is the shape ``screen.rank_corridors`` takes — the
+    catalogue's output is the screening pass's input, with no adapter in between."""
+    from inrix_tools import screen
+
+    net = _chain_network(4)
+    res = corridors.resolve_catalogue(net, [_entry(id="Toy Rd NB")])
+    scr = pd.DataFrame(
+        {"am_travel_time": [2.0] * 4, "am_speed": [30.0] * 4, "ref_speed": [60.0] * 4,
+         "am_n_obs": [100] * 4, "am_kept_fraction": [1.0] * 4},
+        index=pd.Index([1000, 1001, 1002, 1003], name="Segment ID"),
+    )
+    scr.attrs = {"windows": {"am": {"window": "7:00AM-9:00AM", "peak": True}},
+                 "units": {"travel_time": "Minutes", "speed": "miles/hour"}}
+
+    ranked = screen.rank_corridors(scr, res.attrs["chains"])
+    row = ranked.iloc[0]
+    assert row["corridor"] == "Toy Rd NB" and row["window"] == "am"
+    assert row["n_segments"] == 4 and row["n_observed"] == 4
+    # 3.0 in-extent miles (the two end segments are trimmed to half), 1 min delay/mile
+    assert row["miles"] == pytest.approx(3.0)
+    assert row["delay_min"] == pytest.approx(3.0)
+    assert row["tti"] == pytest.approx(2.0)

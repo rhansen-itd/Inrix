@@ -572,6 +572,17 @@ _SUMMARY_COLUMNS = [
     ("r", "r", ".3f"),
 ]
 
+# Present only when the INRIX side carried them through the match (ROADMAP Item
+# 31). A bias computed over historical backfill, or over a chain the export only
+# partly supplied, is a different claim from one that is not — so the two sit in
+# the row rather than in a footnote.
+_COVERAGE_COLUMNS = [
+    ("imputed_fraction", "Imputed", ".1%"),
+    ("n_absent", "Members absent",
+     lambda r: (f'<span class="num">{int(r["n_absent"])}</span>'
+                if r.get("n_absent") else '<span class="num">—</span>')),
+]
+
 
 def scorecard(summary: pd.DataFrame, flags: dict[str, RouteFlags]) -> str:
     """The scorecard: effect size first, each route's own coverage in the row,
@@ -582,6 +593,7 @@ def scorecard(summary: pd.DataFrame, flags: dict[str, RouteFlags]) -> str:
                 lambda r: f'<span class="tag {"arterial" if route_info(r[ROUTE_COL]).character == ARTERIAL else "rural"}">'
                           f'{esc(route_info(r[ROUTE_COL]).character)}</span>')]
     columns += _SUMMARY_COLUMNS
+    columns += [c for c in _COVERAGE_COLUMNS if c[0] in df.columns]
     return table(df, columns,
                  row_class=lambda r: "flagged" if flags.get(r[ROUTE_COL],
                                                             RouteFlags(r[ROUTE_COL])).excluded else "")

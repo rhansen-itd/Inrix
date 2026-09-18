@@ -12,12 +12,14 @@ Modules are scaffolded as stubs until built per ROADMAP.md:
     changepoint — thin adapter over traffic_anomaly.changepoint (Item 5)
     geometry    — segment polylines from the INRIX XD shapefile (Item 8)
     corridors   — corridor chain assembly: snap, walk, trim, account (Item 28)
+                  + the corridor catalogue: endpoint pairs, resolved (Item 36)
     reference   — external travel-time reference: load + gates (Item 29)
     agreement   — INRIX vs reference agreement statistics (Item 29)
     kml         — segment geometry -> KML (Item 6)
     names       — friendly, user-editable segment names (Item 10)
     aadt        — AADT volume layer + volume weighting (Item 18)
     store       — DuckDB-backed storage & ingest of exports + GIS join (Item 21)
+    screen      — district-wide corridor screening + ranking (Item 35)
 """
 
 __version__ = "0.1.0"
