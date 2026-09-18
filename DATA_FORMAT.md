@@ -1083,6 +1083,72 @@ null `W Front St` members west of 15th St have no rows at all, leaving it **73.1
 covered by mileage**. That is a finding about the download, not about the road, and it
 is why catalogue acceptance tests coverage as well as connectivity.
 
+## Recurring-congestion corridor extraction (`screen.py`, Item 43)
+
+Extracting corridor candidates directly from congestion patterns rather than from
+hand-drawn landmarks and municipal borders. A *candidate corridor* is a maximal
+contiguous run of segments that are recurrently congested, with state-route junctions
+used to tidy endpoints only when the data already lands nearby.
+
+### Recurrence vs Mean: distinguishing queues from construction fortnights
+
+Screening via `segment_screen` averages over an entire export's date span. That collapses
+temporary anomalies into the same metric as daily queues: a fortnight of construction
+with TTI = 3.0 and 17 normal days (TTI = 1.0) produces the exact same mean TTI (1.30)
+as a commuter facility congested every single weekday at TTI = 1.30.
+
+`segment_recurrence` computes in DuckDB:
+1. **Per-day reduction**: For each `(Segment ID, window, local_date)`, aggregate daily
+   mean speed and ref speed, computing daily `TTI = ref_speed / speed`.
+2. **Congestion criterion**: A weekday is congested if daily `TTI > tti_threshold`
+   (`DEFAULT_TTI_THRESHOLD = 1.25`, 25% longer than free-flow).
+3. **Recurrence rate**: Share of observed weekdays meeting the congestion criterion
+   (`am_recurrence = n_congested / n_weekdays`).
+
+Under `DEFAULT_RECURRENCE_THRESHOLD = 0.50` ("congested most days"):
+- The construction fortnight segment: 3/20 days = 0.15 recurrence → **rejected**.
+- The daily queue segment: 20/20 days = 1.00 recurrence → **accepted**.
+
+### Run extraction and topology walking (`extract_congestion_runs`)
+
+- **Topological walk, never geographic sort**: Maximal runs are extended along the
+  (repaired) `NextXDSegI` topology in both forward and reverse directions. Geographic
+  sorting is strictly prohibited (Item 36's rule).
+- **Carriageway boundary guard**: A run stops at an `XDGroup` boundary; different
+  carriageways are different facilities and never merge in series.
+- **Gap tolerance**: One free-flowing segment between two congested segments does not
+  split a corridor. Up to `DEFAULT_GAP_TOLERANCE_SEGS = 1` and `DEFAULT_GAP_TOLERANCE_MILES = 0.5`
+  of non-qualifying pavement is bridged. Bridged gaps and total gap miles are recorded
+  on `CongestionRun` so the bridging decision is explicit in the output.
+- **On-system filtering**: Restricts qualifying seeds and run members to numbered state
+  routes via `on_system` (accepts `classify_on_system` DataFrames, boolean Series, or ID sets),
+  preventing off-system county roads from forming candidates.
+
+### Endpoint tidying (`tidy_run_endpoints`)
+
+After maximal runs are extracted, endpoints are examined for nearby junctions with
+differing `RoadNumber`s within `DEFAULT_SNAP_TOLERANCE_MILES = 0.25`:
+- If a state-route junction is found along the topology within tolerance, the endpoint snaps
+  and returns `snapped_to` and `snap_distance_miles`.
+- If no junction exists within tolerance, the endpoint stays where the congestion data placed
+  it (`snapped_to = None`, `snap_distance_miles = NaN`).
+
+### Directional pairing (`pair_directions`)
+
+For each extracted run in one direction (e.g. NB), `pair_directions` searches for a
+counterpart on the opposing carriageway (`XDGroup` differs, same `RoadNumber`, opposite
+cardinal bearing). If no opposing run is found, it is explicitly reported as unpaired
+(`paired = False`), treating one-way congestion as a finding rather than silently creating
+a synthetic counterpart.
+
+### Catalogue candidate emission (`emit_candidates`)
+
+`emit_candidates` outputs candidate dicts carrying `id`, `name`, `start_latlon`,
+`end_latlon`, and underscore-prefixed metadata (`_recurrence`, `_mean_tti`, `_total_miles`,
+`_gaps_bridged`, `_direction`, `_paired`). Crucially, **`description` is omitted**, so
+`corridors.parse_catalogue` refuses to load the candidates until a human operator writes down
+why that extent is meaningful and reviews the candidate.
+
 ## AADT volume layer (ITD `Cumulative_AADT`)
 
 Annual Average Daily Traffic (traffic **volume**) is **not** in the INRIX export —

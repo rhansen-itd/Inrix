@@ -178,7 +178,15 @@ Reading on-system-ness off the volume join is what made the old candidate list j
 independently and **W/E State St in Eagle (11 segs, 4.68 mi) is the one genuinely new
 question**. No re-download is warranted: the export is split by segment, so the gap can
 arrive as a supplemental part. **Nothing here needs new ranking machinery** — Items 38–41 made
-adding a corridor a catalogue edit, and that is what these items feed.
+adding a corridor a catalogue edit, and that is what these items feed. **Item 43 (corridors
+extracted from recurring congestion) is done** (Session 54): `screen.segment_recurrence`
+reduces per-day TTI in DuckDB and computes weekday recurrence share, distinguishing
+construction fortnights from daily queues with the same mean; `screen.extract_congestion_runs`
+walks the topology without sorting, bridging gaps within tolerance and respecting
+`XDGroup` boundaries; `screen.tidy_run_endpoints` snaps endpoints within tolerance to
+state-route junctions with distance reported; `screen.pair_directions` checks opposing
+carriageways; and `screen.emit_candidates` produces catalogue candidates with description
+omitted to mandate human review. **Item 44 is the next open item.**
 
 ---
 
@@ -1764,46 +1772,46 @@ congestion**: contiguous-ish runs of segments that are *recurrently* congested, 
 junction or a city limit used to tidy an endpoint only when the data already lands near
 one. Scope:
 
-- [ ] **Recurrence is the criterion, and it is not the mean.** `segment_screen` averages
+- [x] **Recurrence is the criterion, and it is not the mean.** `segment_screen` averages
       over the whole date range, so a fortnight of construction and a daily queue look
       alike. Add a per-**day** reduction — segment × window × local calendar day, over or
       under a delay/TTI threshold — and define recurrence as the **share of weekdays**
       the segment is over it. A corridor is a run of segments that are congested *most
       days*, and the share is reported per segment so the threshold can be argued with.
-- [ ] **Walk the runs, never sort them.** Extend contiguity along the repaired
+- [x] **Walk the runs, never sort them.** Extend contiguity along the repaired
       `NextXDSegI` (Item 38) through qualifying segments and emit each maximal run. This
       is the one place a geographic sort would be tempting and it is the thing Item 36
       exists to have banned — a run is a chain or it is two runs.
-- [ ] **"Contiguous-ish": a gap tolerance, reported not hidden.** One free-flowing
+- [x] **"Contiguous-ish": a gap tolerance, reported not hidden.** One free-flowing
       segment between two congested runs should not split a corridor; allow a tolerance
       in segments or miles, and return how many gaps each run bridged and their total
       length, so the tolerance is visible in the output.
-- [ ] **Endpoint tidying, with the distance stated.** After a run is found, look for a
+- [x] **Endpoint tidying, with the distance stated.** After a run is found, look for a
       meaningful landmark near each end — a junction with another state route, an
       interchange, a city limit — and snap to it **only within a stated tolerance**,
       returning `snapped_to` and `snap_distance_miles` for each end. An end that has no
       landmark within tolerance stays where the data put it, which is the whole point.
       A run that is snapped half a mile is a decision; a run that is snapped 50 feet is
       tidying, and the column is what tells them apart.
-- [ ] **Directional pairs.** A run found NB should look for its counterpart over the same
+- [x] **Directional pairs.** A run found NB should look for its counterpart over the same
       ground SB (Item 40's reporting corridors are two directions) and **say when it does
       not find one** — a one-direction run is a finding about the road or the data, not
       half a corridor to be quietly completed.
-- [ ] **Emit candidates in the catalogue's own shape**, carrying `start_latlon` /
+- [x] **Emit candidates in the catalogue's own shape**, carrying `start_latlon` /
       `end_latlon`, the measured recurrence and metrics, and the label read off the
       members (`corridors.chain_description` — the outside pass hand-wrote a route number
       that does not exist in Idaho). Deliberately **no `description`**: that is the field
       `parse_catalogue` refuses to accept empty, so a candidate cannot become a catalogue
       entry until a human writes down why that extent is meaningful.
-- [ ] **Stay on-system.** Candidates are drawn from the export's segments, which Item 42
+- [x] **Stay on-system.** Candidates are drawn from the export's segments, which Item 42
       defines; nothing here should surface a county arterial.
-- [ ] pytest: a synthetic corridor congested in its middle recovers exactly that middle,
+- [x] pytest: a synthetic corridor congested in its middle recovers exactly that middle,
       not the whole route; a segment congested on 3 days of 20 does **not** qualify while
       the same mean spread over every day does; a one-segment gap bridges only within
       tolerance; a run does not continue past a carriageway change; an endpoint within
       tolerance of a junction snaps and reports the distance while one beyond it does
       not; candidates are rejected by `parse_catalogue` until described.
-- [ ] DATA_FORMAT (recurrence definition and thresholds); DESIGN_HISTORY.
+- [x] DATA_FORMAT (recurrence definition and thresholds); DESIGN_HISTORY.
 
 *Suggested prompt:* "Do Item 43 of ROADMAP.md — extract corridor candidates as contiguous
 runs of recurring congestion, with a gap tolerance and endpoint snapping."

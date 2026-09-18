@@ -44,10 +44,11 @@ a parameter). Units stay US traffic-engineering — mph, minutes, miles.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import pandas as pd
 
 from . import aadt as _aadt
@@ -1008,9 +1009,979 @@ def _aadt_source_lookup(aadt):
     return aadt[_aadt.AADT_SOURCE_COL]
 
 
+# ---------------------------------------------------------------------------
+# Recurring-congestion corridor extraction  (Item 43)
+# ---------------------------------------------------------------------------
+#
+# Everything above answers "how bad are these corridors you named". What follows
+# answers the prior question: "which corridors should you name — and where do
+# they start and stop?"  The idea is that extents come from the congestion, not
+# from junctions and city limits: a *corridor candidate* is a contiguous run of
+# segments that are recurrently congested, with a junction used to tidy an
+# endpoint only when the data already lands near one.
+#
+# The sequence:
+# 1. ``segment_recurrence`` — per-segment TTI averaged per day, then the share of
+#    weekdays that exceeds a threshold.
+# 2. ``extract_congestion_runs`` — walks the (repaired) ``NextXDSegI`` topology
+#    through qualifying segments, bridging gaps within a tolerance, and emits
+#    each maximal run.  **Never sorts geographically** — a run is a chain or it
+#    is two runs, and a geographic sort is how Item 36 got a frontage road into
+#    a freeway.
+# 3. ``tidy_run_endpoints`` — snaps each end to a nearby state-route junction
+#    within a stated tolerance, recording the snap.
+# 4. ``pair_directions`` — for each run, looks for its counterpart on the
+#    opposing carriageway.
+# 5. ``emit_candidates`` — formats the runs as catalogue-shaped dicts,
+#    deliberately without ``description`` so ``parse_catalogue`` refuses them
+#    until a human adds one.
+
+DEFAULT_TTI_THRESHOLD = 1.25
+"""A segment-day is "congested" when its daily mean TTI exceeds this.  The
+threshold is above the 15-min noise floor but below genuine delay; 1.25 = 25%
+longer than free-flow."""
+
+DEFAULT_RECURRENCE_THRESHOLD = 0.50
+"""Share of observed weekdays a segment must be over the TTI threshold to
+qualify as *recurrently* congested.  0.50 = "congested most days"."""
+
+DEFAULT_GAP_TOLERANCE_SEGS = 1
+"""A contiguous run may bridge at most this many non-qualifying segments and
+remain one run."""
+
+DEFAULT_GAP_TOLERANCE_MILES = 0.5
+"""A contiguous run may bridge at most this many miles of non-qualifying
+segments."""
+
+DEFAULT_SNAP_TOLERANCE_MILES = 0.25
+"""An endpoint within this many miles of a state-route junction is snapped to
+that junction.  Beyond this, it stays where the data put it."""
+
+
+# ---------------------------------------------------------------------------
+# 1. Per-segment recurrence, computed in DuckDB
+# ---------------------------------------------------------------------------
+def segment_recurrence(con, area_key: str, windows=PEAK_WINDOWS,
+                       cvalue_threshold: float | None = DEFAULT_CVALUE_THRESHOLD, *,
+                       tti_threshold: float = DEFAULT_TTI_THRESHOLD,
+                       bin_minutes: int | None = None, tz=DEFAULT_TZ,
+                       date_start=None, date_end=None) -> pd.DataFrame:
+    """Per-segment **recurrence**: share of weekdays that exceed a TTI threshold.
+
+    This is the reduction :func:`segment_screen` does not do: it averages over
+    the whole date range, so a fortnight of construction and a daily queue look
+    alike.  Here the average is taken **per segment × window × local calendar
+    day**, and recurrence is the share of *weekdays* whose daily mean TTI
+    (``Travel Time / (Length / Ref Speed × 60)``) exceeds ``tti_threshold``.
+
+    Args:
+        con: an open :func:`store.connect` connection.
+        area_key: the area to screen (``store.list_areas``).
+        windows: the named windows — :data:`PEAK_WINDOWS` by default.
+        cvalue_threshold: keep rows with ``CValue > threshold``.
+        tti_threshold: daily mean TTI above this counts as "congested".
+        bin_minutes / tz / date_start / date_end: as :func:`segment_screen`.
+
+    Returns:
+        A DataFrame indexed by ``Segment ID`` with per-window columns:
+
+        - ``<name>_recurrence`` — share of observed weekdays the threshold is
+          exceeded (0.0–1.0).
+        - ``<name>_n_weekdays`` — weekdays observed.
+        - ``<name>_n_congested`` — weekdays over the threshold.
+        - ``<name>_mean_tti`` — overall (all-day) mean TTI in that window.
+
+        Plus overall ``ref_speed``, ``n_weekdays_total`` (across all windows).
+        ``attrs`` records all parameters and thresholds.
+    """
+    row = _store._area_row(con, area_key)
+    if row is None:
+        raise KeyError(f"No area {area_key!r} in the store.")
+    wins = resolve_windows(windows)
+    zone = _validated_tz(tz)
+    bin_minutes = _store._resolve_bin(con, area_key, bin_minutes)
+    obs = _store._obs_table(area_key)
+    cols = _table_columns(con, obs)
+    m = _metric_columns(cols)
+    if m["travel_time"] is None:
+        raise ValueError(f"Area {area_key!r} carries no 'Travel Time(...)' column.")
+    if cvalue_threshold is not None and CVALUE_COL not in cols:
+        raise ValueError(
+            f"Area {area_key!r} carries no {CVALUE_COL!r} column but a gate of "
+            f"{cvalue_threshold} was requested; pass cvalue_threshold=None.")
+
+    def q(col):
+        return f'"{col}"' if col else "NULL"
+
+    where = [f'"{_store.BIN_COL}" = ?']
+    params: list = [bin_minutes]
+    lo, hi = _store._date_bounds_utc(date_start, date_end, zone)
+    if lo is not None:
+        where.append(f'"{DATETIME_COL}" >= ?')
+        params.append(lo)
+    if hi is not None:
+        where.append(f'"{DATETIME_COL}" < ?')
+        params.append(hi)
+
+    gate = "TRUE" if cvalue_threshold is None else f'"{CVALUE_COL}" > {float(cvalue_threshold)}'
+
+    # Step 1: compute daily means per segment per window
+    # TTI = travel_time / free_flow_time.  Free-flow time needs Length(Miles) and
+    # Ref Speed, but the export's travel time and speed are the two things the
+    # store has — speed = Length / TT * 60, so TTI = ref_speed / speed when both
+    # are present.  When speed is NULL fall back to TT-based (which would need
+    # Length from the network, not available here — so we use ref/speed).
+    #
+    # SQL: per (segment, local_date), within each window, compute:
+    #   daily_mean_speed, daily_mean_ref_speed → daily_tti = ref / speed.
+    per_window_dfs = []
+    for name, w in wins.items():
+        pred = w.sql_predicate()
+        sql = f"""
+        WITH src AS (
+            SELECT
+                "{SEGMENT_COL}" AS sid,
+                {q(m["speed"])} AS speed,
+                {q(m["travel_time"])} AS tt,
+                {q(m["ref_speed"])} AS ref,
+                "{DATETIME_COL}" AT TIME ZONE '{zone}' AS local_dt,
+                ({gate}) AS kept
+            FROM "{obs}" WHERE {" AND ".join(where)}
+        ), tagged AS (
+            SELECT sid, speed, tt, ref, kept,
+                CAST(local_dt AS DATE) AS local_date,
+                date_part('hour', local_dt) * 3600 + date_part('minute', local_dt) * 60
+                    + date_part('second', local_dt) AS tod,
+                isodow(local_dt) AS dow
+            FROM src
+        ), daily AS (
+            SELECT
+                sid,
+                local_date,
+                isodow(local_date) AS date_dow,
+                AVG(speed) FILTER (WHERE kept AND {pred}) AS day_speed,
+                AVG(ref)   FILTER (WHERE kept AND {pred}) AS day_ref,
+                COUNT(*)   FILTER (WHERE kept AND {pred}) AS day_n
+            FROM tagged
+            WHERE {pred}
+            GROUP BY sid, local_date
+            HAVING day_n > 0
+        )
+        SELECT
+            sid AS "{SEGMENT_COL}",
+            COUNT(*)                               AS n_days,
+            COUNT(*) FILTER (WHERE date_dow <= 5)  AS n_weekdays,
+            COUNT(*) FILTER (WHERE date_dow <= 5
+                AND day_speed > 0
+                AND (day_ref / day_speed) > {float(tti_threshold)})
+                                                   AS n_congested,
+            AVG(CASE WHEN day_speed > 0 THEN day_ref / day_speed END) AS mean_tti,
+            AVG(day_ref) AS ref_speed
+        FROM daily
+        GROUP BY sid
+        ORDER BY sid
+        """
+        wdf = con.execute(sql, params).df()
+        if len(wdf):
+            wdf[SEGMENT_COL] = wdf[SEGMENT_COL].astype("int64")
+        wdf = wdf.set_index(SEGMENT_COL)
+
+        # Compute recurrence
+        n_wk = wdf["n_weekdays"].astype("float64")
+        n_cong = wdf["n_congested"].astype("float64")
+        wdf[f"{name}_recurrence"] = (n_cong / n_wk.where(n_wk > 0))
+        wdf[f"{name}_n_weekdays"] = wdf["n_weekdays"]
+        wdf[f"{name}_n_congested"] = wdf["n_congested"]
+        wdf[f"{name}_mean_tti"] = wdf["mean_tti"]
+
+        per_window_dfs.append(wdf[[
+            f"{name}_recurrence", f"{name}_n_weekdays",
+            f"{name}_n_congested", f"{name}_mean_tti",
+        ]])
+
+    # Merge all windows
+    if not per_window_dfs:
+        raise ValueError("No windows given.")
+    out = per_window_dfs[0]
+    for wdf in per_window_dfs[1:]:
+        out = out.join(wdf, how="outer")
+
+    # Add overall ref_speed from the screen-level query (simple overall mean)
+    ref_sql = f"""
+    SELECT "{SEGMENT_COL}" AS sid, AVG({q(m["ref_speed"])}) AS ref_speed
+    FROM "{obs}" WHERE {" AND ".join(where)}
+        AND ({gate})
+    GROUP BY sid ORDER BY sid
+    """
+    ref_df = con.execute(ref_sql, params).df()
+    if len(ref_df):
+        ref_df["sid"] = ref_df["sid"].astype("int64")
+    ref_df = ref_df.set_index("sid")
+    out = out.join(ref_df, how="left")
+    out.index.name = SEGMENT_COL
+
+    out.attrs = {
+        "area_key": area_key,
+        "bin_minutes": bin_minutes,
+        "tz": zone,
+        "cvalue_threshold": cvalue_threshold,
+        "tti_threshold": float(tti_threshold),
+        "windows": {n: w.to_dict() for n, w in wins.items()},
+        "date_start": date_start,
+        "date_end": date_end,
+    }
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 2. The CongestionRun and run extraction
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class CongestionRun:
+    """One maximal contiguous run of recurrently congested segments, found by
+    walking the XD topology — never by geographic sorting.
+
+    A run is ordered in the topology's travel direction.  ``gap_segments`` are
+    the non-qualifying segments that were bridged within tolerance; they are
+    carried by the run so the gap count is a visible decision, not a hidden one.
+    """
+
+    segment_ids: tuple[int, ...]
+    """Segment IDs in travel order (qualifying + bridged gap segments)."""
+    miles: tuple[float, ...]
+    """Per-segment ``Miles`` from the network."""
+    total_miles: float
+    """Sum of ``miles``."""
+    qualifying_ids: tuple[int, ...]
+    """Only the segments that meet the recurrence threshold (no gaps)."""
+    gap_segments: tuple[int, ...]
+    """Segment IDs that were bridged (non-qualifying, within tolerance)."""
+    gaps_bridged: int
+    """Number of gap spans (each may be 1+ segments) that were bridged."""
+    gap_miles: float
+    """Total miles of gap segments."""
+    bearing: str
+    """Cardinal bearing of the run (N/S/E/W/O), from the majority of members."""
+    xdgroup: int | None
+    """The ``XDGroup`` (carriageway key) — None if mixed or unknown."""
+    road_label: str
+    """De-duplicated road name(s) read off the segments."""
+    road_numbers: tuple[str, ...]
+    """Route numbers read off the segments (e.g. ``('55',)``)."""
+    window: str
+    """The peak window this run was extracted from."""
+    recurrence: dict[int, float] = field(default_factory=dict)
+    """Per-segment recurrence share, for the qualifying segments."""
+    mean_recurrence: float = 0.0
+    """Mean recurrence across qualifying segments."""
+    mean_tti: float = 0.0
+    """Mean TTI across all members (from the recurrence frame)."""
+
+    @property
+    def n_segments(self) -> int:
+        return len(self.segment_ids)
+
+    @property
+    def n_qualifying(self) -> int:
+        return len(self.qualifying_ids)
+
+    @property
+    def start_segment(self) -> int:
+        return self.segment_ids[0]
+
+    @property
+    def end_segment(self) -> int:
+        return self.segment_ids[-1]
+
+
+def _reverse_map(nxt_map: dict[int, int | None]) -> dict[int, int]:
+    """Build a ``{segment -> predecessor}`` lookup from a forward ``NextXDSegI`` map."""
+    prev: dict[int, int] = {}
+    for sid, nid in nxt_map.items():
+        if nid is not None:
+            prev[nid] = sid
+    return prev
+
+
+def _segment_info(network) -> dict:
+    """Extract per-segment data from the network into fast lookups."""
+    ids = [int(s) for s in network["XDSegID"]]
+    nxt_raw = network.get("NextXDSegI", pd.Series([None] * len(ids)))
+    nxt = {i: (None if pd.isna(n) else int(n))
+           for i, n in zip(ids, nxt_raw)}
+
+    miles_raw = network.get("Miles", pd.Series([float("nan")] * len(ids)))
+    miles = {i: (float(m) if not pd.isna(m) else 0.0) for i, m in zip(ids, miles_raw)}
+
+    bearing_raw = network.get("Bearing", pd.Series([None] * len(ids)))
+    bearing = {i: (str(b).strip() if not pd.isna(b) else "")
+               for i, b in zip(ids, bearing_raw)}
+
+    group_raw = network.get("XDGroup", pd.Series([None] * len(ids)))
+    group = {i: (None if pd.isna(g) else int(g)) for i, g in zip(ids, group_raw)}
+
+    road_name = network.get("RoadName", pd.Series([None] * len(ids)))
+    rname = {i: (str(r).strip() if not pd.isna(r) else "")
+             for i, r in zip(ids, road_name)}
+
+    road_number = network.get("RoadNumber", pd.Series([None] * len(ids)))
+    rnum = {i: (str(r).strip() if not pd.isna(r) else "")
+            for i, r in zip(ids, road_number)}
+
+    return {
+        "ids": set(ids),
+        "nxt": nxt,
+        "prev": _reverse_map(nxt),
+        "miles": miles,
+        "bearing": bearing,
+        "group": group,
+        "road_name": rname,
+        "road_number": rnum,
+    }
+
+
+def _majority(values) -> str:
+    """Most common non-empty value, or empty string."""
+    counts: dict[str, int] = {}
+    for v in values:
+        if v:
+            counts[v] = counts.get(v, 0) + 1
+    if not counts:
+        return ""
+    return max(counts, key=counts.get)
+
+
+def _unique_values(mapping: dict, keys) -> tuple:
+    """De-duplicated non-empty values from ``mapping`` for ``keys``, in order."""
+    seen, out = set(), []
+    for k in keys:
+        v = mapping.get(k, "")
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return tuple(out)
+
+
+def _resolve_on_system_ids(on_system) -> set[int] | None:
+    """Resolve an on_system filter (DataFrame, boolean Series, or ID collection)."""
+    if on_system is None:
+        return None
+    if isinstance(on_system, pd.DataFrame):
+        if "on_system" in on_system.columns:
+            sub = on_system[on_system["on_system"]]
+            if sub.index.name == SEGMENT_COL or "Segment ID" in str(sub.index.name):
+                return {int(s) for s in sub.index}
+            if SEGMENT_COL in sub.columns:
+                return {int(s) for s in sub[SEGMENT_COL]}
+            return {int(s) for s in sub.index}
+        return {int(s) for s in on_system.index}
+    if isinstance(on_system, pd.Series):
+        if on_system.dtype == bool or on_system.dtype == "boolean":
+            return {int(s) for s in on_system[on_system].index}
+        return {int(s) for s in on_system}
+    return {int(s) for s in on_system}
+
+
+def extract_congestion_runs(
+    recurrence: pd.DataFrame,
+    network,
+    *,
+    recurrence_threshold: float = DEFAULT_RECURRENCE_THRESHOLD,
+    gap_tolerance_segs: int = DEFAULT_GAP_TOLERANCE_SEGS,
+    gap_tolerance_miles: float = DEFAULT_GAP_TOLERANCE_MILES,
+    window: str = "am",
+    repairs=None,
+    on_system=None,
+) -> list[CongestionRun]:
+    """Walk the (repaired) XD topology and extract maximal runs of recurrently
+    congested segments.
+
+    **Never sorts geographically** — a run is a chain or it is two runs
+    (ROADMAP Item 36).  The walk uses ``NextXDSegI`` (and its reverse for the
+    backward extension) and only passes through segments that:
+
+    1. Meet the ``recurrence_threshold`` in the named ``window``, **or**
+    2. Are non-qualifying gaps within the tolerance (in segments AND miles).
+
+    A gap span of ``gap_tolerance_segs`` consecutive non-qualifying segments
+    totalling at most ``gap_tolerance_miles`` is bridged; longer spans split the
+    run.  Every bridged gap is recorded on the result.
+
+    A run does **not** continue past a ``XDGroup`` boundary — a different
+    carriageway key is a different road.
+
+    Args:
+        recurrence: a :func:`segment_recurrence` frame, indexed by Segment ID.
+        network: the XD network GeoDataFrame (or path), used for topology and
+            attributes.  Must carry ``XDSegID``, ``NextXDSegI``, ``Miles``,
+            ``Bearing``, ``XDGroup``, ``RoadName``, ``RoadNumber``.
+        recurrence_threshold: minimum share of weekdays to qualify.
+        gap_tolerance_segs: max consecutive non-qualifying segments to bridge.
+        gap_tolerance_miles: max total miles of a bridged gap span.
+        window: which window's recurrence to use (e.g. ``"am"``).
+        repairs: optional ``NextXDSegI`` patch table (:func:`corridors.repair_links`).
+        on_system: optional on-system filter (a :func:`aadt.classify_on_system`
+            frame, a boolean Series of on-system flags, or an iterable of on-system
+            segment IDs). Off-system segments are excluded from qualifying.
+
+    Returns:
+        A list of :class:`CongestionRun`, each a maximal contiguous run.
+        ``attrs`` is not set — these are simple frozen dataclass instances.
+    """
+    from . import corridors as _corridors
+
+    network = _corridors._as_network(network)
+    network = _corridors.apply_link_repairs(network, repairs)
+    info = _segment_info(network)
+    on_sys_ids = _resolve_on_system_ids(on_system)
+
+    rec_col = f"{window}_recurrence"
+    tti_col = f"{window}_mean_tti"
+    if rec_col not in recurrence.columns:
+        raise KeyError(
+            f"Recurrence frame has no {rec_col!r} column — "
+            f"available: {[c for c in recurrence.columns if c.endswith('_recurrence')]}.")
+
+    # Build the qualifying set
+    qualifying: set[int] = set()
+    rec_values: dict[int, float] = {}
+    tti_values: dict[int, float] = {}
+    for sid in recurrence.index:
+        sid_int = int(sid)
+        if sid_int not in info["ids"]:
+            continue
+        if on_sys_ids is not None and sid_int not in on_sys_ids:
+            continue
+        rv = recurrence.at[sid, rec_col]
+        if pd.notna(rv) and float(rv) >= recurrence_threshold:
+            qualifying.add(sid_int)
+            rec_values[sid_int] = float(rv)
+        if tti_col in recurrence.columns:
+            tv = recurrence.at[sid, tti_col]
+            if pd.notna(tv):
+                tti_values[sid_int] = float(tv)
+
+    nxt, prev = info["nxt"], info["prev"]
+    miles = info["miles"]
+
+    # Walk forward from a seed, collecting qualifying segments and bridging gaps
+    visited: set[int] = set()
+    runs: list[CongestionRun] = []
+
+    def _walk_forward(seed: int) -> tuple[list[int], list[int], int, float]:
+        """Walk forward from seed, collecting the run. Returns
+        (ordered_ids, gap_ids, gaps_bridged, gap_miles)."""
+        chain = [seed]
+        gaps: list[int] = []
+        n_gaps_bridged = 0
+        total_gap_mi = 0.0
+
+        cur = seed
+        while True:
+            nid = nxt.get(cur)
+            if nid is None or nid not in info["ids"]:
+                break
+            if nid in visited or nid in set(chain):
+                break
+            # XDGroup boundary check — different carriageway splits
+            if info["group"].get(nid) != info["group"].get(seed) and info["group"].get(seed) is not None:
+                break
+            if nid in qualifying:
+                chain.append(nid)
+                cur = nid
+                continue
+            # Try bridging a gap
+            gap_span = [nid]
+            gap_mi = miles.get(nid, 0.0)
+            probe = nid
+            bridged = False
+            while (len(gap_span) <= gap_tolerance_segs
+                   and gap_mi <= gap_tolerance_miles):
+                pnid = nxt.get(probe)
+                if pnid is None or pnid not in info["ids"]:
+                    break
+                if pnid in visited or pnid in set(chain) or pnid in set(gap_span):
+                    break
+                if info["group"].get(pnid) != info["group"].get(seed) and info["group"].get(seed) is not None:
+                    break
+                if pnid in qualifying:
+                    # Bridge successful
+                    chain.extend(gap_span)
+                    chain.append(pnid)
+                    gaps.extend(gap_span)
+                    n_gaps_bridged += 1
+                    total_gap_mi += gap_mi
+                    cur = pnid
+                    bridged = True
+                    break
+                gap_span.append(pnid)
+                gap_mi += miles.get(pnid, 0.0)
+                probe = pnid
+            if not bridged:
+                break
+
+        return chain, gaps, n_gaps_bridged, total_gap_mi
+
+    def _walk_backward(seed: int) -> tuple[list[int], list[int], int, float]:
+        """Walk backward (via prev map) from seed. Returns
+        (ordered_ids_reversed, gap_ids, gaps_bridged, gap_miles)."""
+        chain = [seed]
+        gaps: list[int] = []
+        n_gaps_bridged = 0
+        total_gap_mi = 0.0
+
+        cur = seed
+        while True:
+            pid = prev.get(cur)
+            if pid is None or pid not in info["ids"]:
+                break
+            if pid in visited or pid in set(chain):
+                break
+            if info["group"].get(pid) != info["group"].get(seed) and info["group"].get(seed) is not None:
+                break
+            if pid in qualifying:
+                chain.append(pid)
+                cur = pid
+                continue
+            # Try bridging backward
+            gap_span = [pid]
+            gap_mi = miles.get(pid, 0.0)
+            probe = pid
+            bridged = False
+            while (len(gap_span) <= gap_tolerance_segs
+                   and gap_mi <= gap_tolerance_miles):
+                ppid = prev.get(probe)
+                if ppid is None or ppid not in info["ids"]:
+                    break
+                if ppid in visited or ppid in set(chain) or ppid in set(gap_span):
+                    break
+                if info["group"].get(ppid) != info["group"].get(seed) and info["group"].get(seed) is not None:
+                    break
+                if ppid in qualifying:
+                    chain.extend(gap_span)
+                    chain.append(ppid)
+                    gaps.extend(gap_span)
+                    n_gaps_bridged += 1
+                    total_gap_mi += gap_mi
+                    cur = ppid
+                    bridged = True
+                    break
+                gap_span.append(ppid)
+                gap_mi += miles.get(ppid, 0.0)
+                probe = ppid
+            if not bridged:
+                break
+
+        return chain, gaps, n_gaps_bridged, total_gap_mi
+
+    # Process each qualifying segment as a potential seed
+    for seed in sorted(qualifying):
+        if seed in visited:
+            continue
+
+        # Walk forward from seed
+        fwd_ids, fwd_gaps, fwd_n_gaps, fwd_gap_mi = _walk_forward(seed)
+        # Walk backward from seed (returns reversed order)
+        bwd_ids, bwd_gaps, bwd_n_gaps, bwd_gap_mi = _walk_backward(seed)
+
+        # Combine: backward (reversed, dropping the seed) + forward
+        bwd_ids.reverse()
+        all_ids = bwd_ids[:-1] + fwd_ids  # bwd includes seed at end after reverse
+        if not all_ids:
+            all_ids = [seed]
+        all_gaps = list(set(bwd_gaps + fwd_gaps))
+        total_gaps_bridged = fwd_n_gaps + bwd_n_gaps
+        total_gap_mi = fwd_gap_mi + bwd_gap_mi
+
+        # Mark all as visited
+        for sid in all_ids:
+            visited.add(sid)
+
+        # Build the run
+        seg_miles = tuple(miles.get(s, 0.0) for s in all_ids)
+        qual_in_run = tuple(s for s in all_ids if s in qualifying)
+        gap_in_run = tuple(s for s in all_ids if s in set(all_gaps))
+
+        # Majority bearing and XDGroup
+        bearings = [info["bearing"].get(s, "") for s in all_ids]
+        groups = [info["group"].get(s) for s in all_ids]
+        non_none_groups = [g for g in groups if g is not None]
+
+        maj_bearing = _majority(bearings)
+        maj_group = _majority([str(g) for g in non_none_groups]) if non_none_groups else None
+        if maj_group is not None:
+            try:
+                maj_group = int(maj_group)
+            except (ValueError, TypeError):
+                maj_group = None
+
+        road_names = _unique_values(info["road_name"], all_ids)
+        road_numbers = _unique_values(info["road_number"], all_ids)
+        label_parts = list(road_names) or list(road_numbers)
+        if road_numbers and road_names:
+            extra = [n for n in road_numbers if n not in road_names]
+            if extra:
+                label_parts.append(f"({', '.join(extra)})")
+        road_label = " / ".join(label_parts) if label_parts else f"Segment {all_ids[0]}"
+
+        per_seg_rec = {s: rec_values.get(s, 0.0) for s in qual_in_run}
+        mean_rec = float(np.mean(list(per_seg_rec.values()))) if per_seg_rec else 0.0
+        mean_tti_val = float(np.mean([tti_values.get(s, float("nan"))
+                                       for s in all_ids
+                                       if s in tti_values])) if any(
+            s in tti_values for s in all_ids) else 0.0
+
+        runs.append(CongestionRun(
+            segment_ids=tuple(all_ids),
+            miles=seg_miles,
+            total_miles=float(sum(seg_miles)),
+            qualifying_ids=qual_in_run,
+            gap_segments=gap_in_run,
+            gaps_bridged=total_gaps_bridged,
+            gap_miles=total_gap_mi,
+            bearing=maj_bearing,
+            xdgroup=maj_group,
+            road_label=road_label,
+            road_numbers=road_numbers,
+            window=window,
+            recurrence=per_seg_rec,
+            mean_recurrence=mean_rec,
+            mean_tti=mean_tti_val,
+        ))
+
+    # Sort by total miles descending — the longest runs first
+    runs.sort(key=lambda r: r.total_miles, reverse=True)
+    return runs
+
+
+# ---------------------------------------------------------------------------
+# 3. Endpoint tidying — snap to nearby state-route junctions
+# ---------------------------------------------------------------------------
+def tidy_run_endpoints(
+    runs: list[CongestionRun],
+    network,
+    *,
+    snap_tolerance_miles: float = DEFAULT_SNAP_TOLERANCE_MILES,
+    repairs=None,
+) -> list[dict]:
+    """For each run's endpoints, look for a junction with another state route
+    within ``snap_tolerance_miles`` and snap to it.
+
+    A "junction" here is a segment whose ``RoadNumber`` differs from the run's
+    own — an interchange, an intersection with a cross-route.  The snap is along
+    the topology (the network distance to the junction segment's endpoint), not
+    a crow-flies distance.
+
+    Args:
+        runs: output of :func:`extract_congestion_runs`.
+        network: the XD network GeoDataFrame.
+        snap_tolerance_miles: max distance to snap each end.
+        repairs: optional link repair table.
+
+    Returns:
+        A list of dicts, one per run, each carrying:
+
+        - ``run``: the original :class:`CongestionRun`
+        - ``start_snapped_to``: junction road name/number at the start, or None
+        - ``start_snap_distance_miles``: distance to the snapped junction
+        - ``end_snapped_to``: junction at the end, or None
+        - ``end_snap_distance_miles``: distance to the snapped junction
+        - ``start_segment``: the (possibly adjusted) start segment
+        - ``end_segment``: the (possibly adjusted) end segment
+    """
+    from . import corridors as _corridors
+
+    network = _corridors._as_network(network)
+    network = _corridors.apply_link_repairs(network, repairs)
+    info = _segment_info(network)
+    nxt, prev = info["nxt"], info["prev"]
+
+    results = []
+    for run in runs:
+        own_numbers = set(run.road_numbers)
+
+        def _find_junction(start_seg: int, walk_map: dict, own_numbers_set: set[str]):
+            """Walk along ``walk_map`` from ``start_seg`` up to tolerance,
+            looking for a segment with a different ``RoadNumber``."""
+            cur = start_seg
+            dist_mi = 0.0
+            for _ in range(20):  # safety bound
+                nid = walk_map.get(cur)
+                if nid is None or nid not in info["ids"]:
+                    return None, 0.0, start_seg
+                dist_mi += info["miles"].get(nid, 0.0)
+                if dist_mi > snap_tolerance_miles:
+                    return None, 0.0, start_seg
+                rn = info["road_number"].get(nid, "")
+                if rn and rn not in own_numbers_set:
+                    junction_label = info["road_name"].get(nid, "") or f"Route {rn}"
+                    return junction_label, dist_mi, nid
+                cur = nid
+            return None, 0.0, start_seg
+
+        # Look backward from start for a junction
+        start_snap, start_dist, start_seg = _find_junction(
+            run.start_segment, prev, own_numbers)
+        # Look forward from end for a junction
+        end_snap, end_dist, end_seg = _find_junction(
+            run.end_segment, nxt, own_numbers)
+
+        results.append({
+            "run": run,
+            "start_snapped_to": start_snap,
+            "start_snap_distance_miles": start_dist if start_snap else float("nan"),
+            "end_snapped_to": end_snap,
+            "end_snap_distance_miles": end_dist if end_snap else float("nan"),
+            "start_segment": start_seg if start_snap else run.start_segment,
+            "end_segment": end_seg if end_snap else run.end_segment,
+        })
+    return results
+
+
+# ---------------------------------------------------------------------------
+# 4. Directional pairing
+# ---------------------------------------------------------------------------
+def pair_directions(
+    runs: list[CongestionRun],
+    network,
+    *,
+    repairs=None,
+) -> list[dict]:
+    """For each run, find its counterpart on the opposing carriageway.
+
+    A counterpart is a run whose segments are in a different ``XDGroup`` but
+    carry the same ``RoadNumber`` and whose extent overlaps the original's.
+    The pairing is by **road identity** (RoadNumber), not by proximity — the
+    two carriageways of a divided highway are different groups covering the
+    same ground.
+
+    Args:
+        runs: output of :func:`extract_congestion_runs`.
+        network: the XD network GeoDataFrame.
+        repairs: optional link repair table.
+
+    Returns:
+        A list of dicts, one per run, carrying:
+
+        - ``run``: the original :class:`CongestionRun`
+        - ``counterpart``: the opposing run (:class:`CongestionRun`), or None
+        - ``counterpart_index``: index into ``runs`` of the counterpart
+        - ``paired``: bool
+        - ``direction``: inferred direction label for this run (NB/SB/EB/WB)
+    """
+    from .geometry import direction_group as _direction_group
+
+    _OPPOSITE = {"N": "S", "S": "N", "E": "W", "W": "E"}
+    _DIR_LABEL = {"N": "NB", "S": "SB", "E": "EB", "W": "WB"}
+
+    # Index runs by their road numbers and XDGroup for fast lookup
+    results = []
+    for i, run in enumerate(runs):
+        # Determine this run's direction from its bearing
+        dir_group = _direction_group(run.bearing) if run.bearing else ""
+        opp = _OPPOSITE.get(dir_group, "")
+        direction_label = _DIR_LABEL.get(dir_group, run.bearing)
+
+        counterpart = None
+        counterpart_idx = None
+
+        if run.road_numbers and opp:
+            for j, other in enumerate(runs):
+                if j == i:
+                    continue
+                if other.xdgroup == run.xdgroup:
+                    continue  # same carriageway, not a counterpart
+                # Check for matching road numbers
+                if not (set(other.road_numbers) & set(run.road_numbers)):
+                    continue
+                # Check opposing direction
+                other_dir = _direction_group(other.bearing) if other.bearing else ""
+                if other_dir != opp:
+                    continue
+                # Check geographic overlap via shared road numbers
+                counterpart = other
+                counterpart_idx = j
+                break
+
+        results.append({
+            "run": run,
+            "counterpart": counterpart,
+            "counterpart_index": counterpart_idx,
+            "paired": counterpart is not None,
+            "direction": direction_label,
+        })
+    return results
+
+
+# ---------------------------------------------------------------------------
+# 5. Emit candidates in catalogue shape
+# ---------------------------------------------------------------------------
+def emit_candidates(
+    runs: list[CongestionRun],
+    network,
+    *,
+    snap_tolerance_miles: float = DEFAULT_SNAP_TOLERANCE_MILES,
+    repairs=None,
+    window: str = "am",
+    on_system=None,
+    on_system_only: bool = False,
+) -> list[dict]:
+    """Format congestion runs as corridor catalogue candidates.
+
+    The output is shaped like a :func:`corridors.parse_catalogue` entry — same
+    fields — but **deliberately carries no ``description``**, so ``parse_catalogue``
+    will refuse it until a human writes one.  That is the whole gate between a
+    machine-found extent and a catalogue entry.
+
+    Args:
+        runs: output of :func:`extract_congestion_runs`.
+        network: the XD network GeoDataFrame.
+        snap_tolerance_miles: as :func:`tidy_run_endpoints`.
+        repairs: optional link repair table.
+        window: which peak window the runs came from.
+        on_system: optional on-system filter (classify_on_system frame or ID set).
+        on_system_only: if True, exclude runs with no state/US/interstate route number.
+
+    Returns:
+        A list of dicts, each carrying:
+
+        - ``id``, ``name``, ``start_latlon``, ``end_latlon`` — catalogue fields
+        - ``_recurrence``, ``_mean_tti``, ``_total_miles``, ``_n_segments``,
+          ``_n_qualifying``, ``_gaps_bridged``, ``_gap_miles``, ``_window``,
+          ``_direction``, ``_paired``, ``_counterpart_id`` — underscore-prefixed
+          metadata (ignored by ``parse_catalogue``)
+    """
+    from . import corridors as _corridors
+
+    network_gdf = _corridors._as_network(network)
+    network_gdf = _corridors.apply_link_repairs(network_gdf, repairs)
+
+    if on_system is not None:
+        on_sys_ids = _resolve_on_system_ids(on_system)
+        runs = [r for r in runs if any(s in on_sys_ids for s in r.qualifying_ids)]
+    if on_system_only:
+        runs = [r for r in runs if r.road_numbers]
+
+    # Get endpoint coordinates from the network
+    tidied = tidy_run_endpoints(runs, network_gdf, snap_tolerance_miles=snap_tolerance_miles)
+    paired = pair_directions(runs, network_gdf, repairs=repairs)
+
+    candidates = []
+    used_ids: set[str] = set()
+
+    for i, run in enumerate(runs):
+        tidy = tidied[i]
+        pair = paired[i]
+
+        # Get lat/lon of start/end segments from the network attributes
+        start_seg = tidy["start_segment"]
+        end_seg = tidy["end_segment"]
+
+        start_lat = start_lon = end_lat = end_lon = None
+
+        # Look up coordinates from the network
+        net_df = pd.DataFrame(network_gdf).drop(columns="geometry", errors="ignore")
+        seg_lookup = net_df.set_index("XDSegID")
+
+        if start_seg in seg_lookup.index:
+            row = seg_lookup.loc[start_seg]
+            if hasattr(row, "StartLat"):
+                start_lat = float(row["StartLat"]) if not pd.isna(row.get("StartLat")) else None
+                start_lon = float(row["StartLong"]) if not pd.isna(row.get("StartLong")) else None
+        if end_seg in seg_lookup.index:
+            row = seg_lookup.loc[end_seg]
+            if hasattr(row, "EndLat"):
+                end_lat = float(row["EndLat"]) if not pd.isna(row.get("EndLat")) else None
+                end_lon = float(row["EndLong"]) if not pd.isna(row.get("EndLong")) else None
+
+        # Fall back to geometry if StartLat/EndLat columns were missing
+        if (start_lat is None or start_lon is None) and "geometry" in network_gdf.columns:
+            m = network_gdf[network_gdf["XDSegID"] == start_seg]
+            if not m.empty and m.iloc[0].geometry is not None:
+                g = m.iloc[0].geometry
+                if network_gdf.crs and str(network_gdf.crs) != "EPSG:4326":
+                    import geopandas as gpd
+                    from shapely.geometry import Point
+                    pt = gpd.GeoSeries([Point(g.coords[0])], crs=network_gdf.crs).to_crs("EPSG:4326").iloc[0]
+                    start_lon, start_lat = pt.x, pt.y
+                else:
+                    start_lon, start_lat = g.coords[0][0], g.coords[0][1]
+
+        if (end_lat is None or end_lon is None) and "geometry" in network_gdf.columns:
+            m = network_gdf[network_gdf["XDSegID"] == end_seg]
+            if not m.empty and m.iloc[0].geometry is not None:
+                g = m.iloc[0].geometry
+                if network_gdf.crs and str(network_gdf.crs) != "EPSG:4326":
+                    import geopandas as gpd
+                    from shapely.geometry import Point
+                    pt = gpd.GeoSeries([Point(g.coords[-1])], crs=network_gdf.crs).to_crs("EPSG:4326").iloc[0]
+                    end_lon, end_lat = pt.x, pt.y
+                else:
+                    end_lon, end_lat = g.coords[-1][0], g.coords[-1][1]
+
+        if start_lat is None or end_lat is None:
+            continue  # no coordinates — skip
+
+        # Build an id from the road and direction
+        direction = pair["direction"]
+        rnum = run.road_numbers[0] if run.road_numbers else "unk"
+        base_id = f"auto-{rnum}-{direction}".lower().replace(" ", "-")
+        cand_id = base_id
+        suffix = 2
+        while cand_id in used_ids:
+            cand_id = f"{base_id}-{suffix}"
+            suffix += 1
+        used_ids.add(cand_id)
+
+        # Build a name
+        rname = run.road_label
+        name = f"{rname} {direction}" if direction else rname
+
+        counterpart_id = None
+        if pair["counterpart"] is not None:
+            cp = pair["counterpart"]
+            cp_rnum = cp.road_numbers[0] if cp.road_numbers else "unk"
+            cp_pair = paired[pair["counterpart_index"]]
+            cp_dir = cp_pair["direction"]
+            counterpart_id = f"auto-{cp_rnum}-{cp_dir}".lower().replace(" ", "-")
+
+        candidates.append({
+            "id": cand_id,
+            "name": name,
+            "start_latlon": [start_lat, start_lon],
+            "end_latlon": [end_lat, end_lon],
+            # Deliberately NO description — parse_catalogue refuses it.
+            "_recurrence": run.mean_recurrence,
+            "_mean_tti": run.mean_tti,
+            "_total_miles": run.total_miles,
+            "_n_segments": run.n_segments,
+            "_n_qualifying": run.n_qualifying,
+            "_gaps_bridged": run.gaps_bridged,
+            "_gap_miles": run.gap_miles,
+            "_window": window,
+            "_direction": direction,
+            "_paired": pair["paired"],
+            "_counterpart_id": counterpart_id,
+            "_road_numbers": list(run.road_numbers),
+            "_start_snapped_to": tidy["start_snapped_to"],
+            "_start_snap_distance_miles": tidy["start_snap_distance_miles"],
+            "_end_snapped_to": tidy["end_snapped_to"],
+            "_end_snap_distance_miles": tidy["end_snap_distance_miles"],
+        })
+
+    return candidates
+
+
 __all__ = [
     "rank_corridor_groups", "corridor_peak_totals", "corridor_breakout",
     "GROUP_COL", "DIRECTION_COL", "RANK_METRICS", "DEFAULT_RANK_METRIC",
     "PeakWindow", "PEAK_WINDOWS", "WEEKDAYS", "resolve_windows",
     "segment_screen", "rank_corridors",
+    # Item 43 — recurring-congestion corridor extraction
+    "segment_recurrence", "CongestionRun", "extract_congestion_runs",
+    "tidy_run_endpoints", "pair_directions", "emit_candidates",
+    "DEFAULT_TTI_THRESHOLD", "DEFAULT_RECURRENCE_THRESHOLD",
+    "DEFAULT_GAP_TOLERANCE_SEGS", "DEFAULT_GAP_TOLERANCE_MILES",
+    "DEFAULT_SNAP_TOLERANCE_MILES",
 ]
+

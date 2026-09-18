@@ -4171,3 +4171,72 @@ filed under, its metadata merges in, the provenance records the rewrite, an expo
 no corridor column raises rather than being invented one, and `area_segments` reads the
 observations rather than the part-1-only metadata. **Full suite: 563 passed, 2 skipped.**
 
+---
+
+## Session 54 — Corridors extracted from recurring congestion, not drawn from landmarks (ROADMAP Item 43) (2026-09-18)
+
+**The problem Item 43 solves.** District 3's existing 20 corridor catalogue entries were
+hand-drawn from landmarks and municipal borders (Session 33). On rural/urban hybrid
+facilities like SH-45, an entire 17.4-mile corridor was declared, of which only 4.4 miles
+through Nampa is congested — diluting the delay over three times its length in free-flowing
+rural highway. The owner's requirement is that **extents come from the data**:
+corridor candidates extracted as maximal contiguous runs of recurrently congested segments,
+snapped to a junction only when the data already lands nearby.
+
+**1. Recurrence is the criterion, not the mean (`segment_recurrence`).**
+An export-wide mean collapses an incident or construction fortnight into the same figure as a
+daily commute queue: 3 days of construction (TTI = 3.0) and 17 free-flow days (TTI = 1.0)
+produces the exact same mean TTI (1.30) as 20 weekdays of recurring commute delay (TTI = 1.30).
+`screen.segment_recurrence` computes in DuckDB:
+- Grouping by `(Segment ID, window, local_date)` to determine daily mean speed and ref speed,
+  giving daily TTI (`ref_speed / speed`).
+- Classifying a segment-day as congested when daily `TTI > 1.25` (`DEFAULT_TTI_THRESHOLD`).
+- Defining recurrence as the share of observed weekdays meeting the threshold.
+At `DEFAULT_RECURRENCE_THRESHOLD = 0.50` ("congested most days"), the construction fortnight
+has recurrence 0.15 (rejected), while the commute queue has recurrence 1.00 (accepted).
+
+**2. Walking the runs, never sorting (`extract_congestion_runs`).**
+Topological contiguity is walked along (repaired) `NextXDSegI` in forward and backward
+directions. Geographic sorting is strictly banned (Item 36's rule). A run halts at an
+`XDGroup` boundary (different carriageway keys cannot merge).
+
+**3. Gap tolerance, reported not hidden.**
+A single free-flowing segment between two congested ones does not fragment a corridor. Up to
+`gap_tolerance_segs = 1` and `gap_tolerance_miles = 0.5` are bridged, and every bridged gap
+is recorded on `CongestionRun` (`gap_segments`, `gaps_bridged`, `gap_miles`).
+
+**4. Endpoint tidying with distance stated (`tidy_run_endpoints`).**
+End segments are examined along the topology up to `snap_tolerance_miles = 0.25` for junctions
+with differing `RoadNumber`s. If found, the run endpoint snaps to the junction and reports
+`snapped_to` and `snap_distance_miles`. If no junction is within tolerance, it remains where
+the data placed it (`snapped_to = None`, distance `NaN`).
+
+**5. Directional pairs (`pair_directions`).**
+Each run is searched for an opposing counterpart (`XDGroup` differs, same `RoadNumber`,
+opposite bearing). A one-direction run is reported as `paired = False` — a finding, not half
+a corridor to be quietly completed.
+
+**6. Catalogue candidate emission (`emit_candidates`).**
+Formats runs into catalogue entries with `id`, `name`, `start_latlon`, `end_latlon`, and
+metadata. Deliberately omits `description`: `corridors.parse_catalogue` refuses to load
+entries with empty descriptions, ensuring human review before any machine-generated candidate
+enters the catalogue.
+
+**7. Staying on-system.**
+`extract_congestion_runs` and `emit_candidates` accept an `on_system` filter (a
+`classify_on_system` DataFrame, boolean Series, or ID collection) and `on_system_only=True`
+to ensure off-system county roads do not surface as candidates.
+
+**Tests.** `tests/test_recurrence.py` is new (+24 tests):
+- `segment_recurrence` accurately measures weekday recurrence vs daily TTI.
+- Distinguishes construction fortnight (3/20 days, recurrence 0.15) from daily queue (20/20 days, recurrence 1.00) despite identical mean TTI (1.30).
+- Recovers congested middle of a synthetic corridor.
+- Bridges single-segment gaps within tolerance, splits on gaps exceeding tolerance.
+- Halts at `XDGroup` boundaries.
+- Snaps endpoints within tolerance and reports distance; leaves distant endpoints untidied.
+- Directional pairing matches opposing runs and flags unpaired runs.
+- `emit_candidates` produces valid coordinates (with geometry fallback) and omits description.
+- `parse_catalogue` rejects emitted candidates until described.
+- On-system filtering via DataFrame, Series, and ID sets.
+**Full suite: 587 passed, 2 skipped.**
+
