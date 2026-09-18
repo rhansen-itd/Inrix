@@ -68,13 +68,18 @@ def _one_route(frame: pd.DataFrame, route: str | None, key: str) -> pd.DataFrame
 def stat_box(row) -> str:
     """The per-corridor stat box, as HTML, **read off the summary row**.
 
-    Order is deliberate and matches the scorecard: bias with its day-blocked
-    interval first (the effect size), correlation last (G6 — a route was once
-    promoted on r = 0.945 while carrying a 5.49-minute bias).
+    Order is deliberate and matches the scorecard: the two effects a single bias
+    fuses first — the **delay slope** and the **free-flow level gap**, each with
+    its day-blocked interval (ROADMAP Item 32) — then the bias itself, then the
+    delay ratio as the secondary statistic it now is, and correlation last (G6 —
+    a route was once promoted on r = 0.945 while carrying a 5.49-minute bias).
     """
     if row is None:
         return ""
-    return (f"<b>Bias:</b> {_fmt(row.get('bias'), '+.2f')} min "
+    return (f"<b>Delay slope:</b> {_fmt(row.get('delay_slope'))} "
+            f"[{_fmt(row.get('delay_slope_ci_low'))}, {_fmt(row.get('delay_slope_ci_high'))}]"
+            f"<br><b>Free-flow gap:</b> {_fmt(row.get('free_flow_gap'), '+.2f')} min"
+            f"<br><b>Bias:</b> {_fmt(row.get('bias'), '+.2f')} min "
             f"[{_fmt(row.get('bias_ci_low'), '+.2f')}, {_fmt(row.get('bias_ci_high'), '+.2f')}]"
             f"<br><b>MAE:</b> {_fmt(row.get('mae'))} min"
             f"<br><b>Delay ratio:</b> {_fmt(row.get('delay_ratio'))}"
@@ -175,6 +180,176 @@ def ratio_bars(summary: pd.DataFrame, key: str = ROUTE_COL, labels=None,
         xaxis_title="INRIX ÷ reference", margin=dict(l=10, r=40, t=40, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     fig.update_xaxes(gridcolor=GRID, range=[0, max(1.15, float(df[["delay_ratio", "sd_ratio"]].max().max()) * 1.2)])
+    return fig
+
+
+def slope_forest(summary: pd.DataFrame, key: str = ROUTE_COL, labels=None,
+                 flagged=(), height: int | None = None) -> go.Figure:
+    """The delay slope with its interval, one row per route — **the headline**.
+
+    INRIX delay regressed on reference delay, each above its own free-flow
+    (``agreement.delay_regression``). The reference line is **1.0**, not 0: a
+    slope of 1 is the two sources crediting the same minute of delay, and a slope
+    of 0.5 is INRIX crediting half of it. Like :func:`bias_forest`, the per-bin
+    interval sits behind the day-blocked one in muted ink so the width the
+    autocorrelation costs is visible rather than asserted.
+    """
+    if summary is None or summary.empty:
+        return _blank("No agreement summary to plot.")
+    if "delay_slope" not in summary.columns:
+        return _blank("Summary is missing the delay-slope columns.")
+
+    df = summary.sort_values("delay_slope")
+    names = [(labels or {}).get(r, r) for r in df[key]]
+    flags = [r in set(flagged) for r in df[key]]
+    names = [f"⚠ {n}" if f else n for n, f in zip(names, flags)]
+    colors = [STATUS_CRITICAL if f else INRIX_COLOR for f in flags]
+
+    fig = go.Figure()
+    if {"delay_slope_ci_low_naive", "delay_slope_ci_high_naive"} <= set(df.columns):
+        fig.add_trace(go.Scatter(
+            x=df["delay_slope"], y=names, mode="markers",
+            name="Per-bin 95% CI (too narrow)",
+            marker=dict(size=9, color=MUTED, opacity=0.35),
+            error_x=dict(type="data", symmetric=False,
+                         array=df["delay_slope_ci_high_naive"] - df["delay_slope"],
+                         arrayminus=df["delay_slope"] - df["delay_slope_ci_low_naive"],
+                         color=MUTED, thickness=6, width=0),
+            hoverinfo="skip"))
+    fig.add_trace(go.Scatter(
+        x=df["delay_slope"], y=names, mode="markers", name="Day-blocked 95% CI",
+        marker=dict(size=11, color=colors, line=dict(width=2, color="#fcfcfb")),
+        error_x=dict(type="data", symmetric=False,
+                     array=df["delay_slope_ci_high"] - df["delay_slope"],
+                     arrayminus=df["delay_slope"] - df["delay_slope_ci_low"],
+                     color=MUTED, thickness=2, width=6),
+        customdata=df[["delay_slope_ci_low", "delay_slope_ci_high",
+                       "delay_intercept", "delay_r2"]].to_numpy(),
+        hovertemplate=("<b>%{y}</b><br>Slope %{x:.3f} "
+                       "[%{customdata[0]:.3f}, %{customdata[1]:.3f}]"
+                       "<br>Intercept %{customdata[2]:+.3f} min"
+                       "<br>r² %{customdata[3]:.3f}<extra></extra>")))
+    fig.add_vline(x=1.0, line=dict(color=MUTED, width=1.5, dash="dash"),
+                  annotation_text="parity", annotation_position="top")
+    fig.update_layout(
+        template=TEMPLATE, height=height or max(280, 42 * len(df) + 130),
+        xaxis_title=("Delay slope: minutes of INRIX delay per minute of reference "
+                     "delay — below 1 means INRIX compresses delay"),
+        yaxis_title=None, margin=dict(l=10, r=20, t=40, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    fig.update_xaxes(gridcolor=GRID, zeroline=False)
+    fig.update_yaxes(gridcolor=GRID)
+    return fig
+
+
+def level_gap_forest(summary: pd.DataFrame, key: str = ROUTE_COL, labels=None,
+                     flagged=(), height: int | None = None) -> go.Figure:
+    """The free-flow level gap with its day-blocked interval, one row per route.
+
+    The *other* effect ``bias`` fuses (ROADMAP Item 32): how far apart the two
+    sources sit at each one's own 10th-percentile free-flow, before any delay is
+    involved. A gap here is a level difference — plausibly different pavement, a
+    different path between the same endpoints, or a different extent — and unlike
+    the slope it **cancels** in a before/after difference. It is drawn separately
+    for that reason: the two have opposite consequences for an intervention study.
+    """
+    if summary is None or summary.empty:
+        return _blank("No agreement summary to plot.")
+    if "free_flow_gap" not in summary.columns:
+        return _blank("Summary is missing the free-flow gap columns.")
+
+    df = summary.sort_values("free_flow_gap")
+    names = [(labels or {}).get(r, r) for r in df[key]]
+    flags = [r in set(flagged) for r in df[key]]
+    names = [f"⚠ {n}" if f else n for n, f in zip(names, flags)]
+    colors = [STATUS_CRITICAL if f else REF_COLOR for f in flags]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["free_flow_gap"], y=names, mode="markers",
+        name="Day-blocked 95% CI (bootstrap)",
+        marker=dict(size=11, color=colors, line=dict(width=2, color="#fcfcfb")),
+        error_x=dict(type="data", symmetric=False,
+                     array=df["free_flow_gap_ci_high"] - df["free_flow_gap"],
+                     arrayminus=df["free_flow_gap"] - df["free_flow_gap_ci_low"],
+                     color=MUTED, thickness=2, width=6),
+        customdata=df[["free_flow_gap_ci_low", "free_flow_gap_ci_high",
+                       "free_flow_inrix", "free_flow_ref"]].to_numpy(),
+        hovertemplate=("<b>%{y}</b><br>Level gap %{x:+.2f} min "
+                       "[%{customdata[0]:+.2f}, %{customdata[1]:+.2f}]"
+                       "<br>Free flow: INRIX %{customdata[2]:.2f} vs "
+                       "reference %{customdata[3]:.2f} min<extra></extra>")))
+    fig.add_vline(x=0, line=dict(color=MUTED, width=1.5, dash="dash"))
+    fig.update_layout(
+        template=TEMPLATE, height=height or max(280, 42 * len(df) + 130),
+        xaxis_title=("Free-flow level gap: INRIX − reference at each source's own "
+                     "10th percentile (minutes)"),
+        yaxis_title=None, margin=dict(l=10, r=20, t=40, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    fig.update_xaxes(gridcolor=GRID, zeroline=False)
+    fig.update_yaxes(gridcolor=GRID)
+    return fig
+
+
+def delay_regression(matched: pd.DataFrame, route: str | None = None, row=None,
+                     key: str = ROUTE_COL, height: int = 460) -> go.Figure:
+    """Delay against delay, with the fitted line **drawn from the summary row**.
+
+    The one figure in this report carrying a fitted line, and it is still a shell:
+    the slope and intercept are read off ``row`` — the same values the scorecard
+    prints — and this builder only evaluates ``intercept + slope · x`` to place
+    the segment. Nothing here calls ``polyfit``; that fusion is exactly what the
+    retired report did (``legacy/generate_corridor_html_reports.py:504-549``).
+
+    Each axis is that source's delay above its **own** free flow, so the origin is
+    "both sources at free flow". A line through the origin with a slope below 1 is
+    the compression finding in one picture: the gap is multiplicative in delay,
+    which is why it does not cancel in a before/after difference.
+    """
+    sub = _one_route(matched, route, key)
+    if sub is None or sub.empty:
+        return _blank("No matched bins for this corridor.")
+    if row is None or row.get("free_flow_inrix") != row.get("free_flow_inrix"):
+        return _blank("No delay regression for this corridor.")
+
+    ff_i, ff_r = float(row["free_flow_inrix"]), float(row["free_flow_ref"])
+    d_i = (sub[INRIX_COL] - ff_i).clip(lower=0)
+    d_r = (sub[REF_COL] - ff_r).clip(lower=0)
+    hi = float(max(d_r.max(), d_i.max())) or 1.0
+    pad = hi * 0.05
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[0, hi], y=[0, hi], mode="lines", name="1:1 (equal delay)",
+        line=dict(color=MUTED, width=1.5, dash="dash"), hoverinfo="skip"))
+    fig.add_trace(go.Scatter(
+        x=d_r, y=d_i, mode="markers", name="15-minute bin",
+        marker=dict(size=5, color=INRIX_COLOR, opacity=0.45, line=dict(width=0)),
+        customdata=pd.to_datetime(sub[DATETIME_COL]).dt.strftime("%Y-%m-%d %H:%M"),
+        hovertemplate=("%{customdata}<br>Reference delay %{x:.2f} min"
+                       "<br>INRIX delay %{y:.2f} min<extra></extra>")))
+    slope, intercept = row.get("delay_slope"), row.get("delay_intercept")
+    if slope == slope and intercept == intercept:
+        fig.add_trace(go.Scatter(
+            x=[0, hi], y=[intercept, intercept + slope * hi], mode="lines",
+            name=f"Fitted in the core: {_fmt(slope, '.3f')}·x {_fmt(intercept, '+.3f')}",
+            line=dict(color=REF_COLOR, width=2.5), hoverinfo="skip"))
+    if row is not None:
+        fig.add_annotation(xref="paper", yref="paper", x=0.03, y=0.97,
+                           xanchor="left", yanchor="top", showarrow=False,
+                           text=stat_box(row), align="left",
+                           bgcolor="rgba(252,252,251,0.9)", bordercolor=GRID,
+                           borderwidth=1, borderpad=6,
+                           font=dict(size=11, color="#0b0b0b"))
+    fig.update_layout(template=TEMPLATE, height=height,
+                      margin=dict(l=60, r=30, t=40, b=50),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                  xanchor="right", x=1))
+    fig.update_xaxes(title_text="Reference delay above its own free flow (minutes)",
+                     range=[-pad, hi + pad], gridcolor=GRID)
+    fig.update_yaxes(title_text="INRIX delay above its own free flow (minutes)",
+                     range=[-pad, hi + pad], gridcolor=GRID,
+                     scaleanchor="x", scaleratio=1)
     return fig
 
 

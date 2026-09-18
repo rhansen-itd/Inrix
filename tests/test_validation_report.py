@@ -368,10 +368,87 @@ def test_the_report_states_the_measured_cadence_not_fifteen_minutes(frames):
 
 
 def test_the_finding_is_written_from_this_run_s_numbers(frames):
+    """The prose is interpolated from the frames, so it cannot drift from the
+    tables beneath it. Since Item 32 the claim is the slope, and the worked
+    before/after consequence is that slope times the example — both have to be
+    this run's numbers, not a sentence carried over from a previous one."""
     html = vr.build_report(frames)["index.html"]
-    median = frames["summary"].set_index(ROUTE_COL).loc["Eagle Rd NB", "delay_ratio"]
-    assert "delay ratio" in html
-    assert f"{median:.2f}" in html
+    row = frames["summary"].set_index(ROUTE_COL).loc["Eagle Rd NB"]   # the only arterial
+    assert "slope" in html
+    assert f"{row['delay_slope']:.3f}" in html
+    assert f"{row['delay_ratio']:.2f}" in html            # kept, as the secondary
+    assert f"{4.0 * row['delay_slope']:.1f} minutes" in html
+
+
+def test_the_finding_leads_with_the_slope_and_the_level_gap_separately(frames):
+    """Item 32's point: a single bias fuses two effects with opposite consequences
+    for a before/after study, so the report must not lead with their sum."""
+    html = vr.build_report(frames)["index.html"]
+    assert html.index("Delay slope") < html.index("Bias (min)")
+    assert html.index("Free-flow gap (min)") < html.index("Bias (min)")
+    assert "does not cancel" in html and "cancels in a before/after" in html
+    # The ratio survives, demoted and footnoted rather than silently redefined.
+    assert "Delay ratio †" in html and "secondary statistic" in html
+
+
+def test_the_scorecard_prints_the_intervals_the_core_computed(frames):
+    html = vr.build_report(frames)["index.html"]
+    row = frames["summary"].set_index(ROUTE_COL).loc["Eagle Rd NB"]
+    assert f"[{row['delay_slope_ci_low']:.3f}, {row['delay_slope_ci_high']:.3f}]" in html
+    assert f"[{row['free_flow_gap_ci_low']:+.2f}, {row['free_flow_gap_ci_high']:+.2f}]" in html
+
+
+def test_the_delay_regression_figure_draws_the_rows_slope_not_a_refit(matched, row):
+    """The load-bearing property of this layer: the fitted line is the core's
+    coefficients evaluated, not a ``polyfit`` inside the figure loop — which is
+    exactly what the retired report did. Hand it a row whose slope the data
+    denies, and the line must follow the row."""
+    lying = row.copy()
+    lying["delay_slope"], lying["delay_intercept"] = 9.0, -2.0
+    fig = vfig.delay_regression(matched, "Eagle Rd NB", lying)
+    fitted = [t for t in fig.data if "Fitted in the core" in (t.name or "")]
+    assert len(fitted) == 1
+    x0, x1 = fitted[0].x
+    y0, y1 = fitted[0].y
+    assert (y1 - y0) / (x1 - x0) == pytest.approx(9.0)
+    assert y0 == pytest.approx(-2.0)
+
+
+def test_the_delay_regression_figure_refuses_a_row_it_cannot_place(matched):
+    fig = vfig.delay_regression(matched, "Eagle Rd NB", None)
+    assert "No delay regression" in fig.layout.annotations[0].text
+
+
+def test_the_slope_and_gap_forests_place_the_summarys_own_values(summary):
+    slope_fig = vfig.slope_forest(summary)
+    gap_fig = vfig.level_gap_forest(summary)
+    by_route = summary.set_index(ROUTE_COL)
+    primary = [t for t in slope_fig.data if "Day-blocked" in (t.name or "")][0]
+    assert sorted(primary.x) == pytest.approx(sorted(summary["delay_slope"]))
+    gap_primary = [t for t in gap_fig.data if "Day-blocked" in (t.name or "")][0]
+    assert set(gap_primary.x) == set(summary["free_flow_gap"])
+    # …and the interval drawn is the day-blocked one, not the per-bin one.
+    route = "Eagle Rd NB"
+    i = list(primary.y).index(route)
+    assert (primary.x[i] + primary.error_x.array[i]) == pytest.approx(
+        by_route.loc[route, "delay_slope_ci_high"])
+
+
+def test_the_forests_say_so_when_the_columns_are_missing(summary):
+    """A summary built before Item 32 must produce a blank with a reason, not a
+    traceback in the middle of a report build."""
+    older = summary.drop(columns=[c for c in summary.columns if c.startswith("delay_slope")])
+    assert "missing the delay-slope" in vfig.slope_forest(older).layout.annotations[0].text
+    older = summary.drop(columns=["free_flow_gap"])
+    assert "missing the free-flow gap" in vfig.level_gap_forest(older).layout.annotations[0].text
+
+
+def test_the_route_page_reports_the_level_gap_beside_the_slope(frames):
+    html = vr.build_report(frames)["eagle_rd.html"]
+    row = frames["summary"].set_index(ROUTE_COL).loc["Eagle Rd NB"]
+    assert "Free-flow level gap" in html and "Delay slope" in html
+    assert f"{row['free_flow_gap']:+.2f} min" in html
+    assert f"r&#178; {row['delay_r2']:.3f}" in html or f"r² {row['delay_r2']:.3f}" in html
 
 
 def test_unknown_routes_are_shown_on_an_other_page_not_dropped(frames):
@@ -384,3 +461,92 @@ def test_unknown_routes_are_shown_on_an_other_page_not_dropped(frames):
     frames["summary"] = grown
     pages = vr.build_report(frames)
     assert "other.html" in pages and "Brand New Sheet" in pages["other.html"]
+
+
+# ---------------------------------------------------------------------------
+# Splitting the level gap  (ROADMAP Item 33)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def split_frames(frames):
+    """The same run, with the reference carrying its own delay — so the level gap
+    can be split into the reference's residual delay and the static remainder."""
+    from inrix_tools.reference import EXTRA_TT_COL
+
+    stamps = pd.date_range("2026-03-03 06:00", periods=36, freq="1h", tz=TZ)
+    rng = np.random.default_rng(7)
+    frames_i, frames_r = [], []
+    for route, base in (("Eagle Rd NB", 8.0), ("Cascade-HSB", 50.0)):
+        delay = 2.0 + np.abs(rng.normal(0, 0.3, len(stamps)))   # never free flow
+        frames_i.append(pd.DataFrame({ROUTE_COL: route, "Date Time": stamps,
+                                      TT_COL: base + 0.5 * delay}))
+        frames_r.append(pd.DataFrame({ROUTE_COL: route, "Date Time": stamps,
+                                      TT_COL: base + delay, EXTRA_TT_COL: delay}))
+    matched = agreement.match_bins(pd.concat(frames_i, ignore_index=True),
+                                   pd.concat(frames_r, ignore_index=True))
+    out = dict(frames)
+    out["matched"] = matched
+    out["summary"] = agreement.compare(None, None, matched=matched)
+    return out
+
+
+def test_the_scorecard_splits_the_level_gap_beside_it(split_frames):
+    """A gap quoted "at free flow" is only that if the reference is at free flow
+    there. The two columns that say whether it was sit with the gap, not at the
+    end of the row."""
+    html = vr.scorecard(split_frames["summary"], {})
+    assert "Ref delay at ff (min)" in html and "Static gap (min)" in html
+    assert html.index("Gap 95% CI") < html.index("Ref delay at ff (min)") < html.index("Bias (min)")
+    assert "Free-flow gap = Static gap &#x2212; Ref delay at ff" in html or \
+           "Free-flow gap = Static gap − Ref delay at ff" in html
+
+
+def test_the_scorecard_omits_the_split_when_the_run_cannot_support_it(summary):
+    """No reference-side delay column, no split columns — and no footnote
+    explaining a decomposition the table does not carry."""
+    html = vr.scorecard(summary, {})
+    assert "Static gap" not in html and "Ref delay at ff" not in html
+    assert "Free-flow gap = Static gap" not in html
+
+
+def test_the_route_page_splits_the_level_gap_in_the_kpi(split_frames):
+    html = vr.build_report(split_frames)["eagle_rd.html"]
+    row = split_frames["summary"].set_index(ROUTE_COL).loc["Eagle Rd NB"]
+    assert f"static gap of {row['free_flow_gap_static']:+.2f} min" in html
+    assert f"minus {row['ref_free_flow_delay']:.2f} min of delay the reference itself" in html
+
+
+def _sh69_summary(*, split: bool) -> pd.DataFrame:
+    """Two rows shaped like the SH-69 pair the finding is about."""
+    rows = [{ROUTE_COL: "SH-69 NB", "free_flow_inrix": 9.13, "free_flow_ref": 9.95,
+             "free_flow_gap": -0.82, "ref_no_traffic": 8.2667,
+             "ref_free_flow_delay": 1.6833, "free_flow_gap_static": 0.8633},
+            {ROUTE_COL: "SH-69 SB", "free_flow_inrix": 8.95, "free_flow_ref": 13.64,
+             "free_flow_gap": -4.69, "ref_no_traffic": 11.3167,
+             "ref_free_flow_delay": 2.325, "free_flow_gap_static": -2.3667}]
+    out = pd.DataFrame(rows)
+    return out if split else out.drop(columns=["ref_no_traffic", "ref_free_flow_delay",
+                                               "free_flow_gap_static"])
+
+
+def test_the_interchange_panel_states_what_item_33_found(summary):
+    """The panel used to end "this report does not claim to know what it is". It
+    can now say: the reference's own no-traffic duration is directional over
+    chains of the same extent, which no measurement of the road can be."""
+    chains = {"SH-69 NB": _Chain(miles=7.17, requested=7.11, snap=(18.5, 1.5)),
+              "SH-69 SB": _Chain(miles=7.17, requested=7.11, snap=(63.9, 18.5))}
+    html = vr.unsupported_explanation_panel(chains, _sh69_summary(split=True))
+
+    assert "11.32 minutes against 8.27" in html
+    assert "3.05-minute directional" in html
+    assert "7.11 miles of pavement" in html
+    assert "64 ft from the southbound roadway" in html
+    assert "does not claim to know" not in html
+
+
+def test_the_interchange_panel_does_not_guess_without_the_split(summary):
+    """A run whose reference gave no delay column cannot show the finding, and the
+    panel goes back to saying so rather than asserting it anyway."""
+    chains = {"SH-69 NB": _Chain(snap=(18.5, 1.5)), "SH-69 SB": _Chain(snap=(63.9, 18.5))}
+    html = vr.unsupported_explanation_panel(chains, _sh69_summary(split=False))
+    assert "does not claim to know" in html
+    assert "no-traffic duration" not in html

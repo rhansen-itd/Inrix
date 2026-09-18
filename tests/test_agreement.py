@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from inrix_tools import agreement
-from inrix_tools.reference import ROUTE_COL, TT_COL
+from inrix_tools.reference import EXTRA_TT_COL, ROUTE_COL, TT_COL
 
 TZ = "America/Denver"
 
@@ -281,3 +281,286 @@ def test_profile_by_date_gives_the_day_means_the_ci_is_built_from():
 def test_profile_rejects_an_unknown_key():
     with pytest.raises(ValueError, match="Unknown profile key"):
         agreement.profile(_matched_two_days(), by="fortnight")
+
+
+# ---------------------------------------------------------------------------
+# The delay slope and the free-flow level gap  (ROADMAP Item 32)
+# ---------------------------------------------------------------------------
+def _delay_frames(slope=0.5, level_gap=0.0, congested_offset=0.0, n_days=20,
+                  per_day=24, noise=0.0, slope_jitter=0.0, seed=3,
+                  free_flow=10.0, delay_sd=3.0, floor_delay=0.0,
+                  ref_extra=False, ref_no_traffic_drift=0.0):
+    """A pair of frames with a **known** delay relationship.
+
+    The reference is ``free_flow`` plus a per-bin delay, a quarter of each day at
+    exactly zero so both 10th percentiles land on the free-flow shoulder. INRIX
+    sits ``level_gap`` above that shoulder and carries ``slope ×`` the reference's
+    delay. The three effects are separately known and separately recoverable:
+
+    - ``level_gap`` moves the two sources' free flow apart and leaves delay alone;
+    - ``slope`` compresses delay and leaves free flow alone;
+    - ``congested_offset`` adds a fixed penalty **only** to bins that carry delay,
+      which is the one way a real intercept arises — a constant added to *every*
+      bin is absorbed into INRIX's own free flow and cannot show up as one.
+
+    ``slope_jitter`` gives each day its own slope, the day-to-day heterogeneity
+    the blocked interval exists to account for.
+
+    ``floor_delay`` adds a constant to the reference's delay in **every** bin — a
+    corridor congested through the whole logging window, whose 10th percentile is
+    therefore not free flow. ``ref_extra`` has the reference carry its own delay in
+    ``EXTRA_TT_COL`` the way the logger does, which is what lets the level gap be
+    split (ROADMAP Item 33); ``ref_no_traffic_drift`` moves the reference's
+    no-traffic duration by that much halfway through the record, so a drifting
+    baseline can be told from a constant one.
+    """
+    rng = np.random.default_rng(seed)
+    frames_i, frames_r = [], []
+    for d in range(n_days):
+        stamps = pd.date_range(f"2026-04-{d + 1:02d} 06:00", periods=per_day,
+                               freq="30min", tz=TZ)
+        delay = np.abs(rng.normal(0, delay_sd, per_day))
+        delay[:max(1, per_day // 4)] = 0.0
+        congested = delay > 0
+        delay = delay + floor_delay
+        day_slope = slope + (rng.normal(0, slope_jitter) if slope_jitter else 0.0)
+        inrix_delay = day_slope * delay + congested_offset * congested
+        inr = free_flow + level_gap + inrix_delay
+        if noise:
+            inr = inr + rng.normal(0, noise, per_day) * congested
+        no_traffic = free_flow + (ref_no_traffic_drift if d >= n_days // 2 else 0.0)
+        ref = pd.DataFrame({ROUTE_COL: "R", "Date Time": stamps,
+                            TT_COL: no_traffic + delay})
+        if ref_extra:
+            ref[EXTRA_TT_COL] = delay
+        frames_r.append(ref)
+        frames_i.append(pd.DataFrame({ROUTE_COL: "R", "Date Time": stamps, TT_COL: inr}))
+    return (pd.concat(frames_i, ignore_index=True), pd.concat(frames_r, ignore_index=True))
+
+
+def test_the_slope_recovers_a_known_compression_with_a_zero_intercept():
+    """The estimator is the finding. A slope of 0.5 with a zero intercept is what
+    "INRIX credits half a minute per real minute" means — and the zero intercept
+    is not an accident of this fixture: because each source's delay is measured
+    above its **own** free flow, a purely multiplicative compression can only
+    produce an intercept of zero. That is why the near-zero intercepts measured on
+    the real arterials are read as evidence the disagreement is multiplicative."""
+    got = agreement.compare(*_delay_frames(slope=0.5)).iloc[0]
+
+    assert got["delay_slope"] == pytest.approx(0.5, abs=1e-9)
+    assert got["delay_intercept"] == pytest.approx(0.0, abs=1e-9)
+    assert got["delay_r2"] == pytest.approx(1.0, abs=1e-9)
+    # An exact fit has no residual to build an interval from — NaN, not width 0.
+    assert np.isnan(got["delay_slope_ci_low"]) and np.isnan(got["delay_slope_ci_high"])
+
+
+def test_a_fixed_penalty_on_congested_bins_shows_up_as_a_positive_intercept():
+    """The other side of the same reading: an intercept is a *fixed offset* in
+    delay, which would partly cancel in a before/after difference. The estimator
+    has to be able to see one, or "the intercepts are near zero" says nothing."""
+    got = agreement.compare(*_delay_frames(slope=0.5, congested_offset=0.6)).iloc[0]
+
+    assert got["delay_intercept"] > 0.25
+    assert got["delay_intercept_ci_low"] > 0                      # and it is not zero
+    assert got["delay_slope"] == pytest.approx(0.5, abs=0.1)
+    assert got["free_flow_gap"] == pytest.approx(0.0, abs=1e-9)   # free flow untouched
+
+
+def test_the_level_gap_and_the_slope_are_separated():
+    """The defect Item 32 fixes: ``bias`` cannot tell "the two sources are
+    measuring different pavement" from "INRIX compresses delay", and those have
+    opposite consequences for a before/after study. A pure level shift must show
+    in the gap and **not** in the slope, and a pure compression the reverse —
+    while both collapse into the same single negative ``bias``."""
+    level = agreement.compare(*_delay_frames(slope=1.0, level_gap=-5.0)).iloc[0]
+    assert level["free_flow_gap"] == pytest.approx(-5.0, abs=1e-9)
+    assert level["delay_slope"] == pytest.approx(1.0, abs=1e-9)
+
+    compressed = agreement.compare(*_delay_frames(slope=0.5)).iloc[0]
+    assert compressed["free_flow_gap"] == pytest.approx(0.0, abs=1e-9)
+    assert compressed["delay_slope"] == pytest.approx(0.5, abs=1e-9)
+
+    assert level["bias"] < 0 and compressed["bias"] < 0
+
+
+def test_the_slope_survives_noise_and_its_interval_covers_the_truth():
+    inrix, reference = _delay_frames(slope=0.55, noise=0.35, slope_jitter=0.05, seed=11)
+    got = agreement.compare(inrix, reference).iloc[0]
+
+    assert got["delay_slope"] == pytest.approx(0.55, abs=0.05)
+    assert got["delay_slope_ci_low"] < 0.55 < got["delay_slope_ci_high"]
+    assert got["delay_intercept_ci_low"] < 0.0 < got["delay_intercept_ci_high"]
+
+
+def test_the_level_gap_estimate_falls_inside_its_own_interval():
+    """The interval is a day-block **bootstrap of the pooled gap**, not a t
+    interval over per-day gaps. The two are different estimands, and on the real
+    arterials they disagree by enough to put the point estimate outside its own
+    interval (Eagle Rd NB: −5.36 against a per-day interval of [−5.96, −5.71]),
+    which is not a thing a report may print."""
+    inrix, reference = _delay_frames(slope=0.6, level_gap=-2.0, noise=0.4, seed=5)
+    got = agreement.compare(inrix, reference).iloc[0]
+
+    assert got["free_flow_gap_ci_low"] <= got["free_flow_gap"] <= got["free_flow_gap_ci_high"]
+    assert got["free_flow_gap"] == pytest.approx(-2.0, abs=0.1)
+    assert got["n_free_flow_days"] == 20
+
+
+def test_the_slope_interval_is_day_blocked_and_the_bootstrap_is_deterministic():
+    """Same argument as the bias CI: bins inside a day are not independent, so the
+    textbook OLS interval is too narrow. Here the dependence is a day-to-day
+    slope — the compression a corridor shows on Tuesday is not the one it shows on
+    Friday — and the day-clustered interval widens to say so while the per-bin one
+    does not. And a report re-run must reproduce its own numbers."""
+    steady = agreement.compare(*_delay_frames(slope=0.5, noise=0.5, seed=2)).iloc[0]
+    varying = agreement.compare(*_delay_frames(slope=0.5, noise=0.5,
+                                               slope_jitter=0.12, seed=2)).iloc[0]
+
+    def widths(row):
+        return (row["delay_slope_ci_high"] - row["delay_slope_ci_low"],
+                row["delay_slope_ci_high_naive"] - row["delay_slope_ci_low_naive"])
+
+    block_v, naive_v = widths(varying)
+    block_s, naive_s = widths(steady)
+    assert block_v > 3 * block_s                    # the honest interval widens
+    assert naive_v == pytest.approx(naive_s, rel=0.6)   # the per-bin one barely moves
+    assert varying["delay_slope_ci_width_ratio"] == pytest.approx(block_v / naive_v)
+    assert varying["delay_slope_ci_width_ratio"] > 2
+
+    again = agreement.compare(*_delay_frames(slope=0.5, noise=0.5,
+                                             slope_jitter=0.12, seed=2)).iloc[0]
+    assert again["free_flow_gap_ci_low"] == varying["free_flow_gap_ci_low"]
+    assert again["free_flow_gap_ci_high"] == varying["free_flow_gap_ci_high"]
+
+
+def test_a_near_zero_delay_route_has_an_unstable_ratio_and_a_stable_slope():
+    """The VSL SB PM case, pinned as a regression. On a route carrying little delay
+    the ratio of two small means read **2.32** while the regression on the same
+    bins read 0.71 — a route where INRIX compresses delay was being reported as
+    showing more than twice as much of it. Instability is the charge, so the test
+    measures it: split the same route in half by date and the ratio moves by a
+    third while the slope moves by a hundredth, each half's interval covering the
+    other half's estimate."""
+    inrix, reference = _delay_frames(slope=0.7, delay_sd=0.4, noise=0.4, seed=17)
+    halves = []
+    for lo, hi in (("2026-04-01", "2026-04-11"), ("2026-04-11", "2026-04-21")):
+        window = lambda f: f[(f["Date Time"] >= lo) & (f["Date Time"] < hi)]  # noqa: E731
+        halves.append(agreement.compare(window(inrix), window(reference)).iloc[0])
+    a, b = halves
+
+    ratio_swing = abs(a["delay_ratio"] - b["delay_ratio"]) / ((a["delay_ratio"] + b["delay_ratio"]) / 2)
+    assert a["delay_ratio"] > 1 and ratio_swing > 0.25       # the unusable statistic
+    assert abs(a["delay_slope"] - b["delay_slope"]) < 0.05   # …and the usable one
+    assert a["delay_slope_ci_low"] <= b["delay_slope"] <= a["delay_slope_ci_high"]
+    assert b["delay_slope_ci_low"] <= a["delay_slope"] <= b["delay_slope_ci_high"]
+
+    whole = agreement.compare(inrix, reference).iloc[0]
+    assert whole["delay_ratio"] > whole["delay_slope_ci_high"]
+
+
+def test_delay_regression_agrees_with_compare_column_for_column():
+    inrix, reference = _delay_frames(slope=0.5, noise=0.2, slope_jitter=0.05)
+    matched = agreement.match_bins(inrix, reference)
+    reg = agreement.delay_regression(matched).iloc[0]
+    row = agreement.compare(None, None, matched=matched).iloc[0]
+    for column in ("free_flow_gap", "free_flow_gap_ci_low", "free_flow_gap_ci_high",
+                   "delay_slope", "delay_slope_ci_low", "delay_slope_ci_high",
+                   "delay_intercept", "delay_r2", "delay_ratio"):
+        assert reg[column] == pytest.approx(row[column])
+
+
+def test_a_degenerate_regression_reports_undefined_not_certain():
+    """A constant regressor, or fewer than three bins, has no slope — NaN, not a
+    number with a width-0 interval around it; and one day is no blocks."""
+    flat = agreement.compare(_frame([5.0] * 8), _frame([4.0] * 8)).iloc[0]
+    assert np.isnan(flat["delay_slope"]) and np.isnan(flat["delay_intercept"])
+    assert np.isnan(flat["delay_slope_ci_low"]) and np.isnan(flat["delay_r2"])
+
+    two = agreement.compare(_frame([5.0, 7.0]), _frame([4.0, 8.0])).iloc[0]
+    assert np.isnan(two["delay_slope"])
+
+    single_day = agreement.compare(_frame([4.0, 6.0, 8.0, 10.0]),
+                                   _frame([5.0, 9.0, 9.0, 13.0])).iloc[0]
+    assert np.isfinite(single_day["delay_slope"])
+    assert np.isnan(single_day["delay_slope_ci_low"])
+    assert np.isnan(single_day["free_flow_gap_ci_low"])
+
+
+# ---------------------------------------------------------------------------
+# Splitting the level gap  (ROADMAP Item 33)
+# ---------------------------------------------------------------------------
+def test_match_bins_carries_the_reference_extra_travel_time():
+    """The logger records the provider's own delay beside its travel time, and
+    Item 33 is the finding that without it a level gap cannot be read: the column
+    has to survive the join, renamed so it cannot be confused with the INRIX side."""
+    ref = _frame([10.0, 12.0]).assign(**{EXTRA_TT_COL: [0.0, 2.0]})
+    m = agreement.match_bins(_frame([5.0, 6.0]), ref)
+    assert m[agreement.REF_EXTRA_COL].tolist() == pytest.approx([0.0, 2.0])
+    assert EXTRA_TT_COL not in m.columns
+
+
+def test_match_bins_skips_an_extra_column_the_workbook_never_filled():
+    """``load_tt_logger`` fills the column with NaN for a sheet that has none, and
+    an all-NaN column would advertise a decomposition the workbook cannot support."""
+    empty = _frame([10.0, 12.0]).assign(**{EXTRA_TT_COL: [float("nan")] * 2})
+    assert agreement.REF_EXTRA_COL not in agreement.match_bins(_frame([5.0, 6.0]), empty)
+    assert agreement.REF_EXTRA_COL not in agreement.match_bins(_frame([5.0, 6.0]),
+                                                               _frame([10.0, 12.0]))
+
+
+def test_a_level_gap_over_a_reference_that_never_reaches_free_flow_is_not_a_level_gap():
+    """The Item 33 defect, in the smallest form that shows it. This corridor has
+    **no** level difference and a 0.5 compression, but the reference carries 4
+    minutes of delay in every bin — so its 10th percentile is not free flow, and
+    the gap reads −2.00 minutes as if the two sources measured different pavement.
+
+    The split says otherwise: the whole of it is the reference's own delay at that
+    percentile (4.00) against a positive static remainder, and
+    ``free_flow_gap == free_flow_gap_static − ref_free_flow_delay`` holds exactly.
+    This is Eagle Rd NB, where 4.04 minutes of a 5.36-minute gap is delay the
+    reference itself reports."""
+    got = agreement.compare(*_delay_frames(slope=0.5, level_gap=0.0,
+                                           floor_delay=4.0, ref_extra=True)).iloc[0]
+
+    assert got["free_flow_gap"] == pytest.approx(-2.0, abs=1e-9)   # looks like a level gap
+    assert got["ref_free_flow_delay"] == pytest.approx(4.0, abs=1e-9)
+    assert got["free_flow_gap_static"] == pytest.approx(2.0, abs=1e-9)
+    assert got["free_flow_gap"] == pytest.approx(
+        got["free_flow_gap_static"] - got["ref_free_flow_delay"], abs=1e-9)
+    assert got["ref_no_traffic"] == pytest.approx(10.0, abs=1e-9)
+
+
+def test_a_real_level_gap_survives_the_split_whole():
+    """The other direction: when the reference *does* reach free flow, none of the
+    gap is its own delay and the static remainder is the gap. A split that could
+    not tell these two apart would explain away a real finding."""
+    got = agreement.compare(*_delay_frames(slope=1.0, level_gap=-5.0,
+                                           ref_extra=True)).iloc[0]
+
+    assert got["ref_free_flow_delay"] == pytest.approx(0.0, abs=1e-9)
+    assert got["free_flow_gap_static"] == pytest.approx(-5.0, abs=1e-9)
+    assert got["free_flow_gap"] == pytest.approx(-5.0, abs=1e-9)
+
+
+def test_a_drifting_no_traffic_duration_is_measured_not_assumed():
+    """The decomposition is taken over a single no-traffic duration per route,
+    which is what this logger has (1,936 bins of SH-69 SB at exactly 11.3167).
+    ``ref_no_traffic_spread`` is how a reader knows that held for their run — a
+    provider that re-routed a sheet mid-record moves the baseline the split is
+    measured against."""
+    steady = agreement.compare(*_delay_frames(ref_extra=True)).iloc[0]
+    assert steady["ref_no_traffic_spread"] == pytest.approx(0.0, abs=1e-9)
+
+    drifted = agreement.compare(*_delay_frames(ref_extra=True,
+                                               ref_no_traffic_drift=1.5)).iloc[0]
+    assert drifted["ref_no_traffic_spread"] == pytest.approx(1.5, abs=1e-9)
+
+
+def test_the_split_is_undefined_without_the_references_own_delay():
+    """No extra-travel-time column, no split — NaN rather than a baseline invented
+    from the travel times, which would make the gap decompose into itself."""
+    got = agreement.compare(*_delay_frames(slope=0.5, level_gap=-2.0)).iloc[0]
+
+    assert np.isnan(got["ref_no_traffic"]) and np.isnan(got["ref_no_traffic_spread"])
+    assert np.isnan(got["ref_free_flow_delay"]) and np.isnan(got["free_flow_gap_static"])
+    assert got["free_flow_gap"] == pytest.approx(-2.0, abs=1e-9)   # still reported

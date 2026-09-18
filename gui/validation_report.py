@@ -343,7 +343,9 @@ p, li { max-width: 78ch; }
   color: var(--ink-2); }
 .kpi .value { font-size: 24px; font-weight: 640; margin-top: 2px; }
 .kpi .detail { font-size: 12.5px; color: var(--ink-2); }
-table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 12px 0; }
+.tablewrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.tablewrap th, .tablewrap td { white-space: nowrap; }
 th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); }
 th:first-child, td:first-child { text-align: left; }
 thead th { background: #f4f5f3; font-size: 12px; text-transform: uppercase;
@@ -431,8 +433,8 @@ def table(frame: pd.DataFrame, columns, row_class=None) -> str:
                 cells.append(f'<td class="num">{fmt(value, spec)}</td>')
         cls = f' class="{row_class(row)}"' if row_class else ""
         rows.append(f"<tr{cls}>{''.join(cells)}</tr>")
-    return (f"<table><thead><tr>{head}</tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody></table>")
+    return (f'<div class="tablewrap"><table><thead><tr>{head}</tr></thead>'
+            f"<tbody>{''.join(rows)}</tbody></table></div>")
 
 
 def kpi(label: str, value: str, detail: str = "") -> str:
@@ -460,12 +462,26 @@ def _ranges(summary: pd.DataFrame, routes, column: str) -> tuple[float, float]:
     return (float(values.min()), float(values.max())) if len(values) else (float("nan"),) * 2
 
 
+# A regression that explains less than this much of the variance is not evidence
+# about its own intercept; the finding's intercept claim is read off the rest.
+R2_FLOOR = 0.5
+
+
+def _median(summary: pd.DataFrame, routes, column: str) -> float:
+    values = summary.loc[summary[ROUTE_COL].isin(list(routes)), column].dropna()
+    return float(values.median()) if len(values) else float("nan")
+
+
 def finding_paragraphs(summary: pd.DataFrame, flags: dict[str, RouteFlags],
-                       chains: dict | None = None) -> str:
+                       chains: dict | None = None,
+                       example_minutes: float = 4.0) -> str:
     """The finding, with its numbers interpolated from this run's frames.
 
     Written from the data so the prose cannot drift from the tables beneath it —
-    the specific failure the rebuild is answering.
+    the specific failure the rebuild is answering. Since Item 32 the claim is a
+    **measured slope with an interval**, not the assertion "about half": the
+    worked before/after consequence below is ``example_minutes`` multiplied by
+    this run's median arterial slope, so it moves when the data does.
     """
     usable = set(headline_routes(flags))
     arterials = [r for r in summary[ROUTE_COL]
@@ -473,40 +489,93 @@ def finding_paragraphs(summary: pd.DataFrame, flags: dict[str, RouteFlags],
     rurals = [r for r in summary[ROUTE_COL]
               if r in usable and route_info(r).character == RURAL]
 
-    dr = _ranges(summary, arterials, "delay_ratio")
-    sr = _ranges(summary, arterials, "sd_ratio")
-    dr_med = summary.loc[summary[ROUTE_COL].isin(arterials), "delay_ratio"].median()
-    sr_med = summary.loc[summary[ROUTE_COL].isin(arterials), "sd_ratio"].median()
+    sl = _ranges(summary, arterials, "delay_slope")
+    sl_med = _median(summary, arterials, "delay_slope")
+    # The intercept claim is read off the fits that can carry it: a route whose
+    # regression explains little of the variance has an intercept, and it means
+    # nothing. Naming the count keeps the sentence true without hiding the rest.
+    conditioned = [r for r in arterials
+                   if float(summary.loc[summary[ROUTE_COL] == r, "delay_r2"].iloc[0] or 0) > R2_FLOOR]
+    ic = _ranges(summary, conditioned, "delay_intercept")
+    ic_med = _median(summary, arterials, "delay_intercept")
+    dr_med = _median(summary, arterials, "delay_ratio")
+    sr_med = _median(summary, arterials, "sd_ratio")
+    gap = _ranges(summary, arterials, "free_flow_gap")
     rural_bias = _ranges(summary, rurals, "bias")
+    rural_slope = _ranges(summary, rurals, "delay_slope")
     rural_miles = ""
     if chains:
         miles = [chains[r].requested_miles for r in rurals if r in chains]
         if miles:
             rural_miles = f" over {max(miles):.1f}-mile chains"
+    scored = (example_minutes * sl_med) if sl_med == sl_med else float("nan")
+
+    # The gap's own split, stated from this run's numbers (Item 33). The
+    # arterial with the most reference-side delay left at the percentile is named,
+    # because that is the route on which "at free flow" is least true.
+    gap_split = ""
+    if "ref_free_flow_delay" in summary.columns:
+        split = summary[summary[ROUTE_COL].isin(arterials)].dropna(
+            subset=["ref_free_flow_delay", "free_flow_gap"])
+        if len(split):
+            worst = split.loc[split["ref_free_flow_delay"].idxmax()]
+            resid = _ranges(split, list(split[ROUTE_COL]), "ref_free_flow_delay")
+            gap_split = (
+                f" <b>And the level gap itself splits.</b> The reference reports "
+                f"{fmt(resid[0], '.2f')}–{fmt(resid[1], '.2f')} minutes of its own delay "
+                f"at the very percentile the gap is quoted at, so that percentile is "
+                f"not free flow on the reference side: on "
+                f"{esc(route_info(worst[ROUTE_COL]).title)} "
+                f"{fmt(worst['ref_free_flow_delay'], '.2f')} of its "
+                f"{fmt(abs(worst['free_flow_gap']), '.2f')}-minute gap is delay the "
+                f"reference itself acknowledges. What is left — the "
+                f"<b>static gap</b> — is the only part that compares two open-road "
+                f"numbers, and the scorecard carries it per route.")
 
     return f"""
 <div class="panel finding">
-<h3>The finding: INRIX compresses arterial delay by about half</h3>
+<h3>The finding: INRIX credits about half a minute of delay per real minute</h3>
 <p>On the signalised arterials measured here, INRIX reports substantially less
-delay than the external reference: the delay ratio (mean delay above <em>each
-source's own</em> 10th-percentile free-flow) has a median of <b>{fmt(dr_med)}</b>
-across {len(arterials)} arterial routes — range {fmt(dr[0])}–{fmt(dr[1])} — and the
-SD ratio tracks it at a median of <b>{fmt(sr_med)}</b> (range {fmt(sr[0])}–{fmt(sr[1])}).
-The two agreeing matters: the SD ratio is symmetric, so this is compression of the
+delay than the external reference, and the relationship is a <b>slope</b>, not an
+offset. Regressing per-bin INRIX delay on reference delay — each above <em>its
+own</em> 10th-percentile free-flow — gives a median slope of
+<b>{fmt(sl_med, '.3f')}</b> across {len(arterials)} arterial routes (range
+{fmt(sl[0], '.3f')}–{fmt(sl[1], '.3f')}), each with its own day-blocked interval in
+the scorecard. The <b>intercepts are near zero</b> — median {fmt(ic_med, '+.3f')} min, and
+{fmt(ic[0], '+.3f')} to {fmt(ic[1], '+.3f')} min across the {len(conditioned)} routes
+whose fit explains more than {R2_FLOOR:.0%} of the variance: at free flow the two
+sources agree about delay, and they diverge in proportion to how much delay there
+is. (A route whose regression explains little — the scorecard carries r² per
+route — has an intercept that means correspondingly little.) The SD ratio tracks the slope at
+a median of <b>{fmt(sr_med)}</b> — it is symmetric, so this is compression of the
 congested tail, not an artifact of regressing one noisy source on another. The
 spread is real and per-route — read the scorecard, not the median, for any one
 corridor.</p>
+<p><b>A level gap is a different thing, and it is reported separately.</b> Some
+routes also sit at different <em>levels</em> at free flow, before any delay is
+involved: the arterial free-flow gap runs {fmt(gap[0], '+.2f')} to
+{fmt(gap[1], '+.2f')} minutes, and it is directional in a way a measurement
+difference would not be. A single bias column fuses that level gap with the slope,
+and the two have opposite consequences for a study — a constant level difference
+cancels in a before/after difference, and a slope does not. Which is why they now
+sit in separate columns rather than being added together.{gap_split}</p>
 <p>On the rural highway routes the two sources agree closely — bias
-{fmt(rural_bias[0], '+.2f')} to {fmt(rural_bias[1], '+.2f')} minutes{rural_miles}.
-Free-flow travel time is not the problem; <em>delay</em> is.</p>
-<p><b>What follows for a before/after study.</b> An intervention evaluated on INRIX
-will show roughly <b>half the effect size in minutes</b> that this reference would
-credit it with, on this kind of road. A <em>relative</em> change may survive the
-compression, but that is a different claim and needs its own evidence — if both
-the before and after delay are scaled by the same factor the ratio is preserved,
-and nothing here establishes that the factor is constant across congestion levels.
-Report INRIX-derived minutes of delay saved as a lower bound, and say which source
-produced them.</p>
+{fmt(rural_bias[0], '+.2f')} to {fmt(rural_bias[1], '+.2f')} minutes{rural_miles},
+and slopes of {fmt(rural_slope[0], '.3f')}–{fmt(rural_slope[1], '.3f')} whose
+intervals span parity. Free-flow travel time is not the problem; <em>delay</em>
+is.</p>
+<p><b>What follows for a before/after study.</b> Because the disagreement is
+multiplicative in delay and not a fixed offset, it does <b>not</b> cancel when you
+subtract a before period from an after period. An intervention that removes
+{fmt(example_minutes, '.0f')} real minutes of delay scores as roughly
+<b>{fmt(scored, '.1f')} minutes</b> on INRIX at this median slope. Report
+INRIX-derived minutes of delay saved as a lower bound, and say which source
+produced them. A <em>relative</em> change survives the compression better — a
+constant multiplicative factor preserves a ratio — but the slopes here are not
+identical across routes, so that is a claim needing its own evidence per corridor,
+not a general dispensation. The old summary of this ("roughly half the effect size
+in minutes") was right; the scorecard now states it as a coefficient with an
+interval instead of an assertion.</p>
 </div>
 """
 
@@ -514,7 +583,12 @@ produced them.</p>
 def unsupported_explanation_panel(chains: dict | None, summary: pd.DataFrame,
                                   profile_tod: pd.DataFrame | None = None) -> str:
     """G2: the outside pass's stated cause for the largest biases, and the
-    measurements that contradict it — recomputed here from this run's chains."""
+    measurements that contradict it — recomputed here from this run's chains.
+
+    Closes with what Item 33 *did* find at that interchange, when the run carries
+    the level gap's split; without it the panel ends where it used to, saying it
+    does not know.
+    """
     rows = []
     for route in ("Eagle Rd NB", "Eagle Rd SB", "SH-69 NB", "SH-69 SB"):
         chain = (chains or {}).get(route)
@@ -547,21 +621,83 @@ I-84 and captured off-ramp signal queues, and that its spatial analysis
 <em>proved</em> it. The chains assembled here do not support that:</p>
 <ul>{''.join(rows) or '<li>Chain snap distances unavailable in this run.</li>'}</ul>
 {early}
-<p>Something route-specific may well be happening at that interchange. This report
-does not claim to know what it is, and neither did the evidence offered.</p>
+{_directional_gap_panel(chains, summary)}
 </div>
 """
+
+
+def _directional_gap_panel(chains: dict | None, summary: pd.DataFrame) -> str:
+    """What the directional level gap on SH-69 turned out to be (ROADMAP Item 33).
+
+    Every number is read off this run's frames, including the fallback: a run
+    without the level gap's split ends the panel the way it ended before Item 33,
+    rather than asserting a finding the data in hand cannot show.
+    """
+    unknown = ("<p>Something route-specific may well be happening at that "
+               "interchange. This report does not claim to know what it is, and "
+               "neither did the evidence offered.</p>")
+    if "free_flow_gap_static" not in summary.columns:
+        return unknown
+    pair = summary[summary[ROUTE_COL].isin(("SH-69 NB", "SH-69 SB"))].dropna(
+        subset=["free_flow_gap_static", "ref_no_traffic"])
+    if len(pair) != 2:
+        return unknown
+    nb = pair[pair[ROUTE_COL] == "SH-69 NB"].iloc[0]
+    sb = pair[pair[ROUTE_COL] == "SH-69 SB"].iloc[0]
+    miles = ""
+    if chains and "SH-69 NB" in chains and "SH-69 SB" in chains:
+        nb_mi, sb_mi = (chains["SH-69 NB"].requested_miles,
+                        chains["SH-69 SB"].requested_miles)
+        miles = (f" over two chains requesting the same {nb_mi:.2f} miles of pavement"
+                 if abs(nb_mi - sb_mi) < 0.01 else
+                 f" over chains requesting {nb_mi:.2f} and {sb_mi:.2f} miles")
+    snap = ""
+    if chains and "SH-69 SB" in chains:
+        snap = (f" The southbound sheet's origin snaps "
+                f"{chains['SH-69 SB'].snap_start_feet:.0f} ft from the southbound "
+                f"roadway and {chains['SH-69 NB'].snap_end_feet:.0f} ft from the "
+                f"northbound one — consistent with a single logged coordinate "
+                f"lying on the northbound carriageway, which is the wrong side to "
+                f"start a southbound trip from.")
+    return f"""
+<p><b>What is happening at that interchange is on the reference side.</b> The
+reference states its own no-traffic duration for each route, and southbound it is
+{fmt(sb['ref_no_traffic'])} minutes against {fmt(nb['ref_no_traffic'])} northbound{miles} —
+a {fmt(sb['ref_no_traffic'] - nb['ref_no_traffic'], '.2f')}-minute directional
+difference in a number that contains no traffic at all, and so cannot be a
+measurement. INRIX's free-flow travel times over the same pavement are
+{fmt(nb['free_flow_inrix'])} and {fmt(sb['free_flow_inrix'])} minutes —
+{fmt(abs(nb['free_flow_inrix'] - sb['free_flow_inrix']), '.2f')} minutes apart,
+which is what two directions of one road look like. The static gap column carries
+the consequence: {fmt(nb['free_flow_gap_static'], '+.2f')} northbound against
+{fmt(sb['free_flow_gap_static'], '+.2f')} southbound. The reference's southbound
+<em>route</em> is not the reverse of its northbound one.{snap} Whatever
+extra ground it covers is logged nowhere, so the size of the detour cannot be
+confirmed from this workbook — re-log the southbound origin on the southbound
+roadway, or capture the provider's returned distance, and the question closes.</p>"""
 
 
 # ---------------------------------------------------------------------------
 # Pages
 # ---------------------------------------------------------------------------
 _SUMMARY_COLUMNS = [
+    # The two effects a single bias fuses, separated and leading (Item 32). The
+    # slope is what does *not* cancel in a before/after difference; the level gap
+    # is what does. Reporting only their sum tells a study neither.
+    ("delay_slope", "Delay slope", ".3f"),
+    ("delay_r2", "Slope r²", ".3f"),
+    ("slope_ci", "Slope 95% CI (day-blocked)",
+     lambda r: f'<span class="num">[{fmt(r.get("delay_slope_ci_low"), ".3f")}, '
+               f'{fmt(r.get("delay_slope_ci_high"), ".3f")}]</span>'),
+    ("free_flow_gap", "Free-flow gap (min)", "+.2f"),
+    ("gap_ci", "Gap 95% CI",
+     lambda r: f'<span class="num">[{fmt(r.get("free_flow_gap_ci_low"), "+.2f")}, '
+               f'{fmt(r.get("free_flow_gap_ci_high"), "+.2f")}]</span>'),
     ("bias", "Bias (min)", "+.2f"),
     ("ci", "95% CI (day-blocked)",
      lambda r: f'<span class="num">[{fmt(r.get("bias_ci_low"), "+.2f")}, '
                f'{fmt(r.get("bias_ci_high"), "+.2f")}]</span>'),
-    ("delay_ratio", "Delay ratio", ".2f"),
+    ("delay_ratio", "Delay ratio †", ".2f"),
     ("sd_ratio", "SD ratio", ".2f"),
     ("mae", "MAE (min)", ".2f"),
     ("mape", "MAPE (%)", ".1f"),
@@ -571,6 +707,27 @@ _SUMMARY_COLUMNS = [
      lambda r: f'{pd.Timestamp(r["first"]):%Y-%m-%d} → {pd.Timestamp(r["last"]):%Y-%m-%d}'),
     ("r", "r", ".3f"),
 ]
+
+# The level gap split (ROADMAP Item 33), present only when the match carried the
+# reference's own extra-travel-time column. A gap quoted "at free flow" is only
+# that if the reference *is* at free flow there, and these two columns say whether
+# it was: ``Ref delay at ff`` is what the reference itself calls delay at the
+# percentile the gap is measured at, and ``Static gap`` is what is left once it is
+# removed — the only part that compares two open-road numbers.
+_GAP_SPLIT_COLUMNS = [
+    ("ref_free_flow_delay", "Ref delay at ff (min)", "+.2f"),
+    ("free_flow_gap_static", "Static gap (min)", "+.2f"),
+]
+
+_GAP_SPLIT_NOTE = """
+<p class="sub"><b>Free-flow gap = Static gap − Ref delay at ff</b>, by construction.
+<b>Ref delay at ff</b> is the delay the <em>reference itself</em> reports at the
+percentile the gap is measured at — the difference between its travel time there
+and its own no-traffic duration for the route. Where it is large, the gap is not
+being measured at free flow on the reference side, and the part of it that is a
+statement about the road is the <b>static gap</b>: INRIX's free-flow travel time
+for the chain against the provider's no-traffic duration for the path
+<em>it</em> routed.</p>"""
 
 # Present only when the INRIX side carried them through the match (ROADMAP Item
 # 31). A bias computed over historical backfill, or over a chain the export only
@@ -585,18 +742,52 @@ _COVERAGE_COLUMNS = [
 
 
 def scorecard(summary: pd.DataFrame, flags: dict[str, RouteFlags]) -> str:
-    """The scorecard: effect size first, each route's own coverage in the row,
-    correlation in the last column where it belongs."""
-    df = summary.sort_values("bias")
+    """The scorecard: the delay slope and the free-flow level gap first, each with
+    its day-blocked interval (Item 32), the gap's own split beside it (Item 33),
+    each route's own coverage in the row, and correlation in the last column where
+    it belongs.
+
+    Sorted by slope rather than by bias: the slope is the statistic the finding is
+    now stated in, and a route's rank on it is not its rank on bias.
+    """
+    sort_col = "delay_slope" if "delay_slope" in summary.columns else "bias"
+    df = summary.sort_values(sort_col)
     columns = [(ROUTE_COL, "Route", lambda r: _route_cell(r[ROUTE_COL], flags)),
                ("character", "Type",
                 lambda r: f'<span class="tag {"arterial" if route_info(r[ROUTE_COL]).character == ARTERIAL else "rural"}">'
                           f'{esc(route_info(r[ROUTE_COL]).character)}</span>')]
-    columns += _SUMMARY_COLUMNS
+    # ``compare`` always emits the split columns and fills them with NaN when the
+    # reference supplied no delay of its own — a column of dashes would advertise a
+    # decomposition this run cannot make, so the test is for values, not for names.
+    split = [c for c in _GAP_SPLIT_COLUMNS if c[0] in df.columns and df[c[0]].notna().any()]
+    for spec in _SUMMARY_COLUMNS:
+        columns.append(spec)
+        if spec[0] == "gap_ci":
+            # The split sits with the gap it decomposes, not at the end of the row.
+            columns += split
     columns += [c for c in _COVERAGE_COLUMNS if c[0] in df.columns]
     return table(df, columns,
                  row_class=lambda r: "flagged" if flags.get(r[ROUTE_COL],
-                                                            RouteFlags(r[ROUTE_COL])).excluded else "")
+                                                            RouteFlags(r[ROUTE_COL])).excluded else "") + """
+<p class="sub">† <b>Delay ratio</b> is kept as a secondary statistic: it is the
+form Item 30's published numbers are stated in, so it keeps its name and meaning
+rather than being redefined underneath them. It is a ratio of two small means and
+carries no interval — on a low-delay route it is unstable (VSL SB PM: ratio 2.34
+against a slope of 0.69 on the same bins). Read the slope.</p>""" + (
+        _GAP_SPLIT_NOTE if split else "")
+
+
+def _gap_split_caption(row) -> str:
+    """The level gap's split, for a route page KPI — empty when the run did not
+    carry the reference's extra-travel-time column (ROADMAP Item 33)."""
+    static = row.get("free_flow_gap_static")
+    resid = row.get("ref_free_flow_delay")
+    if static != static or resid != resid:          # NaN, or absent
+        return ""
+    return (f" · splits as a static gap of {fmt(static, '+.2f')} min "
+            f"minus {fmt(resid, '.2f')} min of delay the reference itself reports "
+            f"at that percentile (its own no-traffic duration for this route is "
+            f"{fmt(row.get('ref_no_traffic'))} min)")
 
 
 def notes_list(flags: dict[str, RouteFlags], routes=None) -> str:
@@ -780,19 +971,31 @@ def index_page(frames: dict) -> str:
 
     usable = summary[~summary[ROUTE_COL].isin(excluded)]
     arterials = [r for r in usable[ROUTE_COL] if route_info(r).character == ARTERIAL]
-    dr = _ranges(summary, arterials, "delay_ratio")
-    dr_med = summary.loc[summary[ROUTE_COL].isin(arterials), "delay_ratio"].median()
+    sl = _ranges(summary, arterials, "delay_slope")
+    sl_med = _median(summary, arterials, "delay_slope")
+    gap = _ranges(summary, arterials, "free_flow_gap")
+    worst_gap = (usable.loc[usable["free_flow_gap"].abs().idxmax()]
+                 if "free_flow_gap" in usable and len(usable.dropna(subset=["free_flow_gap"]))
+                 else None)
     worst = (usable.loc[usable["bias"].abs().idxmax()] if len(usable.dropna(subset=["bias"]))
              else None)
 
     kpis = "".join([
         kpi("Routes compared", f"{len(summary)}",
             f"{len(excluded)} excluded from the headline by a gate"),
-        kpi("Arterial delay ratio", f"median {fmt(dr_med)}",
-            f"range {fmt(dr[0])}–{fmt(dr[1])} · INRIX ÷ reference, each on its own free-flow"),
+        kpi("Arterial delay slope", f"median {fmt(sl_med, '.3f')}",
+            f"range {fmt(sl[0], '.3f')}–{fmt(sl[1], '.3f')} · minutes of INRIX delay "
+            f"per minute of reference delay · does not cancel in a before/after"),
+        kpi("Arterial free-flow gap",
+            f"{fmt(gap[0], '+.2f')} to {fmt(gap[1], '+.2f')} min",
+            (f"largest {esc(route_info(worst_gap[ROUTE_COL]).title)} "
+             f"{fmt(worst_gap['free_flow_gap'], '+.2f')} · a level difference, which "
+             f"<em>does</em> cancel") if worst_gap is not None else
+            "INRIX − reference at each source's own free flow"),
         kpi("Largest bias", f"{fmt(worst['bias'] if worst is not None else None, '+.2f')} min",
-            (f"{esc(route_info(worst[ROUTE_COL]).title)} · day-blocked CI "
-             f"[{fmt(worst['bias_ci_low'], '+.2f')}, {fmt(worst['bias_ci_high'], '+.2f')}]")
+            (f"{esc(route_info(worst[ROUTE_COL]).title)} · the two effects above, "
+             f"summed — day-blocked CI [{fmt(worst['bias_ci_low'], '+.2f')}, "
+             f"{fmt(worst['bias_ci_high'], '+.2f')}]")
             if worst is not None else "INRIX − reference"),
         kpi("Distinct pavement", f"{fmt(totals.iloc[0].get('miles_distinct'), '.1f')} mi",
             f"{int(totals.iloc[0]['days_distinct']):,} distinct days"),
@@ -806,15 +1009,25 @@ headline; correlation is a column.</p>
 <div class="kpis">{kpis}</div>
 {finding_paragraphs(summary, flags, frames.get("chains"))}
 <h2>Scorecard</h2>
-<p>Sorted by bias. Each row carries its <em>own</em> sampling window and day count —
-there is no study-wide period, because the fifteen sheets do not share one.</p>
+<p>Sorted by delay slope. Each row carries its <em>own</em> sampling window and day
+count — there is no study-wide period, because the fifteen sheets do not share
+one.</p>
 {scorecard(summary, flags)}
+{figure_html(vfig.slope_forest(summary, labels=labels, flagged=excluded),
+             "The headline: minutes of INRIX delay per minute of reference delay, "
+             "with the day-blocked 95% interval (the per-bin interval, in grey "
+             "behind it, is the one autocorrelation makes too narrow). Parity is 1.")}
+{figure_html(vfig.level_gap_forest(summary, labels=labels, flagged=excluded),
+             "The other effect, kept separate: how far apart the two sources sit at "
+             "free flow, before any delay. This one cancels in a before/after "
+             "difference; the slope above does not.")}
 {figure_html(vfig.bias_forest(summary, labels=labels, flagged=excluded),
-             "Bias with its day-blocked 95% interval (the per-bin interval, in grey "
-             "behind it, is the one autocorrelation makes too narrow).")}
+             "Bias — the two effects above summed over this route's mix of "
+             "conditions — with its day-blocked 95% interval.")}
 {figure_html(vfig.ratio_bars(summary, labels=labels),
-             "Delay ratio and SD ratio against parity. The arterials cluster near "
-             "half; the rural routes sit near 1.")}
+             "Delay ratio and SD ratio against parity, kept for continuity with the "
+             "numbers published under Item 30. The ratio carries no interval; the "
+             "slope above is the better-conditioned form of the same question.")}
 <h3>Flags and footnotes</h3>
 {notes_list(flags)}
 {unsupported_explanation_panel(frames.get("chains"), summary, frames.get("profile_tod"))}
@@ -892,13 +1105,27 @@ def _route_section(route: str, frames: dict) -> str:
             f"{fmt(cov['median_sample_minutes'], '.0f')} minutes.</p>")
 
     kpis = "".join([
+        kpi("Delay slope", fmt(row.get("delay_slope"), ".3f"),
+            f"day-blocked 95% CI [{fmt(row.get('delay_slope_ci_low'), '.3f')}, "
+            f"{fmt(row.get('delay_slope_ci_high'), '.3f')}] · intercept "
+            f"{fmt(row.get('delay_intercept'), '+.3f')} min "
+            f"[{fmt(row.get('delay_intercept_ci_low'), '+.3f')}, "
+            f"{fmt(row.get('delay_intercept_ci_high'), '+.3f')}] · r² "
+            f"{fmt(row.get('delay_r2'), '.3f')}"),
+        kpi("Free-flow level gap", f"{fmt(row.get('free_flow_gap'), '+.2f')} min",
+            f"95% CI [{fmt(row.get('free_flow_gap_ci_low'), '+.2f')}, "
+            f"{fmt(row.get('free_flow_gap_ci_high'), '+.2f')}] · free-flow "
+            f"{fmt(row['free_flow_inrix'])} vs {fmt(row['free_flow_ref'])} min · "
+            f"this part cancels in a before/after difference"
+            + _gap_split_caption(row)),
         kpi("Bias (INRIX − reference)", f"{fmt(row['bias'], '+.2f')} min",
-            f"day-blocked 95% CI [{fmt(row['bias_ci_low'], '+.2f')}, "
+            f"the two above summed · day-blocked 95% CI "
+            f"[{fmt(row['bias_ci_low'], '+.2f')}, "
             f"{fmt(row['bias_ci_high'], '+.2f')}] — "
             f"{fmt(row.get('ci_width_ratio'), '.1f')}× the width of the per-bin interval"),
-        kpi("Delay ratio", fmt(row["delay_ratio"]),
-            f"SD ratio {fmt(row['sd_ratio'])} · free-flow "
-            f"{fmt(row['free_flow_inrix'])} vs {fmt(row['free_flow_ref'])} min"),
+        kpi("Delay ratio (secondary)", fmt(row["delay_ratio"]),
+            f"SD ratio {fmt(row['sd_ratio'])} · a ratio of two small means, kept "
+            f"because Item 30's numbers are published in it"),
         kpi("Typical disagreement", f"{fmt(row['mae'])} min",
             f"95% limits of agreement {fmt(row['loa_low'], '+.2f')} to "
             f"{fmt(row['loa_high'], '+.2f')} min"),
@@ -913,9 +1140,16 @@ def _route_section(route: str, frames: dict) -> str:
 {banner}
 {coverage_line}
 <div class="kpis">{kpis}</div>
+{figure_html(vfig.delay_regression(matched, route, row),
+             "Delay against delay, each above its own free flow, with the line the "
+             "core fitted (this figure evaluates it, it does not fit it). A line "
+             "through the origin below 1:1 is the compression: multiplicative in "
+             "delay, so it does not cancel in a before/after difference.")}
 {figure_html(vfig.scatter_1to1(matched, route, row),
-             "Every matched bin against the 1:1 line. No fitted line: the summary of "
-             "the gap is in the box, computed once, in the core.")}
+             "Every matched bin against the 1:1 line, in travel time rather than "
+             "delay — where the cloud sits off the 1:1 line at the bottom left is "
+             "the free-flow level gap. No fitted line here: the summary of the gap "
+             "is in the box, computed once, in the core.")}
 {figure_html(vfig.bland_altman(matched, route, row),
              "Bland-Altman — how far apart a single bin typically falls, with the "
              "bias and the 95% limits of agreement.")}

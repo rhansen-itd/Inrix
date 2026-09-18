@@ -3153,3 +3153,243 @@ length is unmoved; the gate records its threshold and its cost, measures the imp
 share when ungated too, and raises on an export with no `CValue` column; the carried
 columns survive the match and reach `compare`, and are **absent rather than NaN** when
 there are none.
+
+---
+
+## Session 44 — The delay compression as a slope, and the level gap as its own number (ROADMAP Item 32) (2026-09-18)
+
+Continues the Items 31–33 batch. Item 30 published the compression as a **delay
+ratio** — `mean(delay_inrix) / mean(delay_ref)`, each above its own 10th percentile,
+"median 0.59 (0.37–0.95)". Session 37's re-review found that statistic to be the least
+stable thing in a report that attaches a day-blocked interval to everything else: it
+divides two small means, it carried no interval at all, and **VSL SB PM read a ratio of
+2.34 against a regression slope of 0.685 on the same bins** — a route where INRIX
+compresses delay, reported as showing more than twice as much of it.
+
+**The primary statistic is now a regression.** `agreement.delay_regression` fits INRIX
+delay on reference delay per route, each source above its **own** free-flow percentile,
+over every matched bin including the free-flow ones that anchor the intercept. It is
+folded into `compare` through a shared `_delay_block`, so the whole pipeline — summary
+CSV, scorecard, figures, route pages — gets the columns without a second code path, and
+`delay_regression` stays callable on a matched frame by itself. Measured over the
+arterials: **median slope 0.536** (range 0.250–0.875), Eagle Rd NB 0.520 [0.505, 0.536],
+Eagle Rd SB 0.514, SH-69 SB 0.250, reproducing Session 37's independently-derived values
+to ±0.015. Both rural routes' slope intervals **span parity** (Cascade→HSB 0.505
+[−0.040, 1.050]), the same "no measurable disagreement" their bias CIs say.
+
+**`delay_ratio` keeps its name, its definition and a column.** It is what Item 30's
+numbers were published in, and redefining a statistic underneath a published name is how
+a report stops being comparable to itself. It is demoted to a footnoted secondary column
+and the report says why.
+
+**The two effects `bias` fused are now separate columns.** A corridor can disagree
+because the two sources sit at different **levels at free flow** and because INRIX
+**compresses delay**, and those have opposite consequences: a level difference cancels in
+a before/after difference and a slope does not. `free_flow_gap` is reported beside the
+slope, each with its own interval, and the scorecard opens with both — `Delay slope` /
+`Slope r²` / `Slope 95% CI` / `Free-flow gap` / `Gap 95% CI` — before `Bias`, which is now
+captioned "the two above summed". Sorted by slope, not by bias. The index page leads with
+both as KPIs and draws a `slope_forest` and a `level_gap_forest` **above** the bias
+forest; each route page carries the same two KPIs above its bias KPI.
+
+**Two interval constructions, for two different estimands.** The slope and intercept get
+a **day-clustered sandwich** (CR1, *t* on G − 1 days) — the regression analogue of the
+bias CI's t-interval over daily means, and blocked for the same reason: bins inside a day
+are not independent. The per-bin interval is kept as `*_naive` and
+`delay_slope_ci_width_ratio` shows the cost: **median 2.0×, max 3.2×** on these
+corridors. The **free-flow level gap is a difference of two quantiles**, which has no
+closed-form clustered SE, so its interval is a **day-block bootstrap** — resample whole
+days, recompute both pooled percentiles, 1000 draws, fixed seed so a re-run reproduces
+its own numbers. A t-interval over **per-day** gaps was written first and **rejected on
+measurement**: it estimates the mean of daily gaps rather than the pooled gap that is
+reported, and on the real arterials the two differ enough to put Eagle Rd NB's published
+−5.36 *outside its own interval* ([−5.96, −5.71]) — which is not a thing a report may
+print.
+
+**The near-zero intercept is a finding, and the session established why it is not an
+artifact.** Because each source's delay is measured above its *own* free flow, a constant
+added to **every** bin is absorbed into that source's free-flow percentile and cannot
+appear as an intercept. An intercept therefore only arises from an offset applied to
+congested bins and not free-flow ones — so measuring ≈0 (median +0.084 min; +0.018 to
++0.158 across the eight arterials whose fit clears r² 0.5) means there is **no fixed
+penalty**, and the entire disagreement rides on the slope. That is the worst case for
+this project's primary use: an intervention removing **4 real minutes** of delay scores
+as roughly **2.1 minutes** on INRIX. Both directions are pinned by tests — a pure
+compression must return an intercept of exactly zero, and a fixed congested-bin penalty
+must be visible as a positive one.
+
+**A prose guard.** The finding paragraph interpolates its numbers from the run's frames,
+so "an intervention that removes 4 real minutes scores as 2.1" is *computed* from this
+run's median slope rather than asserted. The intercept sentence reads its range off the
+fits that can carry it (r² > 0.5) and names the count, because VSL SB PM's +0.614 at
+r² 0.168 would otherwise make "near zero" false in the report's own table.
+
+**One defect found and fixed while testing.** `_ols_day_blocked` guarded a degenerate fit
+with `rss <= 0`, which floating point never quite reaches: an exact synthetic fit came
+back with rss ~1e-30 and a CI of width ~1e-16 — a width-0 claim of certainty, the exact
+thing `_t_interval` refuses. The guard is now relative (`rss > 1e-12 × max(tss, 1)`).
+
+**The figure layer stays a shell, including the one figure with a fitted line.**
+`delay_regression` (the figure) draws delay against delay with the line the **core**
+fitted — it evaluates `intercept + slope · x` and calls no `polyfit`, which is precisely
+what the retired `generate_corridor_html_reports.py:504-549` did inside its figure loops.
+A test hands it a row whose slope the data denies and asserts the drawn line follows the
+**row**. `scatter_1to1` keeps its place beside it in travel-time units, where the
+free-flow level gap is the offset of the cloud at the bottom left. Wide tables gained a
+scroll wrapper rather than being crushed by the new columns.
+
+**The end-to-end report re-run is still outstanding, for Session 43's reason.**
+`TT Logger.xlsx` is gitignored raw logged input and is not on this machine, so the
+published slope table is computed over the **outside pass's 28,340-bin matched set**
+(`out/inrix_vs_google_matched_timeseries.csv`) — the same source Session 37 used — while
+the Item 30 bias/ratio table above it comes from the rebuild's 38,873 bins. The two are
+**not bin-for-bin comparable**, and DATA_FORMAT says so in a provenance paragraph.
+Regenerate both when the workbook is back.
+
+**DATA_FORMAT.md** gained *The compression is a slope, not an offset (Item 32)* — the
+per-route table (slope, day-blocked CI, intercept, level gap and its CI, r², ratio), the
+interval constructions and why there are two, the rural contrast, the multiplicative
+before/after consequence, and the provenance note. Item 30's "roughly half the effect
+size in minutes" is kept and now points at the measured 0.536 instead of standing alone.
+
+**Tests:** +16 (`tests/test_agreement.py` +9, `tests/test_validation_report.py` +7; one
+existing report test rewritten from the ratio to the slope). **Full suite: 474 passed,
+2 skipped.** The instability charge
+against the ratio is **measured, not asserted**: the same low-delay route split in half
+by date moves its ratio by a third while its slope moves by a hundredth, each half's
+interval covering the other half's estimate.
+
+---
+
+## Session 45 — The directional level gap is on the reference side (ROADMAP Item 33) (2026-09-18)
+
+Closes the Items 31–33 batch. The question two reviews had left open: at each
+source's own 10th percentile, **SH-69 SB sits 4.69 min below the reference while
+SH-69 NB over the same endpoints reversed sits 0.82**, and Eagle Rd NB sits 5.36.
+Both reviews had confirmed the *endpoints* coincide (4–64 ft snaps) and stopped
+there, which proves only where the routes start and finish. This session tested the
+ground between them.
+
+**The INRIX path is identical in both directions — measured four ways.** The SH-69
+chains are member-for-member mirrors: every segment length on one appears on the
+other, with one pair breaking at a different point (0.198 + 0.806 against 0.500 +
+0.503, the same 1.003 miles), and both requested extents are **7.113 mi** (Eagle Rd:
+6.938 against 6.939). Sampling 201 points along the NB chain, the **median distance
+to the SB chain is 0 ft** and the maximum 56 ft — the XD network carries one
+centerline for both directions over almost all of SH-69, splitting only at the
+north end; Eagle Rd runs as parallel carriageways a median 43 ft apart. Terminal
+vertices coincide **exactly** at SH-69's south end and at both ends of Eagle Rd, and
+SH-69's two chains end 63 ft apart at the north end — the carriageway separation
+there, which is the thread the mechanism below hangs on. And per-member travel time is
+symmetric: summing each member's own 10th percentile over the logged window, **NB is
+8.540 min against SB's 8.440** with **no slice of the corridor differing by more
+than 0.04 min** — so the gap is neither spread as a length mismatch nor concentrated
+in one member, which is the scope's own test for an XD extent that disagrees with
+the roadway. Eagle Rd: 9.680 against 9.280.
+
+**The answer was in a reference column nothing had ever read.** `load_tt_logger`
+has parsed `Extra TT (Min)` since Item 29 and `align_to_bins` carried it, but
+`match_bins` dropped it and no statistic used it. `Travel Time − Extra TT` is the
+provider's **no-traffic duration** for the path *it* routed, and on this workbook it
+is a constant per sheet — **1,936 of 1,936** matched SH-69 SB bins carry exactly
+11.3167 minutes, 1,937 of 1,937 Eagle Rd NB bins carry 11.5383, over six months and
+a 13-hour daily window. Over the identical 7.113 miles the two SH-69 sheets read
+**11.3167 SB against 8.2667 NB** — 37.7 mph against 51.6 — a 3.05-minute directional
+difference **in a number that contains no traffic at all**. The record's extremes say
+the same: the fastest southbound reference trip in 1,936 samples was 11.317 min and
+the fastest northbound 8.267, against INRIX's 8.00 and 8.12.
+
+**So the level gap splits, and both parts are now columns.** `match_bins` gained
+`carry_ref` (the reference-side analogue of Item 31's `carry`), and `_delay_block`
+gained `ref_no_traffic`, `ref_no_traffic_spread`, `ref_free_flow_delay` and
+`free_flow_gap_static`, with `free_flow_gap == free_flow_gap_static −
+ref_free_flow_delay` by construction. The whole pipeline gets them through the same
+shared block Item 32 built, so `compare`, `delay_regression`, the summary CSV, the
+scorecard and the route pages all carry the split without a second code path.
+
+**The two unexplained routes are two different things, and only one is about a road.**
+
+- **Eagle Rd NB is mostly not a level gap.** 4.04 of its 5.36 minutes is delay the
+  reference *itself* reports at its own 10th percentile: on a corridor congested
+  through the whole logging window, the 10th percentile is not free flow. Item 32's
+  phrase "the quietest conditions measured" is true of INRIX — on the two complete
+  SH-69 chains its 10th percentile lands within **0.25 min** of the free-flow time
+  its own `Ref Speed` column implies (9.130 against 9.005 NB, 8.950 against 8.716
+  SB) — and false of the reference. The remaining −1.32 min (36.1 mph against INRIX's
+  40.7) is an ordinary disagreement about what "open road" means on a signalised
+  arterial, where the provider's estimate carries typical signal delay and
+  `Ref Speed` does not.
+- **SH-69 SB is a route difference on the reference side.** −2.37 of its −4.69
+  survives removing the reference's own delay, against a **+0.86 northbound** over
+  mirrored pavement. INRIX's two directions differ by 0.18 min; the reference's
+  no-traffic durations differ by 3.05.
+
+**The mechanism, stated as far as the evidence goes and no further.** The
+southbound sheet's origin snaps **63.9 ft** from the southbound roadway while the
+northbound sheet's destination snaps **1.5 ft** from the northbound one, and the two
+carriageways are **63.2 ft** apart there — so a single coordinate 1.5 ft from the
+northbound centerline sits 61.7–64.7 ft from the southbound one, and 63.9 is inside
+that band. It is the **only** origin of the twelve coordinate-snapped routes that
+lands on the opposing carriageway (next largest: VSL NB at 10.2 ft against a 20.6 ft
+separation; Franklin WB - No Mid's 55.0 ft is a longitudinal offset on an undivided
+stretch, not a carriageway side). A southbound trip from a point on the northbound
+side must reverse direction first, and that endpoint sits ~90 ft south of the I-84
+WB ramp terminal and ~400 ft south of the north ramp terminal. **What is not
+established is the size of that detour** — a U-turn at the north terminal is ~800 ft
+plus a signal, short of 3.05 minutes — and it cannot be, because the logger records
+the provider's duration and not the route it returned. Recorded instead: the two
+measurements that would settle it (re-log the southbound origin on the southbound
+roadway; capture the returned distance).
+
+**Ruled out and recorded, so they are not re-examined.** A directional sampling
+artefact — the NB and SB sheets are logged in **exactly the same 1,936 bins**, hour
+for hour and day for day, on both corridors. A chain-extent mismatch — requested
+extents agree to 0.001 mi on all four routes, and every direction pair in the study
+agrees to 0.004 mi or better (the outside pass's Franklin 2.993-vs-3.453 asymmetry is
+whole end segments, which Item 28's trim already accounts for). A member-level INRIX
+defect. A mid-record route change — `ref_no_traffic_spread` is 0.0000 on both SH-69
+sheets.
+
+**One caveat the same column exposed, and it constrains how the number may be
+read.** The no-traffic duration is **per sheet, not per path**: VSL NB AM and VSL NB
+PM resolve to the same chain and the same two endpoints yet carry 4.1833 and 5.5765
+minutes. So it is the provider's open-road duration *for this sheet's route as
+logged*, and comparing it across sheets that were not logged together says nothing.
+The SH-69 comparison is not that case — both sheets log the same window over the
+same six months — but DATA_FORMAT says so explicitly rather than leaving the reader
+to assume it.
+
+**The report says what it found, where it used to say it did not know.** The G2
+panel ("Something route-specific may well be happening at that interchange. This
+report does not claim to know what it is") now closes with the finding, every number
+interpolated from the run's frames — and falls back to the old sentence verbatim
+when the run carries no reference-side delay column, rather than asserting a finding
+the data in hand cannot show. The scorecard carries `Ref delay at ff` and
+`Static gap` beside the gap they decompose, the finding panel's level-gap paragraph
+gains the split with its worst route named, and each route page's gap KPI states its
+own decomposition. All of it is gated on the columns **having values**, not on the
+column names existing: `compare` emits them filled with NaN when the reference
+supplied no delay, and a column of dashes would advertise a decomposition the run
+cannot make.
+
+**What this does *not* touch.** The delay-compression slope. It is fitted on each
+source's delay above its own free flow, so a directional difference in the
+reference's baseline is absorbed into that baseline and cannot move it. The one
+number the routing difference could still be distorting is SH-69 SB's slope of
+0.250 — its reference delay includes delay from pavement INRIX was never asked
+about — which is one more reason its r² (0.417, against 0.775 northbound) belongs
+beside it.
+
+**Tests:** +11 (`tests/test_agreement.py` +6, `tests/test_validation_report.py` +5).
+The Item 33 defect is pinned in the smallest form that shows it: a fixture with **no**
+level difference, a 0.5 compression and 4 minutes of reference delay in every bin
+reports a −2.00 "level gap", and the split returns exactly 4.00 of reference delay
+against a +2.00 static remainder. The converse is pinned too — a real −5.00 level gap
+over a reference that does reach free flow comes back with 0.00 of its own delay and
+the whole −5.00 static — because a split that could not tell those apart would
+explain away a real finding. **Full suite: 485 passed, 2 skipped.**
+
+**Still outstanding, for Session 43's reason.** `TT Logger.xlsx` is not on this
+machine, so every number above is computed over the outside pass's 28,340-bin matched
+set (`out/inrix_vs_google_matched_timeseries.csv`), the same source Items 32 and 33
+used; the end-to-end report re-run stays pending the workbook.

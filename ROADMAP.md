@@ -67,7 +67,17 @@ still sum short while marked complete (**31**); the finding is a **slope**, not 
 offset, and the ratio-of-means currently reporting it is the least stable statistic
 available (**32**); and the directional free-flow level gap on SH-69 SB / Eagle Rd
 remains unexplained after two reviews (**33**). Run them in order (32 needs 31, 33 needs
-32). Everything else is in **Future** (needs a planning pass).
+32). **Item 31 (chain membership accounting + a recorded CValue gate) is done**
+(Session 43) and **Item 32 (the compression as a slope, with the free-flow level gap
+reported separately) is done** (Session 44) — arterial median slope **0.536**, near-zero
+intercepts, and both rural slope intervals spanning parity. **Item 33 (the directional
+free-flow level gap) is done** (Session 45): the INRIX chains are mirrored to 0.04 min
+per slice, and the gap is **reference-side** — SH-69 SB's own no-traffic duration is
+11.32 min against northbound's 8.27 over the same 7.113 miles, while Eagle Rd NB's
+−5.36 is 4.04 min of delay the reference itself reports at the percentile the gap is
+quoted at. The level gap now splits into `ref_free_flow_delay` and
+`free_flow_gap_static` wherever it is reported. The batch (Items 31–33) is **complete**.
+Everything else is in **Future** (needs a planning pass).
 
 **Items 34–37 are a new batch** scoped 2026-09-17 (DESIGN_HISTORY Session 38) out of a
 review of an **outside district-wide corridor screening** run against this project's
@@ -799,7 +809,7 @@ DESIGN_HISTORY Session 37."
 
 ---
 
-## 32 — Report the delay compression as a slope, not a ratio of means
+## 32 — Report the delay compression as a slope, not a ratio of means ✅ (Session 44)
 
 **Target: Opus; the estimator itself is Fable-eligible** (math-heavy, per the CLAUDE.md
 rule of thumb). `agreement.py` + the report's scorecard + a DATA_FORMAT pass.
@@ -812,7 +822,7 @@ interval (against the CLAUDE.md standard the same report meets everywhere else),
 is visibly unstable: **VSL SB PM reports a delay ratio of 2.32 against a regression
 slope of 0.71** on the same bins. Scope:
 
-- [ ] **Add a per-route regression of INRIX delay on reference delay** (each above its
+- [x] **Add a per-route regression of INRIX delay on reference delay** (each above its
       own free-flow percentile) returning **slope, intercept, and a day-blocked CI** on
       both, alongside the existing bias CI. On the 2026 D3 export the arterial slopes
       cluster tightly — median **0.534**, with Eagle Rd NB 0.517 / intercept 0.037,
@@ -820,14 +830,32 @@ slope of 0.71** on the same bins. Scope:
       which is a far better-conditioned estimate than the ratio of means. Keep
       `delay_ratio` as a secondary column; don't silently swap the definition under a
       name Item 30's numbers were published under.
-- [ ] **Separate the two effects the `bias` column currently fuses.** The arterials
+      **Done:** `agreement.delay_regression`, folded into `compare` so the whole
+      pipeline gets the columns. The CI is a **day-clustered sandwich** (CR1, *t* on
+      G − 1) — the regression analogue of the bias CI's t-interval over daily means —
+      with the per-bin interval kept beside it as `*_naive` and
+      `delay_slope_ci_width_ratio` showing the inflation (**median 2.0×, max 3.2×**).
+      Measured: arterial median slope **0.536** (range 0.250–0.875), Eagle Rd NB
+      0.520 [0.505, 0.536] / intercept +0.018, SH-69 SB 0.250 [0.208, 0.292]. Both
+      rural slope intervals span parity. `delay_ratio` keeps its name, its definition
+      and a scorecard column, footnoted as secondary.
+- [x] **Separate the two effects the `bias` column currently fuses.** The arterials
       carry a **level gap at free flow** *stacked on top of* the slope: Eagle Rd NB's
       10th-percentile gap is −5.36 min and SH-69 SB's is −4.69 min, while SH-69 NB over
       the same endpoints reversed is −0.82 min. A single `bias` cannot distinguish "the
       two sources are measuring different pavement" from "INRIX compresses delay", and
       those have opposite implications for a before/after study. Report the free-flow
       level gap and the slope as separate columns and lead the scorecard with both.
-- [ ] **Restate the finding in DATA_FORMAT.md as a slope, with the before/after
+      **Done:** `free_flow_gap` with its own interval, and the scorecard now **opens**
+      with `Delay slope` / `Slope r²` / `Slope 95% CI` / `Free-flow gap` / `Gap 95% CI`
+      before `Bias`, sorted by slope rather than bias. The index page leads with both as
+      KPIs and draws a `slope_forest` and a `level_gap_forest` above the bias forest;
+      each route page reports them as separate KPIs above the bias, which is labelled
+      "the two above summed". The gap's interval is a **day-block bootstrap of the
+      pooled gap** (fixed seed): a t-interval over per-day gaps was tried first and
+      rejected because it estimates a different quantity and put Eagle Rd NB's −5.36
+      outside its own interval.
+- [x] **Restate the finding in DATA_FORMAT.md as a slope, with the before/after
       consequence made explicit.** The near-zero intercepts are the point: the
       disagreement is **multiplicative in delay**, not a fixed offset, so it does **not**
       cancel in a before/after difference. An intervention that removes 4 real minutes
@@ -835,12 +863,28 @@ slope of 0.71** on the same bins. Scope:
       already says "about half the effect size in minutes" — replace the assertion with
       the measured slope and its interval, and keep the rural contrast (Cascade↔HSB,
       both CIs spanning zero) beside it.
-- [ ] pytest: synthetic frames with a known slope and intercept recover them; the
+      **Done:** new DATA_FORMAT section *The compression is a slope, not an offset
+      (Item 32)* with the full per-route table, the interval construction, the rural
+      contrast (both slope intervals spanning parity), and the 4 min → **2.1 min**
+      consequence. The report's own prose is interpolated from the run's frames, so
+      that sentence is now a computed number rather than a claim. Also recorded: the
+      near-zero intercept is a **finding**, not an artifact — a constant added to every
+      bin is absorbed into that source's own free flow and cannot show up as an
+      intercept, so ≈0 means there is no fixed congested-bin penalty (tested both ways).
+- [x] pytest: synthetic frames with a known slope and intercept recover them; the
       day-blocked CI widens against the naive one as it does for `bias`; a
       near-zero-delay route produces an unstable ratio **and** a stable slope, pinning
       the VSL SB PM case as a regression. DESIGN_HISTORY entry.
+      **Done:** +16 tests (`tests/test_agreement.py` +9, `tests/test_validation_report.py`
+      +7; **full suite: 474 passed, 2 skipped**), DESIGN_HISTORY Session 44. The
+      instability is *measured* rather than asserted: the same low-delay route split in
+      half by date moves its ratio by a third and its slope by a hundredth, each half's
+      interval covering the other's estimate. The **end-to-end report re-run is still
+      outstanding for the same reason as Item 31** — `TT Logger.xlsx` is not on this
+      machine — so the published slope table is computed over the outside pass's
+      28,340-bin matched set, with its provenance stated in DATA_FORMAT.
 
-*Suggested prompt:* "Do Item 32 of ROADMAP.md — report the INRIX-vs-reference delay
+*Suggested prompt (done):* "Do Item 32 of ROADMAP.md — report the INRIX-vs-reference delay
 compression as a regression slope with a day-blocked CI, separate the free-flow level
 gap from the slope in the scorecard, and restate the DATA_FORMAT finding accordingly,
 per DESIGN_HISTORY Session 37."
@@ -862,29 +906,44 @@ Item 30 confirmed it with measured snaps of 4–64 ft — but **a snap distance 
 the endpoints coincide, not that the two routes traverse the same path between them**,
 and that is the hypothesis nobody has actually tested. Scope:
 
-- [ ] **Test path equivalence, not endpoint equivalence.** Compare the assembled chain's
+- [x] **Test path equivalence, not endpoint equivalence.** Compare the assembled chain's
       geometry against what the reference route must have traversed — cumulative
       distance, road names along the chain (`chain_attributes`), and whether a plausible
       alternative path exists between the same two snapped points (a frontage road, a
       one-way pair, a different carriageway). A directional gap this large at free flow
       is much more likely a *route* difference than a *measurement* difference.
-- [ ] **Decompose the gap along the chain.** With per-segment INRIX travel time in hand,
+- [x] **Decompose the gap along the chain.** With per-segment INRIX travel time in hand,
       find whether the SB level gap is spread evenly (suggesting a length or extent
       mismatch) or concentrated in one or two members (suggesting a specific
       intersection, ramp terminal, or a segment whose XD extent disagrees with the
       roadway). Do the same for Eagle Rd NB and compare.
-- [ ] **Check the reference side for a directional artefact** before blaming geometry:
+- [x] **Check the reference side for a directional artefact** before blaming geometry:
       whether SB and NB samples are drawn at the same times of day, whether the SB
       route's logged origin/destination pair is actually the reverse of NB's, and
       whether the sheet's own extent matches.
-- [ ] **Land it as a finding either way.** If it is a route mismatch, the affected routes
+- [x] **Land it as a finding either way.** If it is a route mismatch, the affected routes
       need re-endpointing and the headline numbers re-derived; if it is real, it is a
       second INRIX limitation distinct from the delay compression and belongs in
       DATA_FORMAT beside it. A negative result is a valid outcome here — record what was
       excluded. DESIGN_HISTORY entry.
 
-*Suggested prompt:* "Do Item 33 of ROADMAP.md — diagnose the directional free-flow level
-gap on SH-69 SB and Eagle Rd NB, testing path equivalence rather than endpoint
+**Outcome (Session 45): reference-side, and two different things.** The INRIX path is
+identical in both directions — member-for-member mirrored chains, 7.113 mi requested
+each way, a median 0 ft between the two directions' geometry, and per-member 10th
+percentiles summing to 8.540 min NB against 8.440 SB with no slice differing by more
+than 0.04 min. The asymmetry is entirely in the reference's **own no-traffic duration**
+(`Travel Time − Extra TT`, constant per sheet): **11.3167 min SB against 8.2667 NB** over
+the same pavement. Eagle Rd NB's −5.36 is mostly not a level gap at all — 4.04 min of it
+is delay the reference itself reports at its own 10th percentile. `agreement` now splits
+every level gap into `ref_free_flow_delay` and `free_flow_gap_static`; DATA_FORMAT gains
+*The directional level gap is on the reference side (Item 33)*. The **size** of SH-69
+SB's route difference is **not** established — the logger records no route — and the
+leading mechanism (one logged coordinate on the northbound carriageway, 63.9 ft from the
+southbound roadway against a 63.2 ft carriageway separation) is recorded with the two
+measurements that would settle it.
+
+*Suggested prompt (done):* "Do Item 33 of ROADMAP.md — diagnose the directional free-flow
+level gap on SH-69 SB and Eagle Rd NB, testing path equivalence rather than endpoint
 equivalence, per DESIGN_HISTORY Session 37."
 
 ---
