@@ -335,6 +335,195 @@ def test_line_bearing_and_diff():
 
 
 # ---------------------------------------------------------------------------
+# Route class: a record's own route, and the tie-break  (Item 42)
+# ---------------------------------------------------------------------------
+def test_record_route_number_reads_the_band_then_the_description():
+    """A route the record names *for itself*: the ``RouteID`` band first, then the
+    two description forms ITD uses — a trailing parenthetical and a description that
+    is nothing but a route."""
+    assert aadt.record_route_number("02150ASH069", "MERIDIAN RD") == 69
+    # 330 D3 rows carry state highway on an OH band and say so only here:
+    assert aadt.record_route_number("04523AOH000", "KARCHER RD (SH-55)") == 55
+    assert aadt.record_route_number("07880AOH000", "E 7TH ST (US-95)") == 95
+    assert aadt.record_route_number("00378AOH000", "SH-52") == 52
+    assert aadt.record_route_number("00163AOH000", "MILL CREEK RD") is None
+    assert aadt.record_route_number("00163AOH000", None) is None
+
+
+def test_record_route_number_ignores_a_route_named_mid_description():
+    """A route named anywhere but those two places is a cross-street, a junction or a
+    *business* route — reading it would hand a city street the interstate's identity.
+    ``FRANKLIN RD US-20 IC#29`` is I-84's own mainline record at the US-20
+    interchange, and ``CALDWELL BLVD(I-84 BUS)`` is I-84 Business, not I-84."""
+    assert aadt.record_route_number("00163AOH000", "FRANKLIN RD US-20 IC#29") is None
+    assert aadt.record_route_number("00163AOH000", "IDAHO AVE @ US-95 CONN") is None
+    assert aadt.record_route_number("00163AOH000", "CALDWELL BLVD(I-84 BUS)") is None
+    assert aadt.record_route_number("00163AOH000", "CLEVELAND BLVD (I-84 B)") is None
+
+
+def _two_records_on_the_segment(**kwargs):
+    """Two records lying *on* the same segment, equal in every ranked term — same
+    kind, same 0.0 m distance, same full coverage. One names a route, one does not."""
+    return gpd.GeoDataFrame(
+        {"AADT": [4700.0, 1400.0],
+         "RouteID": ["04523AOH000", "04680AOH000"],
+         "Descriptio": ["KARCHER RD (SH-55)", "LAKE LOWELL AVE"],
+         "Commercial": [300, 50],
+         "geometry": [LineString([(-116.20, 43.610), (-116.20, 43.620)]),
+                      LineString([(-116.20, 43.610), (-116.20, 43.620)])]},
+        crs="EPSG:4326", **kwargs)
+
+
+def test_a_named_route_breaks_a_tie_an_unnumbered_record_cannot():
+    """The last decision in the key: with route, facility, distance and coverage all
+    equal, the record that names a route wins."""
+    seg = _carriageway(road_number=None, road_name="W Karcher Rd", frc=3)
+    j = aadt.join_aadt(seg, _two_records_on_the_segment())
+    assert j.loc[1001, "AADT"] == 4700.0
+    assert j.loc[1001, aadt.AADT_ROUTE_NUM_COL] == 55
+    assert "named route" in j.attrs["aadt_join"]["preference"]
+
+
+def test_the_match_does_not_depend_on_the_layers_row_order():
+    """What the tie-break actually fixes. The final comparison used to be the
+    record's **position in the layer**, so two records on the same ground were
+    separated by load order and the answer changed with the candidate set — measured
+    on D3, shuffling the AADT layer moved 9 of the 3,905 export segments."""
+    layer = _two_records_on_the_segment()
+    seg = _carriageway(road_number=None, road_name="W Karcher Rd", frc=3)
+    forwards = aadt.join_aadt(seg, layer)
+    backwards = aadt.join_aadt(seg, layer.iloc[::-1].reset_index(drop=True))
+    assert forwards.loc[1001, "AADT"] == backwards.loc[1001, "AADT"]
+    assert forwards.loc[1001, "RouteID"] == backwards.loc[1001, "RouteID"]
+
+
+def test_the_route_class_preference_never_promotes_a_worse_match():
+    """It is a tie-break and nothing more. Ranking a numbered record ahead of
+    distance or coverage was measured on D3 and is wrong — a city street at an
+    interchange sits metres from the interstate's own record, and W Emerald St would
+    take ``COLE RD IC #1B``'s 82,000 over N Cole Rd's 12,500."""
+    layer = gpd.GeoDataFrame(
+        {"AADT": [82000.0, 12500.0],
+         "RouteID": ["01010AIN084", "06352AOH000"],
+         "Descriptio": ["COLE RD IC #1B", "N COLE RD"],
+         "Commercial": [9000, 700],
+         "geometry": [
+             # the interstate record, 9 m off and running past the whole segment
+             LineString([(-116.19989, 43.610), (-116.19989, 43.620)]),
+             # the street's own record, on it
+             LineString([(-116.20, 43.610), (-116.20, 43.620)])]},
+        crs="EPSG:4326")
+    seg = _carriageway(road_number=None, road_name="W Emerald St", frc=4)
+    assert aadt.join_aadt(seg, layer).loc[1001, "AADT"] == 12500.0      # not 82,000
+
+    # and coverage still outranks it: the numbered record clipping one end loses to
+    # the unnumbered one that runs the length of the segment.
+    clipped = layer.copy()
+    clipped.loc[0, "geometry"] = LineString([(-116.20, 43.610), (-116.20, 43.6115)])
+    assert aadt.join_aadt(seg, clipped).loc[1001, "AADT"] == 12500.0
+
+
+def test_join_reports_coverage_and_the_records_route():
+    j = aadt.join_aadt(_carriageway(), _divided_highway_layer())
+    assert j.loc[1001, aadt.AADT_COVER_COL] == pytest.approx(1.0)
+    assert j.loc[1001, aadt.AADT_ROUTE_NUM_COL] == 84
+    # the diagnostic row (no gate-passing match) reports them too, with no volume
+    far = aadt.join_aadt(_seg_geo(), _aadt_layer(), max_distance_m=1.0)
+    assert far.loc[1001, "aadt_source"] == "nearest"
+    assert pd.isna(far.loc[1001, "AADT"])
+    assert 0.0 <= far.loc[1001, aadt.AADT_COVER_COL] <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# On-system classification  (Item 42)
+# ---------------------------------------------------------------------------
+def _on_system_geo(road_name, road_number=None, frc=4):
+    return _carriageway(road_number=road_number, road_name=road_name, frc=frc)
+
+
+def _sh55_record(offset=0.0, end_lat=43.620, desc="KARCHER RD (SH-55)"):
+    """SH-55's record, carried on an ``OH`` band as ITD actually writes it."""
+    x = -116.20 + offset
+    return gpd.GeoDataFrame(
+        {"AADT": [4700.0], "RouteID": ["04523AOH000"], "Descriptio": [desc],
+         "Commercial": [300],
+         "geometry": [LineString([(x, 43.610), (x, end_lat)])]},
+        crs="EPSG:4326")
+
+
+def test_on_system_accepts_the_route_when_the_name_agrees():
+    j = aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record())
+    c = aadt.classify_on_system(j)
+    assert bool(c.loc[1001, aadt.ON_SYSTEM_COL])
+    assert c.loc[1001, aadt.ON_SYSTEM_REASON_COL] == "route 55"
+    assert c.attrs["on_system"]["min_coverage"] == aadt.DEFAULT_ON_SYSTEM_COVERAGE
+
+
+def test_on_system_rejects_the_road_that_merely_runs_beside_the_route():
+    """The failure that made the earlier candidate list untrustworthy: 24 stubs of
+    E Island Woods Dr took ``EAGLE RD (SH-55)``. Coverage cannot catch it — a short
+    stub beside a long record covers 1.00 — so identity has to."""
+    j = aadt.join_aadt(_on_system_geo("E Island Woods Dr"),
+                       _sh55_record(desc="EAGLE RD (SH-55)"))
+    c = aadt.classify_on_system(j)
+    assert not bool(c.loc[1001, aadt.ON_SYSTEM_COL])
+    assert c.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL].startswith("a neighbouring road")
+    assert c.attrs["on_system"]["n_rejected"] == 1
+    # the segment naming the route itself is the other way to pass identity
+    named = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("E Island Woods Dr", road_number="55"),
+                       _sh55_record(desc="EAGLE RD (SH-55)")))
+    assert bool(named.loc[1001, aadt.ON_SYSTEM_COL])
+    # ...and the test can be switched off, which is what it means to be a policy
+    off = aadt.classify_on_system(j, require_identity=False)
+    assert bool(off.loc[1001, aadt.ON_SYSTEM_COL])
+
+
+def test_on_system_rejects_far_clipping_unnumbered_and_ramp_records():
+    far = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record(offset=-0.0006)))
+    assert not bool(far.loc[1001, aadt.ON_SYSTEM_COL])
+    assert far.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == "the record is too far away"
+    assert "m away" in far.loc[1001, aadt.ON_SYSTEM_REASON_COL]
+
+    clipped = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record(end_lat=43.6115)))
+    assert not bool(clipped.loc[1001, aadt.ON_SYSTEM_COL])
+    assert clipped.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == "the record clips the segment"
+    assert "% of the segment" in clipped.loc[1001, aadt.ON_SYSTEM_REASON_COL]
+
+    unnumbered = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record(desc="KARCHER RD")))
+    assert not bool(unnumbered.loc[1001, aadt.ON_SYSTEM_COL])
+    assert unnumbered.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == \
+        "the matched record names no route"
+
+    ramp = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("Eagle Rd off-ramp", frc=6), _divided_highway_layer()))
+    assert not bool(ramp.loc[1001, aadt.ON_SYSTEM_COL])
+    assert ramp.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == \
+        "the matched record is a ramp or connector"
+
+
+def test_on_system_empty_frame_and_missing_match():
+    empty = aadt.classify_on_system(aadt.join_aadt(_seg_geo().iloc[:0], _sh55_record()))
+    assert len(empty) == 0 and aadt.ON_SYSTEM_COL in empty.columns
+    nomatch = aadt.classify_on_system(          # the record is ~800 m west
+        aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record(offset=-0.01)))
+    assert nomatch.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == "no AADT record matched"
+
+
+def test_street_name_tokens_drop_directionals_types_and_the_route():
+    assert aadt.street_name_tokens("KARCHER RD (SH-55)") == {"KARCHER"}
+    assert aadt.street_name_tokens("E Amity Rd") == {"AMITY"}
+    assert aadt.street_names_agree("E Amity Rd", "W AMITY RD")
+    assert not aadt.street_names_agree("E Amity Rd", "MERIDIAN RD (SH-69)")
+    # only the record's own street counts, not the place it runs to
+    assert aadt.street_name_tokens("IDAHO AVE @ US-95 CONN") == {"IDAHO"}
+    assert not aadt.street_names_agree(None, "KARCHER RD")      # unnamed proves nothing
+
+
+# ---------------------------------------------------------------------------
 # Weighting math
 # ---------------------------------------------------------------------------
 def test_aadt_weighted_mean_speed():

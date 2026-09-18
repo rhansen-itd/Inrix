@@ -22,6 +22,33 @@ are split into `..._part_1.zip`, `..._part_2.zip`, …. `io.py` should read
 straight from the zip (stream `data.csv` out of it) rather than requiring it be
 unpacked, and be able to concatenate parts.
 
+**The split is by segment, not by date** (Item 42). Each part carries the *whole* date
+span for its own subset of segments, and its `metadata.csv` lists **only those
+segments**: D3's three parts hold 1,947 + 1,942 + 16 = **3,905**, and part 3's
+`data.csv` is 25 MB against part 1's. Two consequences:
+
+- **The store's metadata covers one part, by design.** `ingest_export_streaming`
+  ingests the observations of *every* discovered part but reads metadata from `source`
+  alone (`io.load_metadata` does not walk the parts), so `d3_store.duckdb` answers
+  **1,947** to `store.load_metadata` while its observations carry all **3,905**.
+  Anything reconciling the segment set must therefore read `store.area_segments` — the
+  observations — not the metadata index.
+- Adding segments later does **not** need the whole export re-downloaded: a supplemental
+  export of just those segments over the same date span is the same shape as another
+  part, and ingests into the same area — see the corridor relabel below.
+
+**A supplemental export carries its own corridor label, and that is an area.** The area
+is the corridor set (`store.area_identity`), and INRIX names a report whatever it was
+requested as. The seven SH-19 segments backfilled after Item 42 arrived as
+`Cent_2026-01-01_to_2026-09-01_15_min_part_1.zip` with `Corridor/Region Name = "Cent"` —
+ingested as-is they would have been **an area of their own** that no district run would
+ever look at. `store.ingest_export_streaming(..., corridor_name="D3")` (also on
+`ingest_export`) rewrites the label as the rows are staged, so the rows, the resolved
+area and any later re-derivation agree; the provenance row records the rewrite
+(`Cent_….zip (corridor 'Cent' -> 'D3')`). It refuses an export that carries no corridor
+column rather than inventing one. **D3 now holds 3,912 segments** (163,268 rows added,
+metadata 1,947 → 1,954) over the same span, 2026-01-01 → 2026-09-01 at 15 min.
+
 ## `data.csv` columns
 
 Header (observed on the Myrtle export):
@@ -1156,6 +1183,71 @@ What fixes it (`aadt.classify_aadt_records` + the ranked `join_aadt`):
 - **Rural divided sections can exceed 60 m.** 12 rural I-84 WB segments in D3 sit
   61–85 m from the mainline centerline and come back `nearest` (no volume) — correct
   behaviour, but raise `max_distance_m` if you need them.
+
+### Route class, the tie-break, and what is *on-system* (ROADMAP Item 42)
+
+**A record's `RouteID` class is not the whole answer to which route it is on.** 330 of
+the D3 layer's `OH` ("other highway") rows name a state route in the description
+instead — `KARCHER RD (SH-55)`, `EAGLE RD (SH-55)`, `CHINDEN BLVD (US-20)`,
+`E 7TH ST (US-95)` — and 82 more are nothing *but* a route (`SH-52`, `US-95`). Read
+class off `RouteID` alone and a state highway comes back an unnumbered street.
+`aadt.record_route_number` reads both, and reads **only** those two forms:
+
+- a **trailing parenthetical** — `N WASHINGTON AVE(SH-52)`;
+- a description that is **only** a route designation — `US-95`.
+
+A route named anywhere else in a description is a cross-street or a junction, not the
+record's own route: `FRANKLIN RD US-20 IC#29` is **I-84's** mainline record at the
+US-20 interchange, and `IDAHO AVE @ US-95 CONN` is a connector. The closing
+parenthesis must follow the number, which also drops `CALDWELL BLVD(I-84 BUS)` and
+`CLEVELAND BLVD (I-84 B)` — **I-84 Business, not I-84**.
+
+**Where route class enters the join: last, as a tie-break.** The ranked preference is
+route → facility → distance → coverage → **route class** → the record's own identity.
+Class sits under coverage deliberately. Ranking a numbered record above distance or
+coverage was measured on D3 and is wrong: Ustick Rd would take
+`FRANKLIN RD US-20 IC#29`'s 74,500 and W Emerald St `COLE RD IC #1B`'s 82,000, because
+an interstate record passes within metres of a city street at an interchange. What the
+tie-break fixes is smaller and real — the last comparison used to be **the record's
+row position in the layer**, so two records on the same ground, equally close and
+equally alongside, were separated by load order. Shuffling the AADT layer moved the
+AADT of **9 of the 3,905** D3 segments (`HOWARD RD` ↔ `CLARK RD` on SH-78,
+`BISHOP RD` ↔ `BERGLAND RD` on SH-52, `POISON CREEK RD` ↔ `PERSHALL RD` on US-95 —
+adjacent records on the same route, both lying on the segment). The join is now
+independent of layer order, and the description-derived route number is used **only**
+for this tie-break and for the reported `aadt_route_number`: letting it decide the
+*match* moved 14 segments and every one for the worse (two Chinden Blvd segments left
+US-20's 29,000 mainline record for a 1,100 record covering 9% of the segment).
+
+**On-system is a different question from "whose volume is this".** The join answers
+the second by proximity within a 60 m gate, so a frontage stub, a ramp and a
+cross-street at an interchange all match a numbered record. Taking that as *on-system*
+labelled **764 D3 segments / 223 miles** on-system off the export — 24 stubs of
+E Island Woods Dr on `EAGLE RD (SH-55)`, 66 of Simco Rd on `GRANDVIEW RD (SH-167)`.
+**Coverage cannot catch this**: a 0.04-mile stub beside a mile-long record covers
+1.00. `aadt.classify_on_system` adds the test that can — **identity**: the record's
+description names the same street as the XD segment (`street_names_agree`, which drops
+directionals and street types) *or* the segment names a route in its own
+`RoadNumber` / `RoadList`. With it, mainline-only, ≤ 35 m and ≥ 0.4 coverage, the 764
+become **26 segments / 8.77 miles**. Thresholds worth knowing:
+
+- **35 m, not 20 m** — on a divided highway the mainline centerline sits 22–30 m off
+  each carriageway, so a 20 m rule rules out the interstates themselves.
+- **0.4 coverage** — a record boundary landing mid-segment cuts coverage without
+  saying anything about the route; one of the seven SH-19 segments the owner confirmed
+  as a real omission covers 0.45.
+- The test is **sufficient, not necessary**: 3,415 of the export's own 3,905 segments
+  pass it, the rest failing mostly because their matched record names no route at all
+  (a rural record described by its cross-streets).
+
+**What I-84 Business is in this vintage.** Nothing carries `84B`. ITD's AADT layer
+classes Caldwell Blvd and Cleveland Blvd under an `IN084` **`RouteID`** — I-84 in the
+route inventory — and the XD attributes give those segments `RoadNumber` **84**. The
+only place the business route appears by name is a description parenthetical
+(`CALDWELL BLVD(I-84 BUS)`, `N MAIN ST (I-84 BUS)`, `CLEVELAND BLVD (I-84 B)`), which
+`record_route_number` deliberately refuses to read as a route number. A future search
+for "84B" will fail exactly as this one did; search the corridor lists in
+`out/highways/` instead.
 
 **AADT is a daily total.** Vehicle-hours of delay (`Delay/60 × AADT`) and the
 AADT-weighted mean speed use it as a **relative** weight, not an absolute VMT: the

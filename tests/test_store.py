@@ -120,6 +120,74 @@ def test_metadata_roundtrip_equals_file_loader(con, zip_a):
     pd.testing.assert_frame_equal(loaded, direct)
 
 
+def _supplemental_zip(tmp_path):
+    """A later, separately-requested export of segments that belong to an existing
+    area — INRIX names the report whatever it was asked for, so its corridor label is
+    its own (the seven SH-19 segments backfilled into D3 came back as ``"Cent"``)."""
+    rows = [_row(t, 1009, 30, 0.5, 95, corridor="Cent") for t in T5]
+    return _make_zip(tmp_path, "Cent", rows, [1009])
+
+
+@pytest.mark.parametrize("ingest", ["streaming", "pandas"])
+def test_corridor_name_files_a_supplemental_export_into_the_existing_area(
+        con, zip_a, tmp_path, ingest):
+    """The backfill of ROADMAP Item 42. Without the relabel the supplement is an
+    **area of its own** that no district run would ever look at; with it the rows
+    become the area's own, label and all."""
+    area = store.ingest_export(con, zip_a)["area_key"]
+    supp = _supplemental_zip(tmp_path)
+
+    unlabelled = store.ingest_export_streaming(con, supp)
+    assert unlabelled["area_key"] != area              # its own area, as it stands
+    store.remove_area(con, unlabelled["area_key"])
+
+    call = (store.ingest_export_streaming if ingest == "streaming"
+            else store.ingest_export)
+    out = call(con, supp, corridor_name="9th")
+    assert out["area_key"] == area and out["area_name"] == "9th"
+    assert 1009 in store.area_segments(con, area)
+    assert store.load_metadata(con, area).index.tolist() == [1001, 1002, 1009]
+
+    # the stored rows carry the label they were filed under, so re-deriving the
+    # identity from them lands on the same area
+    stored = con.execute(
+        f'SELECT DISTINCT "{store.CORRIDOR_COL}" FROM "obs_{area}"').fetchall()
+    assert [r[0] for r in stored] == ["9th"]
+    # ...and the relabel is on the record
+    log = con.execute(f'SELECT source FROM "{store.INGESTS_TABLE}" '
+                      f"WHERE source LIKE '%Cent%'").fetchone()[0]
+    assert "'Cent' -> '9th'" in log
+
+
+def test_corridor_name_refuses_an_export_with_no_corridor_column(con, tmp_path):
+    """It relabels; it does not invent a label for an export that carries none."""
+    zpath = tmp_path / "NoCorr_5_min_part_1.zip"
+    hdr = _DATA_HDR.replace(",Corridor/Region Name", "")
+    rows = ["".join(_row(t, 1001, 30, 0.5, 95).rsplit(",9th", 1)) for t in T5]
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr("NoCorr/data.csv", hdr + "".join(rows))
+        zf.writestr("NoCorr/metadata.csv", _meta([1001]))
+    for call in (store.ingest_export_streaming, store.ingest_export):
+        with pytest.raises(ValueError, match="no 'Corridor/Region Name'"):
+            call(con, zpath, corridor_name="9th")
+
+
+def test_area_segments_reads_the_observations_not_the_metadata(con, zip_a):
+    """What the export *contains* is what was observed. A district export is split
+    into parts by segment and each part's ``metadata.csv`` lists only its own, while
+    ``ingest_export_streaming`` reads metadata from ``source`` alone — so the store
+    under-reports its segment set through ``load_metadata``: Item 42 found
+    ``d3_store.duckdb`` answering 1,947 against 3,905 observed."""
+    info = store.ingest_export(con, zip_a)
+    key = info["area_key"]
+    observed = store.area_segments(con, key)
+    assert observed == sorted(store.load_metadata(con, key).index)
+    con.execute(f'DELETE FROM "meta_{key}" WHERE "{SEGMENT_COL}" = {observed[0]}')
+    assert len(store.load_metadata(con, key)) == len(observed) - 1
+    assert store.area_segments(con, key) == observed           # unchanged
+    assert store.area_segments(con, "no_such_area") == []
+
+
 def test_list_areas_reports_the_ingest(con, zip_a):
     assert len(store.list_areas(con)) == 0
     info = store.ingest_export(con, zip_a)

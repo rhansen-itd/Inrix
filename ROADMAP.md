@@ -167,7 +167,17 @@ the data already lands near one. So: **42** reconciles the id files against the 
 fixes the AADT join's missing numbered-over-`OH` preference (without which an on-system
 classification flips with the candidate set); **43** extracts corridor candidates from
 recurring congestion, with a gap tolerance and endpoint snapping; **44** rebuilds the
-catalogue from them. **Nothing here needs new ranking machinery** — Items 38–41 made
+catalogue from them. **Item 42 is done** (Session 52), with one correction to its own
+premise: preferring a numbered record ahead of distance or coverage is wrong (it hands a
+city street at an interchange the interstate's volume), and the instability was that the
+join's **last comparison was the record's row position in the layer** — so route class
+went in as the last decision, under coverage, and the join is now order-independent.
+Reading on-system-ness off the volume join is what made the old candidate list junk;
+`aadt.classify_on_system` asks it separately and takes 764 segments / 223 mi down to
+**26 / 8.77 mi**, of which the owner's seven confirmed SH-19 segments are found
+independently and **W/E State St in Eagle (11 segs, 4.68 mi) is the one genuinely new
+question**. No re-download is warranted: the export is split by segment, so the gap can
+arrive as a supplemental part. **Nothing here needs new ranking machinery** — Items 38–41 made
 adding a corridor a catalogue edit, and that is what these items feed.
 
 ---
@@ -1623,7 +1633,7 @@ direction and peak as its own row under a corridor total ranked on a per-mile ra
 
 ---
 
-## 42 — Reconcile the export's segment set against the corridor inventory
+## 42 — Reconcile the export's segment set against the corridor inventory ✅ (Session 52)
 
 **Target: Sonnet-eligible** on the reconciliation; **Opus** for the `join_aadt` preference
 fix. Small. Any re-download has a long external lead time, so settle the list first.
@@ -1661,9 +1671,16 @@ framing: those are off-system county roads and correctly excluded.
 
 Scope:
 
-- [ ] **Reconcile every `out/highways/*_ALL.txt` against the master list** and record which
+- [x] **Reconcile every `out/highways/*_ALL.txt` against the master list** and record which
       per-corridor ids never reached it. SH-55 is the one found so far; the check is cheap
       and should be run over all 32 files rather than assuming it is the only one.
+      *Done by `scripts/reconcile_export_segments.py`: 4,004 ids across the 32 files,
+      3,947 in the master, 3,905 observed, and the 57 SH-55 Eagle Rd ids are the only
+      ones that never reached the master. Every directional file adds up to its `_ALL`.
+      A finding on the way: the export is split **by segment**, each part's
+      `metadata.csv` listing only its own — the store answers 1,947 to `load_metadata`
+      against 3,905 observed, so `store.area_segments` (new) reads the segment set from
+      the observations.*
 - [x] **Resolved with the owner: the true gap is 7 segments, not 99.** The 57 SH-55 Eagle
       Rd segments were deleted **on purpose** — 38 are south of I-84 and belong to ACHD,
       14 are north of State St, and the remaining 5 are edge stubs just beyond each end of
@@ -1674,26 +1691,60 @@ Scope:
       I-84B — so it went out with the rest. Those 7 segments (1.89 mi) are the only ones
       to add, and they are in `out/segments_to_add_to_export.txt`, paste-ready. The
       Blaine/Cleveland/Caldwell Blvd remainder stays out.
-- [ ] **Fix `join_aadt`'s route-class preference.** Item 34 taught it to prefer mainline
-      over ramp; it has no preference for a **numbered** route over an `OH` record, so an
-      on-system classification flips with the candidate set — W Karcher Rd classifies `SH`
-      against an AADT subset loaded around it and `OH` against the full statewide layer.
-      This is what makes the 483 spatial-join candidates in section 2 of that file
-      untrustworthy (median length **0.076 mi**, 130 of them under 0.05 mi — frontage
-      roads, ramps and connector stubs that merely run near a state route).
-- [ ] **Regenerate the candidate list after the fix** and review it by road. Expect it to
-      shrink a long way. The ones worth looking at first are SW Old Grandview Hwy
-      (13.75 mi), Gunfighter Ave (3.59) and Lowell Rd (3.73).
-- [ ] **Decide whether any of this justifies a re-download** — the current export is
-      91.05 M rows / 2.1 GB for 3,905 segments, and the confirmed gap is 99 segments.
-      State the trade-off; do not assume a re-download.
-- [ ] **Record what I-84 Business is in this vintage**: ITD's AADT layer classes Caldwell
+- [x] **Fix `join_aadt`'s route-class preference** — done, but **not as specified**, and
+      the difference is recorded in DESIGN_HISTORY Session 52. Preferring a numbered
+      record ahead of distance or coverage was measured on D3 and is wrong (Ustick Rd
+      takes `FRANKLIN RD US-20 IC#29`'s 74,500; W Emerald St takes `COLE RD IC #1B`'s
+      82,000). The real instability was that the **last comparison was the record's row
+      position in the layer** — shuffling the layer moved 9 of the 3,905 export
+      segments' AADT. Route class went in as the **last decision, under coverage**,
+      replacing the index; the join is now provably order-independent. Also:
+      `record_route_number` reads the route an `OH`-band record names for itself
+      (`KARCHER RD (SH-55)`), 330 D3 rows' worth.
+- [x] **Regenerate the candidate list after the fix** and review it by road. *It shrank
+      a long way, but the preference is not what did it: on-system-ness cannot be read
+      off the volume join at all, which is why the 483 were junk. New
+      `aadt.classify_on_system` adds an **identity** test (the record's description
+      names the same street, or the segment names a route itself) — without it, 764
+      segments / 223 mi classify on-system off the export; with it, **26 segments /
+      8.77 mi**. Reviewed by road: Centennial Way (7, the confirmed SH-19 addition,
+      found independently) accept; **W/E State St in Eagle (11 segs, 4.68 mi) and Blaine
+      St (1) are the two questions for the owner**; Caldwell/Cleveland Blvd (5) and the
+      W Karcher Rd interchange stubs (2) reject. Full output in
+      `out/export_reconciliation/`.*
+- [x] **Decide whether any of this justifies a re-download** — **no, and it does not
+      need one.** The confirmed gap is 7 segments (1.89 mi), at most 19 if State St and
+      Blaine come in, against 91.05 M rows / 2.1 GB already held. Because the export is
+      split by segment, a **supplemental** export of just those segments over the same
+      span (2026-01-01..2026-09-01, 15 min) is the same shape as another part and
+      ingests into the same area — ~0.2% of the rows already held. The span has to
+      match or the new segments cannot be compared with the rest.
+- [x] **Record what I-84 Business is in this vintage**: ITD's AADT layer classes Caldwell
       Blvd and Cleveland Blvd under an `IN084` RouteID, so it is I-84 in the route
       inventory and has no `84B` route number anywhere in the XD attributes. A future
-      search for "84B" will fail exactly as this one did.
-- [ ] pytest for the route-class preference; DATA_FORMAT; DESIGN_HISTORY.
+      search for "84B" will fail exactly as this one did. *In DATA_FORMAT, with the one
+      place the name does appear — a description parenthetical (`CALDWELL BLVD(I-84
+      BUS)`), which `record_route_number` deliberately refuses to read as route 84.*
+- [x] pytest for the route-class preference; DATA_FORMAT; DESIGN_HISTORY. *+20 tests
+      (`test_aadt` 11, new `test_reconcile_export_segments` 8, `test_store` 1); suite
+      560 passed, 2 skipped.*
 
-*Suggested prompt:* "Do Item 42 of ROADMAP.md — reconcile the per-corridor id files
+**The seven landed** (Session 53). The owner ordered them and
+`Cent_2026-01-01_to_2026-09-01_15_min_part_1.zip` is ingested: 163,268 rows over the
+district export's own span, the store **3,905 → 3,912** segments, "requested, returned
+nothing" 42 → 35. The export labelled itself corridor `"Cent"`, which under the area
+model would have made it an area no district run ever looks at, so
+`store.ingest_export_streaming` gained `corridor_name=` — it relabels as the rows are
+staged and records the rewrite in the provenance. The reporting ranking is unchanged to
+floating point (the seven belong to no catalogue entry — **there is no SH-19 corridor**,
+which is Item 44's business).
+
+**Open for the owner (Item 44 inherits it):** W/E State St in Eagle — 11 segments /
+4.68 mi, the only candidate no corridor list has ever named — and Blaine St in
+Caldwell (1 segment, connects to the now-ingested SH-19 run). Both are laid out with
+their evidence in `out/segments_to_add_to_export.txt`.
+
+*Suggested prompt (done):* "Do Item 42 of ROADMAP.md — reconcile the per-corridor id files
 against the export, re-request the 99 absent segments, and give `join_aadt` a
 numbered-over-OH route-class preference."
 
@@ -1761,8 +1812,10 @@ runs of recurring congestion, with a gap tolerance and endpoint snapping."
 
 ## 44 — Rebuild the D3 catalogue from the extracted runs
 
-**Target: Opus**, possibly two sessions. **Depends on Item 43**; Item 42 decides whether
-the 99 absent segments join the export first.
+**Target: Opus**, possibly two sessions. **Depends on Item 43**. Item 42 settled the
+segment set: the export is complete bar **7 confirmed SH-19 segments** (and two open
+questions, W/E State St in Eagle and Blaine St), and no re-download is needed — a
+supplemental part would carry them.
 
 The catalogue becomes data-derived: Item 43 says where the congestion actually starts and
 stops, a human says why that extent is the meaningful one and what to call it. The

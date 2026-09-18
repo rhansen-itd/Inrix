@@ -221,7 +221,8 @@ def detect_bin_minutes(df: pd.DataFrame) -> int | None:
 # ---------------------------------------------------------------------------
 # Ingest (merge into an area)
 # ---------------------------------------------------------------------------
-def ingest_export(con, source, *, ingested_at: datetime | None = None) -> dict:
+def ingest_export(con, source, *, ingested_at: datetime | None = None,
+                  corridor_name: str | None = None) -> dict:
     """Ingest an INRIX export (``source``) — merging it into its corridor **area**.
 
     Reads with the file loaders (:func:`io.load_data` / :func:`io.load_metadata`),
@@ -232,12 +233,23 @@ def ingest_export(con, source, *, ingested_at: datetime | None = None) -> dict:
 
     As in :func:`ingest_export_streaming`, ``source`` is expanded by
     :func:`io._discover_parts`: handing it any ``..._part_N.zip`` reads **every**
-    sibling part, and ``n_rows_added`` is the total over all of them.
+    sibling part, and ``n_rows_added`` is the total over all of them. So is
+    ``corridor_name``, which files a supplemental export under an existing area's
+    label instead of one of its own — see that function for why.
     """
     parts = [Path(p).name for p in _io._discover_parts(source)]
     df = _io.load_data(source)
     metadata = _io.load_metadata(source)
-    out = put_export(con, df, metadata, source=" + ".join(parts), ingested_at=ingested_at)
+    logged = " + ".join(parts)
+    if corridor_name is not None:
+        if CORRIDOR_COL not in df.columns:
+            raise ValueError(
+                f"corridor_name={corridor_name!r} was given but {source!r} carries no "
+                f"{CORRIDOR_COL!r} column, so there is no label to rewrite.")
+        was = ", ".join(sorted({str(c) for c in df[CORRIDOR_COL].dropna().unique()}))
+        df[CORRIDOR_COL] = corridor_name
+        logged += f" (corridor {(was or '(none)')!r} -> {corridor_name!r})"
+    out = put_export(con, df, metadata, source=logged, ingested_at=ingested_at)
     return {**out, "n_parts": len(parts), "parts": parts}
 
 
@@ -523,17 +535,23 @@ def _sql_str(value) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _csv_projection(header: list[str]) -> tuple[list[str], list[str]]:
+def _csv_projection(header: list[str], corridor_name=None) -> tuple[list[str], list[str]]:
     """``io.load_data``'s typing rules, as a SQL projection over an all-``VARCHAR``
     read: the timestamp to ``TIMESTAMPTZ``, ``Segment ID`` to ``BIGINT``, the numeric
     columns (matched by the same prefixes) via ``TRY_CAST`` to ``DOUBLE`` — the SQL
     equivalent of ``pd.to_numeric(errors='coerce')`` — and ``Road Closure`` to the
     ``== 'T'`` boolean. Returns ``(projection, numeric_columns)``; the numeric ones
     are narrowed to ``BIGINT`` afterwards where pandas would have typed them int64.
+
+    ``corridor_name`` projects a literal in place of the export's own
+    ``Corridor/Region Name`` — the relabel :func:`ingest_export_streaming` uses to
+    file a supplemental export under the area it belongs to.
     """
     proj, numeric = [], []
     for c in header:
-        if c == DATETIME_COL:
+        if c == CORRIDOR_COL and corridor_name is not None:
+            proj.append(f'{_sql_str(corridor_name)} AS "{c}"')
+        elif c == DATETIME_COL:
             proj.append(f'TRY_CAST("{c}" AS TIMESTAMPTZ) AS "{c}"')
         elif c == SEGMENT_COL:
             proj.append(f'TRY_CAST("{c}" AS BIGINT) AS "{c}"')
@@ -559,11 +577,11 @@ def _read_csv_sql(csv_path, header: list[str]) -> str:
 
 
 def _load_chunk(con, csv_path, header: list[str], *, replace: bool,
-                stage: str = STREAM_STAGE) -> None:
+                stage: str = STREAM_STAGE, corridor_name=None) -> None:
     """Load one chunk into the ``stage`` table, typed as :func:`io.load_data` types
     it — replacing the stage, or appending to it when the previous chunk was too
     small to decide the export's cadence."""
-    proj, _ = _csv_projection(header)
+    proj, _ = _csv_projection(header, corridor_name)
     body = ",\n  ".join(proj) + "\nFROM " + _read_csv_sql(csv_path, header)
     if replace:
         con.execute(f'CREATE OR REPLACE TABLE "{stage}" AS SELECT\n  ' + body)
@@ -641,7 +659,8 @@ def _member_corridors(con, part, header: list[str]) -> list[str]:
 
 
 def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
-                            chunk_bytes: int = STREAM_CHUNK_BYTES) -> dict:
+                            chunk_bytes: int = STREAM_CHUNK_BYTES,
+                            corridor_name: str | None = None) -> dict:
     """Ingest an INRIX export **without materialising it in pandas** — the zip member
     is streamed straight into DuckDB.  (ROADMAP Item 35)
 
@@ -658,6 +677,11 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
         ingested_at: timestamp recorded on the registry rows (default: now, UTC).
         chunk_bytes: uncompressed CSV bytes per committed chunk (default 256 MiB).
             Peak memory tracks this, not the export's size.
+        corridor_name: file this export under **this** corridor label instead of the
+            one it carries, so a supplemental export lands in the area it belongs to
+            rather than an area of its own (see below). Raises when the export has no
+            ``Corridor/Region Name`` column — there is nothing to relabel, and this
+            does not invent one.
 
     Returns:
         The same summary dict :func:`ingest_export` returns — ``area_key`` /
@@ -691,6 +715,17 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
       a part-split export that means the metadata of part 1; the observations of
       every part are still ingested.
 
+    **A supplemental export is relabelled, not re-areaed.** The area is the corridor
+    set (:func:`area_identity`), and INRIX names a report whatever it was requested
+    as: the seven SH-19 segments backfilled into D3 after ROADMAP Item 42 came back
+    labelled ``"Cent"``, which would have made them an area of their own that no
+    district run would ever see. ``corridor_name="D3"`` rewrites the label **as the
+    rows are staged**, so the stored rows, the resolved area and a later
+    re-derivation of the identity all agree — the rows become D3 rows, which is what
+    they are. The relabel is recorded in the provenance row's source string
+    (``Cent_….zip (corridor 'Cent' -> 'D3')``), because an export that says one thing
+    and is stored as another has to say so somewhere.
+
     A duplicate ``(Segment ID, Date Time)`` **spanning two chunks or parts** is
     de-duplicated here (each chunk merges against what is already stored) where the
     pandas path inserts both copies — its anti-join sees the table, not the frame it
@@ -700,12 +735,23 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
     _ensure_registry(con)
     parts = _io._discover_parts(source)
     headers = [list(_io._read_member_csv(p, "data.csv", nrows=0).columns) for p in parts]
+    if corridor_name is not None and not all(CORRIDOR_COL in h for h in headers):
+        raise ValueError(
+            f"corridor_name={corridor_name!r} was given but {source!r} carries no "
+            f"{CORRIDOR_COL!r} column, so there is no label to rewrite.")
 
     # Does the export span more than one chunk? (A zip's uncompressed member size is
     # in the central directory — no decompression needed to ask.)
     multi = len(parts) > 1 or any(_member_bytes(p) > chunk_bytes for p in parts)
     identity_corridors: list[str] = []
-    if multi:
+    original_corridors: list[str] = []
+    if corridor_name is not None:
+        # The relabel decides the identity; reading the members for it would only
+        # find the label being replaced. Its own value is read for the provenance.
+        identity_corridors = [corridor_name]
+        for part, header in zip(parts, headers):
+            original_corridors += _member_corridors(con, part, header)
+    elif multi:
         for part, header in zip(parts, headers):
             identity_corridors += _member_corridors(con, part, header)
 
@@ -721,14 +767,16 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
             with _member_chunks(part, "data.csv", chunk_bytes) as chunks:
                 pending = next(chunks, None)
                 while pending is not None:
-                    _load_chunk(con, pending, header, replace=True)
+                    _load_chunk(con, pending, header, replace=True,
+                                corridor_name=corridor_name)
                     pending = next(chunks, None)
                     # The cadence is read from the first staged chunk. A chunk too
                     # small to hold two timestamps for any one segment cannot decide
                     # it, so keep appending before labelling anything.
                     while (area_key is None and pending is not None
                            and not _bin_histogram(con, STREAM_STAGE)):
-                        _load_chunk(con, pending, header, replace=False)
+                        _load_chunk(con, pending, header, replace=False,
+                                    corridor_name=corridor_name)
                         pending = next(chunks, None)
                     info = _stage_summary(con, header)
                     for d, n in info["bin_histogram"].items():
@@ -767,7 +815,11 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
     part_names = [Path(p).name for p in parts]
     # The resolved parts, not the single path handed in: a provenance row reading
     # "part_1.zip -> 91,054,384" invites the conclusion that part 1 held everything.
-    _log_ingest(con, area_key, " + ".join(part_names), bin_minutes, n_added,
+    logged = " + ".join(part_names)
+    if corridor_name is not None:
+        was = ", ".join(sorted(set(original_corridors))) or "(none)"
+        logged += f" (corridor {was!r} -> {corridor_name!r})"
+    _log_ingest(con, area_key, logged, bin_minutes, n_added,
                 (span_lo, span_hi), ingested_at)
     return {"area_key": area_key, "area_name": area_name,
             "bin_minutes": bin_minutes, "n_rows_added": n_added,
@@ -907,6 +959,27 @@ def area_bins(con, area_key: str) -> list[int]:
     rows = con.execute(
         f'SELECT DISTINCT "{BIN_COL}" FROM "{obs}" '
         f'WHERE "{BIN_COL}" IS NOT NULL ORDER BY 1').fetchall()
+    return [int(r[0]) for r in rows]
+
+
+def area_segments(con, area_key: str) -> list[int]:
+    """Every ``Segment ID`` the area's **observations** carry, ascending (Item 42).
+
+    Not the same set as :func:`load_metadata`'s index, and the difference matters. An
+    INRIX district export is split into parts **by segment**, each part carrying the
+    whole date span for its own segments and a ``metadata.csv`` that lists only those
+    — D3's three parts hold 1,947 + 1,942 + 16 = 3,905. :func:`ingest_export_streaming`
+    ingests every part's **observations** but reads metadata from ``source`` alone, so
+    the store under-reports the export through ``load_metadata``: ``d3_store.duckdb``
+    answers 1,947 there and 3,912 here. What the export *contains* is what was
+    observed, so anything reconciling the segment set reads it from this.
+    """
+    obs = _obs_table(area_key)
+    if not _table_exists(con, obs):
+        return []
+    rows = con.execute(
+        f'SELECT DISTINCT "{SEGMENT_COL}" FROM "{obs}" '
+        f'WHERE "{SEGMENT_COL}" IS NOT NULL ORDER BY 1').fetchall()
     return [int(r[0]) for r in rows]
 
 

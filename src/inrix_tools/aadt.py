@@ -57,6 +57,8 @@ AADT_SOURCE_COL = "aadt_source"      # matched / matched_ramp / nearest / missin
 AADT_DIST_COL = "aadt_dist_m"        # match distance in metres
 AADT_KIND_COL = "aadt_record_kind"   # record_kind of the chosen AADT record
 AADT_DESC_COL = "aadt_desc"          # Descriptio of the chosen record (diagnostic)
+AADT_COVER_COL = "aadt_coverage"     # share of the segment the chosen record runs beside
+AADT_ROUTE_NUM_COL = "aadt_route_number"   # route the chosen record names (<NA> = none)
 
 RECORD_KIND_COL = "record_kind"      # on the AADT layer (classify_aadt_records)
 ROUTE_CLASS_COL = "route_class"      # IN / SH / US / OH, parsed from RouteID
@@ -91,6 +93,20 @@ _SEG_RAMP_FRC = 6                    # FRC 6+ = local/minor; an interstate is FR
 # "I-84|US-30", "S Eagle Rd|ID-55").
 _XD_ROUTE_RE = re.compile(r"\b(?:I|US|ID|SH|SR)[- ]?(\d{1,3})\b", re.I)
 
+# A record whose ``RouteID`` band is ``OH`` can still be *on* a numbered route: ITD
+# writes the route as a trailing parenthetical (``KARCHER RD (SH-55)``,
+# ``N WASHINGTON AVE(SH-52)``) or as the whole description (``US-95``). 330 of the D3
+# layer's ``OH`` rows name a route that way, Karcher and Eagle Rd among them — which
+# is why route class alone reads a state highway as an unnumbered street.
+# **Only those two forms are read.** A route named anywhere else in a description is a
+# cross-street or a junction, not the record's own route: ``FRANKLIN RD US-20 IC#29``
+# is I-84's *mainline* record at the US-20 interchange, and ``IDAHO AVE @ US-95 CONN``
+# is a connector. The closing parenthesis must follow the number, which also drops the
+# business routes — ``CALDWELL BLVD(I-84 BUS)`` and ``CLEVELAND BLVD (I-84 B)`` are
+# I-84 *Business*, not I-84, and must never match an interstate segment.
+_DESC_ROUTE_RE = re.compile(
+    r"\((?:I|US|SH|ID|HWY)[\s-]?(\d{1,3})\)\s*$|^\s*(?:I|US|SH|ID)[\s-]?(\d{1,3})\s*$", re.I)
+
 
 # ---------------------------------------------------------------------------
 # Record identity: RouteID -> route, Descriptio -> record kind  (Item 34)
@@ -115,6 +131,47 @@ def route_label(route_id) -> str | None:
     _, cls, num = parse_route_id(route_id)
     prefix = _CLASS_PREFIX.get(cls)
     return None if (prefix is None or num is None) else f"{prefix}-{num}"
+
+
+def record_route_number(route_id, description=None) -> int | None:
+    """The route a record names **itself** — from ``RouteID``, else from its
+    ``Descriptio`` (Item 42).
+
+    The ``RouteID`` band is the first answer and the reliable one. It is not the only
+    one: ITD carries plenty of state highway on ``OH`` ("other highway") bands and says
+    so only in the description — ``KARCHER RD (SH-55)`` is SH-55, ``US-95`` is US-95.
+    Reading route class off ``RouteID`` alone therefore calls a state highway an
+    unnumbered street, which is what made an on-system classification depend on which
+    records happened to be loaded.
+
+    Only a **trailing parenthetical** or a description that is *nothing but* a route
+    designation counts (see ``_DESC_ROUTE_RE``): a route named mid-description is a
+    cross-street or an interchange, and the parenthesis-hugging form excludes
+    ``(I-84 BUS)``, which is a business route and not the interstate.
+
+    ``None`` when the record names no route.
+    """
+    _, _, num = parse_route_id(route_id)
+    if num is not None:
+        return num
+    if description is None or (isinstance(description, float) and math.isnan(description)):
+        return None
+    m = _DESC_ROUTE_RE.search(str(description).strip())
+    if m is None:
+        return None
+    return int(m.group(1) or m.group(2))
+
+
+def _record_route_numbers(aadt) -> list:
+    """:func:`record_route_number` per row of an AADT frame, positionally."""
+    route_id = aadt["RouteID"] if "RouteID" in aadt.columns else None
+    desc = aadt["Descriptio"] if "Descriptio" in aadt.columns else None
+    n = len(aadt)
+    if route_id is None and desc is None:
+        return [None] * n
+    ids = route_id.to_numpy() if route_id is not None else [None] * n
+    descs = desc.to_numpy() if desc is not None else [None] * n
+    return [record_route_number(ids[i], descs[i]) for i in range(n)]
 
 
 def _derive_route_fields(aadt):
@@ -405,11 +462,14 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
     distance alone (ROADMAP Item 34):
 
     1. **Route.** A record whose ``RouteID`` route number matches one the segment
-       names (``RoadNumber`` / ``RoadList``) beats one that doesn't. This is a
-       *bonus, never a penalty*: a record that names no route and one that names the
-       wrong one rank together, because a concurrency the XD side doesn't list
-       (US-95 carrying SH-55 traffic at New Meadows) would otherwise push the real
-       route below an unnumbered side street.
+       names (``RoadNumber`` / ``RoadList``) beats one that doesn't — the **band
+       only**, because it is the reliable reading; the route a description names for
+       itself (:func:`record_route_number`) settles step 5 and is reported, but
+       letting it decide the match moved 14 D3 segments and every one for the worse.
+       This is a *bonus, never a penalty*: a record that names no route and one that
+       names the wrong one rank together, because a concurrency the XD side doesn't
+       list (US-95 carrying SH-55 traffic at New Meadows) would otherwise push the
+       real route below an unnumbered side street.
     2. **Facility.** For a mainline segment, a ``record_kind == "mainline"`` record
        beats a connector, which beats a ramp (``prefer_mainline``; see
        :func:`classify_aadt_records`). A segment that is itself a ramp skips this
@@ -420,6 +480,19 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
        longest wins (:func:`_alongside_fraction`). A rest-area ramp record and the
        mainline record are both 0.0 m from an interstate segment; only the mainline
        one runs its whole length.
+    5. **Route class**, as a **tie-break only** (Item 42): with the route, the
+       facility, the distance and the coverage all equal, a record that names a route
+       beats one that names none. This is the last *decision* in the key, and it is
+       deliberately last. Ranking a numbered record ahead of distance or coverage
+       instead was measured on D3 and is wrong: it hands Ustick Rd the 74,500 of
+       ``FRANKLIN RD US-20 IC#29`` and W Emerald St the 82,000 of ``COLE RD IC #1B``
+       — interstate records that pass within metres of a city street at an
+       interchange. What the tie-break removes is the *real* defect, which was that
+       the final comparison was the record's **position in the layer**: two records on
+       the same ground, equally close and equally alongside, were separated by load
+       order, so the answer changed with the candidate set. Below it the key falls
+       back to the record's own identity (``RouteID``/``Descriptio``), which is stable
+       whatever else is loaded.
 
     Nearest-wins alone is systematically wrong on a divided highway: the layer carries
     one mainline centerline, 22–30 m off each carriageway, and a record per ramp
@@ -462,6 +535,11 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
           ``"missing"`` (no AADT line / no segment geometry),
         * ``aadt_dist_m`` — distance to the chosen line in metres (``NaN`` when
           missing),
+        * ``aadt_coverage`` — the share of the segment the chosen line runs beside
+          (:func:`_alongside_fraction`); the evidence that a match is *the road* and
+          not a line that crosses or clips it,
+        * ``aadt_route_number`` — the route the chosen record names (``<NA>`` for an
+          unnumbered one), which is what :func:`classify_on_system` reads,
         * ``aadt_record_kind`` / ``aadt_desc`` — the chosen record's kind and
           ``Descriptio``, so a questionable match names itself,
         * ``RouteID`` / ``Route`` — carried from the chosen line (also for
@@ -473,7 +551,8 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
 
     out = geo.copy()
     blank = {AADT_COL: float("nan"), AADT_SOURCE_COL: "missing",
-             AADT_DIST_COL: float("nan"), AADT_KIND_COL: None, AADT_DESC_COL: None,
+             AADT_DIST_COL: float("nan"), AADT_COVER_COL: float("nan"),
+             AADT_KIND_COL: None, AADT_DESC_COL: None, AADT_ROUTE_NUM_COL: None,
              "RouteID": None, "Route": None, "Commercial": pd.NA}
 
     valid_geo = out[out.geometry.notna() & ~out.geometry.is_empty]
@@ -498,8 +577,19 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
 
     aadt_vals = aadt[AADT_COL].astype(float).to_numpy()
     rec_kind = aadt[RECORD_KIND_COL].to_numpy()
-    rec_num = (aadt[ROUTE_NUMBER_COL].to_numpy() if ROUTE_NUMBER_COL in aadt.columns
-               else [None] * len(aadt))
+    # Two readings of a record's route, and they do different jobs (Item 42).
+    # ``rec_band_num`` is the ``RouteID`` band alone and is what the **match** ranks
+    # on: it is the reliable one. ``rec_num`` adds the route a description names for
+    # itself, which is how a state highway carried on an ``OH`` band identifies itself
+    # (``KARCHER RD (SH-55)``) — it settles the class tie-break and is reported as
+    # ``aadt_route_number``, but it must not promote a record *above* a nearer one.
+    # Measured on the D3 export, letting it do so moves 14 segments and every one of
+    # them for the worse: two Chinden Blvd segments leave US-20's 29,000 mainline
+    # record for a 1,100 record that runs beside 9% of the segment, and two SH-52
+    # segments take a 290-vehicle record named ``SH-52`` over the route's own 3,700.
+    rec_band_num = (aadt[ROUTE_NUMBER_COL].to_numpy() if ROUTE_NUMBER_COL in aadt.columns
+                    else [None] * len(aadt))
+    rec_num = _record_route_numbers(aadt)
 
     def _col_or_none(frame, col):
         return frame[col].to_numpy() if col in frame.columns else None
@@ -521,8 +611,12 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
         apply_kind = prefer_mainline and seg_kinds.get(sid, MAINLINE) != RAMP
         # Candidate lines whose bounding box is within max_distance of the segment.
         cand = tree.query(seg_geom.buffer(max_distance_m))
-        # (route_rank, kind_rank, dist@0.1m, -coverage, dist, idx) — lexicographic,
-        # low wins; the last two only make the order total and reproducible.
+        # (route_rank, kind_rank, dist@0.1m, -coverage, class_rank, dist, tie, idx,
+        # coverage) — lexicographic, low wins. ``class_rank`` is the last *decision*;
+        # ``dist``, ``tie`` (the record's own identity) and the index only make the
+        # order total, and the index is reached only by two indistinguishable records.
+        # The trailing coverage is payload, never compared: nothing gets past the
+        # index to reach it.
         best = None
         for i in cand:
             i = int(i)
@@ -537,23 +631,29 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
             cand_bearing = _local_bearing(aadt_geoms[i], p_seg)
             if _bearing_diff(seg_bearing, cand_bearing) > bearing_tol_deg:
                 continue
+            band = rec_band_num[i]
+            band = None if band is None or pd.isna(band) else int(band)
+            route_rank = 0 if (band is not None and band in seg_nums) else 1
             num = rec_num[i]
-            num = None if num is None or pd.isna(num) else int(num)
-            route_rank = 0 if (num is not None and num in seg_nums) else 1
             kind_rank = _KIND_RANK.get(rec_kind[i], 1) if apply_kind else 0
-            key = (route_rank, kind_rank, round(d, 1),
-                   -_alongside_fraction(seg_geom, aadt_geoms[i], max_distance_m), d, i)
+            cover = _alongside_fraction(seg_geom, aadt_geoms[i], max_distance_m)
+            key = (route_rank, kind_rank, round(d, 1), -cover,
+                   0 if num is not None else 1, d,
+                   f"{_take(aadt_route_id, i) or ''}|{_take(aadt_desc, i) or ''}", i,
+                   cover)
             if best is None or key < best:
                 best = key
         if best is not None:
-            d, i = best[4], best[5]
+            d, i, cover = best[5], best[7], best[8]
             kind = rec_kind[i]
             records[sid] = {
                 AADT_COL: float(aadt_vals[i]),
                 AADT_SOURCE_COL: "matched_ramp" if kind in (RAMP, CONNECTOR) else "matched",
                 AADT_DIST_COL: d,
+                AADT_COVER_COL: cover,
                 AADT_KIND_COL: kind,
                 AADT_DESC_COL: _take(aadt_desc, i),
+                AADT_ROUTE_NUM_COL: rec_num[i],
                 "RouteID": _take(aadt_route_id, i),
                 "Route": _take(aadt_route, i),
                 "Commercial": _take(aadt_comm, i, pd.NA),
@@ -568,8 +668,11 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
                 AADT_COL: float("nan"),
                 AADT_SOURCE_COL: "nearest",
                 AADT_DIST_COL: float(seg_geom.distance(aadt_geoms[i])),
+                AADT_COVER_COL: _alongside_fraction(seg_geom, aadt_geoms[i],
+                                                    max_distance_m),
                 AADT_KIND_COL: rec_kind[i],
                 AADT_DESC_COL: _take(aadt_desc, i),
+                AADT_ROUTE_NUM_COL: rec_num[i],
                 "RouteID": _take(aadt_route_id, i),
                 "Route": _take(aadt_route, i),
                 "Commercial": pd.NA,
@@ -577,6 +680,7 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
 
     for col in blank:
         out[col] = [records.get(sid, blank)[col] for sid in out.index]
+    out[AADT_ROUTE_NUM_COL] = pd.array(out[AADT_ROUTE_NUM_COL], dtype="Int64")
     out.attrs = dict(geo.attrs)
     out.attrs["aadt_join"] = _join_policy(
         max_distance_m, bearing_tol_deg, prefer_mainline, out[AADT_SOURCE_COL])
@@ -591,10 +695,186 @@ def _join_policy(max_distance_m, bearing_tol_deg, prefer_mainline, source) -> di
         "max_distance_m": float(max_distance_m),
         "bearing_tol_deg": float(bearing_tol_deg),
         "prefer_mainline": bool(prefer_mainline),
-        "preference": ("route number, then mainline over connector over ramp, "
-                       "then distance") if prefer_mainline else
-                      "route number, then distance",
+        "preference": ("route number, then mainline over connector over ramp, then "
+                       "distance, then coverage, then a named route over an unnumbered "
+                       "one") if prefer_mainline else
+                      ("route number, then distance, then coverage, then a named route "
+                       "over an unnumbered one"),
         "counts": {k: int(v) for k, v in counts.items()},
+    }
+
+
+# ---------------------------------------------------------------------------
+# On-system classification  (Item 42)
+# ---------------------------------------------------------------------------
+ON_SYSTEM_COL = "on_system"
+ON_SYSTEM_REASON_COL = "on_system_reason"
+ON_SYSTEM_CATEGORY_COL = "on_system_category"
+# A record boundary landing mid-segment cuts coverage without saying anything about
+# whether the segment is on the route: of the seven SH-19 segments the owner
+# confirmed as a real omission from the export, one covers 0.45. The threshold sits
+# below that deliberately — it is here to reject a record that merely clips the
+# segment, not to adjudicate where ITD split its linear reference.
+DEFAULT_ON_SYSTEM_COVERAGE = 0.4
+# Wider than it looks: on a divided highway the mainline centerline sits 22-30 m off
+# each carriageway (DATA_FORMAT, Item 34), so a 20 m rule would rule out the
+# interstates themselves.
+DEFAULT_ON_SYSTEM_DISTANCE_M = 35.0
+
+# Street-name comparison. Directionals and street types carry no identity — "E Amity
+# Rd" and "AMITY RD" are the same street, "EAGLE RD (SH-55)" and "E Island Woods Dr"
+# are not — so both are dropped and what is left is compared as a token set.
+_NAME_DIRECTIONALS = {"N", "S", "E", "W", "NE", "NW", "SE", "SW",
+                      "NB", "SB", "EB", "WB", "OLD", "BEG", "END"}
+_NAME_TYPES = {"RD", "AVE", "AV", "ST", "BLVD", "LN", "DR", "WAY", "HWY", "HIGHWAY",
+               "PKWY", "CT", "CIR", "PL", "TRL", "EXT", "LOOP", "BYPASS", "SPUR",
+               "CONN", "JCT", "IC", "RAMP", "RAMPS"}
+
+
+def street_name_tokens(name) -> set:
+    """The identifying words of a street name — directionals, street types and a
+    trailing route parenthetical removed. ``"KARCHER RD (SH-55)"`` -> ``{"KARCHER"}``.
+
+    An AADT description often names two places (``"9TH ST N (E OF RR)"``,
+    ``"IDAHO AVE @ US-95 CONN"``); only the part before the first ``@`` or ``/`` is
+    the record's own street.
+    """
+    if not isinstance(name, str):
+        return set()
+    text = re.sub(r"\([^)]*\)", " ", name.upper())
+    text = re.split(r"[@/]", text)[0]
+    text = re.sub(r"[^A-Z0-9 ]", " ", text)
+    return {w for w in text.split()
+            if w and w not in _NAME_DIRECTIONALS and w not in _NAME_TYPES}
+
+
+def street_names_agree(road_name, description) -> bool:
+    """Do an XD ``RoadName`` and an AADT ``Descriptio`` name the same street?
+    True when their identifying tokens overlap at all; False when either side has
+    no identifying token (an unnamed segment proves nothing either way)."""
+    a, b = street_name_tokens(road_name), street_name_tokens(description)
+    return bool(a and b and (a & b))
+
+
+def classify_on_system(joined, *, min_coverage=DEFAULT_ON_SYSTEM_COVERAGE,
+                       max_distance_m=DEFAULT_ON_SYSTEM_DISTANCE_M,
+                       require_mainline=True, require_identity=True):
+    """Is this segment **on a numbered route**? — a separate question from which
+    volume it carries, and one that must not be read off the volume join (Item 42).
+
+    :func:`join_aadt` answers "whose volume does this segment take", by proximity
+    within a 60 m gate. Taking "the winning record names a route" as *on-system*
+    is what made the earlier candidate list untrustworthy: on the D3 network off the
+    export it labels 764 segments / 223 miles on-system, and they are cross-streets
+    and subdivision drives lying beside a state route — 24 stubs of E Island Woods Dr
+    took ``EAGLE RD (SH-55)``, 66 of Simco Rd took ``GRANDVIEW RD (SH-167)``. Note
+    coverage cannot catch them: a 0.04-mile stub beside a mile-long record covers
+    1.00. The tests here are:
+
+    * the chosen record **names a route** (``aadt_route_number``, which reads an
+      ``OH``-banded ``KARCHER RD (SH-55)`` as SH-55 — see
+      :func:`record_route_number`),
+    * **identity agrees** (``require_identity``): either the record's description
+      names the same street as the segment (:func:`street_names_agree`) or the
+      segment itself names a route in its XD ``RoadNumber`` / ``RoadList``. This is
+      the test that drops the 764 to 24,
+    * the record is a **mainline** record, not a ramp or connector
+      (``require_mainline``),
+    * it lies within ``max_distance_m``, tighter than the join's own gate,
+    * and it runs beside at least ``min_coverage`` of the segment.
+
+    Args:
+        joined: a frame from :func:`join_aadt`, carrying the XD identity columns
+            (``RoadName`` / ``RoadNumber`` / ``RoadList``) that
+            :func:`inrix_tools.geometry.segment_geometry` provides.
+        min_coverage: least share of the segment the record must run beside.
+        max_distance_m: furthest the record may lie from the segment.
+        require_mainline: reject a ramp/connector record.
+        require_identity: apply the street-name / segment-route test.
+
+    Returns:
+        A copy of ``joined`` with ``on_system`` (bool), ``on_system_reason`` — the
+        route for a segment that passes (``"route 55"``), else why it did not, in its
+        own numbers so a rejection can be argued with — and
+        ``on_system_category``, the same rejection as one of a fixed set.
+        ``attrs['on_system']`` records the thresholds and the counts.
+    """
+    out = joined.copy()
+    n = len(out)
+    if n == 0:
+        out[ON_SYSTEM_COL] = pd.Series(dtype=bool)
+        out[ON_SYSTEM_REASON_COL] = pd.Series(dtype=object)
+        out[ON_SYSTEM_CATEGORY_COL] = pd.Series(dtype=object)
+        out.attrs = dict(joined.attrs)
+        out.attrs["on_system"] = _on_system_policy(
+            min_coverage, max_distance_m, require_mainline, require_identity,
+            out[ON_SYSTEM_CATEGORY_COL])
+        return out
+
+    def _col(name, default=None):
+        return (out[name] if name in out.columns
+                else pd.Series([default] * n, index=out.index))
+
+    source = _col(AADT_SOURCE_COL, "missing")
+    number = _col(AADT_ROUTE_NUM_COL)
+    dist = pd.to_numeric(_col(AADT_DIST_COL), errors="coerce")
+    cover = pd.to_numeric(_col(AADT_COVER_COL), errors="coerce")
+    kind = _col(AADT_KIND_COL)
+    desc = _col(AADT_DESC_COL)
+    road = _col("RoadName")
+
+    reason = pd.Series([None] * n, index=out.index, dtype=object)
+    category = pd.Series([None] * n, index=out.index, dtype=object)
+
+    def _reject(mask, cat, detail=None):
+        # A rejection is recorded as its category *and* in its own numbers; the
+        # category is the authority, so a detail that cannot be written (a NaN
+        # distance) falls back to it rather than reading as a pass.
+        hit = category.isna() & pd.Series(mask, index=out.index).fillna(False)
+        category[hit] = cat
+        reason[hit] = cat if detail is None else detail[hit].fillna(cat)
+
+    _reject(~source.isin(("matched", "matched_ramp")), "no AADT record matched")
+    _reject(number.isna(), "the matched record names no route")
+    if require_identity:
+        named = pd.Series([street_names_agree(r, d) for r, d in zip(road, desc)],
+                          index=out.index)
+        seg_routes = _segment_route_numbers(out)
+        own = pd.Series([bool(seg_routes.get(sid)) for sid in out.index], index=out.index)
+        _reject(~(named | own), "a neighbouring road: neither the name nor a route agrees")
+    if require_mainline:
+        _reject(kind.isin((RAMP, CONNECTOR)), "the matched record is a ramp or connector")
+    _reject(dist.isna() | (dist > max_distance_m), "the record is too far away",
+            dist.round(1).astype("string").radd("the record is ") + " m away")
+    _reject(cover.isna() | (cover < min_coverage), "the record clips the segment",
+            (cover * 100).round().astype("Int64").astype("string")
+            .radd("the record runs beside ") + "% of the segment")
+
+    passed = category.isna()
+    label = number.map(lambda v: None if pd.isna(v) else f"route {int(v)}")
+    reason[passed] = label[passed]
+    out[ON_SYSTEM_COL] = passed
+    out[ON_SYSTEM_REASON_COL] = reason
+    out[ON_SYSTEM_CATEGORY_COL] = category
+    out.attrs = dict(joined.attrs)
+    out.attrs["on_system"] = _on_system_policy(
+        min_coverage, max_distance_m, require_mainline, require_identity,
+        category[~passed])
+    return out
+
+
+def _on_system_policy(min_coverage, max_distance_m, require_mainline,
+                      require_identity, rejected) -> dict:
+    """The thresholds actually applied plus why the rejections were rejected — the
+    module's convention of travelling with its own policy."""
+    counts = rejected.value_counts().to_dict() if len(rejected) else {}
+    return {
+        "min_coverage": float(min_coverage),
+        "max_distance_m": float(max_distance_m),
+        "require_mainline": bool(require_mainline),
+        "require_identity": bool(require_identity),
+        "n_rejected": int(len(rejected)),
+        "rejected_because": {str(k): int(v) for k, v in counts.items()},
     }
 
 

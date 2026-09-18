@@ -4001,3 +4001,173 @@ rather than "the only one in the district", and ROADMAP Item 44 carries the inst
 No code changed. The lesson worth keeping is procedural: three of the four wrong claims in
 this session came from measuring against XD's attributes when a hand-built inventory of
 the same thing was already sitting in `out/`.
+
+---
+
+## Session 52 — The route-class preference, and what "on-system" actually tests (ROADMAP Item 42) (2026-09-18)
+
+Item 42's own framing did not survive measurement, and the part of it that did was
+smaller and more specific than written. Recording both, because the wrong version was
+in the ROADMAP.
+
+**The reconciliation, run over all 32 corridor files.** Session 51 checked SH-55 by
+hand; `scripts/reconcile_export_segments.py` now does every file. The result confirms
+the inventory: the union of the per-corridor `*_ALL.txt` lists is **4,004** ids, the
+master list **3,947**, the store **3,905**, and the **57 SH-55 Eagle Rd ids are the
+only ones that never reached the master** — nothing else leaks. Every directional
+(`_NB`/`_SB`/`_EB`/`_WB`) file adds up exactly to its `_ALL`. Two files differ from the
+store and both were already explained: `I-84B_Caldwell_ALL.txt` (42 requested, none
+returned) and the SH-55 pair.
+
+**A finding on the way there: the export is split by segment, not by date.** Each part
+carries the whole date span for its own segments and a `metadata.csv` listing only
+those — D3's parts hold 1,947 + 1,942 + 16 = 3,905. `ingest_export_streaming` ingests
+every part's observations but reads metadata from `source` alone (its docstring says
+so), so `d3_store.duckdb` answers **1,947** to `load_metadata` while its observations
+hold all **3,905**, and the first run of the reconciliation reported 2,000 segments
+"requested, returned nothing" that are in fact sitting in the store. New `store.area_segments` reads the segment set from the
+observations, which is what the export *contains*. It also settles the re-download
+question: a supplemental export of a handful of segments is the same shape as another
+part, so the 2.1 GB does not have to come down again.
+
+**`join_aadt`'s route-class preference: real defect, different from the stated one.**
+The ROADMAP asked for a numbered route to be preferred over an `OH` record because
+"an on-system classification flips with the candidate set". Measured on D3:
+
+- Preferring numbered ahead of distance or coverage is **wrong**. It would hand Ustick
+  Rd the 74,500 of `FRANKLIN RD US-20 IC#29` and W Emerald St the 82,000 of
+  `COLE RD IC #1B` — interstate records that pass within metres of a city street at an
+  interchange. 34 D3 segments have a numbered and an unnumbered record tied on
+  distance; ranking class above coverage moves **18** of them to the numbered record,
+  and ranking it above distance moves 69 — every one of the ones checked for the worse.
+- The instability is real but has a different cause: the **last comparison in the key
+  was the record's row position in the layer**. Shuffling the AADT layer changed the
+  AADT of **9 of the 3,905** export segments (`HOWARD RD` ↔ `CLARK RD` on SH-78,
+  `BISHOP RD` ↔ `BERGLAND RD` on SH-52, `POISON CREEK RD` ↔ `PERSHALL RD` on US-95).
+
+So route class went in as the **last decision**, under coverage, replacing the index:
+with route, facility, distance and coverage equal, a record that names a route beats
+one that names none, and below that the key falls back to the record's own
+`RouteID`/`Descriptio`. The join is now provably independent of layer order (a shuffle
+test pins it), and the same 9 segments are the only ones whose value moved. The
+district ranking is unchanged to floating point — those 9 are rural and outside every
+catalogue corridor.
+
+**A record's `RouteID` class is not its route.** 330 D3 `OH` rows name a state route in
+the description (`KARCHER RD (SH-55)`, `CHINDEN BLVD (US-20)`) and 82 more *are* a
+route (`SH-52`). `aadt.record_route_number` reads the two forms ITD uses — a trailing
+parenthetical and a route-only description — and nothing else: `FRANKLIN RD US-20
+IC#29` is I-84's record at the US-20 interchange, and the parenthesis-hugging pattern
+also refuses `CALDWELL BLVD(I-84 BUS)`, which is a business route. Feeding this to the
+*match* (not just the tie-break) was tried and reverted: it moved 14 segments and every
+one for the worse — two Chinden Blvd segments left US-20's 29,000 mainline record for
+a 1,100 record covering 9% of the segment. It is used for the tie-break and for the
+reported `aadt_route_number`, which is what the classification reads.
+
+**On-system is a different question from "whose volume is this", and that is why the
+483 were junk.** The join matches by proximity within a 60 m gate, so reading
+on-system-ness off its winner labels **764 segments / 223 miles** on-system off the
+export — 24 stubs of E Island Woods Dr on `EAGLE RD (SH-55)`, 66 of Simco Rd on
+`GRANDVIEW RD (SH-167)`, cross-streets at every interchange. **Coverage cannot catch
+them**: a 0.04-mile stub beside a mile-long record covers 1.00. New
+`aadt.classify_on_system` adds the test that can — **identity**: the record's
+description names the same street as the segment (`street_names_agree`, directionals
+and street types dropped) or the segment names a route itself — plus mainline-only,
+≤ 35 m (the divided-highway centerline sits 22–30 m off each carriageway) and ≥ 0.4
+coverage (one of the seven confirmed SH-19 segments covers 0.45). **764 → 26 segments
+/ 8.77 mi**, and the classifier finds the owner's seven SH-19 Centennial Way segments
+independently, which is the ground truth it was checked against.
+
+**The regenerated list, reviewed by road** (`out/export_reconciliation/`):
+
+| | segs | mi | verdict |
+|---|---|---|---|
+| Centennial Way (SH-19) | 7 | 1.89 | accept — the confirmed addition, found again |
+| W/E State St, Eagle | 11 | 4.68 | **ask** — the only new question |
+| Blaine St | 1 | 0.48 | **ask** — see below |
+| Caldwell Blvd / Cleveland Blvd | 5 | 1.54 | reject — relinquished I-84B |
+| W Karcher Rd | 2 | 0.18 | reject — interchange stubs on `KARCHER IC #33` |
+
+State St is the only candidate **no corridor list has ever named** — a contiguous
+two-way chain 90–470 m north of the exported ID-44 chain through Eagle, matching an
+OH-band `W STATE ST (SH-44)` record carrying 5,200 while the SH-44 segments beside it
+match SH-44-banded records at 31,500–35,500. That reads as an older parallel
+alignment, not the highway, but it is the owner's call and it is written down as such.
+Blaine St sits inside the relinquished Caldwell corridor yet matches
+`SIMPLOT BLVD(SH-19)` at 0.0 m and connects end-to-end with the south end of the
+accepted Centennial Way run — if SH-19 continues onto Blaine it belongs with the seven.
+
+**Tests.** `test_aadt.py` +11: the two description forms and the four ways to *not*
+read a route from one; the tie-break winning and the layer-shuffle giving the same
+answer; the tie-break refusing to promote a worse match (both by distance and by
+coverage); the new `aadt_coverage` / `aadt_route_number` columns; and
+`classify_on_system` accepting the route, rejecting the road beside it, and rejecting
+far / clipping / unnumbered / ramp records with the category each time.
+`test_reconcile_export_segments.py` is new (+8): never-requested vs never-returned kept
+apart, a directional file that stops adding up, the observations-not-metadata rule, the
+on-system pass finding the route and not its neighbour, and the report carrying its
+policy. `test_store.py` +1. **Full suite: 560 passed, 2 skipped** (was 540/2).
+
+---
+
+## Session 53 — The Item 42 backfill lands, and a supplemental export is relabelled, not re-areaed (2026-09-18)
+
+The owner ordered the seven SH-19 Centennial Way segments Item 42 identified and dropped
+`Cent_2026-01-01_to_2026-09-01_15_min_part_1.zip` in the repo root. Ingesting it is one
+line — except that it would have gone into **the wrong place**.
+
+**The problem the file posed.** An area is the export's corridor set
+(`store.area_identity`), and INRIX names a report whatever it was requested as: this one
+carries `Corridor/Region Name = "Cent"`, not `"D3"`. Ingested as it stands it resolves to
+its own `area_key`, and every district tool — the screening runner, the reconciliation,
+the GUI's area picker — works on one area at a time, so the seven segments would have
+been present in the store and invisible to every question anyone asks of D3. The checks
+that would have caught it later are exactly the ones Item 42 just built, which is a poor
+way to find out.
+
+**The fix: relabel on the way in.** `ingest_export_streaming(..., corridor_name="D3")`
+(and `ingest_export`) projects the label as the rows are **staged**, so the stored rows,
+the resolved area and any later re-derivation of the identity all agree — the rows
+*become* D3 rows, which is what they are. Two deliberate limits: it refuses an export
+with no `Corridor/Region Name` column rather than inventing one (that would be a
+different feature — forcing an area — and should be asked for by name), and the
+provenance row records the rewrite, because an export that says one thing and is stored
+as another has to say so somewhere:
+
+```
+Cent_2026-01-01_to_2026-09-01_15_min_part_1.zip (corridor 'Cent' -> 'D3')
+```
+
+The relabel was verified before writing to the 2.8 GB store, not after:
+`area_identity({"Corridor/Region Name": ["D3"]})` returns `32cdb7edbcbd`, the existing
+key, so the ingest could only be an additive keep-first merge.
+
+**What landed.** 163,268 rows at 15 minutes over the same span as the district export
+(2026-01-01 07:00Z → 2026-09-01 05:45Z), the store's segment set **3,905 → 3,912** —
+exactly the seven ids — and its metadata 1,947 → 1,954. Re-running the two pipelines:
+
+- **Reconciliation**: observed 3,912, "requested, returned nothing" **42 → 35** (the
+  remainder of the relinquished I-84B Caldwell corridor), nothing observed unrequested,
+  and Centennial Way has dropped out of the on-system candidate list — **26 → 19
+  segments / 6.88 mi**, all of them already reviewed. The two questions still open for
+  the owner are unchanged: W/E State St in Eagle (11 segs, 4.68 mi) and Blaine St (1).
+- **District screening**: 3,912 segments and 54,687,762 peak-window observations (was
+  3,905 / 54,556,187). The reporting ranking is **identical to floating point** — the
+  seven belong to no catalogue entry, since there is no SH-19 corridor in
+  `scripts/d3_corridors.json`. Whether they should get one is Item 44's business.
+
+**A correction to Session 52.** That entry blamed the store's 1,947-row metadata table on
+"a metadata merge that missed a part". It is not a miss: `ingest_export_streaming`
+ingests every discovered part's observations but reads metadata from `source` alone, and
+its own docstring says so. The consequence is the same — `load_metadata` under-reports
+the export, `area_segments` is what to read — but the cause is documented behaviour, not
+an accident, and DATA_FORMAT now says which. Worth revisiting on its own: a part-split
+export leaves the store knowing only part 1's segment metadata.
+
+**Tests.** `test_store.py` +3 functions / +4 collected cases (the relabel one is
+parametrised over both ingest paths): a supplemental export lands in its own area
+unlabelled and in the existing one relabelled, its stored rows carry the label it was
+filed under, its metadata merges in, the provenance records the rewrite, an export with
+no corridor column raises rather than being invented one, and `area_segments` reads the
+observations rather than the part-1-only metadata. **Full suite: 563 passed, 2 skipped.**
+
