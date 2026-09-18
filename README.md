@@ -140,6 +140,65 @@ sheets whose endpoints are place names rather than coordinates (see
 bbox then derived from the coordinate routes. Output lands under `out/`, which is
 gitignored — regenerate it rather than committing it.
 
+## Rank a district's corridors (district-wide screening)
+
+Which corridors in a district are worst — the prior question to analysing a corridor
+you have already named. It runs off the DuckDB store, so the export must be ingested
+first (the explorer's "Ingest export" control, or `store.ingest_export_streaming`):
+
+```bash
+python scripts/run_district_screening.py \
+    --db d3_store.duckdb \
+    --catalogue scripts/d3_corridors.json \
+    --repairs scripts/d3_link_repairs.csv \
+    --network USA_Idaho_shapefile.zip \
+    --network-cache geometry_cache/d3_network.geoparquet \
+    --aadt Cumulative_AADT.zip \
+    --out-dir out/district_screening
+```
+
+Wiring only: `screen.segment_screen` reduces the store to one row per segment per
+named peak window, `corridors.resolve_catalogue` walks each corridor's extent,
+`aadt.join_aadt` supplies the mainline-preferred volume weights, and
+`screen.rank_corridors` produces the ranking. It writes `corridor_rankings.csv`,
+`corridor_resolution.csv`, a per-corridor `corridors.kml` and a
+`screening_provenance.json` — and the CSVs carry that provenance in a `#` header, so
+a ranking read off disk still states the area, dates, CValue gate, windows, catalogue
+and repair table it was computed under.
+
+It writes **two rankings**. A catalogue entry is one *direction* of one extent,
+because that is the unit the network walk and the AADT join work in; a **reporting
+corridor** is the road — both directions of it — which is the unit a district reads a
+ranking in. `reporting_corridor_rankings.csv` is the headline view (District 3's 20
+entries group into 10 roads), `corridor_rankings.csv` keeps the per-direction detail,
+and the printed summary shows both. Nothing is averaged across directions and the two
+carriageways' miles are never summed — they run over the same ground. Note also that
+a grouped row sums its directions *at the same clock time*, so a commute corridor
+whose directions peak in different windows carries a second number,
+`vhd_directional_peaks`, that takes each direction at its own peak (see
+[DATA_FORMAT.md](DATA_FORMAT.md)).
+
+The headline table is `corridor_peak_totals.csv`: one row per reporting corridor,
+**totalled over every peak window and both directions**, ranked on **vehicle-hours of
+delay per mile** — volume-weighted, but length does not decide the order (`--rank-by`
+changes it; every metric's rank travels in the frame either way, and without an AADT
+join the run falls back to the unweighted rate and says so). `corridor_breakout.csv` is the same cells
+unaggregated — a `(corridor, direction, window)` MultiIndex — and the printed summary
+interleaves them, each corridor's total followed by every one of its direction × peak
+rows.
+
+Two behaviours worth knowing. **A corridor that does not resolve is not ranked** — it
+is listed separately with its `stop_reason` and coverage rather than carried in with
+blank metrics. And `--repairs` is the Item 38 topology patch table: without it seven
+of the twenty District 3 corridors do not walk (I-184 not at all), so an absent table
+stops the run rather than silently ranking thirteen. `--no-repairs` walks
+`NextXDSegI` exactly as published, deliberately.
+
+Note that one call ingests a **whole** export: handing `ingest_export_streaming` any
+`..._part_N.zip` reads every sibling part, and its `n_rows_added` is the total across
+all of them (`n_parts` / `parts` say which). Output lands under `out/`, which is
+gitignored — regenerate it rather than committing it.
+
 ## Documents
 
 - [ROADMAP.md](ROADMAP.md) — planned work as named, numbered, session-sized

@@ -599,3 +599,58 @@ def test_streaming_ingest_rejects_an_empty_export(tmp_path):
             store.ingest_export_streaming(con, zpath)
     finally:
         con.close()
+
+
+# ---------------------------------------------------------------------------
+# Multi-part ingest is one call, and says so  (Item 39)
+# ---------------------------------------------------------------------------
+def _part_zip(path, rows, *, corridor="Toy Rd", start="2026-01-01T00:00:00-07:00"):
+    """A minimal INRIX-shaped export part."""
+    import zipfile
+
+    ts = pd.date_range(start, periods=rows, freq="15min")
+    data = pd.DataFrame({
+        "Segment ID": [1000 + (i % 2) for i in range(rows)],
+        "Date Time": [t.isoformat() for t in ts],
+        "Speed(miles/hour)": [55.0] * rows,
+        "Travel Time(Minutes)": [1.0] * rows,
+        "CValue": [90] * rows,
+    })
+    meta = pd.DataFrame({"Segment ID": [1000, 1001], "Road": [corridor] * 2,
+                         "Direction": ["N", "S"], "Miles": [1.0, 1.0],
+                         "Combined": [f"{corridor} N", f"{corridor} S"]})
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("data.csv", data.to_csv(index=False))
+        z.writestr("metadata.csv", meta.to_csv(index=False))
+
+
+@pytest.mark.parametrize("ingest", ["streaming", "pandas"])
+def test_any_part_ingests_every_sibling_part_and_the_summary_says_so(tmp_path, ingest):
+    """A ``..._part_N.zip`` path means the WHOLE export, so ``n_rows_added`` is the
+    total over every part — the reading that made 91,054,384 look like one part's
+    row count on the 2026 D3 ingest. ``n_parts`` / ``parts`` are what make it
+    unambiguous, and the provenance row names the members rather than the argument.
+    """
+    rows = [4, 6, 2]
+    for i, n in enumerate(rows, start=1):
+        _part_zip(tmp_path / f"Toy_2026_15_min_part_{i}.zip", n,
+                  start=f"2026-01-0{i}T00:00:00-07:00")
+    con = store.connect(tmp_path / "s.duckdb")
+    fn = store.ingest_export_streaming if ingest == "streaming" else store.ingest_export
+    # Handed part 1 — but part 1 is not what gets ingested.
+    out = fn(con, tmp_path / "Toy_2026_15_min_part_1.zip")
+    assert out["n_rows_added"] == sum(rows) == 12
+    assert out["n_parts"] == 3
+    assert [Path(p).name for p in out["parts"]] == [
+        f"Toy_2026_15_min_part_{i}.zip" for i in (1, 2, 3)]
+
+    # ...and a second call on another part re-discovers the same three and adds
+    # nothing, which is what the keep-first merge means.
+    again = fn(con, tmp_path / "Toy_2026_15_min_part_2.zip")
+    assert again["n_rows_added"] == 0 and again["n_parts"] == 3
+
+    log = con.execute(f'SELECT source, n_rows_added FROM "{store.INGESTS_TABLE}"').df()
+    assert len(log) == 2
+    assert " + " in log.loc[0, "source"]          # the resolved members, not the argument
+    assert "part_1.zip" in log.loc[0, "source"] and "part_3.zip" in log.loc[0, "source"]
+    con.close()

@@ -771,3 +771,374 @@ def test_resolved_chains_feed_rank_corridors():
     assert row["miles"] == pytest.approx(3.0)
     assert row["delay_min"] == pytest.approx(3.0)
     assert row["tti"] == pytest.approx(2.0)
+
+
+# ---------------------------------------------------------------------------
+# Topology repair  (Item 38)
+# ---------------------------------------------------------------------------
+_DEG = 1e-4        # ~11.1 m of latitude here — the repair radius is 25 m
+
+
+def _repair_network(segs):
+    """A toy network for the repair rules.
+
+    Each entry is ``(id, (lat0, lon0), (lat1, lon1), next_id, group, bearing)``
+    with optional ``lanes``/``name``; the repair rule reads ``XDGroup`` and
+    ``Bearing``, so a fixture without them is not exercising it.
+    """
+    rows = []
+    for s in segs:
+        sid, p0, p1, nxt, group, bearing = s[:6]
+        rows.append({
+            "XDSegID": sid,
+            "NextXDSegI": nxt,
+            "XDGroup": group,
+            "Bearing": bearing,
+            "RoadName": s[6] if len(s) > 6 else "Main St",
+            "RoadNumber": "99",
+            "Lanes": s[7] if len(s) > 7 else 2.0,
+            "Miles": 1.0,
+            "geometry": LineString([(p0[1], p0[0]), (p1[1], p1[0])]),
+        })
+    df = pd.DataFrame(rows)
+    return gpd.GeoDataFrame(
+        {**{c: df[c] for c in df.columns if c != "geometry"}},
+        geometry=list(df["geometry"]),
+        crs=geometry.WGS84,
+    ).astype({"XDSegID": "Int64", "NextXDSegI": "Int64", "XDGroup": "Int64"})
+
+
+def _north(lat0, n=1):
+    return (LAT0 + lat0 * _DEG, LON), (LAT0 + (lat0 + n) * _DEG, LON)
+
+
+def test_repair_fills_a_null_link_to_the_one_same_group_continuation():
+    a0, a1 = _north(0, 50)
+    b0, b1 = _north(50, 50)
+    net = _repair_network([
+        (1, a0, a1, pd.NA, 7, "N"),
+        (2, b0, b1, pd.NA, 7, "N"),
+    ])
+    patch = corridors.repair_links(net)
+    assert list(patch["segment"]) == [1]
+    row = patch.iloc[0]
+    assert row["new_next"] == 2 and row["kind"] == corridors.FILL
+    assert pd.isna(row["old_next"])
+    assert row["gap_m"] == pytest.approx(0.0, abs=0.5)
+    assert patch.attrs["n_fill"] == 1 and patch.attrs["n_override"] == 0
+
+
+def test_repair_leaves_an_ambiguous_break_alone():
+    """Two qualifying continuations is an ambiguity, and an ambiguity stays a break
+    — the whole point of refusing to guess."""
+    a0, a1 = _north(0, 50)
+    b0, b1 = _north(50, 50)
+    net = _repair_network([
+        (1, a0, a1, pd.NA, 7, "N"),
+        (2, b0, b1, pd.NA, 7, "N"),
+        (3, b0, (b1[0], b1[1] + _DEG), pd.NA, 7, "N"),   # a second same-group fork
+    ])
+    patch = corridors.repair_links(net)
+    assert patch.empty
+    assert patch.attrs["ambiguous_fill"] == 1
+
+
+def test_repair_overrides_a_link_that_leaves_its_own_carriageway():
+    """The I-184 case: the mainline's ``NextXDSegI`` names an off-ramp, and the
+    mainline continuation is sitting right there in the same ``XDGroup``."""
+    a0, a1 = _north(0, 50)
+    main0, main1 = _north(50, 50)
+    net = _repair_network([
+        (1, a0, a1, 9, 7, "N"),                                   # points at the ramp
+        (2, main0, main1, pd.NA, 7, "N"),                         # the real continuation
+        (9, main0, (main1[0], main1[1] + 3 * _DEG), pd.NA, 88, "N", "Off Ramp", 1.0),
+    ])
+    patch = corridors.repair_links(net)
+    over = patch[patch["kind"] == corridors.OVERRIDE]
+    assert len(over) == 1
+    assert over.iloc[0]["segment"] == 1 and over.iloc[0]["new_next"] == 2
+    assert over.iloc[0]["old_next"] == 9
+    # ...and the conservative setting never contradicts the network.
+    fills_only = corridors.repair_links(net, kinds=(corridors.FILL,))
+    assert corridors.OVERRIDE not in set(fills_only["kind"])
+
+
+def test_repair_prefers_the_farther_in_group_segment_over_a_nearer_ramp():
+    """The measured Flying Y trap: the on-ramp is 8.1 m from the mainline's end and
+    the true continuation is 4.7 m, so *distance* alone picks the ramp. Here the
+    ramp is deliberately the **nearer** of the two."""
+    a0, a1 = _north(0, 50)
+    net = _repair_network([
+        (1, a0, a1, pd.NA, 7, "N"),
+        (2, (a1[0] + 1.5 * _DEG, a1[1]), (a1[0] + 50 * _DEG, a1[1]), pd.NA, 7, "N"),
+        (9, (a1[0] + 0.2 * _DEG, a1[1]), (a1[0] + 20 * _DEG, a1[1] + _DEG), pd.NA,
+         88, "N", "Off Ramp", 1.0),
+    ])
+    patch = corridors.repair_links(net)
+    assert list(patch["new_next"]) == [2]           # not the nearer out-of-group 9
+    assert patch.iloc[0]["gap_m"] > 10.0            # and it knowingly reached farther
+
+
+def test_repair_refuses_to_change_the_direction_of_travel():
+    """The Eagle Rd rotary: a same-``XDGroup`` continuation whose ``Bearing`` is not
+    the segment's own. Repaired through, the corridor walks south, round the rotary
+    and back north over the same ground."""
+    a0, a1 = _north(0, 50)
+    net = _repair_network([
+        (1, a0, a1, pd.NA, 7, "N"),
+        (2, a1, (a1[0] + 30 * _DEG, a1[1] + 30 * _DEG), pd.NA, 7, "O", "Rotary", 2.0),
+    ])
+    assert corridors.repair_links(net).empty
+    # The guard is a guard, not a law of nature: it can be turned off deliberately.
+    loose = corridors.repair_links(net, require_same_bearing=False)
+    assert list(loose["new_next"]) == [2]
+
+
+def test_repair_rejects_an_anti_parallel_continuation():
+    """Two segments of one group whose ends coincide and which run *at* each other
+    (a cul-de-sac pair) would otherwise repair into a 2-cycle."""
+    a0, a1 = _north(0, 50)
+    net = _repair_network([
+        (1, a0, a1, pd.NA, 7, "N"),
+        (2, a1, a0, pd.NA, 7, "N"),          # straight back down the same line
+    ])
+    assert corridors.repair_links(net).empty
+
+
+def test_repair_does_not_touch_a_link_that_leaves_the_subset():
+    """A pointer to a segment this extract does not carry is the edge of the
+    extract, not a defect; ``walk_chain`` already calls that ``off_network``."""
+    a0, a1 = _north(0, 50)
+    b0, b1 = _north(50, 50)
+    net = _repair_network([
+        (1, a0, a1, 4242, 7, "N"),           # 4242 is not in this subset
+        (2, b0, b1, pd.NA, 7, "N"),
+    ])
+    patch = corridors.repair_links(net)
+    assert patch.empty
+    assert patch.attrs["skipped_off_subset"] == 1
+
+
+def test_repair_links_rejects_an_unknown_kind():
+    with pytest.raises(ValueError, match="Unknown repair kind"):
+        corridors.repair_links(_repair_network([(1, *_north(0, 50), pd.NA, 7, "N")]),
+                               kinds=("bridge",))
+
+
+def test_apply_link_repairs_is_idempotent_and_subset_safe():
+    net = _chain_network(3, next_ids=[1001, pd.NA, pd.NA])
+    patch = pd.DataFrame({"segment": [1001, 999999], "new_next": [1002, 5],
+                          "old_next": pd.array([pd.NA, pd.NA], dtype="Int64"),
+                          "kind": [corridors.FILL, corridors.FILL]})
+    once = corridors.apply_link_repairs(net, patch)
+    assert corridors.walk_chain(once, 1000, 1002)[1] == "target"
+    twice = corridors.apply_link_repairs(once, patch)
+    assert list(twice["NextXDSegI"]) == list(once["NextXDSegI"])
+    assert corridors.apply_link_repairs(net, None) is net
+
+
+def test_build_chain_names_the_repairs_it_used():
+    """A chain that rests on a repair says so — that is the price of repairing."""
+    net = _chain_network(4, next_ids=[1001, pd.NA, 1003, pd.NA])
+    broken = corridors.build_chain(net, _at(0.5, 0), _at(0.5, 3))
+    assert not broken.reached_target and broken.stop_reason == "dead_end"
+    assert broken.n_repaired_links == 0
+
+    patch = pd.DataFrame({"segment": [1001], "new_next": [1002],
+                          "old_next": pd.array([pd.NA], dtype="Int64"),
+                          "kind": [corridors.FILL]})
+    fixed = corridors.build_chain(net, _at(0.5, 0), _at(0.5, 3), repairs=patch)
+    assert fixed.reached_target
+    assert fixed.repaired_links == ((1001, 1002),)
+    assert fixed.n_repaired_links == 1 and fixed.summary()["n_repaired_links"] == 1
+    # A repair the chain never traverses is not credited to it.
+    unused = pd.concat([patch, pd.DataFrame({"segment": [4242], "new_next": [4243],
+                                             "old_next": pd.array([pd.NA], dtype="Int64"),
+                                             "kind": [corridors.FILL]})])
+    assert corridors.build_chain(net, _at(0.5, 0), _at(0.5, 3),
+                                 repairs=unused).repaired_links == ((1001, 1002),)
+
+
+def test_resolve_catalogue_carries_the_repair_accounting():
+    net = _chain_network(4, next_ids=[1001, pd.NA, 1003, pd.NA])
+    patch = pd.DataFrame({"segment": [1001], "new_next": [1002],
+                          "old_next": pd.array([pd.NA], dtype="Int64"),
+                          "kind": [corridors.FILL]})
+    entry = _entry(id="Toy Rd NB")
+    plain = corridors.resolve_catalogue(net, [entry])
+    assert not plain.loc[0, "reached_target"]
+    assert plain.attrs["repairs_applied"] is False and plain.attrs["n_repairs"] == 0
+
+    repaired = corridors.resolve_catalogue(net, [entry], repairs=patch)
+    assert repaired.loc[0, "reached_target"]
+    assert repaired.loc[0, "n_repaired_links"] == 1
+    assert "n_repaired_links" in corridors.CATALOGUE_COLUMNS
+    assert repaired.attrs["repairs_applied"] is True and repaired.attrs["n_repairs"] == 1
+
+
+def test_load_link_repairs_round_trips_with_its_rule_in_the_header(tmp_path):
+    """The committed table has to say what rule produced it, or a run cannot state
+    what it walked on."""
+    net = _repair_network([
+        (1, *_north(0, 50), pd.NA, 7, "N"),
+        (2, *_north(50, 50), pd.NA, 7, "N"),
+    ])
+    patch = corridors.repair_links(net)
+    path = tmp_path / "repairs.csv"
+    with path.open("w") as fh:
+        fh.write(f"# radius_m: {patch.attrs['radius_m']}\n")
+        fh.write(f"# n_override: {patch.attrs['n_override']}\n")
+        patch.to_csv(fh, index=False)
+    back = corridors.load_link_repairs(path)
+    assert list(back["segment"]) == [1] and list(back["new_next"]) == [2]
+    assert back["old_next"].isna().all()
+    assert back.attrs["radius_m"] == "25.0" and back.attrs["n_override"] == "0"
+
+
+# --- the real network -------------------------------------------------------
+D3_NETWORK = REPO_ROOT / "geometry_cache" / "d3_network.geoparquet"
+D3_CATALOGUE = REPO_ROOT / "scripts" / "d3_corridors.json"
+D3_REPAIRS = REPO_ROOT / "scripts" / "d3_link_repairs.csv"
+
+
+@pytest.mark.skipif(not (D3_NETWORK.exists() and D3_REPAIRS.exists()),
+                    reason="D3 network cache / repair table not available")
+def test_committed_repair_table_resolves_the_whole_d3_catalogue():
+    """20 of 20, and — the part that matters — the corridors that already resolved
+    without repairs are not disturbed by them."""
+    net = gpd.read_parquet(D3_NETWORK)
+    repairs = corridors.load_link_repairs(D3_REPAIRS)
+    res = corridors.resolve_catalogue(net, corridors.load_catalogue(D3_CATALOGUE),
+                                      repairs=repairs).set_index("id")
+    assert res["reached_target"].all(), sorted(res.index[~res["reached_target"]])
+    # I-84 EB is the corridor Item 36 got right; it must still be exactly that.
+    assert res.loc["i84-eb", "n_segments"] == 27
+    assert res.loc["i84-eb", "chain_miles"] == pytest.approx(15.1229, abs=1e-3)
+    assert res.loc["i84-eb", "n_repaired_links"] == 0
+    # I-184 is the corridor Item 36 could not walk at all.
+    assert res.loc["i184-eb", "n_segments"] == 10
+    assert res.loc["i184-eb", "chain_miles"] == pytest.approx(4.7174, abs=1e-3)
+    assert res.loc["i184-eb", "n_repaired_links"] == 5
+    # The catalogue leans on the table far less than the table's size suggests.
+    assert res["n_repaired_links"].sum() == 14
+
+
+@pytest.mark.skipif(not D3_NETWORK.exists(), reason="D3 network cache not available")
+def test_committed_repair_table_reproduces_the_rule_it_documents():
+    """The table is *derived*, not typed: regenerating it from the network under the
+    header's own parameters must give back the same rows."""
+    net = gpd.read_parquet(D3_NETWORK)
+    fresh = corridors.repair_links(net)
+    committed = corridors.load_link_repairs(D3_REPAIRS)
+    assert len(fresh) == len(committed)
+    assert list(fresh["segment"]) == list(committed["segment"])
+    assert list(fresh["new_next"]) == list(committed["new_next"])
+    assert fresh.attrs["n_override"] == int(committed.attrs["n_override"])
+    assert fresh.attrs["ambiguous_override"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Reporting corridors: the catalogue schema  (Item 40)
+# ---------------------------------------------------------------------------
+def _grouped_catalogue(**over):
+    base = {
+        "corridors": [
+            {**_ENTRY, "id": "toy-nb", "corridor": "toy", "direction": "NB"},
+            {**_ENTRY, "id": "toy-sb", "corridor": "toy", "direction": "SB"},
+        ],
+        "reporting_corridors": [
+            {"id": "toy", "name": "Toy Rd", "description": "Both directions of it."},
+        ],
+    }
+    base.update(over)
+    return base
+
+
+_ENTRY = {"name": "Toy Rd", "start_latlon": [43.60, -116.35],
+          "end_latlon": [43.64, -116.35], "description": "why this extent"}
+
+
+def test_entries_carry_their_reporting_corridor_and_direction():
+    entries = corridors.parse_catalogue(_grouped_catalogue())
+    assert [e.corridor for e in entries] == ["toy", "toy"]
+    assert [e.direction for e in entries] == ["NB", "SB"]
+    groups = corridors.parse_reporting_corridors(_grouped_catalogue())
+    assert [g.id for g in groups] == ["toy"] and groups[0].name == "Toy Rd"
+
+
+def test_an_ungrouped_catalogue_is_still_valid():
+    """Grouping is additive: a catalogue that declares none ranks per direction
+    exactly as it did before Item 40."""
+    entries = corridors.parse_catalogue({"corridors": [{**_ENTRY, "id": "toy-nb"}]})
+    assert entries[0].corridor is None and entries[0].direction is None
+    assert corridors.parse_reporting_corridors({"corridors": [{**_ENTRY, "id": "a"}]}) == ()
+
+
+def test_corridor_and_direction_must_travel_together():
+    data = _grouped_catalogue()
+    del data["corridors"][0]["direction"]
+    with pytest.raises(ValueError, match="without the other"):
+        corridors.parse_catalogue(data)
+
+
+def test_two_entries_cannot_be_the_same_direction_of_one_corridor():
+    """A copy-paste that would double-count one carriageway into the grouped total
+    and drop the other entirely."""
+    data = _grouped_catalogue()
+    data["corridors"][1]["direction"] = "NB"
+    with pytest.raises(ValueError, match="both NB of reporting corridor"):
+        corridors.parse_catalogue(data)
+
+
+def test_a_group_an_entry_names_must_be_declared():
+    data = _grouped_catalogue()
+    data["corridors"][1]["corridor"] = "nowhere"
+    with pytest.raises(ValueError, match="does not declare"):
+        corridors.parse_reporting_corridors(data)
+
+
+def test_a_declared_group_with_no_entries_is_a_corridor_missing_from_the_report():
+    data = _grouped_catalogue()
+    data["reporting_corridors"].append(
+        {"id": "ghost", "name": "Ghost Rd", "description": "nobody belongs to it"})
+    with pytest.raises(ValueError, match="declared but no entry belongs"):
+        corridors.parse_reporting_corridors(data)
+
+
+def test_reporting_corridor_schema_is_validated_like_an_entry():
+    for bad, match in [
+        ({"id": "", "name": "n", "description": "d"}, "has no 'id'"),
+        ({"id": "toy", "name": "", "description": "d"}, "empty 'name'"),
+        ({"id": "toy", "name": "n", "description": ""}, "empty 'description'"),
+        ({"id": "toy", "name": "n", "description": "d", "colour": "red"}, "unknown field"),
+        ({"id": "toy", "name": "n"}, "is missing"),
+    ]:
+        with pytest.raises(ValueError, match=match):
+            corridors.parse_reporting_corridors({"reporting_corridors": [bad]})
+    with pytest.raises(ValueError, match="Duplicate reporting corridor id"):
+        corridors.parse_reporting_corridors({"reporting_corridors": [
+            {"id": "toy", "name": "n", "description": "d"},
+            {"id": "toy", "name": "m", "description": "e"}]})
+
+
+def test_resolution_table_carries_the_grouping():
+    net = _chain_network(4)
+    entries = corridors.parse_catalogue({"corridors": [
+        {**_ENTRY, "id": "toy-nb", "corridor": "toy", "direction": "NB",
+         "start_latlon": list(_at(0.5, 0)), "end_latlon": list(_at(0.5, 3))}]})
+    res = corridors.resolve_catalogue(net, entries)
+    assert res.loc[0, "corridor"] == "toy" and res.loc[0, "direction"] == "NB"
+    assert "corridor" in corridors.CATALOGUE_COLUMNS
+
+
+@pytest.mark.skipif(not D3_CATALOGUE.exists(), reason="D3 catalogue not available")
+def test_the_d3_catalogue_groups_its_20_entries_into_10_roads():
+    entries = corridors.load_catalogue(D3_CATALOGUE)
+    groups = corridors.load_reporting_corridors(D3_CATALOGUE)
+    assert len(entries) == 20 and len(groups) == 10
+    assert all(e.corridor and e.direction for e in entries)
+    # Every reporting corridor is exactly two directions, and they differ.
+    by_group: dict[str, list[str]] = {}
+    for e in entries:
+        by_group.setdefault(e.corridor, []).append(e.direction)
+    assert all(len(v) == 2 and len(set(v)) == 2 for v in by_group.values()), by_group

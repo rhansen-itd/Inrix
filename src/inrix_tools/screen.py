@@ -601,6 +601,393 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
     return out
 
 
+# ---------------------------------------------------------------------------
+# Reporting corridors: both directions of one road  (Item 40)
+# ---------------------------------------------------------------------------
+GROUP_COL = "corridor_group"
+DIRECTION_COL = "direction"
+
+_GROUP_SUM = ("n_segments", "n_observed", "missing_miles", "n_obs",
+              "travel_time_min", "free_flow_min", "delay_min", "vhd",
+              "n_ramp_weighted", "n_aadt_missing")
+
+
+def _membership_frame(membership) -> pd.DataFrame:
+    """``{entry: group}`` / a frame / entry objects -> a frame of
+    ``corridor, corridor_group, direction``."""
+    if isinstance(membership, pd.DataFrame):
+        frame = membership.copy()
+        if GROUP_COL not in frame.columns and {"id", "corridor"} <= set(frame.columns):
+            # ``corridors.resolve_catalogue``'s shape: 'id' is the entry, 'corridor'
+            # is the reporting group it belongs to.
+            frame = frame.rename(columns={"id": CORRIDOR_COL, "corridor": GROUP_COL})
+        missing = {CORRIDOR_COL, GROUP_COL} - set(frame.columns)
+        if missing:
+            raise ValueError(f"Membership frame is missing {sorted(missing)}.")
+        if DIRECTION_COL not in frame.columns:
+            frame[DIRECTION_COL] = None
+        return frame[[CORRIDOR_COL, GROUP_COL, DIRECTION_COL]]
+
+    rows = []
+    for item in membership:
+        if hasattr(item, "id"):                     # corridors.CorridorEntry
+            rows.append({CORRIDOR_COL: item.id, GROUP_COL: item.corridor,
+                         DIRECTION_COL: item.direction})
+        else:                                       # a {entry: group} mapping item
+            entry, group = item, membership[item]
+            rows.append({CORRIDOR_COL: entry, GROUP_COL: group, DIRECTION_COL: None})
+    return pd.DataFrame(rows, columns=[CORRIDOR_COL, GROUP_COL, DIRECTION_COL])
+
+
+def rank_corridor_groups(ranking: pd.DataFrame, membership, *, names=None) -> pd.DataFrame:
+    """Combine a directional :func:`rank_corridors` into **reporting corridors** —
+    one row per road × window instead of one per carriageway × window.  (Item 40)
+
+    A catalogue entry is one direction of one extent, because that is the unit the
+    network walk and the AADT join work in. A district reads its ranking per *road*:
+    "I-84, Nampa to Boise" is one corridor, not two. This does that combination, and
+    the whole difficulty is that **most of these metrics do not combine the same
+    way**:
+
+    - **Additive over carriageways** — ``vhd``, ``n_obs``, ``n_segments``,
+      ``n_observed``, ``missing_miles``, ``n_ramp_weighted``, ``n_aadt_missing``, and
+      the two trip components ``travel_time_min`` / ``free_flow_min``. Vehicle-hours
+      of delay is a count of hours and the two directions are different vehicles, so
+      the sum is the corridor's burden.
+    - **NOT additive: ``miles``.** The two carriageways run over the *same ground*.
+      Summing them would double-count the corridor's length — the identical error as
+      summing a frontage road in series with the freeway it parallels (Item 36). So
+      ``miles`` is the **mean** of the directions' observed miles, which is the
+      corridor's length, and the sum is reported separately as
+      ``directional_miles`` (centre-line miles × directions) because that *is* the
+      right denominator for a per-mile rate.
+    - **NOT averageable: ``tti``, ``delay_per_mile``, ``vhd_per_mile``.** A ratio of
+      sums is not the mean of the ratios. Each is **recomputed** from the summed
+      components — ``tti`` from summed travel time over summed free-flow, the
+      per-mile rates over ``directional_miles``. Averaging the two directions' TTIs
+      would let a 0.6-mile direction pull as hard as a 15-mile one.
+
+    The direction breakout is kept rather than dissolved: ``peak_direction`` (the
+    direction carrying the most ``vhd``, falling back to ``delay_min`` when no AADT
+    was joined), ``tti_min`` / ``tti_max`` and ``delay_min_max`` across the
+    directions, and ``directions`` listing what was combined. The per-direction rows
+    are unchanged in the input frame — this is a second view, not a replacement.
+
+    **The trap grouping sets, and the column that defuses it.** A grouped row is
+    *one window*, so it sums the two directions **at the same clock time** — and the
+    two directions of a commute corridor peak at *different* times. D3's I-84 is the
+    case: WB carries 25,677 veh-hrs in the PM and EB 19,818 in the AM, but the
+    grouped PM row reads **26,260**, because EB at 5pm is nearly empty. That number
+    is correct for the question "how bad is this road at its worst hour" and badly
+    wrong for "how much delay does this road cause in a day". So the frame also
+    carries ``vhd_directional_peaks`` — each direction taken at **its own** worst
+    peak and then summed (45,495 for I-84). It is a group-level constant, identical
+    on every window row, and it deliberately spans two different windows: read it as
+    a daily burden, never as a moment.
+
+    Args:
+        ranking: a :func:`rank_corridors` frame, keyed on the catalogue entry id.
+        membership: ``{entry_id: group_id}``, an iterable of
+            :class:`corridors.CorridorEntry` (which carry ``corridor`` /
+            ``direction``), or a frame with ``corridor``/``corridor_group``
+            (``corridors.resolve_catalogue``'s ``id``/``corridor`` shape is accepted
+            directly). Entries with no group are **dropped**, and
+            ``attrs['ungrouped']`` names them — an entry silently absent from a
+            report is the failure this guards against.
+        names: optional ``{group_id: display name}``.
+
+    Returns:
+        One row per group × window. ``attrs`` carries the input's, plus
+        ``grouped=True``, ``miles_basis_group`` and ``ungrouped``.
+    """
+    if ranking.empty:
+        raise ValueError("Nothing to group: the ranking frame is empty.")
+    member = _membership_frame(membership)
+    member = member[member[GROUP_COL].notna()]
+    if member.empty:
+        raise ValueError(
+            "No entry carries a reporting corridor; add 'corridor'/'direction' to the "
+            "catalogue entries, or rank per direction with rank_corridors alone.")
+
+    joined = ranking.merge(member, on=CORRIDOR_COL, how="left")
+    ungrouped = sorted(joined.loc[joined[GROUP_COL].isna(), CORRIDOR_COL].unique())
+    joined = joined[joined[GROUP_COL].notna()]
+    if joined.empty:
+        raise ValueError(
+            f"None of the ranked corridors {sorted(ranking[CORRIDOR_COL].unique())} "
+            "appears in the membership.")
+
+    name_map = dict(names or {})
+    # Each direction at its own worst peak — a daily burden, spanning two windows.
+    own_peak = joined[joined[WINDOW_COL] == joined["worst_peak"]]
+    peak_totals = own_peak.groupby(GROUP_COL)["vhd"].sum(min_count=1)
+    peak_delay = own_peak.groupby(GROUP_COL)["delay_min"].sum(min_count=1)
+    records = []
+    for (gid, wname), block in joined.groupby([GROUP_COL, WINDOW_COL], sort=False):
+        sums = {c: block[c].sum(min_count=1) for c in _GROUP_SUM if c in block}
+        obs_miles = block["miles"]
+        directional_miles = float(obs_miles.sum())
+        tt, ff = sums.get("travel_time_min"), sums.get("free_flow_min")
+        delay, vhd = sums.get("delay_min"), sums.get("vhd")
+        # The peak direction is the one carrying the load, by volume-weighted delay
+        # where a weight exists and by delay otherwise.
+        by = "vhd" if block["vhd"].notna().any() else "delay_min"
+        lead = block.loc[block[by].idxmax()] if block[by].notna().any() else block.iloc[0]
+        total_miles = directional_miles + float(sums.get("missing_miles") or 0.0)
+        records.append({
+            GROUP_COL: gid,
+            "group_name": name_map.get(gid, gid),
+            WINDOW_COL: wname,
+            "is_peak": bool(block["is_peak"].iloc[0]),
+            "n_entries": int(len(block)),
+            "directions": tuple(d for d in block[DIRECTION_COL] if d is not None),
+            "n_segments": int(sums.get("n_segments") or 0),
+            "n_observed": int(sums.get("n_observed") or 0),
+            "miles": float(obs_miles.mean()),          # the corridor's length
+            "directional_miles": directional_miles,     # centre-line miles x directions
+            "missing_miles": float(sums.get("missing_miles") or 0.0),
+            "miles_covered_fraction": (directional_miles / total_miles
+                                       if total_miles > 0 else float("nan")),
+            "n_obs": int(sums.get("n_obs") or 0),
+            "min_kept_fraction": float(block["min_kept_fraction"].min()),
+            "travel_time_min": tt,
+            "free_flow_min": ff,
+            "delay_min": delay,
+            "tti": (tt / ff) if ff and ff > 0 else float("nan"),
+            "delay_per_mile": (delay / directional_miles
+                               if directional_miles > 0 else float("nan")),
+            "vhd": vhd,
+            "vhd_per_mile": (vhd / directional_miles
+                             if directional_miles > 0 and pd.notna(vhd) else float("nan")),
+            "peak_direction": lead[DIRECTION_COL],
+            "peak_entry": lead[CORRIDOR_COL],
+            "tti_min": float(block["tti"].min()),
+            "tti_max": float(block["tti"].max()),
+            "delay_min_max": float(block["delay_min"].max()),
+            "vhd_directional_peaks": peak_totals.get(gid, float("nan")),
+            "delay_min_directional_peaks": peak_delay.get(gid, float("nan")),
+            "n_ramp_weighted": int(sums.get("n_ramp_weighted") or 0),
+            "n_aadt_missing": int(sums.get("n_aadt_missing") or 0),
+        })
+
+    out = pd.DataFrame.from_records(records)
+    # worst_peak on the same rule rank_corridors uses: the peak window carrying the
+    # most delay, computed on the *group's* delay rather than either direction's.
+    for gid, block in out.groupby(GROUP_COL, sort=False):
+        peaks = block[block["is_peak"] & (block["n_observed"] > 0)]
+        worst = (peaks.loc[peaks["delay_min"].idxmax(), WINDOW_COL]
+                 if not peaks.empty and peaks["delay_min"].notna().any() else None)
+        out.loc[out[GROUP_COL] == gid, "worst_peak"] = worst
+    order = [GROUP_COL, "group_name", WINDOW_COL, "is_peak", "worst_peak", "n_entries",
+             "directions", "peak_direction", "peak_entry", "n_segments", "n_observed",
+             "miles", "directional_miles", "missing_miles", "miles_covered_fraction",
+             "n_obs", "min_kept_fraction", "travel_time_min", "free_flow_min",
+             "delay_min", "tti", "tti_min", "tti_max", "delay_min_max",
+             "delay_per_mile", "vhd", "vhd_per_mile", "vhd_directional_peaks",
+             "delay_min_directional_peaks", "n_ramp_weighted", "n_aadt_missing"]
+    out = out[order]
+    out.attrs = {
+        **ranking.attrs,
+        "grouped": True,
+        "miles_basis_group": ("miles = mean of the directions (the corridor's length); "
+                              "directional_miles = their sum, and the denominator of "
+                              "every per-mile rate"),
+        "vhd_basis_group": ("vhd sums the directions within ONE window; "
+                            "vhd_directional_peaks takes each direction at its own "
+                            "worst peak and spans two"),
+        "ungrouped": ungrouped,
+    }
+    return out
+
+
+# ---------------------------------------------------------------------------
+# The reporting table: every direction x peak visible, ranked on the total
+# ---------------------------------------------------------------------------
+RANK_METRICS = ("vhd_per_mile", "delay_per_mile", "vhd", "delay_min", "tti")
+DEFAULT_RANK_METRIC = "vhd_per_mile"
+
+
+def _peak_cells(ranking, membership, windows):
+    """The (corridor, direction, window) cells a reporting total is built from."""
+    member = _membership_frame(membership)
+    member = member[member[GROUP_COL].notna()]
+    if member.empty:
+        raise ValueError(
+            "No entry carries a reporting corridor; add 'corridor'/'direction' to the "
+            "catalogue entries, or rank per direction with rank_corridors alone.")
+    joined = ranking.merge(member, on=CORRIDOR_COL, how="left")
+    ungrouped = sorted(joined.loc[joined[GROUP_COL].isna(), CORRIDOR_COL].unique())
+    joined = joined[joined[GROUP_COL].notna()]
+    if windows is None:
+        cells = joined[joined["is_peak"]]
+        used = sorted(cells[WINDOW_COL].unique())
+    else:
+        used = list(resolve_windows(windows).keys())
+        cells = joined[joined[WINDOW_COL].isin(used)]
+    if cells.empty:
+        raise ValueError(f"No rows for window(s) {used or 'flagged is_peak'}.")
+    return cells, used, ungrouped
+
+
+def corridor_peak_totals(ranking: pd.DataFrame, membership, *, names=None, windows=None,
+                         rank_by: str = "vhd_per_mile", couplets=None) -> pd.DataFrame:
+    """One row per reporting corridor, **summed over every peak window and both
+    directions** — the number a corridor is finally ranked on.  (Item 41)
+
+    :func:`rank_corridor_groups` answers "how bad is this road at one hour". This
+    answers "how much congestion does this road carry across its peaks, in total",
+    which is the ranking a programme is built from. Delay, travel time, free-flow and
+    ``vhd`` are summed across all ``direction x peak window`` cells; the two peaks of
+    one direction are two separate trips over the same pavement, so they add.
+
+    **The mileage denominator is counted once per direction, not once per cell.**
+    A direction's observed miles do not change between windows (verified on the D3
+    run: zero spread), so ``directional_miles`` sums each direction's miles a single
+    time and every per-mile rate divides the *summed* total by it.
+
+    **The default ranking is ``vhd_per_mile`` — vehicle-hours of delay per mile.**
+    The three candidates are genuinely different questions and D3 orders them
+    differently, so the choice is recorded rather than left implicit:
+
+    - ``vhd`` (total vehicle-hours) asks *how much delay does this road cause*, and
+      rewards **length and volume together**: 34.9-mile rural SH-45 out-totals the
+      downtown couplet, which is four times worse to drive.
+    - ``delay_per_mile`` asks *how bad is it to drive*, and ignores **how many
+      people it happens to** — it puts a 1.1-mile couplet leg above I-84.
+    - ``vhd_per_mile`` asks *how much delay does each mile of this road cause*. It
+      keeps the volume weighting and drops the length reward, which is the
+      combination a screening rank wants. On D3 it puts I-84 first (1,539 veh-hrs
+      per mile, nearly three times the next) while still holding the couplet second
+      at 554 — a corridor that ranks 9th of 10 on the bare total.
+
+    Every metric's rank is returned beside the chosen one (``rank_vhd_per_mile``,
+    ``rank_delay_per_mile``, …) so the orderings can be compared rather than taken on
+    faith, and ``rank_by`` selects any of them.
+
+    Args:
+        ranking: a :func:`rank_corridors` frame, keyed on the catalogue entry id.
+        membership: as :func:`rank_corridor_groups` takes it.
+        names: optional ``{group_id: display name}``.
+        windows: which windows to total (default: every window flagged ``is_peak``).
+        rank_by: one of :data:`RANK_METRICS`; the frame is sorted by it, descending
+            (ascending for nothing — every one of these is worse when larger).
+            ``vhd_per_mile`` and ``vhd`` are ``NaN`` without an AADT join, and
+            ``attrs['rank_metric_all_null']`` says so rather than returning a frame
+            of ``<NA>`` ranks that looks like a ranking.
+        couplets: ids of reporting corridors whose two directions run on **different
+            streets** (a one-way couplet), flagged in the ``one_way_couplet`` column.
+            It changes no arithmetic — see the note below — but it changes how
+            ``directional_miles`` reads.
+
+    Returns:
+        One row per corridor, ranked. ``attrs`` carries the input's plus ``windows``,
+        ``rank_by``, ``ungrouped`` and ``miles_basis``.
+
+    **The couplet note.** For a divided or undivided road the two directions run over
+    the *same ground*, so ``directional_miles`` is travel-miles (the ground driven
+    twice), not centre-line miles. For a one-way couplet — D3 has exactly one, Myrtle
+    St EB and Front St WB — the two directions are genuinely different streets, so
+    the same number is *also* distinct centre-line pavement. Either way it is the
+    miles a round trip covers, which is what every rate here divides by, so the
+    ranking is comparable across both; the flag exists so nobody reads the column as
+    centre-line mileage for the fifteen-mile freeway.
+    """
+    if rank_by not in RANK_METRICS:
+        raise ValueError(f"rank_by must be one of {RANK_METRICS}, got {rank_by!r}.")
+    if ranking.empty:
+        raise ValueError("Nothing to total: the ranking frame is empty.")
+    cells, used, ungrouped = _peak_cells(ranking, membership, windows)
+
+    name_map, couplet_ids = dict(names or {}), set(couplets or ())
+    records = []
+    for gid, block in cells.groupby(GROUP_COL, sort=False):
+        # Miles once per direction, however many windows it appears in.
+        per_dir = block.groupby(CORRIDOR_COL)["miles"]
+        spread = float((per_dir.max() - per_dir.min()).max())
+        directional_miles = float(per_dir.max().sum())
+        delay = block["delay_min"].sum(min_count=1)
+        vhd = block["vhd"].sum(min_count=1)
+        tt, ff = block["travel_time_min"].sum(), block["free_flow_min"].sum()
+        dirs = block.drop_duplicates(CORRIDOR_COL)
+        records.append({
+            GROUP_COL: gid,
+            "group_name": name_map.get(gid, gid),
+            "one_way_couplet": gid in couplet_ids,
+            "n_directions": int(dirs[CORRIDOR_COL].nunique()),
+            "directions": tuple(d for d in dirs[DIRECTION_COL] if d is not None),
+            "windows": tuple(used),
+            "miles": float(per_dir.max().mean()),
+            "directional_miles": directional_miles,
+            "miles_window_spread": spread,
+            "n_segments": int(dirs["n_segments"].sum()),
+            "n_obs": int(block["n_obs"].sum()),
+            "min_kept_fraction": float(block["min_kept_fraction"].min()),
+            "travel_time_min": float(tt),
+            "free_flow_min": float(ff),
+            "delay_min": delay,
+            "tti": (tt / ff) if ff > 0 else float("nan"),
+            "delay_per_mile": (delay / directional_miles
+                               if directional_miles > 0 else float("nan")),
+            "vhd": vhd,
+            "vhd_per_mile": (vhd / directional_miles
+                             if directional_miles > 0 and pd.notna(vhd) else float("nan")),
+            "n_ramp_weighted": int(dirs["n_ramp_weighted"].sum()),
+            "n_aadt_missing": int(dirs["n_aadt_missing"].sum()),
+        })
+
+    out = pd.DataFrame.from_records(records)
+    for metric in RANK_METRICS:
+        out[f"rank_{metric}"] = out[metric].rank(ascending=False, method="min").astype("Int64")
+    out = out.sort_values(rank_by, ascending=False, na_position="last", ignore_index=True)
+    out.insert(0, "rank", out[f"rank_{rank_by}"])
+    all_null = bool(out[rank_by].isna().all())
+    out.attrs = {
+        **ranking.attrs,
+        "totalled": True,
+        "windows": tuple(used),
+        "rank_by": rank_by,
+        "rank_metric_all_null": all_null,
+        "ungrouped": ungrouped,
+        "miles_basis": ("directional_miles = each direction's observed miles counted "
+                        "ONCE and summed; every per-mile rate divides the summed "
+                        "delay by it (minutes per mile travelled, over the peaks)"),
+    }
+    return out
+
+
+def corridor_breakout(ranking: pd.DataFrame, membership, *, names=None, windows=None,
+                      order=None) -> pd.DataFrame:
+    """The same cells, **unaggregated** — one row per corridor x direction x window.
+
+    A total that cannot be opened up is a number to be taken on trust. This is the
+    breakout beneath :func:`corridor_peak_totals`: a ``MultiIndex`` of
+    ``(corridor_group, direction, window)`` carrying each cell's own metrics, so the
+    direction split and the peak split are both visible in the same table rather
+    than collapsed into a "peak direction" label.
+
+    ``order`` is an iterable of group ids (e.g. the ranked order from
+    :func:`corridor_peak_totals`) that the rows are sorted into; groups it does not
+    name follow in first-seen order.
+    """
+    cells, used, ungrouped = _peak_cells(ranking, membership, windows)
+    name_map = dict(names or {})
+    out = cells.copy()
+    out["group_name"] = out[GROUP_COL].map(lambda g: name_map.get(g, g))
+    rank_of = {g: i for i, g in enumerate(order or ())}
+    out["_g"] = out[GROUP_COL].map(lambda g: rank_of.get(g, len(rank_of)))
+    win_of = {w: i for i, w in enumerate(used)}
+    out["_w"] = out[WINDOW_COL].map(win_of)
+    out = out.sort_values(["_g", GROUP_COL, DIRECTION_COL, "_w"]).drop(columns=["_g", "_w"])
+    keep = [c for c in ("group_name", CORRIDOR_COL, "corridor_name", "n_segments",
+                        "n_observed", "miles", "n_obs", "min_kept_fraction",
+                        "travel_time_min", "free_flow_min", "delay_min", "tti",
+                        "delay_per_mile", "vhd", "vhd_per_mile", "n_ramp_weighted",
+                        "n_aadt_missing") if c in out.columns]
+    out = out.set_index([GROUP_COL, DIRECTION_COL, WINDOW_COL])[keep]
+    out.attrs = {**ranking.attrs, "windows": tuple(used), "ungrouped": ungrouped}
+    return out
+
+
 _AADT_CAVEAT = (
     "AADT is a daily total; vhd is a relative weight at the window's mean delay, not "
     "absolute vehicle-hours unless the window is scaled to a full day "
@@ -622,6 +1009,8 @@ def _aadt_source_lookup(aadt):
 
 
 __all__ = [
+    "rank_corridor_groups", "corridor_peak_totals", "corridor_breakout",
+    "GROUP_COL", "DIRECTION_COL", "RANK_METRICS", "DEFAULT_RANK_METRIC",
     "PeakWindow", "PEAK_WINDOWS", "WEEKDAYS", "resolve_windows",
     "segment_screen", "rank_corridors",
 ]

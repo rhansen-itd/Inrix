@@ -227,11 +227,18 @@ def ingest_export(con, source, *, ingested_at: datetime | None = None) -> dict:
     Reads with the file loaders (:func:`io.load_data` / :func:`io.load_metadata`),
     derives the area from the corridor set and the bin-length from the timestamp
     spacing, then merges the rows **keep-first** into the area's tables. Returns a
-    summary dict: ``area_key`` / ``area_name`` / ``bin_minutes`` / ``n_rows_added``.
+    summary dict: ``area_key`` / ``area_name`` / ``bin_minutes`` / ``n_rows_added``,
+    plus ``n_parts`` / ``parts``.
+
+    As in :func:`ingest_export_streaming`, ``source`` is expanded by
+    :func:`io._discover_parts`: handing it any ``..._part_N.zip`` reads **every**
+    sibling part, and ``n_rows_added`` is the total over all of them.
     """
+    parts = [Path(p).name for p in _io._discover_parts(source)]
     df = _io.load_data(source)
     metadata = _io.load_metadata(source)
-    return put_export(con, df, metadata, source=str(source), ingested_at=ingested_at)
+    out = put_export(con, df, metadata, source=" + ".join(parts), ingested_at=ingested_at)
+    return {**out, "n_parts": len(parts), "parts": parts}
 
 
 def put_export(con, df: pd.DataFrame, metadata: pd.DataFrame, *,
@@ -653,11 +660,22 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
             Peak memory tracks this, not the export's size.
 
     Returns:
-        The same summary dict :func:`ingest_export` returns: ``area_key`` /
-        ``area_name`` / ``bin_minutes`` / ``n_rows_added``.
+        The same summary dict :func:`ingest_export` returns — ``area_key`` /
+        ``area_name`` / ``bin_minutes`` / ``n_rows_added`` — plus ``n_parts`` and
+        ``parts``, the members this call actually covered.
 
-    **Four things worth knowing:**
+    **Five things worth knowing:**
 
+    - **One call can ingest the whole export, and usually does.** ``source`` is
+      expanded by :func:`io._discover_parts`, so handing it *any* ``..._part_N.zip``
+      ingests **every sibling part**, and ``n_rows_added`` is the total across all of
+      them. That is by design and matches :func:`io.load_data`, but it is easy to
+      misread as one part carrying everything: the 2026 D3 export returns
+      **91,054,384** from a single call on ``part_1.zip`` where that member alone
+      holds 45,403,216 rows. ``n_parts`` / ``parts`` say which members the number
+      covers, and the provenance row records the resolved list rather than the one
+      path handed in. Calling it again on ``part_2.zip`` re-discovers the same three
+      and adds nothing — the merge is keep-first.
     - **Chunks are staged and merged one at a time**, each its own committed
       statement, so memory is bounded by ``chunk_bytes`` however large the export is.
     - **The area identity is the whole export's.** When an export needs more than one
@@ -746,10 +764,14 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
     _merge_frame(con, _meta_table(area_key), meta_flat, keys=[SEGMENT_COL])
 
     _upsert_area(con, area_key, area_name, corridors, units, ingested_at)
-    _log_ingest(con, area_key, str(source), bin_minutes, n_added,
+    part_names = [Path(p).name for p in parts]
+    # The resolved parts, not the single path handed in: a provenance row reading
+    # "part_1.zip -> 91,054,384" invites the conclusion that part 1 held everything.
+    _log_ingest(con, area_key, " + ".join(part_names), bin_minutes, n_added,
                 (span_lo, span_hi), ingested_at)
     return {"area_key": area_key, "area_name": area_name,
-            "bin_minutes": bin_minutes, "n_rows_added": n_added}
+            "bin_minutes": bin_minutes, "n_rows_added": n_added,
+            "n_parts": len(parts), "parts": part_names}
 
 
 def _member_bytes(part, basename: str = "data.csv") -> int:

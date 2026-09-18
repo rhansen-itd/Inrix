@@ -3393,3 +3393,541 @@ explain away a real finding. **Full suite: 485 passed, 2 skipped.**
 machine, so every number above is computed over the outside pass's 28,340-bin matched
 set (`out/inrix_vs_google_matched_timeseries.csv`), the same source Items 32 and 33
 used; the end-to-end report re-run stays pending the workbook.
+
+---
+
+## Session 46 — Scoping the topology repair and the screening runner (Items 38–39) (2026-09-18)
+
+A scoping pass, not an implementation one. Two things were outstanding after Item 37:
+the district screen has never been run end to end (Session 41 deferred it deliberately),
+and 7 of the 20 D3 corridors do not resolve. The owner asked for both, and brought an
+outside diagnosis of the 7 that proposed a hand-typed table of ~15 `NextXDSegI`
+corrections. The diagnosis of *which* corridors break and *why* holds up. The mechanism
+was re-measured before being scoped, and the measurement changed the answer.
+
+**The proximity rule everyone reaches for first is unsafe, and I-184 is where it shows.**
+Bridging a null link to the nearest segment within 25 m that shares `RoadNumber` and
+bearing fixes SH-16 both directions and SH-44 westbound — and walks `i184-eb` into a
+**196-segment, 110.6-mile** chain. At the Flying Y the I-184 EB mainline's end point sits
+**8.1 m** from the on-ramp named `1A` (FRC 4, 1.0 lanes, `XDGroup` 5930102) and **4.7 m**
+from the true mainline continuation `1187532906` (`XDGroup` 3750153). Road number and
+bearing agree with both; distance prefers the ramp. That measurement is the reason the
+scoped rule is not a proximity rule.
+
+**`XDGroup` is the key that works** — XD's own carriageway grouping, which ramps and
+parallel facilities do not share. Scoped to *same `XDGroup`, endpoint contact within
+25 m*, over the 16,105-segment D3 subset (8,499 = **52.8%** null `NextXDSegI`):
+
+| class | fires | ambiguous (left alone) |
+|---|---|---|
+| **fill** — null link, one same-group continuation | 6,119 | 321 |
+| **override** — link points *out* of its `XDGroup`, same-group continuation exists | 99 | 52 |
+
+Fills alone take the catalogue **13/20 → 17/20**; fills + overrides → **20/20**. I-184
+comes back at **EB 10 segments / 4.717 mi, WB 10 / 4.629 mi**, which independently
+reproduces the outside pass's hand-patched figures from a derived rule rather than a
+typed list. Every one of the 13 entries that already resolved is unchanged under fills
+(`i84-eb` 27 segments / 15.123 mi, SH-45 40 / 17.429). Overrides move exactly one —
+`sh44-wb-boise-eagle`, 11 segments / 4.1064 mi → 12 / 4.1441 — and Item 38 is required to
+explain that before the override class is trusted.
+
+The two corridor-specific cases the overrides fix are the ones a fill cannot reach,
+because XD asserts a link and the link is wrong: `428958469` → off-ramp `1187615222` on
+I-184 EB (mainline continues at `1187558526`), and the SH-44 eastbound fork at Ballantyne
+Rd from `XDGroup` 114772 onto the parallel 1-lane 3938033.
+
+**This is not the fallback Item 36 banned,** and the distinction is worth stating once.
+What was banned is *inventing order the network does not assert* — the geographic sort
+that put the Garrity Blvd frontage road in series with I-84. A repair asserts nothing:
+the geometries have to physically touch, the continuation has to stay inside XD's own
+carriageway group, an ambiguous case stays a break, and every repair is named in the
+output. Item 38 carries that through to `ChainResult` (`n_repaired_links`), so a corridor
+that leaned on a repair says so in every report downstream.
+
+**Two catalogue corrections fell out of the measurement:**
+
+- **SH-16's description is wrong about its own carriageways.** Repaired, `sh16-nb` and
+  `sh16-sb` resolve at 22 segments / 12.55 mi each and share **zero** segments, with
+  clean `N` and `S` bearings — the coincident-carriageway caveat in the entry text does
+  not apply. Its "1.02 mi + 12.9 mi north of the break" also sums to 13.9 against the
+  12.55 measured; Item 38 settles which number is wrong.
+- **`front-wb` is not a topology defect at all.** The chain reaches its target; it was
+  rejected on 73.1% coverage. The owner supplied the roadway fact the XD attributes
+  corroborate exactly: west of S 13th St all but one lane of Front St becomes I-184, the
+  remnant keeps the name and functions as a frontage road, and ITD's interest transfers
+  to the freeway because that is the state-owned facility. In the network, the first
+  **9** members carry `RoadNumber = 20` at **5.0 lanes** (1.072 mi, ending at
+  **(43.61703, -116.21077)**) and the last **3** carry a null `RoadNumber` at **1.0
+  lane**. So the extent shortens at 13th St for a jurisdictional reason that the export's
+  state-route query happens to agree with — which is the opposite of the SH-16 case Item
+  36 refused, where an extent would have been defined by where a data gap fell. Recorded
+  as a one-off: no generic coverage-allowance machinery is scoped for it.
+
+**Item 39** is the runner Session 41 deferred: `scripts/run_district_screening.py` as a
+thin shell composing `segment_screen` → `join_aadt` → `resolve_catalogue` → 
+`rank_corridors`, with provenance in the output, findings reported separately rather than
+ranked with blank metrics, and the D3 rankings themselves as the deliverable. It also
+picks up the `ingest_export_streaming` row-count finding recorded under Known gaps the
+same day, because the runner's provenance line quotes exactly that counter.
+
+**One decision deliberately left to the Item 38 session** at the owner's direction:
+whether the override class ships on by default or stays opt-in per run. The evidence to
+decide it on is the `sh44-wb-boise-eagle` change above.
+
+No code changed this session. ROADMAP.md gained Items 38–39 and their batch paragraph.
+
+---
+
+## Session 47 — The XD topology, repaired as data (ROADMAP Item 38) (2026-09-18)
+
+Item 36 left 7 of the 20 District 3 corridors unresolved and recorded them as findings
+about the network file. That was the right call about *mechanism* — what it refused was
+completing a corridor by sorting a bounding box geographically, which is what summed the
+Garrity Blvd frontage road in series with I-84 — but it is not a resting place: one of
+the findings is **I-184**, the whole west-side commute into downtown Boise, and a
+district screen that cannot rank it is not finished.
+
+**Repairing a link is a different act from inventing an order,** and the whole design is
+built to keep the difference visible. A repair requires the two geometries to physically
+**touch** (end to start, within 25 m), the continuation to stay inside the segment's own
+**`XDGroup`** — XD's carriageway key, which ramps, opposing directions and parallel
+facilities do not share — the same cardinal **`Bearing`**, a junction turning no more than
+**90°** measured on the *local* geometry rather than the segment chord, and **exactly one**
+qualifying candidate. Two candidates is an ambiguity and an ambiguity stays a break. The
+result is returned as a table, not applied in place, and every chain reports the links it
+owes to it.
+
+**`XDGroup` rather than `RoadNumber` + bearing was measured, not assumed.** At the Flying
+Y the I-184 EB mainline's end point is **8.1 m** from the 1-lane on-ramp named `1A` and
+**4.7 m** from the true mainline continuation. Road number and bearing agree with both;
+distance prefers the ramp. Repaired that way, `i184-eb` walks into a **196-segment,
+110.6-mile** chain. That measurement is why the rule is scoped to the carriageway.
+
+**Two guards that only running it revealed** — both are now the load-bearing part of the
+rule, and neither would have been reasoned into existence:
+
+- **A rotary reverses a corridor without ever turning sharply.** At the south end of Eagle
+  Rd, six segments of 8–20 m each (`Bearing` `O`, one `XDGroup`) join the southbound and
+  northbound carriageways. No junction in it turns more than 60°, so the angle guard is
+  blind to it. Repaired through, `sh55-eagle-nb` — a corridor that had resolved cleanly
+  since Item 36 — walked *south* down Eagle Rd, round the rotary and back *north* over the
+  same ground: **39 segments / 10.75 mi** against the corridor's 16 / 6.64. Requiring the
+  same cardinal `Bearing` on both sides excludes it; `O` has no direction to preserve.
+- **A link that leaves the *subset* is not a defect.** It is the edge of the extract (96
+  in D3), and substituting a same-group continuation for it would put a different road in
+  place of one that is merely absent. `walk_chain` already calls that `off_network`, which
+  is the honest answer.
+
+**The table.** `scripts/d3_link_repairs.csv` — **6,090 fills** (267 ambiguous, left null)
+and **66 overrides** (**zero** ambiguous), 6,156 rows with the rule, the counts and the
+meaning of each kind in a `# key: value` header that `load_link_repairs` reads back as
+`attrs`. It is *derived*, not typed: a test regenerates it from the network and asserts
+the committed rows come back.
+
+**The override class ships on by default, and the decision was left to this session
+deliberately.** The evidence: all 66 were read. In every case the replaced target is a
+cross street, a ramp or a parallel facility, and the replacement is XD's own
+same-carriageway segment — `I-184 E` → off-ramp `3`, `I-84 W` → ramp `27`, `S Cloverdale
+Rd` → `W Kuna Mora Rd`, `S Broadway Ave` (US-20, 5.0 lanes) restored over an unnumbered
+2.3-lane namesake. Ambiguous overrides are **zero**, so none of the 66 is a coin-flip.
+And exactly one already-accepted corridor moves: `sh44-wb-boise-eagle`, 11 segments /
+4.1064 mi → **12 / 4.1441**, because `484348318` (`N Glenwood St`, `RoadNumber` 44, 2.705
+lanes, FRC 3) had its `NextXDSegI` pointed at `440882032` (`N Gary Ln`, **1.113 lanes**,
+FRC 4, unnumbered). The new chain is the better one. `kinds=(FILL,)` remains available as
+the setting that never contradicts the network — and on its own it already takes the
+catalogue from 13/20 to 17/20.
+
+**The resolution table, 20 of 20:**
+
+| entry | segs | chain mi | repaired links |
+|---|---|---|---|
+| `i84-eb` | 27 | 15.123 | 0 |
+| `i84-wb` | 29 | 15.892 | 0 |
+| `i184-eb` | 10 | 4.717 | **5** |
+| `i184-wb` | 10 | 4.629 | **4** |
+| `myrtle-eb` | 9 | 1.197 | 0 |
+| `front-wb` | 9 | 1.072 | 0 |
+| `sh55-eagle-nb` / `-sb` | 16 / 15 | 6.643 | 0 |
+| `sh69-nb` / `-sb` | 20 / 20 | 8.393 / 8.389 | 0 |
+| `us2026-chinden-eb` / `-wb` | 19 / 19 | 10.017 / 9.713 | 0 |
+| `sh44-eb-star-eagle` | 10 | 5.892 | **1** |
+| `sh44-eb-eagle-boise` / `sh44-wb-boise-eagle` | 11 / 12 | 4.106 / 4.144 | 0 / **1** |
+| `sh44-wb-eagle-star` | 9 | 5.387 | **1** |
+| `sh16-nb` / `sh16-sb` | 22 / 22 | 12.553 | **1** each |
+| `sh45-nb` / `-sb` | 40 / 40 | 17.429 | 0 |
+
+The last column is the number worth keeping: the whole catalogue uses **14** of the
+table's 6,156 rows. A repair table large enough to be alarming turns out to be barely
+touched by the corridors that matter, and each touch is named.
+
+**Two catalogue corrections fell out of the run.**
+
+- **SH-16's description was wrong about its own carriageways and about its own length.**
+  Repaired, `sh16-nb` and `sh16-sb` resolve at 22 segments / 12.553 chain mi / 11.947 mi
+  in extent, share **zero** segments and carry clean `N`/`S` bearings — so Item 36's
+  coincident-carriageway caveat did not apply here. And its "12.9 mi north of the break
+  walks cleanly" was an **unbounded** walk: run without a target it goes **41.6 mi** past
+  Emmett to Payette on SH-52. The resolved extent checks out on its own — sinuosity 1.053
+  against the 11.345 mi straight line, with XD `Miles` and the projected geometry agreeing
+  to 0.005 mi.
+- **`front-wb` was never a topology defect.** Its chain reached its target; it was rejected
+  on 73.1% coverage. The owner supplied the roadway fact, and the XD attributes corroborate
+  it exactly: west of S 13th St all but one lane of Front St becomes I-184, the remnant
+  keeps the name and functions as a frontage road, and ITD's interest transfers to the
+  freeway because that is the state-owned facility. In the network the 9 members now in the
+  entry carry `RoadNumber = 20` at **5.0 lanes** (1.072 chain mi) and the 3 blocks beyond
+  carry a null `RoadNumber` at **1.0 lane**. So the extent ends at 13th St for a
+  jurisdictional reason that the export's state-route query happens to agree with — the
+  opposite of the SH-16 case, where an extent would have been defined by where a data gap
+  fell, and the description says so in that order. The endpoint sits 37 ft short of the
+  junction so the snap lands on the last five-lane block rather than the one-lane remnant
+  across it. Recorded as a one-off: no generic coverage-allowance machinery was built.
+
+The six repaired entries' descriptions were rewritten so their FINDING paragraphs read as
+history rather than status — what the break *was* is kept, because it is a real fact about
+this XD vintage, and each entry now states its resolved chain and how many repaired links
+it rests on.
+
+**Tests:** +14 in `tests/test_corridors.py` (64 in the file). Each rule and each guard is
+pinned in the smallest fixture that shows it, including the ramp trap with the out-of-group
+candidate deliberately made the *nearer* of the two, the rotary (refused with the direction
+guard, accepted with `require_same_bearing=False`, so the guard is shown to be the thing
+doing the work), the anti-parallel cul-de-sac pair, and the off-subset pointer. Two
+real-network tests assert the committed table resolves the catalogue 20/20 with `i84-eb`
+untouched at 27 segments, and that regenerating the table reproduces the committed rows.
+**Full suite: 499 passed, 2 skipped** (was 485/2 at Session 45).
+
+**Not done here:** the district ranking run itself — that is Item 39, which now has a
+catalogue that resolves completely to rank.
+
+---
+
+## Session 48 — The district screening runner, and District 3's actual rankings (ROADMAP Item 39) (2026-09-18)
+
+Items 34–37 built every piece of the district screen; Session 41 deliberately stopped
+short of running it. Nothing in the repo composed `segment_screen` → `join_aadt` →
+`resolve_catalogue` → `rank_corridors` outside a test, and the composition is where the
+interesting failures live. Two were waiting there, and neither is a statistics bug.
+
+**`scripts/run_district_screening.py` is wiring only** — no computation that is not
+already in `src/inrix_tools/`, modelled on `build_validation_report.py`. It writes
+`corridor_rankings.csv`, `corridor_resolution.csv`, `corridors.kml` and
+`screening_provenance.json`, and the provenance is written **into the CSVs' `#` header as
+well as the JSON**, so a ranking read off disk still states the area, dates, CValue gate,
+windows, catalogue, repair table (with its rule and how many of its rows were used) and
+AADT join policy it was computed under. A ranking with no stated basis cannot be handed to
+anyone.
+
+**A corridor that did not resolve is not ranked.** Findings are listed with their
+`stop_reason` and coverage rather than carried into the ranking with blank metrics — Item
+36's rule applied to the output. `--repairs` is required for the same reason: without the
+Item 38 table seven of the twenty corridors do not walk, so an absent table stops the run
+instead of silently ranking thirteen. `--no-repairs` walks `NextXDSegI` as published,
+deliberately, and on this catalogue that is a refusal, not a partial answer.
+
+**The `ingest_export_streaming` row-count finding was not a counter bug.**
+`io._discover_parts` expands **any** `..._part_N.zip` into all of its siblings, so the
+call was never handed one part: a single call on `part_1.zip` ingests all three and
+`n_rows_added = 91,054,384` is the correct total. That also explains the thing the finding
+recorded as unexplainable — the store reached its complete, exactly-correct state "while
+the ingest was still working on part 2" because the *first* call was itself looping over
+the three parts, and parts 2 and 3 "never logged" because they were never separate
+ingests. `d3_store.duckdb`'s `_ingests` table has exactly **one** row. Session 40's "3
+parts, 91,054,384 rows, 262 s" stands as a whole-export figure.
+
+What *was* wrong is the record, and that is now fixed: both `ingest_export` and
+`ingest_export_streaming` return `n_parts` / `parts`, log the resolved member list
+(`part_1.zip + part_2.zip + part_3.zip`) instead of the single path handed in, and say so
+in their docstrings. A provenance row can no longer read as "part 1 carried everything".
+
+**Two defects the composition exposed that no unit test could have.** `corridor_geometry`
+merged a member table with a GeoDataFrame and got back a plain DataFrame, so the AADT
+bbox derivation hit `'Series' object has no attribute 'total_bounds'` — the geometry
+column has to be re-declared after the merge. And `geometry.load_xd_network` reads a
+GeoParquet only through `cache_path`, so a `--network` that *is* one went to the shapefile
+reader; the runner now hands a `.geoparquet` source over as its own cache.
+
+**The KML is the first caller to exceed Item 37's guard.** Twenty corridors against a
+12-hue default palette is exactly the case that raise was added for, so the runner passes
+an explicit 20-colour palette and `folder_by="corridor"` — the guard did its job on its
+first real encounter.
+
+**District 3, screened: 3,905 segments, 54,556,187 of 91,054,384 rows surviving
+`CValue > 80` (59.9%, reproducing Sessions 40–41), all 20 corridors resolved, no
+findings.** Each corridor at its own worst peak window, by vehicle-hours of delay:
+
+| corridor | win | mi | delay min | TTI | delay/mi | veh-hrs |
+|---|---|---|---|---|---|---|
+| `i84-wb` | pm | 15.08 | 11.83 | 1.88 | 0.78 | **25,677** |
+| `i84-eb` | am | 14.94 | 9.30 | 1.69 | 0.62 | **19,818** |
+| `sh55-eagle-nb` | pm | 6.54 | 3.64 | 1.34 | 0.56 | 2,840 |
+| `us2026-chinden-wb` | pm | 9.70 | 5.60 | 1.41 | 0.58 | 2,700 |
+| `i184-wb` | pm | 4.11 | 3.55 | 1.86 | 0.86 | 2,700 |
+| `sh55-eagle-sb` | pm | 6.53 | 2.84 | 1.27 | 0.44 | 2,219 |
+| `us2026-chinden-eb` | am | 9.71 | 3.08 | 1.22 | 0.32 | 1,437 |
+| `sh44-wb-eagle-star` | pm | 4.55 | 2.66 | 1.48 | 0.58 | 1,383 |
+| `sh69-nb` | am | 8.27 | 1.62 | 1.13 | 0.20 | 828 |
+| `sh44-wb-boise-eagle` | pm | 3.86 | 1.38 | 1.25 | 0.36 | 826 |
+| `front-wb` | pm | 1.06 | 1.66 | 1.69 | **1.56** | 678 |
+| `sh69-sb` | pm | 8.19 | 1.36 | 1.12 | 0.17 | 638 |
+| `sh44-eb-star-eagle` | am | 4.92 | 1.23 | 1.20 | 0.25 | 620 |
+| `sh44-eb-eagle-boise` | pm | 4.11 | 0.89 | 1.16 | 0.22 | 531 |
+| `sh45-sb` | pm | 17.43 | 1.50 | 1.07 | 0.09 | 473 |
+| `i184-eb` | am | 4.36 | 0.56 | 1.13 | 0.13 | 436 |
+| `sh45-nb` | pm | 17.43 | 1.36 | 1.06 | 0.08 | 403 |
+| `sh16-sb` | am | 11.95 | 1.10 | 1.08 | 0.09 | 209 |
+| `myrtle-eb` | pm | 1.16 | 0.43 | 1.17 | 0.37 | 202 |
+| `sh16-nb` | am | 11.95 | 1.02 | 1.08 | 0.09 | 197 |
+
+**Five things this table says.**
+
+- **I-84 is the district, by an order of magnitude.** 25,677 and 19,818 veh-hrs against
+  2,840 for the next corridor. The direction split is the expected one — WB is the heavier
+  in the PM, EB in the AM — and it is the split Item 34 existed to make trustworthy: before
+  the ramp-vs-mainline fix one carriageway was weighted at 61,410 AADT where the other was
+  114,981, which near-halved exactly this number.
+- **I-184 WB ranks fifth, and could not be ranked at all two sessions ago.** It is the
+  clearest return on Item 38: 4.11 mi at TTI 1.86, the second-worst congestion *ratio* in
+  the district behind I-84 WB. Its rank carries one caveat that belongs with it — 3 of its
+  10 segments are `matched_ramp` in the AADT join (Item 34's flag doing its job on a
+  freeway made almost entirely of ramp geometry), so its veh-hrs is the least
+  well-weighted of the top five.
+- **`front-wb` has the worst delay *per mile* in the district** — 1.56 min/mi against
+  I-84 WB's 0.78 — on 1.06 mi. A downtown couplet leg is short and saturated; ranking it
+  by total veh-hrs (678) buries that, which is why both columns are reported.
+- **SH-45 behaves as the rural control it was carried as**, near the bottom at TTI 1.07 /
+  1.06 — not literally zero, but the flattest profile of the twenty over the longest
+  extent (17.43 mi). It also has the district's lowest CValue survival, 0.79–0.82 against
+  ~0.99 everywhere else, which is what a low-volume rural road looks like through a
+  confidence gate and is worth remembering before reading its delay as signal.
+- **Coverage is now essentially complete for every entry** (≥0.9999), where Item 36 had
+  `front-wb` at 0.731. That is the Item 38 extent change, not better data.
+
+**Tests:** +8 in a new `tests/test_run_district_screening.py`, built on a miniature
+district — a synthetic export ingested into a real store, a four-segment network with a
+deliberately missing link, a two-entry catalogue and a one-row repair table — run end to
+end. It asserts the composition rather than the statistics: the resolved corridor ranked
+under its **id** with its name beside it and `n_repaired_links = 1`, the unresolvable
+entry reported and not ranked, `--no-repairs` producing a refusal rather than a partial
+ranking, the provenance present in both the JSON and the CSV header, `--no-kml` skipping
+only the KML, area resolution by key and by name, and a missing repair table refused
+rather than ignored. Plus 2 in `tests/test_store.py` pinning the multi-part ingest: any
+part path ingests every sibling, `n_parts` / `parts` say so, a second call adds nothing,
+and the log names the members. **Full suite: 509 passed, 2 skipped** (was 499/2 at
+the Session 47 checkpoint).
+
+**One presentation change worth recording.** `rank_corridors` is keyed on the catalogue
+**id**, not the name, with the full name carried as its own column. Two catalogue names
+share their first twenty characters — `SH-44 (State St) WB: ...` names both halves of one
+corridor — so a name-keyed summary printed two indistinguishable rows.
+
+---
+
+## Session 49 — One corridor is both directions: reporting corridors (ROADMAP Item 40) (2026-09-18)
+
+Item 39 produced a ranking of the 20 catalogue entries, and the owner named what was
+missing: **for reporting purposes one corridor is both directions.** `i84-eb` and
+`i84-wb` were competing in that table as though they were different roads, which is not
+how a district programmes work. The requirement carries its own constraint — "obviously
+we want to break out and distinguish the peak and direction congestion information" —
+so the grouping has to combine without dissolving.
+
+**Two units, kept deliberately separate.** A catalogue entry stays one **direction** of
+one extent, because that is the unit the `NextXDSegI` walk works in (a chain is
+directional) and the unit the AADT join works in (the two carriageways of a divided
+highway carry different counts — the whole point of Item 34). A **reporting corridor** is
+the road, both directions, named the way a district talks about it. The catalogue
+declares them in a `reporting_corridors` block and each entry carries `corridor` +
+`direction`; D3's **20 entries group into 10 roads**. Validation cross-checks both ways:
+a group an entry names must be declared, and a group declared with **no** entries raises,
+because a corridor declared and unused is one silently missing from the report. Two
+entries claiming the same direction of one corridor raises too — that copy-paste would
+double-count one carriageway into the grouped total and drop the other.
+
+**The real work is that these metrics do not combine the same way,** and the repo has a
+specific history of getting exactly this class of thing wrong:
+
+- **Additive** — `vhd`, `n_obs`, `n_segments`, `n_observed`, `missing_miles`, and the two
+  trip components `travel_time_min` / `free_flow_min`. The directions are different
+  vehicles over different pavement.
+- **`miles` is NOT additive.** The two carriageways run over the **same ground**, so
+  summing them double-counts the corridor's length — the identical error as summing the
+  Garrity Blvd frontage road in series with the freeway it parallels, which is what Item
+  36 exists to have stopped. `miles` is the **mean** of the directions, which is the
+  road's length; the sum is reported separately as `directional_miles`, because that *is*
+  the right denominator for a per-mile rate.
+- **`tti`, `delay_per_mile`, `vhd_per_mile` are NOT averageable.** Each is recomputed
+  from the summed components. A ratio of sums is not the mean of the ratios, and
+  averaging would let a 0.6-mile direction pull as hard as a 15-mile one. The test that
+  pins this needs lopsided free-flow times to even show a difference — with equal ones
+  the two formulas coincide, which is precisely how this kind of bug survives a test
+  suite.
+
+**The direction breakout survives**: `peak_direction` / `peak_entry` (the direction
+carrying the most `vhd`, falling back to `delay_min` when no AADT was joined), `tti_min` /
+`tti_max`, `delay_min_max`, and `directions`. `worst_peak` is the **road's** — the window
+carrying the most *combined* delay, which is not always either direction's own. The
+per-direction rows are untouched; this is a second view, and the runner writes and prints
+both.
+
+**The trap grouping sets, which the run surfaced immediately.** A grouped row sums its
+directions **at the same clock time**, and a commute corridor's directions peak at
+different times. I-84 WB carries 25,677 veh-hrs in the PM and EB 19,818 in the AM — but
+the grouped PM row reads **26,260**, because EB at 5pm is nearly empty. That is the right
+answer to "how bad is this road at its worst hour" and the wrong answer to "how much delay
+does this road cause in a day", and nothing in the frame said which question it was
+answering. So the frame carries `vhd_directional_peaks` (and its delay twin): each
+direction at **its own** worst peak, summed — **45,495** for I-84 — a group-level
+constant that deliberately spans two windows. D3 splits **five and five**: Eagle Rd, State
+St east, the downtown couplet, SH-45 and SH-16 peak in the same window both ways and have
+the two numbers identical; I-84, Chinden, I-184, State St west and SH-69 do not.
+
+**District 3 as ten roads** (each at its own worst peak window):
+
+| corridor | win | mi | peak dir | TTI | TTI range | delay/mi | veh-hrs | both peaks |
+|---|---|---|---|---|---|---|---|---|
+| `i84` | pm | 15.01 | WB | 1.45 | 1.02–1.88 | 0.40 | **26,260** | **45,495** |
+| `sh55-eagle` | pm | 6.53 | NB | 1.31 | 1.27–1.34 | 0.50 | 5,059 | 5,059 |
+| `us2026-chinden` | pm | 9.71 | WB | 1.26 | 1.11–1.41 | 0.37 | 3,458 | 4,137 |
+| `i184` | pm | 4.23 | WB | 1.42 | 1.01–1.86 | 0.42 | 2,738 | 3,135 |
+| `sh44-star-eagle` | pm | 4.73 | WB | 1.27 | 1.09–1.48 | 0.35 | 1,696 | 2,003 |
+| `sh44-eagle-boise` | pm | 3.98 | WB | 1.20 | 1.16–1.25 | 0.29 | 1,357 | 1,357 |
+| `sh69` | pm | 8.23 | NB | 1.11 | 1.10–1.12 | 0.16 | 1,298 | 1,466 |
+| `boise-couplet` | pm | 1.11 | WB | 1.43 | 1.17–1.69 | **0.94** | 880 | 880 |
+| `sh45` | pm | 17.43 | SB | **1.06** | 1.06–1.07 | 0.08 | 876 | 876 |
+| `sh16` | am | 11.95 | SB | 1.08 | 1.08–1.08 | 0.09 | 406 | 406 |
+
+**Grouping re-orders the district, which is the point of having done it.**
+
+- **Eagle Rd rises to #2** (5,059) where its directions ranked 3rd and 6th separately. It
+  is the corridor whose two directions are *both* heavy — NB 2,840 and SB 2,219 — and the
+  directional table was the wrong place to see that.
+- **I-184 falls to #4** (2,738) because EB is light (436 against WB's 2,700). Its TTI
+  range, **1.01–1.86**, is the widest in the district: one carriageway at free flow while
+  the other is the second-worst in D3. A single grouped TTI would have hidden that
+  entirely, which is what `tti_min` / `tti_max` are for.
+- **The downtown couplet has the worst delay per mile** (0.94 against I-84's 0.40) on
+  1.11 mi. Short and saturated; total veh-hrs buries it, which is why both columns report.
+- **SH-45 holds as the rural control** at TTI 1.06–1.07, the flattest in the district —
+  but it outranks SH-16 on veh-hrs (876 vs 406). That is length and volume, not
+  congestion, and it is exactly the reading error TTI and delay-per-mile sitting beside
+  veh-hrs exist to prevent.
+
+Also corrected here: `front-wb`'s **name** still read "to the Connector terminus" after
+Item 38 moved its extent to S 13th St.
+
+**Tests:** +19. `test_screen.py` +8 on the combining rules, checked against hand-computed
+arithmetic rather than against another function's output — the additive set, mean-not-sum
+of miles, the lopsided-length case separating the ratio of sums (2.525) from the mean of
+ratios (2.05), the peak direction flipping between AM and PM, the group's own
+`worst_peak`, the one-window vs daily-burden split, the three accepted membership shapes,
+an ungrouped entry reported rather than dropped, and the two refusals. `test_corridors.py`
++9 on the schema, including the real D3 catalogue grouping 20 → 10 with two distinct
+directions each. `test_run_district_screening.py` +2, one of them asserting that a group
+whose second direction did **not** resolve reports `n_entries = 1` and its one direction
+rather than presenting a one-direction total as a two-direction one. **Full suite: 528
+passed, 2 skipped** (was 509/2 at Session 48).
+
+---
+
+## Session 50 — The reporting table: every direction × peak visible, ranked per mile (ROADMAP Item 41) (2026-09-18)
+
+Item 40 grouped the directional entries into roads, but still reported each road at a
+**single** window with the other direction and the other peak collapsed into a
+`peak_direction` label and a TTI range. The owner asked for the reporting shape
+directly: every direction and peak as its own row, the final ranking a **sum over peaks
+and directions**, and the ranking taken on a **per-mile rate** so length does not decide
+it (first built on delay per mile, corrected mid-session to vehicle-hours per mile —
+below). Also answered, since it was asked: the runner **does not write a report** — it
+writes CSVs, a KML and a provenance JSON and prints a terminal table. The tables quoted
+in these entries are that terminal output.
+
+**`corridor_peak_totals`** sums every `direction × peak window` cell — four per road in
+D3, AM and PM across two directions. Delay, travel time, free-flow and `vhd` add: the
+two peaks of one direction are two separate trips over the same pavement.
+
+**The mileage denominator is counted once per direction, not once per cell** — a
+direction does not get longer because it has two peaks. That was verified before it was
+assumed: observed miles have **zero spread** between AM and PM for all 20 D3 entries.
+`miles_window_spread` reports it per corridor anyway, so a future export that breaks the
+assumption shows up instead of silently halving every rate.
+
+**`corridor_breakout`** returns the same cells unaggregated, as a
+`(corridor_group, direction, window)` MultiIndex ordered by the ranked order it is
+handed. A total that cannot be opened up is a number taken on trust; a test asserts the
+cells sum to the total they sit under, and the printed table interleaves them.
+
+**Which rate to rank on, settled by trying two.** The item was built first on
+`delay_per_mile` and the owner corrected it mid-session to **vehicle-hours of delay per
+mile**. Both were run against D3, and the correction is right: the three candidates are
+three different questions, and the district answers them in three different orders.
+
+| metric | the question | rewards | D3 order (top 4) |
+|---|---|---|---|
+| `vhd` | how much delay does this road cause | length **and** volume | i84, sh55-eagle, chinden, i184 |
+| `delay_per_mile` | how bad is it to drive | intensity, ignoring how many people | boise-couplet, i84, sh55-eagle, chinden |
+| **`vhd_per_mile`** | how much delay does each mile cause | volume, **not** length | i84, boise-couplet, sh55-eagle, i184 |
+
+`delay_per_mile` over-corrects: dropping the volume weighting entirely puts a 1.11-mile
+couplet leg above a freeway carrying 46,191 vehicle-hours. `vhd_per_mile` keeps the
+weighting and drops only the length reward, which is the combination a screening rank
+wants — and the ranking it produces is the one that survives being read aloud.
+
+| # | corridor | dir·mi | delay | TTI | d/mi | veh-hrs | **vh/mi** | also: vh, d/mi |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `i84` | 30.02 | 21.44 | 1.40 | 0.71 | 46,191 | **1,539** | 1, 2 |
+| 2 | `boise-couplet` *(couplet)* | 2.22 | 2.89 | 1.29 | 1.30 | 1,233 | 554 | **9**, 1 |
+| 3 | `sh55-eagle` | 13.07 | 9.00 | 1.21 | 0.69 | 7,022 | 537 | 2, 3 |
+| 4 | `i184` | 8.47 | 4.22 | 1.24 | 0.50 | 3,217 | 380 | 4, 6 |
+| 5 | `us2026-chinden` | 19.42 | 11.00 | 1.20 | 0.57 | 5,232 | 269 | 3, 4 |
+| 6 | `sh44-eagle-boise` | 7.96 | 3.53 | 1.16 | 0.44 | 2,107 | 265 | 7, 7 |
+| 7 | `sh44-star-eagle` | 9.47 | 4.85 | 1.20 | 0.51 | 2,500 | 264 | 6, 5 |
+| 8 | `sh69` | 16.46 | 5.33 | 1.10 | 0.32 | 2,605 | 158 | **5**, 8 |
+| 9 | `sh45` | 34.86 | 5.10 | 1.06 | 0.15 | 1,416 | 41 | 8, 9 |
+| 10 | `sh16` | 23.90 | 3.42 | 1.06 | 0.14 | 656 | 27 | 10, 10 |
+
+**I-84 leads at 1,539 veh-hrs per mile, nearly three times the next.** The two corridors
+that move furthest between the orderings are the ones that justify the metric: the
+**downtown couplet** is 9th of 10 on the bare total and 1st on the unweighted rate, and
+settles at 2nd; **SH-69** is 5th on the total and 8th on both rates, which is 16.5
+directional miles doing that work. SH-45 and SH-16, the rural end of the catalogue, are
+9th and 10th on every one of the three, which is the reassurance that none of the metrics
+is simply rewarding shortness.
+
+Both `vhd` metrics are `NaN` without an AADT join, so `attrs['rank_metric_all_null']`
+reports that and the runner falls back to `delay_per_mile` with a printed note — a frame
+of `<NA>` ranks is catalogue order wearing a ranking's clothes.
+
+**The cells are where the story is**, and they were invisible in the Item 40 view. I-84's
+four cells run 9.30 / 0.25 / 0.05 / 11.83 minutes — the two off-peak-direction cells are
+essentially free-flowing, which is what a commute corridor looks like and what a
+single-window row could not show. I-184's are 0.56 / 0.05 / 0.07 / 3.55: one carriageway
+at a standstill in the PM and everything else at reference speed.
+
+**The one-way couplet, considered.** `one_way_couplet` is an optional flag on the
+reporting corridor; D3 has exactly one and the catalogue says so. It **changes no
+arithmetic** — every per-mile rate divides by the miles a round trip covers, here as
+everywhere, and a test asserts the flagged and unflagged totals are identical — but it
+changes how `directional_miles` *reads*. For a divided or undivided road that column is
+travel-miles: the same ground driven twice. For the couplet, whose two legs are different
+streets, it is *also* 2.22 mi of distinct centre-line pavement. The flag exists so the
+column is not misread as centre-line mileage for the fifteen-mile freeway.
+
+**A regression the rewrite introduced and the tests caught.** Replacing the per-direction
+table with the breakout left an **ungrouped** catalogue printing nothing but its
+findings — `summarise` no longer used its `ranking` argument at all. The per-direction
+table is now the explicit fallback when no reporting corridors are declared, with a test
+that pins it.
+
+**Tests:** +12. `test_screen.py` +8, the load-bearing one being a three-corridor fixture
+on which the three rankings give **three completely different orders** — `long` (40 mi,
+40 min, 4,000 vh), `short` (1 mi, 10 min, 500 vh), `busy` (10 mi, 20 min, 8,000 vh) give
+`busy>long>short` by total, `short>busy>long` by rate and `busy>short>long` by
+vehicle-hours per mile. That is what makes the three worth distinguishing, and an earlier
+version of the fixture accidentally tied two of them, which is exactly how a metric change
+passes a test suite without being tested. Also: the cell sum; miles counted once per
+direction; the all-null rank metric; the couplet flag changing nothing; peak-window
+selection by default and by explicit `windows=`; the breakout's index and its cells
+summing to their total; and the ranked ordering being followed.
+`test_run_district_screening.py` +4, including the AADT-less fallback firing and
+announcing itself. **Full suite: 540 passed, 2 skipped** (was 528/2 at Session 49).

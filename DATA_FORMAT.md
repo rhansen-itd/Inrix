@@ -318,6 +318,142 @@ never completed by sorting the segments in a bounding box by latitude or longitu
 `scripts/d3_corridors.json` is the District 3 catalogue in that form and
 `corridors.load_catalogue` / `resolve_catalogue` are the code contract.
 
+### `XDGroup` is the carriageway key, and it is what makes a repair safe (Item 38)
+
+`XDGroup` groups the segments of **one carriageway of one road**. A ramp, the
+opposing direction, and a parallel frontage road of the same name each carry a
+*different* `XDGroup`, which is what makes it the right scope for correcting the
+topology above — and what `RoadNumber`, `RoadName`, `FRC` and proximity each fail
+to supply.
+
+`corridors.repair_links` derives a `NextXDSegI` patch table under five conditions:
+the candidate's start must lie within **25 m** of this segment's end, stay inside
+the segment's own `XDGroup`, carry the **same cardinal `Bearing`**, turn no more
+than **90°** at the junction (measured over 30 m of *local* geometry, not the
+segment chord), and be the **only** candidate that qualifies. Two candidates is an
+ambiguity and stays a break. On the District 3 subset (16,105 segments, 8,499 null
+links) that yields **6,090 fills** (a null link completed — the network asserted
+nothing) and **66 overrides** (a link that pointed out of its own carriageway,
+replaced), with **267** ambiguous fills and **zero** ambiguous overrides left
+alone. The table is committed as `scripts/d3_link_repairs.csv` with its rule in the
+header; walking on it is opt-in (`repairs=`) and every chain reports the links it
+owes to it as `n_repaired_links`.
+
+Four measured facts about why the rule is shaped this way — each is a real corridor
+that a looser rule gets wrong:
+
+1. **Proximity picks the ramp.** At the Flying Y the I-184 EB mainline's end point
+   is **8.1 m** from the 1-lane on-ramp `1A` and **4.7 m** from the true mainline
+   continuation. `RoadNumber` and `Bearing` agree with both. Repaired on
+   proximity + route number, `i184-eb` walks into a **196-segment, 110.6-mile**
+   chain; scoped to `XDGroup` it resolves at 10 segments / 4.72 mi.
+2. **A rotary reverses a corridor without ever turning sharply.** At the south end
+   of Eagle Rd, six segments of 8–20 m each (`Bearing` `O`, one `XDGroup`) join the
+   southbound and northbound carriageways. No single junction in it turns more than
+   60°, so an angle guard does not see it; repaired through, `sh55-eagle-nb` walks
+   *south* down Eagle Rd, round the rotary and back *north* over the same ground —
+   39 segments and 10.75 mi against the corridor's 16 and 6.64. The **same-cardinal-
+   `Bearing`** condition is what excludes it: `O` has no direction to preserve.
+3. **Coincident ends can be anti-parallel.** The subset carries cul-de-sac pairs in
+   one `XDGroup` whose ends coincide at 0.0 m and which run *at* each other; the
+   90° guard is what stops them repairing into a 2-cycle.
+4. **A link leaving the *subset* is not a defect.** It is the edge of the extract
+   (96 such links in D3), and `walk_chain` already calls it `off_network`.
+   Repairing it would substitute a different road for one that is merely absent.
+
+**What repairing is not.** Item 36 banned completing a corridor by **sorting a
+bounding box geographically** — inventing an order the network does not assert,
+which is what summed the Garrity Blvd frontage road in series with I-84. A repair
+asserts nothing new: the geometries must physically touch, the continuation must be
+XD's own same-carriageway segment, an ambiguity stays a break, and every repair is
+named in the output and reviewable in the committed table. With it, the D3
+catalogue resolves **20 of 20** against Item 36's 13, and the whole 20-corridor set
+uses just **14** of the table's 6,156 rows.
+
+### A catalogue entry is a direction; a reporting corridor is the road (Item 40)
+
+The two units are deliberately separate, because the pipeline needs one and the
+reader needs the other:
+
+- **A catalogue entry is one direction of one extent.** That is the unit the
+  `NextXDSegI` walk works in (a chain is directional), and the unit the AADT join
+  works in (the two carriageways of a divided highway carry different counts — the
+  whole point of Item 34).
+- **A reporting corridor is both directions of one road**, named the way a district
+  talks about it. `scripts/d3_corridors.json` declares them in a
+  `reporting_corridors` block and each entry carries `corridor` + `direction`;
+  District 3's 20 entries group into **10** roads. `screen.rank_corridor_groups`
+  combines, and the per-direction rows are untouched — it is a second view, not a
+  replacement.
+
+**Most of these metrics do not combine the same way, and getting that wrong is the
+whole risk of grouping:**
+
+| | rule | why |
+|---|---|---|
+| `vhd`, `n_obs`, `n_segments`, `missing_miles`, `travel_time_min`, `free_flow_min` | **sum** | the two directions are different vehicles over different pavement |
+| `miles` | **mean** of the directions | the carriageways run over the **same ground**; summing double-counts the corridor's length — the identical error as summing a frontage road in series with the freeway it parallels |
+| `directional_miles` | sum | centre-line miles × directions, and the right denominator for a per-mile rate |
+| `tti`, `delay_per_mile`, `vhd_per_mile` | **recomputed** from the summed components | a ratio of sums is not the mean of the ratios; averaging would let a 0.6-mile direction pull as hard as a 15-mile one |
+
+**One window is not one day.** A grouped row sums its directions **at the same clock
+time**, and a commute corridor's directions peak at different times. D3's I-84 is the
+case: WB carries 25,677 veh-hrs in the PM and EB 19,818 in the AM, but the grouped PM
+row reads **26,260**, because EB at 5pm is nearly empty. That is the right answer to
+"how bad is this road at its worst hour" and the wrong answer to "how much delay does
+this road cause in a day". `vhd_directional_peaks` is the second number — each
+direction at **its own** worst peak, summed (**45,495** for I-84) — and it
+deliberately spans two windows. D3 splits five and five: Eagle Rd, State St east,
+the downtown couplet, SH-45 and SH-16 peak in the same window both ways and have the
+two numbers identical; I-84, Chinden, I-184, State St west and SH-69 do not.
+
+### The reporting total: summed over peaks and directions, ranked per mile (Item 41)
+
+`rank_corridor_groups` answers *how bad is this road at one hour*.
+`screen.corridor_peak_totals` answers *how much congestion does it carry across its
+peaks* — the row a corridor is finally ranked on. Delay, travel time, free-flow and
+`vhd` sum over every `direction × peak window` cell; the two peaks of one direction
+are two separate trips over the same pavement, so they add.
+
+**The mileage denominator is counted once per direction, not once per cell.** A
+direction's observed miles do not change between windows — verified on the D3 run,
+zero spread across AM and PM for all 20 entries — so `directional_miles` sums each
+direction's miles a single time, and every per-mile rate divides the *summed* delay
+by it. `screen.corridor_breakout` returns the same cells unaggregated, as a
+`(corridor, direction, window)` MultiIndex, so a total can always be opened up.
+
+**Rank on `vhd_per_mile` — vehicle-hours of delay per mile.** The three candidates
+are different questions, and District 3 orders them three different ways, so the
+choice is recorded rather than left implicit:
+
+| metric | the question | what it rewards | D3's top 3 |
+|---|---|---|---|
+| `vhd` | how much delay does this road cause | length **and** volume | i84, sh55-eagle, chinden |
+| `delay_per_mile` | how bad is it to drive | intensity, ignoring how many people | boise-couplet, i84, sh55-eagle |
+| **`vhd_per_mile`** | how much delay does each mile of it cause | volume, **not** length | i84, boise-couplet, sh55-eagle |
+
+`vhd_per_mile` keeps the volume weighting and drops the length reward, which is the
+combination a screening rank wants. The two corridors that move furthest between the
+orderings are the ones that prove the point: the **downtown couplet** is 1st on the
+unweighted rate and **9th of 10** on the bare total (1.11 mi of saturated one-way
+pavement against I-84's 30.02 directional miles) and settles at **2nd** on
+vehicle-hours per mile; **SH-69** is 5th on the total and 8th on both rates, which is
+16.5 directional miles doing the work. Every metric's rank is returned beside the
+chosen one, so the gaps stay visible instead of being decided silently.
+
+Both `vhd` metrics are `NaN` without an AADT join. `attrs['rank_metric_all_null']`
+reports that, because a frame of `<NA>` ranks is catalogue order wearing a ranking's
+clothes.
+
+**One-way couplets.** For a divided or undivided road the two directions run over the
+*same ground*, so `directional_miles` is travel-miles (the ground driven twice), not
+centre-line miles. For a one-way couplet — D3 has exactly one, Myrtle St EB and Front
+St WB, and its two legs are different streets — the same number is *also* distinct
+centre-line pavement. Either way it is the distance a round trip covers, which is
+what every rate divides by, so the ranking stays comparable; the
+`one_way_couplet` flag on the reporting corridor exists so nobody reads the column as
+centre-line mileage for the fifteen-mile freeway. It changes no arithmetic.
+
 ## Corridor chain assembly, endpoint trim & proration (Item 28)
 
 A **chain** is the ordered run of XD segments between two query points — how an
