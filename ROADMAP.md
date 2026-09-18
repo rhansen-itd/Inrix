@@ -1829,10 +1829,10 @@ The catalogue becomes data-derived: Item 43 says where the congestion actually s
 stops, a human says why that extent is the meaningful one and what to call it. The
 existing 20 entries stop being the catalogue and become a **check** on it. Scope:
 
-- [ ] **Run Item 43 over the whole on-system export** and triage the candidates: accept,
+- [x] **Run Item 43 over the whole on-system export** and triage the candidates: accept,
       merge, or reject with a reason. The rejections are as interesting as the
       acceptances and should be recorded, not dropped.
-- [ ] **Compare against the current 10 reporting corridors.** Where an extracted run
+- [x] **Compare against the current 10 reporting corridors.** Where an extracted run
       disagrees with a hand-drawn extent, the presumption is that the data is right about
       the *ends* and the hand-drawn entry is right about the *name* — but check each
       disagreement rather than applying that as a rule. I-84 and Eagle Rd should come back
@@ -1841,22 +1841,31 @@ existing 20 entries stop being the catalogue and become a **check** on it. Scope
       several extents, most of them ranking near zero. **SH-55 Karcher Rd is rankable
       today** — all 92 of its segments are in the export — and has no entry; it should
       pick one up here if the congestion supports one.
-- [ ] **The unranked routes get their extents from the data too** — US-95 (345.7 mi in the
+- [x] **The unranked routes get their extents from the data too** — US-95 (345.7 mi in the
       export), SH-21 (200.5), SH-51 (184.7), SH-78 (183.6), SH-52 (107.6), SH-71, SH-19,
       SH-167, SH-30, SH-67, SH-72 — roughly 1,190 miles with no catalogue entry at all.
       Expect most of it to produce **no** candidate, which is the correct answer for a
       rural state highway and is itself worth recording.
-- [ ] **Keep the reporting-corridor grouping honest as it grows**: `corridor` +
+- [x] **Keep the reporting-corridor grouping honest as it grows**: `corridor` +
       `direction` on every entry, and both directions per group or a stated reason.
       **A second one-way couplet is already known** — I-84 Business through downtown
       Nampa runs westbound on 2nd St S and eastbound on 3rd St S, all 35 segments in the
       export — so `one_way_couplet` is not a Boise-only flag and any I-84B Nampa entry
       needs it set. Watch for more; the earlier claim that Myrtle/Front was the district's
       only couplet was wrong.
-- [ ] **Re-run the district screening and record how the ranking moves.** Ten corridors
+- [x] **Re-run the district screening and record how the ranking moves.** Ten corridors
       over 9.4% of the store is not a district screen; the number that replaces it is the
       deliverable.
-- [ ] pytest for any new validation; DESIGN_HISTORY with the new ranking and the triage.
+- [x] pytest for any new validation; DESIGN_HISTORY with the new ranking and the triage.
+
+Delivered: Rebuilt `scripts/d3_corridors.json` via `scripts/rebuild_d3_catalogue.py`, expanding District 3's screening catalogue from 20 directional entries / 10 reporting corridors to **34 directional entries / 17 reporting corridors**. All 34 entries resolve 100% via `corridors.build_chain` with link repairs (`reached_target=True`, coverage 99.99%-100.0%). Congestion candidate extraction (`scripts/triage_candidates.py`) evaluated 319 candidates across 3,912 segments and 54.7M peak observations: 8 accepted as backbone extents, 75 merged across adjacent boundaries/runs, and 236 rejected (isolated signal queues < 0.25 mi, ramp stubs, unnumbered facilities), preserved in `out/district_screening/candidate_triage.csv` and `.json`. Key outcomes:
+- **SH-55 Karcher Rd** (`sh55-karcher`, 3.01 mi): ranks **#4 in District 3** at 420 vhd/mi (2,109 peak veh-hrs delay), out-ranking I-184 and Chinden Blvd.
+- **SH-45 urban/rural split**: urban Nampa (`sh45-nampa`, 4.86 mi) ranks #10 at 144 vhd/mi; rural control (`sh45-rural`, 13.07 mi) ranks #17 at 6 vhd/mi (TTI 1.04), vindicating the split.
+- **Downtown Nampa couplet** (`nampa-couplet`, 2nd St S WB / 3rd St S EB, 0.75 mi): added with `one_way_couplet: true`, ranks #11 at 67 vhd/mi.
+- **SH-55 north of State St**: partitioned into 4 natural mountain highway extents covering 225 directional miles / 299 segments (`sh55-eagle-hsb`, `sh55-hsb-cascade`, `sh55-cascade-mccall`, `sh55-mccall-newmeadows`); all rank near zero (10-19 vhd/mi, Ranks 13-16, TTI 1.03-1.06, establishing the rural baseline).
+- **Unranked routes**: US-95 (345.7 mi), SH-21 (200.5 mi), SH-51 (184.7 mi), SH-78 (183.6 mi), SH-52 (107.6 mi), SH-71, SH-19, SH-167, SH-30, SH-67, SH-72 verified to produce zero continuous corridor candidates (all isolated intersection queues triaged as REJECTED).
+- **District screening re-run**: screened footprint expanded from 65.5 directional miles / 367 segments (9.4% of store) to **349.5 directional miles / 693 segments (17.7% of store)**. Outputs in `out/district_screening/` (`corridor_peak_totals.csv`, `reporting_corridor_rankings.csv`, `corridor_breakout.csv`, `corridor_resolution.csv`, `screening_provenance.json`, `corridors.kml`).
+- **Tests**: `tests/test_d3_catalogue.py` (+5 tests), `tests/test_corridors.py` updated (73 tests passed), full suite **592 passed, 2 skipped**.
 
 *Suggested prompt:* "Do Item 44 of ROADMAP.md — rebuild the D3 catalogue from Item 43's
 extracted runs, and re-run the district screening."

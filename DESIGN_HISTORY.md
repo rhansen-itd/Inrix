@@ -4240,3 +4240,107 @@ to ensure off-system county roads do not surface as candidates.
 - On-system filtering via DataFrame, Series, and ID sets.
 **Full suite: 587 passed, 2 skipped.**
 
+---
+
+## Session 55 — Rebuilding the D3 catalogue from extracted runs (ROADMAP Item 44) (2026-09-18)
+
+**The mandate.** Item 44 transforms the District 3 screening catalogue from hand-drawn
+landmarks (Session 33) into an empirical, data-derived catalogue backed by recurrence analysis
+(Item 43). Hand-drawn extents suffered from dilution (e.g., dragging 13 miles of free-flow rural
+highway into SH-45 through Nampa), omitted major congestion hotspots (SH-55 Karcher Rd was
+completely uncatalogued despite 92 segments in the store), left rural routes unverified, and
+missed one-way couplets (downtown Nampa on 2nd/3rd St S). Item 44 extracts candidates across the
+entire on-system network, triages them with an audit trail, rebuilds the catalogue, and re-runs
+district screening end-to-end.
+
+### 1. Candidate Extraction and Triage (`scripts/triage_candidates.py`)
+- Evaluated all 3,912 segments in `d3_store.duckdb` across 54,687,762 peak-window observations.
+- Computed recurrence (`screen.segment_recurrence`) at `DEFAULT_TTI_THRESHOLD = 1.25` and
+  `DEFAULT_RECURRENCE_THRESHOLD = 0.50` (cached to `scratch/d3_recurrence.parquet`).
+- Extracted 319 candidates (139 AM, 180 PM) via `screen.extract_congestion_runs` on the on-system
+  network with link repairs.
+- Triage audit trail written to `out/district_screening/candidate_triage.csv` and `.json`:
+  - **8 ACCEPTED**: Primary empirical backbones matching core congestion corridors (I-84, I-184,
+    Eagle Rd, Chinden Blvd, State St, SH-55 Karcher Rd, Garrity Blvd, downtown Nampa).
+  - **75 MERGED**: Contiguous runs crossing `XDGroup` carriageway boundaries or bridging minor
+    link breaks, incorporated into consolidated reporting extents.
+  - **236 REJECTED**: Isolated intersection approach queues (< 0.25 mi), interchange ramp stubs,
+    short local queues, and unnumbered facilities.
+  - Rejection reasons are preserved for every candidate rather than silently dropped.
+
+### 2. Catalogue Rebuild (`scripts/d3_corridors.json` via `scripts/rebuild_d3_catalogue.py`)
+Expanded the catalogue from 20 directional entries / 10 reporting corridors to **34 directional
+entries / 17 reporting corridors**:
+- **100% Resolution**: All 34 entries resolve cleanly through `corridors.build_chain` with link
+  repairs (`reached_target=True`, coverage 99.99%–100.0%, 0 dead ends).
+- **Grouped and Balanced**: Every reporting corridor has exactly two directions (EB/WB or NB/SB),
+  and each entry carries a non-empty `id`, `name`, `direction`, `corridor`, and detailed
+  rationale `description` (> 80 chars).
+- **Couplet Flagging**: `one_way_couplet: true` is set on both `boise-couplet` (Myrtle/Front)
+  and `nampa-couplet` (2nd St S / 3rd St S).
+
+### 3. Key Findings & Extent Decisions
+1. **SH-55 Karcher Rd (`sh55-karcher`, 3.01 mi)**:
+   - Added between Lake Ave / Midway Rd and I-84 IC 33 (EB & WB).
+   - **Ranks #4 in District 3** at **420 vhd/mi** (2,109 peak veh-hrs delay, 2.7 min delay per trip),
+     ahead of I-184 and Chinden Blvd! Previously absent from the catalogue, this is the most
+     significant empirical finding of the screening.
+2. **SH-45 Urban vs Rural Split**:
+   - `sh45-nampa` (4.86 mi, 15 segs): Locust Ln / Deer Flat Rd to 2nd St S downtown. Delay density
+     jumped to **144 vhd/mi** (Rank 10).
+   - `sh45-rural` (13.07 mi, 26 segs): Walters Ferry (Snake River) to Locust Ln. Delay density
+     dropped to **6 vhd/mi** (Rank 17, TTI 1.04).
+   - *Result*: Dilution eliminated. The urban queue is isolated and ranked honestly, while the
+     rural control confirms free flow.
+   - *Snapping adjustment*: Placed `sh45-nampa-sb` start at `[43.57727, -116.56177]` to snap
+     correctly to southbound 12th Ave Rd rather than eastbound 11th Ave S.
+3. **Downtown Nampa Couplet (`nampa-couplet`, 0.75 mi)**:
+   - 2nd St S WB (0.76 mi) and 3rd St S EB (0.74 mi) between 11th Ave S and Caldwell Blvd (I-84B).
+   - Tagged `one_way_couplet: true`, ranks #11 at **67 vhd/mi**.
+4. **SH-55 Mountain Highway Extents (North of State St)**:
+   - Partitioned the 299 segments / 225 directional miles north of State St into 4 natural
+     topographical and functional extents:
+     - `sh55-eagle-hsb` (18.87 mi): Eagle to Horseshoe Bend (Rank 14, 18 vhd/mi, TTI 1.04).
+     - `sh55-hsb-cascade` (51.5 mi): Horseshoe Bend to Cascade (Rank 16, 10 vhd/mi, TTI 1.04).
+     - `sh55-cascade-mccall` (29.4 mi): Cascade to McCall (Rank 13, 19 vhd/mi, TTI 1.06).
+     - `sh55-mccall-newmeadows` (12.7 mi): McCall to New Meadows / US-95 (Rank 15, 15 vhd/mi, TTI 1.03).
+   - All 4 extents rank near zero, establishing the empirical rural baseline for District 3.
+5. **Unranked Rural Routes Verified**:
+   - US-95 (345.7 mi), SH-21 (200.5 mi), SH-51 (184.7 mi), SH-78 (183.6 mi), SH-52 (107.6 mi),
+     SH-71, SH-19, SH-167, SH-30, SH-67, SH-72 (~1,190 miles in export).
+   - Confirmed zero continuous corridor congestion runs. Isolated intersection approach queues
+     (e.g., US-95 in Fruitland/Weiser) exist and were triaged as REJECTED (< 0.25 mi signal queues).
+
+### 4. District Screening Results & Rankings
+Screening footprint grew from 65.5 directional miles / 367 segments (9.4% of store) to **349.5
+directional miles / 693 segments (17.7% of store)**.
+Peak totals ranking (`out/district_screening/corridor_peak_totals.csv`, ranked on `vhd_per_mile`):
+1. **I-84** (Nampa IC 35 to Boise IC 49): 1,539 vhd/mi (46,191 veh-hrs, 21.4 min delay, TTI 1.40)
+2. **Boise Couplet** (Myrtle EB / Front WB): 554 vhd/mi (1,233 veh-hrs, 2.9 min delay, TTI 1.29)
+3. **Eagle Rd** (I-84 to SH-44): 431 vhd/mi (5,635 veh-hrs, 10.6 min delay, TTI 1.34)
+4. **SH-55 Karcher Rd** (Lake Ave to I-84 IC 33): 420 vhd/mi (2,109 veh-hrs, 2.7 min delay, TTI 1.25)
+5. **Chinden Blvd** (Eagle Rd to I-184): 258 vhd/mi (3,365 veh-hrs, 4.4 min delay, TTI 1.24)
+6. **I-184 Connector** (I-84 to downtown): 190 vhd/mi (3,217 veh-hrs, 4.2 min delay, TTI 1.24)
+7. **Garrity Blvd** (11th Ave N to I-84 IC 38): 188 vhd/mi (1,349 veh-hrs, 2.7 min delay, TTI 1.22)
+8. **State St** (Eagle Rd to 23rd St): 173 vhd/mi (2,374 veh-hrs, 4.6 min delay, TTI 1.22)
+9. **Caldwell Blvd** (Karcher Rd to 11th Ave N): 159 vhd/mi (1,159 veh-hrs, 2.2 min delay, TTI 1.18)
+10. **SH-45 Nampa** (Locust Ln to downtown): 144 vhd/mi (1,404 veh-hrs, 2.1 min delay, TTI 1.16)
+11. **Nampa Couplet** (2nd St S WB / 3rd St S EB): 67 vhd/mi (99 veh-hrs, 0.4 min delay, TTI 1.10)
+12. **SH-16** (State St to Emmett): 59 vhd/mi (1,631 veh-hrs, 2.4 min delay, TTI 1.07)
+13. **SH-55 Cascade to McCall**: 19 vhd/mi (1,102 veh-hrs, 4.4 min delay, TTI 1.06)
+14. **SH-55 Eagle to Horseshoe Bend**: 18 vhd/mi (691 veh-hrs, 1.9 min delay, TTI 1.04)
+15. **SH-55 McCall to New Meadows**: 15 vhd/mi (382 veh-hrs, 0.8 min delay, TTI 1.03)
+16. **SH-55 Horseshoe Bend to Cascade**: 10 vhd/mi (1,061 veh-hrs, 5.0 min delay, TTI 1.04)
+17. **SH-45 Rural** (Walters Ferry to Locust Ln): 6 vhd/mi (160 veh-hrs, 1.6 min delay, TTI 1.04)
+
+### 5. Tests
+- `tests/test_d3_catalogue.py` (+5 tests):
+  - `test_d3_catalogue_schema_and_completeness`: 34 entries, 17 groups, balanced directions, descriptions, couplet tags.
+  - `test_d3_catalogue_includes_item44_key_corridors`: checks SH-45 split, Karcher Rd, Nampa couplet, SH-55 mountain extents.
+  - `test_all_d3_catalogue_entries_resolve_with_repairs`: 100% `reached_target=True`, valid chain geometries.
+  - `test_candidate_triage_audit_trail`: validates 319 candidates, exact 8/75/236 counts, non-empty reasons in CSV and JSON.
+  - `test_district_screening_outputs_integrity`: verifies 68 rankings, 17 totals, 68 breakouts, 34 resolutions, >= 70% coverage, ranking order assertions.
+- `tests/test_corridors.py`: updated coordinate bounds for northern D3 and updated catalogue group assertions (73 passed).
+- **Full suite: 592 passed, 2 skipped.**
+
+

@@ -707,8 +707,8 @@ def test_d3_catalogue_loads_and_validates():
         lat0, lon0 = entry.start_latlon
         lat1, lon1 = entry.end_latlon
         # every extent is inside District 3 and is not a zero-length "corridor"
-        assert 42.9 <= lat0 <= 44.9 and -117.3 <= lon0 <= -115.4
-        assert 42.9 <= lat1 <= 44.9 and -117.3 <= lon1 <= -115.4
+        assert 42.9 <= lat0 <= 45.1 and -117.3 <= lon0 <= -115.4
+        assert 42.9 <= lat1 <= 45.1 and -117.3 <= lon1 <= -115.4
         assert (lat0, lon0) != (lat1, lon1)
         assert len(entry.description) > 80      # the *why*, not a label
 
@@ -1132,13 +1132,17 @@ def test_resolution_table_carries_the_grouping():
 
 
 @pytest.mark.skipif(not D3_CATALOGUE.exists(), reason="D3 catalogue not available")
-def test_the_d3_catalogue_groups_its_20_entries_into_10_roads():
+def test_the_d3_catalogue_groups_its_entries_into_reporting_corridors():
     entries = corridors.load_catalogue(D3_CATALOGUE)
     groups = corridors.load_reporting_corridors(D3_CATALOGUE)
-    assert len(entries) == 20 and len(groups) == 10
+    assert len(entries) == 34 and len(groups) == 17
     assert all(e.corridor and e.direction for e in entries)
     # Every reporting corridor is exactly two directions, and they differ.
     by_group: dict[str, list[str]] = {}
     for e in entries:
         by_group.setdefault(e.corridor, []).append(e.direction)
     assert all(len(v) == 2 and len(set(v)) == 2 for v in by_group.values()), by_group
+    # Couplets are explicitly tagged
+    couplets = {g.id for g in groups if g.one_way_couplet}
+    assert couplets == {"boise-couplet", "nampa-couplet"}
+

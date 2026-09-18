@@ -1,0 +1,439 @@
+#!/usr/bin/env python3
+"""Rebuild the District 3 screening catalogue from data-derived runs (ROADMAP Item 44)."""
+import json
+from pathlib import Path
+from inrix_tools import corridors
+
+CATALOGUE_PATH = Path("scripts/d3_corridors.json")
+
+NOTE = (
+    "ITD District 3 screening catalogue (rebuilt 2026-09-18 per ROADMAP Item 44): "
+    "17 reporting corridors (34 directional entries) derived from recurring congestion runs "
+    "(ROADMAP Item 43) and checked against road geometry and connectivity. Each entry is stated as "
+    "its meaningful extent endpoints (lat, lon) in WGS84, in TRAVEL ORDER, resolved through "
+    "corridors.build_chain (topological NextXDSegI walk, k-candidate snapping, endpoint trim, "
+    "coverage accounting). All 34 entries resolve with reached_target=True against the XD network "
+    "and carriageway-scoped repairs table scripts/d3_link_repairs.csv. Includes the urban/rural "
+    "split of SH-45 at Nampa, SH-55 Karcher Rd, the downtown Nampa couplet (2nd St S / 3rd St S), "
+    "and the four natural mountain highway sections of SH-55 north of State St."
+)
+
+CORRIDORS = [
+    {
+        "id": "i84-eb",
+        "name": "I-84 EB: Nampa (IC 35) to Boise (I-184, IC 49)",
+        "start_latlon": [43.60498, -116.59006],
+        "end_latlon": [43.59705, -116.29454],
+        "description": "Eastbound I-84 from the Karcher Rd / Nampa Blvd interchange (IC 35) to the I-184 Connector (IC 49). This is the length of the Treasure Valley freeway that runs at capacity in both peaks - west of Nampa the AM demand has not yet accumulated, and east of the Connector the through volume splits into downtown Boise. Mainline only, and deliberately so: the Garrity Blvd frontage road (FRC 3, 20 mph reference speed) parallels the freeway through Nampa inside any bounding box drawn around this extent, and a chain that includes it sums 1.37 mi of the same ground twice - the error that reported this corridor at 17.01 mi / TTI 1.469 where the mainline is 15.60 mi / TTI 1.553. Resolves to 27 mainline segments, 15.12 mi.",
+        "corridor": "i84",
+        "direction": "EB"
+    },
+    {
+        "id": "i84-wb",
+        "name": "I-84 WB: Boise (I-184, IC 49) to Nampa (IC 35)",
+        "start_latlon": [43.59704, -116.29124],
+        "end_latlon": [43.605, -116.5895],
+        "description": "The westbound carriageway over the same ground as i84-eb, taken separately because the two directions do not congest together (PM outbound is the heavier of the two) and because the AADT join reads them separately. Endpoints sit on the WB carriageway rather than on the EB one: the nearest segment to an interchange point is routinely the opposing carriageway, which is what build_chain's k-candidate snapping exists to survive. Corroborated by Item 43 candidate extraction, which recovers this exact extent as a contiguous 15.92-mile run (28 segments, 100% qualifying, TTI 2.06).",
+        "corridor": "i84",
+        "direction": "WB"
+    },
+    {
+        "id": "i184-eb",
+        "name": "I-184 EB: I-84 (IC 49) to the downtown Boise terminus",
+        "start_latlon": [43.59698, -116.29197],
+        "end_latlon": [43.61874, -116.2148],
+        "description": "The Boise Connector inbound, from I-84 at IC 49 to where it ends at W Myrtle St downtown - 4.72 mi that carries the west-side commute into the state's largest employment centre, and the reason the Myrtle/Front couplet exists. Resolves to 10 mainline segments on 5 repaired links (Item 38): in the XD vintage in use, 7 of the 20 I-184 segments carry a null NextXDSegI (35%, against 2.4% on I-84), no other segment names them as its PreviousXD, and segment 428958469 points at off-ramp 1187615222 instead of the mainline continuation 1187558526. The repairs are carriageway-scoped (same XDGroup, touching geometry, same bearing, one candidate only) and every one of the 5 is named in the chain's repaired_links.",
+        "corridor": "i184",
+        "direction": "EB"
+    },
+    {
+        "id": "i184-wb",
+        "name": "I-184 WB: downtown Boise to I-84 (IC 49)",
+        "start_latlon": [43.619, -116.215],
+        "end_latlon": [43.59847, -116.28778],
+        "description": "The Connector outbound, W Front St to I-84. Resolves to 10 segments / 4.63 mi on 4 repaired links. Item 43 recurrence extraction identifies the core outbound climbing bottleneck between 13th St and Cole Rd as a contiguous 2.17-mile queue in the PM peak (TTI 2.38, 100% qualifying). The repair keeps the walk inside the westbound XDGroup, surviving the published network link defect.",
+        "corridor": "i184",
+        "direction": "WB"
+    },
+    {
+        "id": "myrtle-eb",
+        "name": "Myrtle St EB: Connector terminus to Broadway Ave",
+        "start_latlon": [43.61618, -116.2117],
+        "end_latlon": [43.60597, -116.19342],
+        "description": "W/E Myrtle St, the eastbound (inbound) leg of the downtown Boise one-way couplet, from where I-184 ends to Broadway Ave / Park Blvd. One-way, so it has no opposing direction: the couplet's other half is front-wb, and the pair is ranked under reporting corridor boise-couplet with one_way_couplet true. Captures the morning inbound queue through downtown Boise signals (rec 0.86, TTI 1.35 over 0.44 mi). Resolves to 9 segments, 1.20 mi.",
+        "corridor": "boise-couplet",
+        "direction": "EB"
+    },
+    {
+        "id": "front-wb",
+        "name": "Front St WB: Broadway Ave to S 13th St",
+        "start_latlon": [43.60799, -116.1934],
+        "end_latlon": [43.61698, -116.21064],
+        "description": "E/W Front St, the westbound (outbound) leg of the downtown couplet, Broadway Ave west to S 13th St. Signed US-20/26 through downtown. The extent ends at 13th St where the facility changes and ITD's interest transfers to I-184. Item 43 extraction precisely confirms this extent: in the PM peak, Front St forms a contiguous 1.11-mile run of recurring congestion (11 segments, rec 0.88, TTI 1.74) ending at 13th St. Resolves to 9 segments, 1.07 mi.",
+        "corridor": "boise-couplet",
+        "direction": "WB"
+    },
+    {
+        "id": "sh55-eagle-nb",
+        "name": "SH-55 (Eagle Rd) NB: I-84 (IC 46) to State St (SH-44)",
+        "start_latlon": [43.59627, -116.35476],
+        "end_latlon": [43.69094, -116.35407],
+        "description": "Eagle Rd northbound from the I-84 interchange to the State St junction - the valley's busiest arterial, six lanes of signalised commercial frontage. The extent ends at State St because north of it the road crosses the river into Eagle and leaves the commercial corridor that generates the congestion. Confirmed by Item 43 extraction as a continuous series of recurring queues across all signalized segments in the PM peak (rec 0.81-0.93, TTI up to 1.64). Resolves to 16 segments, 6.64 mi.",
+        "corridor": "sh55-eagle",
+        "direction": "NB"
+    },
+    {
+        "id": "sh55-eagle-sb",
+        "name": "SH-55 (Eagle Rd) SB: State St (SH-44) to I-84 (IC 46)",
+        "start_latlon": [43.69094, -116.35407],
+        "end_latlon": [43.5965, -116.35476],
+        "description": "The southbound carriageway over the same ground as sh55-eagle-nb. Kept separate: the SB free-flow level runs measurably below NB over these endpoints (DESIGN_HISTORY Session 37, ROADMAP Item 33), so averaging the two would bury the finding. Confirmed by Item 43 extraction in the PM peak (rec 0.87-0.98, TTI up to 2.08). Resolves to 15 segments, 6.64 mi.",
+        "corridor": "sh55-eagle",
+        "direction": "SB"
+    },
+    {
+        "id": "sh69-nb",
+        "name": "SH-69 (Meridian Rd) NB: Kuna to I-84 (IC 44)",
+        "start_latlon": [43.48878, -116.41345],
+        "end_latlon": [43.59466, -116.39371],
+        "description": "SH-69 from E Avalon St in Kuna north to I-84 at IC 44. The extent is the whole route because SH-69 IS the Kuna commute - it is the only continuous route from Kuna to the freeway, so the corridor and the trip are the same thing. Item 43 shows congestion concentrated at the I-84 northern terminus signals and at the Kuna southern signals, with the rural middle free-flowing. Resolves to 20 segments, 8.39 mi.",
+        "corridor": "sh69",
+        "direction": "NB"
+    },
+    {
+        "id": "sh69-sb",
+        "name": "SH-69 (Meridian Rd) SB: I-84 (IC 44) to Kuna",
+        "start_latlon": [43.59346, -116.39371],
+        "end_latlon": [43.48878, -116.41345],
+        "description": "The southbound return over the same ground as sh69-nb, and the PM-peak direction of the pair - the one that queues back from the Kuna signals rather than from the I-84 ramp meter. Kept as its own entry because the southbound free-flow level on SH-69 runs measurably below the northbound one over these endpoints (Item 33). Resolves to 20 segments, 8.39 mi.",
+        "corridor": "sh69",
+        "direction": "SB"
+    },
+    {
+        "id": "us2026-chinden-eb",
+        "name": "US-20/26 (Chinden Blvd) EB: SH-16 to Glenwood St",
+        "start_latlon": [43.66292, -116.4702],
+        "end_latlon": [43.64899, -116.27984],
+        "description": "Chinden Blvd eastbound from the SH-16 junction to Glenwood St - the arterial that parallels I-84 two miles to the north and absorbs the freeway's traffic whenever it fails. Ends at Glenwood because east of it Chinden becomes State St's approach into Garden City. Confirmed by Item 43 extraction as a 3.16-mile contiguous morning queue (rec 0.68, TTI 1.49) from Eagle Rd to Glenwood, plus recurring bottlenecks west of Eagle Rd. Resolves to 19 segments, 10.02 mi.",
+        "corridor": "us2026-chinden",
+        "direction": "EB"
+    },
+    {
+        "id": "us2026-chinden-wb",
+        "name": "US-20/26 (Chinden Blvd) WB: Glenwood St to SH-16",
+        "start_latlon": [43.64914, -116.27983],
+        "end_latlon": [43.66306, -116.4702],
+        "description": "The westbound carriageway over the same ground as us2026-chinden-eb. Carried separately because Chinden's signal progression is timed for the peak direction. Item 43 extraction identifies heavy evening westbound recurring congestion across multiple runs (1.94 mi at TTI 1.74, 1.09 mi, 1.01 mi, 1.00 mi at TTI 2.74). Resolves to 19 segments, 9.71 mi.",
+        "corridor": "us2026-chinden",
+        "direction": "WB"
+    },
+    {
+        "id": "sh44-eb-star-eagle",
+        "name": "SH-44 (State St) EB: SH-16 in Star to Eagle Rd",
+        "start_latlon": [43.6917, -116.45053],
+        "end_latlon": [43.69093, -116.35407],
+        "description": "State St eastbound, SH-16 in Star to Eagle Rd in Eagle - the western half of the Star/Eagle-to-Boise arterial commute. Split from sh44-eb-eagle-boise at Eagle Rd rather than carried as one Star-to-Boise entry because the two halves did not connect in the XD network as published, and because they congest separately. Resolves to 10 segments / 5.89 mi on 1 repaired link.",
+        "corridor": "sh44-star-eagle",
+        "direction": "EB"
+    },
+    {
+        "id": "sh44-eb-eagle-boise",
+        "name": "SH-44 (State St) EB: Eagle Rd to Glenwood St, Boise",
+        "start_latlon": [43.69093, -116.35407],
+        "end_latlon": [43.66833, -116.27911],
+        "description": "State St eastbound from Eagle Rd to the Glenwood St junction, where SH-44 turns south - the inbound half of the Star/Eagle commute, and the half that congests in the morning peak. Resolves to 11 segments, 4.11 mi.",
+        "corridor": "sh44-eagle-boise",
+        "direction": "EB"
+    },
+    {
+        "id": "sh44-wb-boise-eagle",
+        "name": "SH-44 (State St) WB: Glenwood St, Boise to Eagle Rd",
+        "start_latlon": [43.66833, -116.27911],
+        "end_latlon": [43.69044, -116.34909],
+        "description": "The outbound half of the State St commute, from the Glenwood St junction west to Eagle Rd - 12 segments, 4.14 mi. Extracted in Item 43 as heavy recurring evening queues approaching Eagle (0.91 mi, 0.81 mi at TTI 1.90, 0.70 mi, 0.50 mi).",
+        "corridor": "sh44-eagle-boise",
+        "direction": "WB"
+    },
+    {
+        "id": "sh44-wb-eagle-star",
+        "name": "SH-44 (State St) WB: Eagle Rd to SH-16 in Star",
+        "start_latlon": [43.6922, -116.36134],
+        "end_latlon": [43.6917, -116.45053],
+        "description": "State St westbound, Eagle Rd out to SH-16 in Star. Resolves to 9 segments / 5.39 mi on 1 repaired link. Confirmed by Item 43 extraction as two contiguous evening commute runs (1.60 mi at TTI 1.75 and 1.56 mi at TTI 1.72) carrying traffic west towards Star.",
+        "corridor": "sh44-star-eagle",
+        "direction": "WB"
+    },
+    {
+        "id": "sh16-nb",
+        "name": "SH-16 (Emmett Hwy) NB: Star (State St) to Emmett",
+        "start_latlon": [43.69625, -116.45853],
+        "end_latlon": [43.86046, -116.46707],
+        "description": "SH-16 north from State St in Star over the bench to the south edge of Emmett - the Gem County commute, and a two-lane rural highway where a peak is a platoon behind a slow vehicle rather than a queue at a signal. Resolves to 22 segments, 12.55 mi, on 1 repaired link. Item 43 shows no recurring congestion over the bench.",
+        "corridor": "sh16",
+        "direction": "NB"
+    },
+    {
+        "id": "sh16-sb",
+        "name": "SH-16 (Emmett Hwy) SB: Emmett to Star (State St)",
+        "start_latlon": [43.86046, -116.46707],
+        "end_latlon": [43.69625, -116.45853],
+        "description": "The southbound return over the same ground as sh16-nb: 22 segments, 12.55 chain mi, on 1 repaired link. Zero recurring congestion over the rural pass.",
+        "corridor": "sh16",
+        "direction": "SB"
+    },
+    {
+        "id": "sh45-nampa-nb",
+        "name": "SH-45 (12th Ave Rd) NB: Locust Ln to downtown Nampa (2nd St S)",
+        "start_latlon": [43.51739, -116.57293],
+        "end_latlon": [43.57727, -116.56177],
+        "description": "The urban 4.86-mile segment of SH-45 through Nampa along 12th Ave Rd and 12th Ave S, from the southern urban boundary at Locust Ln / Deer Flat Rd north to 2nd St S in downtown Nampa. Separated from the rural highway per ROADMAP Item 44: 100% of SH-45's recurring congestion occurs along this signalized arterial corridor, where commuters queue into Nampa in the AM and outbound in the PM. Resolves dilution in the former 17-mile corridor. Resolves to 15 segments, 4.86 mi.",
+        "corridor": "sh45-nampa",
+        "direction": "NB"
+    },
+    {
+        "id": "sh45-nampa-sb",
+        "name": "SH-45 (12th Ave Rd) SB: downtown Nampa (2nd St S) to Locust Ln",
+        "start_latlon": [43.57727, -116.56177],
+        "end_latlon": [43.51739, -116.57293],
+        "description": "The southbound return carriageway over the same 4.86-mile urban extent through Nampa as sh45-nampa-nb, from 2nd St S south to Locust Ln. Carried separately to measure the PM outbound commute delay and resolve volume independently. Confirmed by Item 43 extraction (rec 0.91, TTI 1.37 in PM). Resolves to 15 segments, 4.86 mi.",
+        "corridor": "sh45-nampa",
+        "direction": "SB"
+    },
+    {
+        "id": "sh45-rural-nb",
+        "name": "SH-45 (ID-45) NB: Walters Ferry to Locust Ln, Nampa",
+        "start_latlon": [43.33884, -116.60794],
+        "end_latlon": [43.51739, -116.57293],
+        "description": "The rural 13.07-mile southern portion of SH-45 from the Snake River crossing at Walters Ferry north to Locust Ln at the south edge of Nampa. Retained as the district's true rural control corridor: free of urban signals and commercial strip development, it measures rural baseline performance and ranks near zero delay (mean recurrence < 0.02). Resolves to 26 segments, 13.07 mi.",
+        "corridor": "sh45-rural",
+        "direction": "NB"
+    },
+    {
+        "id": "sh45-rural-sb",
+        "name": "SH-45 (ID-45) SB: Locust Ln, Nampa to Walters Ferry",
+        "start_latlon": [43.51739, -116.57293],
+        "end_latlon": [43.33884, -116.60794],
+        "description": "The southbound return over the same 13.07-mile rural extent as sh45-rural-nb. Resolves to 26 segments, 13.07 mi.",
+        "corridor": "sh45-rural",
+        "direction": "SB"
+    },
+    {
+        "id": "sh55-karcher-eb",
+        "name": "SH-55 (Karcher Rd) EB: Lake Ave to I-84 (IC 33)",
+        "start_latlon": [43.6046, -116.6531],
+        "end_latlon": [43.6054, -116.6030],
+        "description": "Eastbound SH-55 along W Karcher Rd from Lake Ave / Midway Rd to the I-84 interchange (IC 33) in Nampa. Extracted directly from recurring congestion (Item 43, AM recurrence 0.69 / TTI 1.48 over 1.50 mi), capturing the heavy morning commute and retail approach volume feeding the freeway from Canyon County. Resolves to 6 segments, 3.01 mi.",
+        "corridor": "sh55-karcher",
+        "direction": "EB"
+    },
+    {
+        "id": "sh55-karcher-wb",
+        "name": "SH-55 (Karcher Rd) WB: I-84 (IC 33) to Lake Ave",
+        "start_latlon": [43.6054, -116.6030],
+        "end_latlon": [43.6046, -116.6531],
+        "description": "Westbound SH-55 along W Karcher Rd from I-84 (IC 33) out to Lake Ave / Midway Rd. Extracted directly from recurring congestion (Item 43, PM recurrence 0.78 / TTI 1.42 over 2.51 mi), capturing the evening westbound queue away from the freeway and commercial district. Resolves to 6 segments, 3.01 mi.",
+        "corridor": "sh55-karcher",
+        "direction": "WB"
+    },
+    {
+        "id": "nampa-couplet-wb",
+        "name": "Downtown Nampa couplet: 2nd St S WB (11th Ave to Caldwell Blvd)",
+        "start_latlon": [43.579, -116.562],
+        "end_latlon": [43.586, -116.572],
+        "description": "The westbound leg of the downtown Nampa one-way couplet carrying I-84 Business on 2nd St S between 11th Ave S and Caldwell Blvd / 16th Ave S. Part of the second one-way couplet identified on the District 3 state system (ROADMAP Item 44), paired with 3rd St S eastbound. Resolves to 2 segments, 0.76 mi.",
+        "corridor": "nampa-couplet",
+        "direction": "WB"
+    },
+    {
+        "id": "nampa-couplet-eb",
+        "name": "Downtown Nampa couplet: 3rd St S EB (Caldwell Blvd to 11th Ave)",
+        "start_latlon": [43.585, -116.573],
+        "end_latlon": [43.578, -116.563],
+        "description": "The eastbound leg of the downtown Nampa one-way couplet carrying I-84 Business on E 3rd St S between Caldwell Blvd / 16th Ave S and 11th Ave S. Paired with 2nd St S westbound under one_way_couplet true. Resolves to 2 segments, 0.74 mi.",
+        "corridor": "nampa-couplet",
+        "direction": "EB"
+    },
+    {
+        "id": "sh55-eagle-hsb-nb",
+        "name": "SH-55 NB: Eagle (State St) to Horseshoe Bend (SH-52)",
+        "start_latlon": [43.6936, -116.319],
+        "end_latlon": [43.9177, -116.198],
+        "description": "Northbound SH-55 from the State St junction in Eagle over the Spring Valley summit to the SH-52 junction in Horseshoe Bend. Extracted from the unranked SH-55 northern miles (ROADMAP Item 44) as the first natural geographic mountain pass section. Resolves to 22 segments, 18.87 mi.",
+        "corridor": "sh55-eagle-hsb",
+        "direction": "NB"
+    },
+    {
+        "id": "sh55-eagle-hsb-sb",
+        "name": "SH-55 SB: Horseshoe Bend (SH-52) to Eagle (State St)",
+        "start_latlon": [43.9177, -116.198],
+        "end_latlon": [43.6936, -116.319],
+        "description": "Southbound return over the same 18.87-mile mountain highway extent as sh55-eagle-hsb-nb, descending from Horseshoe Bend to Eagle. Resolves to 29 segments, 18.87 mi.",
+        "corridor": "sh55-eagle-hsb",
+        "direction": "SB"
+    },
+    {
+        "id": "sh55-hsb-cascade-nb",
+        "name": "SH-55 NB: Horseshoe Bend (SH-52) to Cascade",
+        "start_latlon": [43.9177, -116.198],
+        "end_latlon": [44.516, -116.043],
+        "description": "Northbound SH-55 through the Payette River Canyon from the SH-52 junction in Horseshoe Bend past Banks (Banks-Lowman Rd) and Smiths Ferry to Cascade. Extracted from the unranked SH-55 northern miles (ROADMAP Item 44) as the canyon section. Resolves to 79 segments, 51.45 mi.",
+        "corridor": "sh55-hsb-cascade",
+        "direction": "NB"
+    },
+    {
+        "id": "sh55-hsb-cascade-sb",
+        "name": "SH-55 SB: Cascade to Horseshoe Bend (SH-52)",
+        "start_latlon": [44.516, -116.043],
+        "end_latlon": [43.9177, -116.198],
+        "description": "Southbound return over the 51.62-mile Payette River Canyon extent from Cascade to Horseshoe Bend. Resolves to 59 segments, 51.62 mi.",
+        "corridor": "sh55-hsb-cascade",
+        "direction": "SB"
+    },
+    {
+        "id": "sh55-cascade-mccall-nb",
+        "name": "SH-55 NB: Cascade to McCall (E Lake St)",
+        "start_latlon": [44.516, -116.043],
+        "end_latlon": [44.911, -116.103],
+        "description": "Northbound SH-55 through Long Valley from Cascade through Donnelly to E Lake St in McCall. Extracted from the unranked northern miles (ROADMAP Item 44). Contains localized weekend/recreational signal congestion in town centers with free-flowing rural highway between them. Resolves to 45 segments, 29.37 mi.",
+        "corridor": "sh55-cascade-mccall",
+        "direction": "NB"
+    },
+    {
+        "id": "sh55-cascade-mccall-sb",
+        "name": "SH-55 SB: McCall (E Lake St) to Cascade",
+        "start_latlon": [44.911, -116.103],
+        "end_latlon": [44.516, -116.043],
+        "description": "Southbound return over the 29.38-mile Long Valley extent from McCall to Cascade. Resolves to 34 segments, 29.38 mi.",
+        "corridor": "sh55-cascade-mccall",
+        "direction": "SB"
+    },
+    {
+        "id": "sh55-mccall-newmeadows-wb",
+        "name": "SH-55 WB: McCall (E Lake St) to New Meadows (US-95)",
+        "start_latlon": [44.911, -116.103],
+        "end_latlon": [44.970, -116.284],
+        "description": "Westbound SH-55 from E Lake St in downtown McCall past Payette Lake and over the pass to the northern terminus at US-95 in New Meadows. Extracted from the northern miles of SH-55 (ROADMAP Item 44). Resolves to 16 segments, 12.70 mi.",
+        "corridor": "sh55-mccall-newmeadows",
+        "direction": "WB"
+    },
+    {
+        "id": "sh55-mccall-newmeadows-eb",
+        "name": "SH-55 EB: New Meadows (US-95) to McCall (E Lake St)",
+        "start_latlon": [44.970, -116.284],
+        "end_latlon": [44.911, -116.103],
+        "description": "Eastbound return over the 12.68-mile extent from US-95 in New Meadows to McCall. Resolves to 22 segments, 12.68 mi.",
+        "corridor": "sh55-mccall-newmeadows",
+        "direction": "EB"
+    }
+]
+
+REPORTING_CORRIDORS = [
+    {
+        "id": "i84",
+        "name": "I-84: Nampa (IC 35) to Boise (I-184, IC 49)",
+        "description": "The Treasure Valley freeway spine, both carriageways. Ranked as one road because that is how a district programmes it, but the directions do not congest together - WB is the heavier in the PM and EB in the AM - so the grouped row names its peak direction rather than averaging the two."
+    },
+    {
+        "id": "i184",
+        "name": "I-184: the Boise Connector, I-84 (IC 49) to downtown",
+        "description": "The whole west-side commute into downtown Boise, both directions. Could not be ranked at all before the topology repair (Item 38); 3 of its 10 segments per direction are weighted by a ramp AADT record, which is what a freeway built almost entirely of ramp geometry looks like through the Item 34 join."
+    },
+    {
+        "id": "boise-couplet",
+        "name": "Downtown Boise couplet: Myrtle St EB / Front St WB",
+        "description": "The two directions of downtown US-20/26 run on two different one-way streets. Grouping them sums their vehicle-hours and recomputes the ratio from summed components; nothing is averaged.",
+        "one_way_couplet": True
+    },
+    {
+        "id": "sh55-eagle",
+        "name": "SH-55 (Eagle Rd): I-84 (IC 46) to State St (SH-44)",
+        "description": "The valley's busiest arterial, both directions - the commercial frontage between the freeway and State St that generates the congestion."
+    },
+    {
+        "id": "sh69",
+        "name": "SH-69 (Meridian Rd): Kuna to I-84 (IC 44)",
+        "description": "The Kuna commute, both directions. The corridor whose southbound free-flow gap turned out to be a reference-side artefact (Item 33), not an INRIX one."
+    },
+    {
+        "id": "us2026-chinden",
+        "name": "US-20/26 (Chinden Blvd): SH-16 to Glenwood St",
+        "description": "The northern parallel to State St, both directions - the alternative route the valley's west-side commute splits onto."
+    },
+    {
+        "id": "sh44-star-eagle",
+        "name": "SH-44 (State St): SH-16 in Star to Eagle Rd",
+        "description": "The western half of the Star/Eagle-to-Boise arterial commute, both directions. Split from sh44-eagle-boise at Eagle Rd because the halves congest separately."
+    },
+    {
+        "id": "sh44-eagle-boise",
+        "name": "SH-44 (State St): Eagle Rd to Glenwood St, Boise",
+        "description": "The eastern, in-town half of State St, both directions - the half that carries the accumulated demand of the western half into Boise."
+    },
+    {
+        "id": "sh16",
+        "name": "SH-16 (Emmett Hwy): Star (State St) to Emmett",
+        "description": "The Gem County commute, both directions - a two-lane rural highway where a peak is a platoon behind a slow vehicle rather than a queue at a signal."
+    },
+    {
+        "id": "sh45-nampa",
+        "name": "SH-45 (12th Ave): Locust Ln to downtown Nampa",
+        "description": "The urban 4.86-mile segment of SH-45 through Nampa, separated from the rural highway per Item 44. Captures 100% of the corridor's congestion without dilution by rural miles."
+    },
+    {
+        "id": "sh45-rural",
+        "name": "SH-45: Walters Ferry to Locust Ln (Rural Control)",
+        "description": "The rural 13.07-mile southern portion of SH-45. Retained as the rural control corridor for District 3 screening: ranks near zero delay."
+    },
+    {
+        "id": "sh55-karcher",
+        "name": "SH-55 (Karcher Rd): Lake Ave to I-84 (IC 33)",
+        "description": "The 3.01-mile commercial and commuter arterial on W Karcher Rd in Nampa, added in Item 44 from recurring congestion runs."
+    },
+    {
+        "id": "nampa-couplet",
+        "name": "Downtown Nampa couplet: 2nd St S WB / 3rd St S EB",
+        "description": "The second one-way couplet on the District 3 state system (Item 44), carrying I-84 Business between 11th Ave S and Caldwell Blvd.",
+        "one_way_couplet": True
+    },
+    {
+        "id": "sh55-eagle-hsb",
+        "name": "SH-55: Eagle (State St) to Horseshoe Bend (SH-52)",
+        "description": "The 18.87-mile southern mountain pass section of SH-55 climbing from Eagle over Spring Valley summit to Horseshoe Bend."
+    },
+    {
+        "id": "sh55-hsb-cascade",
+        "name": "SH-55: Horseshoe Bend to Cascade",
+        "description": "The 51.5-mile Payette River Canyon section of SH-55 from Horseshoe Bend past Banks to Cascade."
+    },
+    {
+        "id": "sh55-cascade-mccall",
+        "name": "SH-55: Cascade to McCall",
+        "description": "The 29.4-mile Long Valley section of SH-55 from Cascade through Donnelly to McCall."
+    },
+    {
+        "id": "sh55-mccall-newmeadows",
+        "name": "SH-55: McCall to New Meadows (US-95)",
+        "description": "The 12.7-mile section of SH-55 connecting McCall over the pass to US-95 in New Meadows."
+    }
+]
+
+
+def rebuild():
+    data = {
+        "_note": NOTE,
+        "corridors": CORRIDORS,
+        "reporting_corridors": REPORTING_CORRIDORS,
+    }
+    # Validate with package parsers before writing
+    entries = corridors.parse_catalogue(data)
+    groups = corridors.parse_reporting_corridors(data)
+    print(f"Validated {len(entries)} corridor entries and {len(groups)} reporting groups.")
+    
+    with open(CATALOGUE_PATH, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+    print(f"Written to {CATALOGUE_PATH}")
+
+
+if __name__ == "__main__":
+    rebuild()
