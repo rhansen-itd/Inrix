@@ -53,3 +53,4 @@ venv/
 # --- generated exploration output (kept out of git; regenerate from tools) ---
 *.kml
 /out/
+/scratch/

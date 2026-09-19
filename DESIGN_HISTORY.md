@@ -4406,5 +4406,30 @@ Peak totals ranking (`out/district_screening/corridor_peak_totals.csv` on `vhd_p
 - `tests/test_corridors.py`: updated group assertions (18 groups) and repaired links sum (19).
 - Full suite passing: **592 passed, 2 skipped**.
 
+---
 
+## Session 57 — 7-Day All-Day Screening Option & Interactive GIS Visualizations (2026-09-19)
 
+Integrated the exploratory 7-day screening and interactive GIS visualizations into project-grade code:
+1. **7-Day All-Day Preset (`inrix_tools.screen`)**:
+   - Added `ALL_DAY_7D_WINDOW`: `PeakWindow("day_7d", "6:00AM-9:00PM", days=None, peak=True)`. Captures steady, non-commute congestion across all 7 days (signalized retail arterials and weekend recreation routes).
+   - Added `ALL_WINDOWS` dict containing both `PEAK_WINDOWS` and `day_7d`.
+   - Updated `resolve_windows()` to resolve string names from `ALL_WINDOWS`.
+2. **Screening CLI Integration (`scripts/run_district_screening.py`)**:
+   - Extended `--windows` flag to accept `day_7d` directly (`--windows day_7d` or `--windows am,pm,day_7d`).
+   - Added `--maps` flag to automatically generate standalone interactive HTML map visualizations of screened segments and ranked corridors alongside the standard CSVs.
+   - Built modular map-rendering pipeline (`generate_maps()`, `_segment_tti_frame()`, `_build_segment_traces()`, `_build_corridor_overlay()`, `_assemble_map()`, `_map_viewer_html()`) with deferred `plotly` imports.
+3. **Interactive GIS Visualizations (`scripts/generate_screening_maps.py`)**:
+   - Refactored script into a clean, thin wrapper calling shared core functions from `run_district_screening.py`.
+   - Generated self-contained HTML maps using Plotly WebGL vector line rendering and Carto basemaps:
+     - `d3_typical_peak_map.html`: All 3,912 segments tiered by weekday worst-peak TTI with 18 corridor centerlines and start/end termini markers.
+     - `d3_7day_all_day_map.html`: All 3,912 segments tiered by 7-day all-day TTI (6 AM – 9 PM).
+     - `map_viewer.html`: Unified tabbed viewer for instant toggling between both analyses.
+4. **Verification & Tests**:
+   - Added 5 new tests in `tests/test_screen.py` and `tests/test_run_district_screening.py`:
+     - `test_resolve_windows_knows_the_7day_preset`
+     - `test_all_windows_is_a_superset_of_peak_windows`
+     - `test_windows_flag_accepts_day_7d`
+     - `test_maps_flag_is_parsed`
+     - `test_day_7d_window_screens_and_ranks`
+   - Full test suite passing: **597 passed, 2 skipped**.
