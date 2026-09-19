@@ -150,13 +150,28 @@ PEAK_WINDOWS: dict[str, PeakWindow] = {
     "night":  PeakWindow("night", "10:00PM-5:00AM"),
 }
 
+# The 7-day all-day window: 6:00 AM to 9:00 PM across all 7 days. Captures steady
+# (non-peaky) congestion that weekday commute windows miss — signal-heavy commercial
+# corridors that stay busy through midday and weekends, and recreational routes with
+# Friday-Sunday travel costs. ``peak=True`` so it ranks in ``corridor_peak_totals``.
+ALL_DAY_7D_WINDOW = PeakWindow("day_7d", "6:00AM-9:00PM", days=None, peak=True)
+
+# Convenience: every defined preset in one dict. ``resolve_windows`` looks here when
+# resolving a string name, so ``--windows day_7d`` works out of the box.
+ALL_WINDOWS: dict[str, PeakWindow] = {
+    **PEAK_WINDOWS,
+    "day_7d": ALL_DAY_7D_WINDOW,
+}
+
 
 def resolve_windows(windows) -> dict[str, PeakWindow]:
     """Normalize a ``windows`` argument to an ordered ``{name: PeakWindow}`` dict.
 
     Accepts the :data:`PEAK_WINDOWS` mapping (or any ``{name: PeakWindow}``), a
     sequence of :class:`PeakWindow`, or a sequence of preset **names**
-    (``["am", "pm"]``). Order is preserved — it is the column order of the screen.
+    (``["am", "pm"]``, ``"day_7d"``). String names are looked up in
+    :data:`ALL_WINDOWS`, which includes both the commute presets and the 7-day
+    all-day window. Order is preserved — it is the column order of the screen.
     """
     if isinstance(windows, Mapping):
         items = list(windows.values())
@@ -168,10 +183,10 @@ def resolve_windows(windows) -> dict[str, PeakWindow]:
             if isinstance(w, PeakWindow):
                 items.append(w)
             elif isinstance(w, str):
-                if w not in PEAK_WINDOWS:
+                if w not in ALL_WINDOWS:
                     raise KeyError(
-                        f"Unknown window preset {w!r}; presets: {sorted(PEAK_WINDOWS)}.")
-                items.append(PEAK_WINDOWS[w])
+                        f"Unknown window preset {w!r}; presets: {sorted(ALL_WINDOWS)}.")
+                items.append(ALL_WINDOWS[w])
             else:
                 raise TypeError(f"Not a PeakWindow or preset name: {w!r}")
     if not items:

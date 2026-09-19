@@ -178,6 +178,28 @@ def test_resolve_windows_accepts_names_and_objects():
         screen.resolve_windows([screen.PEAK_WINDOWS["am"], screen.PEAK_WINDOWS["am"]])
 
 
+def test_resolve_windows_knows_the_7day_preset():
+    """The ``day_7d`` window is a first-class preset in ``ALL_WINDOWS``, resolvable
+    by string name — ``--windows day_7d`` works without constructing a PeakWindow."""
+    resolved = screen.resolve_windows(["day_7d"])
+    assert list(resolved) == ["day_7d"]
+    w = resolved["day_7d"]
+    assert w.peak is True
+    assert w.dows is None        # all 7 days (no day-of-week gate)
+    assert w is screen.ALL_DAY_7D_WINDOW
+    # It also resolves when mixed with commute windows.
+    mixed = screen.resolve_windows(["am", "day_7d"])
+    assert list(mixed) == ["am", "day_7d"]
+
+
+def test_all_windows_is_a_superset_of_peak_windows():
+    """``ALL_WINDOWS`` contains every ``PEAK_WINDOWS`` entry plus the day_7d."""
+    for name, window in screen.PEAK_WINDOWS.items():
+        assert screen.ALL_WINDOWS[name] is window
+    assert "day_7d" in screen.ALL_WINDOWS
+    assert screen.ALL_WINDOWS["day_7d"] is screen.ALL_DAY_7D_WINDOW
+
+
 # ---------------------------------------------------------------------------
 # segment_screen: the SQL path *is* the pandas path
 # ---------------------------------------------------------------------------

@@ -292,6 +292,39 @@ def test_windows_flag_selects_presets():
     assert rds.parse_args(["--db", "x"]).windows is None      # default: every preset
 
 
+def test_windows_flag_accepts_day_7d():
+    """``--windows day_7d`` resolves through ``ALL_WINDOWS``, not just
+    ``PEAK_WINDOWS`` — the 7-day all-day analysis is a first-class option."""
+    from inrix_tools import screen
+    args = rds.parse_args(["--db", "x", "--windows", "day_7d"])
+    assert set(args.windows) == {"day_7d"}
+    assert args.windows["day_7d"] is screen.ALL_DAY_7D_WINDOW
+    # Mixed: commute peaks + all-day
+    args2 = rds.parse_args(["--db", "x", "--windows", "am,pm,day_7d"])
+    assert set(args2.windows) == {"am", "pm", "day_7d"}
+
+
+def test_maps_flag_is_parsed():
+    """``--maps`` is a store_true flag."""
+    assert not rds.parse_args(["--db", "x"]).maps
+    assert rds.parse_args(["--db", "x", "--maps"]).maps
+
+
+def test_day_7d_window_screens_and_ranks(district):
+    """The ``day_7d`` window produces a valid ranking. It sees every observation
+    in the 6am-9pm span across all days, not just the weekday commute peaks."""
+    out = rds.run(_args(district, windows="day_7d"))
+    ranking = out["ranking"]
+    assert set(ranking["corridor"]) == {"toy-nb"}
+    # There is exactly one window called "day_7d".
+    assert list(ranking["window"].unique()) == ["day_7d"]
+    # The window is peak=True, so it is the worst_peak by definition.
+    assert ranking.iloc[0]["worst_peak"] == "day_7d"
+    # The corridor resolves; the totals table is produced.
+    assert out["totals"] is not None
+    assert list(out["totals"]["corridor_group"]) == ["toy"]
+
+
 def test_area_resolution_by_key_and_by_name(district):
     con = store.connect(district["db"])
     try:
@@ -311,3 +344,4 @@ def test_missing_repair_table_is_refused_not_ignored(tmp_path):
     with pytest.raises(SystemExit, match="No repair table"):
         rds.load_repairs(tmp_path / "nope.csv", True)
     assert rds.load_repairs(tmp_path / "nope.csv", False) is None
+
