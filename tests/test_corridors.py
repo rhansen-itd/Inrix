@@ -732,20 +732,17 @@ def test_d3_catalogue_resolves_i84_mainline_only():
 
 @pytest.mark.skipif(not XD_ZIP.exists(), reason="XD shapefile not available")
 def test_d3_catalogue_records_the_state_street_break_as_a_finding():
-    """SH-44 west of Eagle is unreachable in this XD vintage (eastbound NextXDSegI
-    forks onto a parallel 1-lane State St at Ballantyne Rd; westbound the link ends
-    there). The catalogue splits at Eagle Rd and records the halves that will not
-    walk — it does not sort the segments into a corridor-shaped list."""
-    ids = {"sh44-eb-star-eagle", "sh44-eb-eagle-boise"}
+    """SH-44 east of Ballantyne Rd is unreachable without repairs in this XD vintage
+    (eastbound NextXDSegI forks onto a parallel 1-lane State St at Ballantyne Rd).
+    The catalogue records this as a finding when walked without the repair table."""
+    ids = {"sh44-urban-eb"}
     cat = [e for e in corridors.load_catalogue(D3_CATALOGUE) if e.id in ids]
     net = geometry.load_xd_network(XD_ZIP, bbox=(-116.47, 43.64, -116.26, 43.72))
     res = corridors.resolve_catalogue(net, cat).set_index("id")
 
-    assert bool(res.loc["sh44-eb-eagle-boise", "accepted"])
-    assert res.loc["sh44-eb-eagle-boise", "chain_miles"] == pytest.approx(4.11, abs=0.05)
-    assert not res.loc["sh44-eb-star-eagle", "reached_target"]
-    assert res.loc["sh44-eb-star-eagle", "stop_reason"] in {"dead_end", "off_network"}
-    assert res.attrs["findings"] == ["sh44-eb-star-eagle"]
+    assert not res.loc["sh44-urban-eb", "reached_target"]
+    assert res.loc["sh44-urban-eb", "stop_reason"] in {"dead_end", "off_network"}
+    assert res.attrs["findings"] == ["sh44-urban-eb"]
 
 
 def test_resolved_chains_feed_rank_corridors():
@@ -1020,7 +1017,7 @@ def test_committed_repair_table_resolves_the_whole_d3_catalogue():
     assert res.loc["i184-eb", "chain_miles"] == pytest.approx(4.7174, abs=1e-3)
     assert res.loc["i184-eb", "n_repaired_links"] == 5
     # The catalogue leans on the table far less than the table's size suggests.
-    assert res["n_repaired_links"].sum() == 14
+    assert res["n_repaired_links"].sum() == 19
 
 
 @pytest.mark.skipif(not D3_NETWORK.exists(), reason="D3 network cache not available")
@@ -1135,7 +1132,7 @@ def test_resolution_table_carries_the_grouping():
 def test_the_d3_catalogue_groups_its_entries_into_reporting_corridors():
     entries = corridors.load_catalogue(D3_CATALOGUE)
     groups = corridors.load_reporting_corridors(D3_CATALOGUE)
-    assert len(entries) == 34 and len(groups) == 17
+    assert len(entries) == 36 and len(groups) == 18
     assert all(e.corridor and e.direction for e in entries)
     # Every reporting corridor is exactly two directions, and they differ.
     by_group: dict[str, list[str]] = {}

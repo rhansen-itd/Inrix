@@ -1,5 +1,5 @@
 {
-  "_note": "ITD District 3 screening catalogue (rebuilt 2026-09-18 per ROADMAP Item 44): 17 reporting corridors (34 directional entries) derived from recurring congestion runs (ROADMAP Item 43) and checked against road geometry and connectivity. Each entry is stated as its meaningful extent endpoints (lat, lon) in WGS84, in TRAVEL ORDER, resolved through corridors.build_chain (topological NextXDSegI walk, k-candidate snapping, endpoint trim, coverage accounting). All 34 entries resolve with reached_target=True against the XD network and carriageway-scoped repairs table scripts/d3_link_repairs.csv. Includes the urban/rural split of SH-45 at Nampa, SH-55 Karcher Rd, the downtown Nampa couplet (2nd St S / 3rd St S), and the four natural mountain highway sections of SH-55 north of State St.",
+  "_note": "ITD District 3 screening catalogue (refined per ROADMAP Item 44): 18 reporting corridors (36 directional entries) derived from recurring congestion runs (ROADMAP Item 43), checked against road geometry, connectivity, and empirical delay density. Each entry is stated as its meaningful extent endpoints (lat, lon) in WGS84, in TRAVEL ORDER, resolved through corridors.build_chain (topological NextXDSegI walk, k-candidate snapping, endpoint trim, coverage accounting). All 36 entries resolve with reached_target=True against the XD network and carriageway-scoped repairs table scripts/d3_link_repairs.csv. Includes the urban/rural split of SH-44 at Star Rd and SH-45 at Nampa, the official SH-44 Glenwood St alignment to Chinden Blvd, the full ~14-mile Chinden Blvd corridor (SH-16 to I-184), the Broadway Ave corridor (I-84 to Front/Myrtle), SH-55 Karcher Rd, the downtown Nampa couplet (2nd St S / 3rd St S), and the four natural mountain highway sections of SH-55 north of State St.",
   "corridors": [
     {
       "id": "i84-eb",
@@ -153,92 +153,92 @@
     },
     {
       "id": "us2026-chinden-eb",
-      "name": "US-20/26 (Chinden Blvd) EB: SH-16 to Glenwood St",
+      "name": "US-20/26 (Chinden Blvd) EB: SH-16 to I-184 Connector",
       "start_latlon": [
-        43.66292,
-        -116.4702
+        43.6632,
+        -116.4961
       ],
       "end_latlon": [
-        43.64899,
-        -116.27984
+        43.6249,
+        -116.2425
       ],
-      "description": "Chinden Blvd eastbound from the SH-16 junction to Glenwood St - the arterial that parallels I-84 two miles to the north and absorbs the freeway's traffic whenever it fails. Ends at Glenwood because east of it Chinden becomes State St's approach into Garden City. Confirmed by Item 43 extraction as a 3.16-mile contiguous morning queue (rec 0.68, TTI 1.49) from Eagle Rd to Glenwood, plus recurring bottlenecks west of Eagle Rd. Resolves to 19 segments, 10.02 mi.",
+      "description": "Chinden Blvd eastbound from the SH-16 junction to the I-184 Connector in Garden City / Boise. Stitched across Eagle Rd per the congestion congruence rule: both sides exhibit congruent congestion (TTI 1.25 west vs 1.27 east), and maintaining them as a single ~14-mile arterial matches corridor-level operations. Resolves to 27 mainline segments, 14.10 mi.",
       "corridor": "us2026-chinden",
       "direction": "EB"
     },
     {
       "id": "us2026-chinden-wb",
-      "name": "US-20/26 (Chinden Blvd) WB: Glenwood St to SH-16",
+      "name": "US-20/26 (Chinden Blvd) WB: I-184 Connector to SH-16",
       "start_latlon": [
-        43.64914,
-        -116.27983
+        43.6249,
+        -116.2425
       ],
       "end_latlon": [
-        43.66306,
-        -116.4702
+        43.6634,
+        -116.4934
       ],
-      "description": "The westbound carriageway over the same ground as us2026-chinden-eb. Carried separately because Chinden's signal progression is timed for the peak direction. Item 43 extraction identifies heavy evening westbound recurring congestion across multiple runs (1.94 mi at TTI 1.74, 1.09 mi, 1.01 mi, 1.00 mi at TTI 2.74). Resolves to 19 segments, 9.71 mi.",
+      "description": "Westbound Chinden Blvd over the same ground as us2026-chinden-eb, from the I-184 Connector out to SH-16. Captures the heavy evening westbound commute across both Ada County segments (TTI 1.26). Resolves to 28 mainline segments, 14.45 mi.",
       "corridor": "us2026-chinden",
       "direction": "WB"
     },
     {
-      "id": "sh44-eb-star-eagle",
-      "name": "SH-44 (State St) EB: SH-16 in Star to Eagle Rd",
+      "id": "sh44-urban-eb",
+      "name": "SH-44 EB: Star Rd to Chinden Blvd (via Glenwood St)",
       "start_latlon": [
-        43.6917,
-        -116.45053
+        43.692,
+        -116.4918
       ],
       "end_latlon": [
-        43.69093,
-        -116.35407
+        43.6413,
+        -116.2779
       ],
-      "description": "State St eastbound, SH-16 in Star to Eagle Rd in Eagle - the western half of the Star/Eagle-to-Boise arterial commute. Split from sh44-eb-eagle-boise at Eagle Rd rather than carried as one Star-to-Boise entry because the two halves did not connect in the XD network as published, and because they congest separately. Resolves to 10 segments / 5.89 mi on 1 repaired link.",
-      "corridor": "sh44-star-eagle",
+      "description": "Eastbound SH-44 from Star Rd through Eagle along State St, then turning south along Glenwood St to terminate at Chinden Blvd (US-20/26). Reflects official ITD highway alignment (State St east of Glenwood is local arterial under ACHD). Stitched across Eagle Rd because Glenwood-to-Eagle and Eagle-to-Star have congruent congestion levels (~56-67 vhd/mi) and Glenwood-to-Eagle is under 3 miles (2.19 mi). Resolves to 34 segments, 13.06 mi.",
+      "corridor": "sh44-urban",
       "direction": "EB"
     },
     {
-      "id": "sh44-eb-eagle-boise",
-      "name": "SH-44 (State St) EB: Eagle Rd to Glenwood St, Boise",
+      "id": "sh44-urban-wb",
+      "name": "SH-44 WB: Chinden Blvd to Star Rd (via Glenwood St)",
       "start_latlon": [
-        43.69093,
-        -116.35407
+        43.6413,
+        -116.2779
       ],
       "end_latlon": [
-        43.66833,
-        -116.27911
+        43.692,
+        -116.4918
       ],
-      "description": "State St eastbound from Eagle Rd to the Glenwood St junction, where SH-44 turns south - the inbound half of the Star/Eagle commute, and the half that congests in the morning peak. Resolves to 11 segments, 4.11 mi.",
-      "corridor": "sh44-eagle-boise",
-      "direction": "EB"
-    },
-    {
-      "id": "sh44-wb-boise-eagle",
-      "name": "SH-44 (State St) WB: Glenwood St, Boise to Eagle Rd",
-      "start_latlon": [
-        43.66833,
-        -116.27911
-      ],
-      "end_latlon": [
-        43.69044,
-        -116.34909
-      ],
-      "description": "The outbound half of the State St commute, from the Glenwood St junction west to Eagle Rd - 12 segments, 4.14 mi. Extracted in Item 43 as heavy recurring evening queues approaching Eagle (0.91 mi, 0.81 mi at TTI 1.90, 0.70 mi, 0.50 mi).",
-      "corridor": "sh44-eagle-boise",
+      "description": "Westbound return of SH-44 from Chinden Blvd north on Glenwood St, turning west on State St through Eagle to Star Rd. Captures evening westbound arterial congestion heading home toward Star and Middleton. Resolves to 34 segments, 13.06 mi.",
+      "corridor": "sh44-urban",
       "direction": "WB"
     },
     {
-      "id": "sh44-wb-eagle-star",
-      "name": "SH-44 (State St) WB: Eagle Rd to SH-16 in Star",
+      "id": "sh44-rural-eb",
+      "name": "SH-44 EB: I-84 (IC 25) to Star Rd",
       "start_latlon": [
-        43.6922,
-        -116.36134
+        43.7058,
+        -116.7
       ],
       "end_latlon": [
-        43.6917,
-        -116.45053
+        43.692,
+        -116.4918
       ],
-      "description": "State St westbound, Eagle Rd out to SH-16 in Star. Resolves to 9 segments / 5.39 mi on 1 repaired link. Confirmed by Item 43 extraction as two contiguous evening commute runs (1.60 mi at TTI 1.75 and 1.56 mi at TTI 1.72) carrying traffic west towards Star.",
-      "corridor": "sh44-star-eagle",
+      "description": "Eastbound SH-44 from the I-84 interchange (IC 25) near Caldwell through Middleton to Star Rd. Split at Star Rd per congestion triage: delay drops dramatically west of Star Rd (TTI 1.09, ~15 vhd/mi) compared to the urban commute corridor to the east. Resolves to 22 mainline segments, 10.65 mi.",
+      "corridor": "sh44-rural",
+      "direction": "EB"
+    },
+    {
+      "id": "sh44-rural-wb",
+      "name": "SH-44 WB: Star Rd to I-84 (IC 25)",
+      "start_latlon": [
+        43.692,
+        -116.4918
+      ],
+      "end_latlon": [
+        43.7058,
+        -116.7
+      ],
+      "description": "Westbound SH-44 from Star Rd through Middleton to I-84 (IC 25). Rural/exurban corridor with low commute delay (TTI 1.08). Resolves to 22 mainline segments, 10.65 mi.",
+      "corridor": "sh44-rural",
       "direction": "WB"
     },
     {
@@ -510,6 +510,36 @@
       "description": "Eastbound return over the 12.68-mile extent from US-95 in New Meadows to McCall. Resolves to 22 segments, 12.68 mi.",
       "corridor": "sh55-mccall-newmeadows",
       "direction": "EB"
+    },
+    {
+      "id": "broadway-nb",
+      "name": "Broadway Ave NB: I-84 (IC 54) to Myrtle St",
+      "start_latlon": [
+        43.5665,
+        -116.1968
+      ],
+      "end_latlon": [
+        43.608,
+        -116.1934
+      ],
+      "description": "Broadway Ave northbound from the I-84 interchange (IC 54) past Boise State University to Myrtle St downtown. Key south-entry arterial feeding downtown Boise and the university district, with recurring signal queues. Resolves to 15 segments, 3.05 mi.",
+      "corridor": "broadway",
+      "direction": "NB"
+    },
+    {
+      "id": "broadway-sb",
+      "name": "Broadway Ave SB: Front/Myrtle couplet to I-84 (IC 54)",
+      "start_latlon": [
+        43.6075,
+        -116.1934
+      ],
+      "end_latlon": [
+        43.5665,
+        -116.1968
+      ],
+      "description": "Southbound Broadway Ave from the downtown couplet south across the Boise River and past BSU to the I-84 interchange (IC 54). Resolves to 14 segments, 2.90 mi.",
+      "corridor": "broadway",
+      "direction": "SB"
     }
   ],
   "reporting_corridors": [
@@ -541,18 +571,18 @@
     },
     {
       "id": "us2026-chinden",
-      "name": "US-20/26 (Chinden Blvd): SH-16 to Glenwood St",
-      "description": "The northern parallel to State St, both directions - the alternative route the valley's west-side commute splits onto."
+      "name": "US-20/26 (Chinden Blvd): SH-16 to I-184 Connector",
+      "description": "The northern parallel to State St, both directions - the alternative route the valley's west-side commute splits onto. Stitched across Eagle Rd where congestion is congruent (TTI 1.25-1.27) to form a unified ~14-mile east-west arterial parallel to I-84."
     },
     {
-      "id": "sh44-star-eagle",
-      "name": "SH-44 (State St): SH-16 in Star to Eagle Rd",
-      "description": "The western half of the Star/Eagle-to-Boise arterial commute, both directions. Split from sh44-eagle-boise at Eagle Rd because the halves congest separately."
+      "id": "sh44-urban",
+      "name": "SH-44: Chinden Blvd (via Glenwood St) to Star Rd",
+      "description": "The urban SH-44 corridor from Chinden Blvd via Glenwood St along State St through Eagle to Star Rd. Follows official SH-44 alignment (turning south at Glenwood) and stitches across Eagle Rd where congestion is congruent (~56-67 vhd/mi)."
     },
     {
-      "id": "sh44-eagle-boise",
-      "name": "SH-44 (State St): Eagle Rd to Glenwood St, Boise",
-      "description": "The eastern, in-town half of State St, both directions - the half that carries the accumulated demand of the western half into Boise."
+      "id": "sh44-rural",
+      "name": "SH-44: Star Rd to I-84 (IC 25)",
+      "description": "The rural/exurban section of SH-44 from Star Rd through Middleton to I-84 at IC 25. Separated from urban SH-44 due to substantially lower congestion (TTI ~1.08, ~15 vhd/mi)."
     },
     {
       "id": "sh16",
@@ -599,6 +629,11 @@
       "id": "sh55-mccall-newmeadows",
       "name": "SH-55: McCall to New Meadows (US-95)",
       "description": "The 12.7-mile section of SH-55 connecting McCall over the pass to US-95 in New Meadows."
+    },
+    {
+      "id": "broadway",
+      "name": "Broadway Ave: I-84 (IC 54) to Myrtle/Front couplet",
+      "description": "The 3.3-mile south Boise arterial connecting I-84 (IC 54) through the university district to the downtown Myrtle/Front couplet."
     }
   ]
 }

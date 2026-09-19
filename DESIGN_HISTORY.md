@@ -4344,3 +4344,67 @@ Peak totals ranking (`out/district_screening/corridor_peak_totals.csv`, ranked o
 - **Full suite: 592 passed, 2 skipped.**
 
 
+---
+
+## Session 56 — Refining the D3 Screening Catalogue (Congestion Congruence & Glenwood SH-44 Alignment) (2026-09-19)
+
+Refined the District 3 screening catalogue based on engineering review, planning principles, and empirical delay density:
+1. **Minimum Length Rule (~3 miles)**: Micro-queues and isolated signal approaches (< 3 mi) are subsumed into larger logical corridors rather than fragmenting the catalogue into short stubs.
+2. **Congestion Congruence Rule at Major Junctions**: Major state highway junctions (Eagle Rd, Star Rd) are checked for congestion parity. If delay levels (TTI and VHD) on both sides of a junction are reasonably similar, they are stitched into a continuous operational corridor. If substantially different, they are split to avoid diluting urban bottlenecks with rural miles.
+3. **SH-44 Alignment Correction**: Confirmed official highway routing — State St east of Glenwood is local arterial under ACHD jurisdiction; official SH-44 turns south along Glenwood St to terminate at Chinden Blvd (US-20/26).
+4. **Broadway Ave Addition**: Added Broadway Ave (I-84 IC 54 to Front/Myrtle couplet, ~3.0 mi) as an official arterial corridor feeding downtown Boise and Boise State University.
+5. **SH-55 at Avimor Retention**: Empirical VHD analysis demonstrated negligible commute delay south of Avimor (4.0 vhd/mi, 28 total veh-hrs), confirming unity of State St to Horseshoe Bend (`sh55-eagle-hsb`, 18.9 mi).
+6. **US-95 Rural In-Town Signals**: Localized signal queues in Fruitland and Payette evaluated and confirmed to be isolated queues (< 3 mi) without cross-XDGroup connectivity, maintaining US-95 as a free-flowing rural baseline.
+
+### 1. Empirical Delay Density & Triage Findings
+- **SH-44 Congestion Congruence**:
+  - Glenwood to Eagle Rd: 55.9 vhd/mi (2.19 mi).
+  - Eagle Rd to Star Rd: 66.6 vhd/mi (6.20 mi).
+  - Delay densities across Eagle Rd are congruent (within 16%), and Glenwood-to-Eagle is under 3 miles. Splitting at Eagle Rd would violate the minimum-length rule and create artificial boundary effects.
+  - West of Star Rd (Middleton/Caldwell): delay drops to ~15 vhd/mi (TTI 1.08–1.09), confirming Star Rd as the natural split point.
+  - *Result*: Unified urban SH-44 (`sh44-urban`, 13.06 mi, 34 segs) and separated rural SH-44 (`sh44-rural`, 10.65 mi, 22 segs).
+- **Chinden Blvd Congestion Congruence**:
+  - Chinden West (SH-16 to Eagle Rd): TTI 1.25.
+  - Chinden East (Eagle Rd to I-184): TTI 1.27.
+  - Delay is virtually identical across Eagle Rd. Stitched into unified ~14-mile corridor (`us2026-chinden`, 27–28 segs).
+- **Broadway Ave Congestion**:
+  - Northbound AM/PM: TTI 1.12–1.23, 283–552 veh-hrs delay.
+  - Southbound AM/PM: TTI 1.03–1.10, 129–274 veh-hrs delay.
+  - Total delay density of 215 vhd/mi (1,239 peak veh-hrs), ranking #8 in District 3.
+
+### 2. Candidate Triage Audit Trail (`scripts/triage_candidates.py`)
+- Evaluated 319 candidates across 3,912 segments and 54.7M peak observations:
+  - **8 ACCEPTED**: Core empirical backbones (I-84 EB/WB, I-184 WB, SH-55 Karcher EB/WB, Myrtle EB, Front WB).
+  - **101 MERGED**: Contiguous runs subsumed into corridor extents across XDGroup boundaries, including Broadway Ave signal queues and Chinden/SH-44 runs (previously 75 merged).
+  - **210 REJECTED**: Isolated queues on rural routes (US-95, SH-21, SH-51, SH-78), ramp stubs, and unnumbered facilities (previously 236 rejected).
+
+### 3. District Screening Re-Run & Rankings
+Expanded catalogue to **36 directional entries / 18 reporting corridors**. All 36 resolve 100% (`reached_target = True`, 0 findings, coverage 95.7%–100.0%, mean 99.8%).
+Screened footprint grew to **358.3 directional miles / 723 segments (18.5% of store)**.
+Peak totals ranking (`out/district_screening/corridor_peak_totals.csv` on `vhd_per_mile`):
+1. **I-84** (Nampa IC 35 to Boise IC 49): 2,752 vhd/mi (41,313 veh-hrs, 10.5 min delay, TTI 1.34)
+2. **Boise Couplet** (Myrtle EB / Front WB): 940 vhd/mi (1,043 veh-hrs, 1.3 min delay, TTI 1.25)
+3. **SH-55 Eagle Rd** (I-84 to SH-44): 932 vhd/mi (6,086 veh-hrs, 6.7 min delay, TTI 1.24)
+4. **I-184 Connector** (I-84 to downtown): 894 vhd/mi (3,780 veh-hrs, 2.7 min delay, TTI 1.28)
+5. **SH-55 Karcher Rd** (Lake Ave to I-84 IC 33): 712 vhd/mi (1,787 veh-hrs, 2.2 min delay, TTI 1.34)
+6. **SH-44 Urban** (Chinden Blvd via Glenwood to Star Rd): 588 vhd/mi (7,422 veh-hrs, 5.0 min delay, TTI 1.20)
+7. **US-20/26 Chinden Blvd** (SH-16 to I-184 Connector): 521 vhd/mi (7,007 veh-hrs, 4.4 min delay, TTI 1.20)
+8. **Broadway Ave** (I-84 IC 54 to Myrtle/Front): 215 vhd/mi (1,239 veh-hrs, 1.2 min delay, TTI 1.12)
+9. **SH-69 Meridian Rd** (Kuna to I-84 IC 44): 158 vhd/mi (2,605 veh-hrs, 1.6 min delay, TTI 1.10)
+10. **SH-45 Nampa** (Locust Ln to downtown): 144 vhd/mi (1,257 veh-hrs, 1.6 min delay, TTI 1.09)
+11. **SH-44 Rural** (Star Rd to I-84 IC 25): 100 vhd/mi (2,120 veh-hrs, 3.0 min delay, TTI 1.14)
+12. **Downtown Nampa Couplet** (2nd St S WB / 3rd St S EB): 67 vhd/mi (93 veh-hrs, 0.2 min delay, TTI 1.02)
+13. **SH-16** (State St to Emmett): 27 vhd/mi (656 veh-hrs, 1.4 min delay, TTI 1.06)
+14. **SH-55 Cascade to McCall**: 19 vhd/mi (1,071 veh-hrs, 3.6 min delay, TTI 1.06)
+15. **SH-55 Eagle to Horseshoe Bend**: 18 vhd/mi (688 veh-hrs, 1.5 min delay, TTI 1.04)
+16. **SH-55 McCall to New Meadows**: 15 vhd/mi (348 veh-hrs, 0.7 min delay, TTI 1.03)
+17. **SH-55 Horseshoe Bend to Cascade**: 10 vhd/mi (1,018 veh-hrs, 4.3 min delay, TTI 1.04)
+18. **SH-45 Rural** (Walters Ferry to Locust Ln): 6 vhd/mi (159 veh-hrs, 1.0 min delay, TTI 1.04)
+
+### 4. Verification
+- `tests/test_d3_catalogue.py`: updated for 36 entries, 18 reporting groups, triage counts (8/101/210), and ranking assertions.
+- `tests/test_corridors.py`: updated group assertions (18 groups) and repaired links sum (19).
+- Full suite passing: **592 passed, 2 skipped**.
+
+
+

@@ -2,7 +2,7 @@
 """Triage all recurring congestion candidate runs across District 3 (ROADMAP Item 44).
 
 Runs Item 43 extraction over the on-system export in both AM and PM peak windows,
-evaluates every candidate against the 17 reporting corridors (34 directional entries),
+evaluates every candidate against the 18 reporting corridors (36 directional entries),
 and outputs an auditable triage table recording acceptances, merges, and rejections
 with explicit reasons.
 """
@@ -75,9 +75,10 @@ def triage_candidates(rec: pd.DataFrame, net: gpd.GeoDataFrame, repairs, cat_ent
             if corridor_matches:
                 matched_corridor = ";".join(sorted(corridor_matches))
                 check_key = (win, primary_rnum, r.bearing)
-                if check_key in CORE_ACCEPTED_RUN_CHECKS and miles >= 1.0:
+                target_cid = CORE_ACCEPTED_RUN_CHECKS.get(check_key)
+                if target_cid and target_cid in corridor_matches and miles >= 1.0:
                     decision = "ACCEPTED"
-                    reason = f"Primary empirical extent for {CORE_ACCEPTED_RUN_CHECKS[check_key]} ({miles:.2f} mi, TTI {mean_tti:.2f})"
+                    reason = f"Primary empirical extent for {target_cid} ({miles:.2f} mi, TTI {mean_tti:.2f})"
                 else:
                     decision = "MERGED"
                     reason = f"Contiguous congestion run merged into corridor extent {matched_corridor} across XDGroup boundaries or gap tolerance"

@@ -27,13 +27,13 @@ SCREENING_DIR = REPO_ROOT / "out" / "district_screening"
 
 
 def test_d3_catalogue_schema_and_completeness():
-    """All 34 entries and 17 reporting corridors must be well-formed and paired."""
+    """All 36 entries and 18 reporting corridors must be well-formed and paired."""
     assert D3_CATALOGUE.exists(), "scripts/d3_corridors.json missing"
     entries = corridors.load_catalogue(D3_CATALOGUE)
     groups = corridors.load_reporting_corridors(D3_CATALOGUE)
 
-    assert len(entries) == 34
-    assert len(groups) == 17
+    assert len(entries) == 36
+    assert len(groups) == 18
 
     # Validate each entry
     entry_ids = set()
@@ -87,17 +87,23 @@ def test_d3_catalogue_includes_item44_key_corridors():
     assert "sh55-cascade-mccall" in groups
     assert "sh55-mccall-newmeadows" in groups
 
+    # 5. SH-44 urban/rural split and Broadway Ave
+    assert "sh44-urban" in groups
+    assert "sh44-rural" in groups
+    assert "broadway" in groups
+    assert "us2026-chinden" in groups
+
 
 @pytest.mark.skipif(not (D3_NETWORK.exists() and D3_REPAIRS.exists()),
                     reason="D3 network cache or repairs not available")
 def test_all_d3_catalogue_entries_resolve_with_repairs():
-    """All 34 entries must walk to their target and have valid chain geometries."""
+    """All 36 entries must walk to their target and have valid chain geometries."""
     net = gpd.read_parquet(D3_NETWORK)
     repairs = corridors.load_link_repairs(D3_REPAIRS)
     entries = corridors.load_catalogue(D3_CATALOGUE)
 
     res = corridors.resolve_catalogue(net, entries, repairs=repairs)
-    assert len(res) == 34
+    assert len(res) == 36
     assert res["reached_target"].all(), (
         f"Failed to reach target: {res[~res['reached_target']]['id'].tolist()}"
     )
@@ -126,8 +132,8 @@ def test_candidate_triage_audit_trail():
     # Exact triage counts from Item 44 extraction
     counts = df["decision"].value_counts().to_dict()
     assert counts["ACCEPTED"] == 8
-    assert counts["MERGED"] == 75
-    assert counts["REJECTED"] == 236
+    assert counts["MERGED"] == 101
+    assert counts["REJECTED"] == 210
 
     # Verify JSON structure matches
     with TRIAGE_JSON.open() as f:
@@ -137,8 +143,8 @@ def test_candidate_triage_audit_trail():
     for r in records:
         json_counts[r["decision"]] = json_counts.get(r["decision"], 0) + 1
     assert json_counts["ACCEPTED"] == 8
-    assert json_counts["MERGED"] == 75
-    assert json_counts["REJECTED"] == 236
+    assert json_counts["MERGED"] == 101
+    assert json_counts["REJECTED"] == 210
 
 
 @pytest.mark.skipif(not (SCREENING_DIR / "reporting_corridor_rankings.csv").exists(),
@@ -156,10 +162,10 @@ def test_district_screening_outputs_integrity():
     breakout = pd.read_csv(breakout_csv, comment="#")
     resolution = pd.read_csv(resolution_csv, comment="#")
 
-    assert len(rankings) == 68   # 17 groups * 4 windows
-    assert len(totals) == 17     # 17 reporting groups
-    assert len(breakout) == 68   # 17 groups * 2 directions * 2 peak windows
-    assert len(resolution) == 34 # 34 directional entries
+    assert len(rankings) == 72   # 18 groups * 4 windows
+    assert len(totals) == 18     # 18 reporting groups
+    assert len(breakout) == 72   # 18 groups * 2 directions * 2 peak windows
+    assert len(resolution) == 36 # 36 directional entries
     assert resolution["reached_target"].all()
     assert (resolution["miles_covered_fraction"] >= 0.70).all()
 
@@ -174,6 +180,14 @@ def test_district_screening_outputs_integrity():
     rural_rate = totals_by_id.loc["sh45-rural", "vhd_per_mile"]
     assert urban_rate > 10 * rural_rate
 
+    # SH-44 urban has far higher delay density than SH-44 rural
+    sh44_urban_rate = totals_by_id.loc["sh44-urban", "vhd_per_mile"]
+    sh44_rural_rate = totals_by_id.loc["sh44-rural", "vhd_per_mile"]
+    assert sh44_urban_rate > 3 * sh44_rural_rate
+
+    # Broadway ranks in top 10
+    assert totals_by_id.loc["broadway", "rank"] <= 10
+
     # SH-55 mountain highway extents rank near the bottom (rural baseline)
     for mtn in ["sh55-eagle-hsb", "sh55-hsb-cascade", "sh55-cascade-mccall", "sh55-mccall-newmeadows"]:
         assert totals_by_id.loc[mtn, "rank"] >= 12
@@ -181,7 +195,7 @@ def test_district_screening_outputs_integrity():
     # Check provenance
     with prov_json.open() as f:
         prov = json.load(f)
-    assert prov["n_entries"] == 34
-    assert prov["n_accepted"] == 34
+    assert prov["n_entries"] == 36
+    assert prov["n_accepted"] == 36
     assert len(prov["findings"]) == 0
-    assert prov["reporting_corridors"]["n_groups"] == 17
+    assert prov["reporting_corridors"]["n_groups"] == 18
