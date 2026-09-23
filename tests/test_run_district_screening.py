@@ -464,3 +464,35 @@ def test_missing_metrics_render_as_na_not_zero():
     assert rds._fmt_or_na(None) == "n/a"
     assert rds._fmt_or_na(float("nan")) == "n/a"
     assert rds._fmt_or_na(1234.4) == "1,234"
+
+
+def test_the_aadt_join_reads_itd_route_membership(tmp_path, monkeypatch):
+    """Item 49: screening's volume join takes the route numbers ITD's membership
+    resolved (the catalogue builder walks the same ones), not INRIX's RoadNumber. A
+    ``--district`` run finds the district's membership file; ``''`` turns it off."""
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    from inrix_tools import routes
+
+    net = gpd.GeoDataFrame(
+        {"XDSegID": [1, 2], "RoadNumber": ["12", None], "RoadName": ["Main St", "Levee"],
+         "geometry": [LineString([(0, 0), (0, 1)])] * 2}, crs="EPSG:4326")
+    member = pd.DataFrame(
+        {"RoadName": ["Main St", "Levee"], "verdict": [routes.INRIX_ONLY, routes.ITD_ONLY],
+         "routes": ["", "12"], "route_number": [None, "12"],
+         "inrix_route": [12, None], "itd_route": [None, 12]},
+        index=pd.Index([1, 2], name="XDSegID"))
+    path = routes.write_membership(member, tmp_path / "out/highways/route_membership"
+                                   / "d2_route_membership.csv")
+    out = rds.apply_membership(net, str(path))
+    assert list(out["RoadNumber"]) == [None, "12"]
+    assert list(out["RoadNumber_inrix"]) == ["12", None]
+    assert rds.apply_membership(net, None) is net
+
+    monkeypatch.chdir(tmp_path)
+    assert rds.parse_args(["--db", "x", "--district", "2"]).membership == str(
+        Path(rds.MEMBERSHIP.format(district=2)))
+    assert rds.parse_args(["--db", "x", "--district", "2", "--membership", ""]
+                          ).membership == ""
+    assert rds.parse_args(["--db", "x", "--district", "4"]).membership is None

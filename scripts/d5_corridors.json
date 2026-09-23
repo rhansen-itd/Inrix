@@ -6,7 +6,7 @@
       "am",
       "pm"
     ],
-    "n_chains": 57,
+    "n_chains": 55,
     "n_facilities": 5,
     "min_core_miles": 0.75,
     "tiers": [
@@ -235,16 +235,16 @@
         -112.4515
       ],
       "end_latlon": [
-        42.83198,
-        -112.401
+        42.8387,
+        -112.40914
       ],
-      "description": "Tier 3 (Regional Baseline) of I-15 (Yellowstone Ave): Bannock County. Full regional facility (5.10 mi, 17 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of I-15 (Yellowstone Ave): Bannock County. Full regional facility (4.48 mi, 16 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "i-15-yellowstone-ave-bannock-regional",
       "direction": "SB",
       "_tier": "regional",
       "_facility": "i-15-yellowstone-ave-bannock",
-      "_split_rationale": "Full regional facility (5.10 mi, 17 segments)",
-      "_generated_miles": 5.1,
+      "_split_rationale": "Full regional facility (4.48 mi, 16 segments)",
+      "_generated_miles": 4.481,
       "_segment_ids": [
         448697113,
         448697114,
@@ -261,8 +261,7 @@
         1187556951,
         450147550,
         1187572050,
-        1187515332,
-        1187659336
+        1187515332
       ]
     },
     {
@@ -943,36 +942,6 @@
       "direction": "EB"
     },
     {
-      "id": "couplet-91-quinn-rd-us-91-wb",
-      "name": "US-91 WB: Bannock County (Quinn Rd)",
-      "start_latlon": [
-        42.90544,
-        -112.45176
-      ],
-      "end_latlon": [
-        42.90694,
-        -112.46582
-      ],
-      "description": "One-way couplet leg on Quinn Rd (WB) carrying US-91 through Bannock County, 2 segments; the opposing leg runs on Us-91 206 m away.",
-      "corridor": "couplet-91-quinn-rd-us-91",
-      "direction": "WB"
-    },
-    {
-      "id": "couplet-91-quinn-rd-us-91-eb",
-      "name": "US-91 EB: Bannock County (Us-91)",
-      "start_latlon": [
-        42.91124,
-        -112.46643
-      ],
-      "end_latlon": [
-        42.90586,
-        -112.4607
-      ],
-      "description": "One-way couplet leg on Us-91 (EB) carrying US-91 through Bannock County, 5 segments; the opposing leg runs on Quinn Rd 206 m away.",
-      "corridor": "couplet-91-quinn-rd-us-91",
-      "direction": "EB"
-    },
-    {
       "id": "couplet-15-bridge-st-judicial-st-wb",
       "name": "I-15 WB: Bingham County (Bridge St)",
       "start_latlon": [
@@ -1000,66 +969,6 @@
       ],
       "description": "One-way couplet leg on Judicial St (EB) carrying I-15 through Bingham County, 2 segments; the opposing leg runs on Bridge St 78 m away.",
       "corridor": "couplet-15-bridge-st-judicial-st",
-      "direction": "EB"
-    },
-    {
-      "id": "couplet-34-3rd-e-hooper-ave-sb",
-      "name": "SH-34 SB: Caribou County (3Rd E)",
-      "start_latlon": [
-        42.65897,
-        -111.59481
-      ],
-      "end_latlon": [
-        42.65466,
-        -111.59484
-      ],
-      "description": "One-way couplet leg on 3Rd E (SB) carrying SH-34 through Caribou County, 1 segments; the opposing leg runs on Hooper Ave 240 m away.",
-      "corridor": "couplet-34-3rd-e-hooper-ave",
-      "direction": "SB"
-    },
-    {
-      "id": "couplet-34-3rd-e-hooper-ave-nb",
-      "name": "SH-34 NB: Caribou County (Hooper Ave)",
-      "start_latlon": [
-        42.65897,
-        -111.59481
-      ],
-      "end_latlon": [
-        42.68091,
-        -111.58423
-      ],
-      "description": "One-way couplet leg on Hooper Ave (NB) carrying SH-34 through Caribou County, 3 segments; the opposing leg runs on 3Rd E 240 m away.",
-      "corridor": "couplet-34-3rd-e-hooper-ave",
-      "direction": "NB"
-    },
-    {
-      "id": "couplet-38-90-s-50-st-s-wb",
-      "name": "SH-38 WB: Oneida County (90 S)",
-      "start_latlon": [
-        42.18393,
-        -112.24398
-      ],
-      "end_latlon": [
-        42.18398,
-        -112.24815
-      ],
-      "description": "One-way couplet leg on 90 S (WB) carrying SH-38 through Oneida County, 1 segments; the opposing leg runs on 50 St S 199 m away.",
-      "corridor": "couplet-38-90-s-50-st-s",
-      "direction": "WB"
-    },
-    {
-      "id": "couplet-38-90-s-50-st-s-eb",
-      "name": "SH-38 EB: Oneida County (50 St S)",
-      "start_latlon": [
-        42.18473,
-        -112.24398
-      ],
-      "end_latlon": [
-        42.18444,
-        -112.23652
-      ],
-      "description": "One-way couplet leg on 50 St S (EB) carrying SH-38 through Oneida County, 1 segments; the opposing leg runs on 90 S 199 m away.",
-      "corridor": "couplet-38-90-s-50-st-s",
       "direction": "EB"
     },
     {
@@ -1096,11 +1005,11 @@
   "reporting_corridors": [
     {
       "id": "i-15-s-5th-ave-bannock-core",
-      "name": "I-15 (S 5th Ave): Bannock County \u2014 Tier 1 Congested Core (E Dillon St to End 1-Way E Of Us-91)",
+      "name": "I-15 (S 5th Ave): Bannock County \u2014 Tier 1 Congested Core (E Humbolt St to End 1-Way E Of Us-91)",
       "description": "Tier 1 (Congested Core) of I-15 (S 5th Ave): Bannock County. Recurrent bottleneck core (2.73 mi, 11 segments at PEAK TTI >= 1.2). Upstream boundary: a congestion discontinuity (freeflow_to_congested, TTI 1.04 -> 1.38); downstream boundary: an AADT step-change (19,000 -> 8,000 vpd, 58%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (E Dillon St to End 1-Way E Of Us-91)",
+      "_tier_label": "Tier 1 Congested Core (E Humbolt St to End 1-Way E Of Us-91)",
       "_facility": "i-15-s-5th-ave-bannock",
       "_facility_name": "I-15 (S 5th Ave): Bannock County",
       "_miles": 2.729,
@@ -1145,14 +1054,14 @@
     {
       "id": "i-15-yellowstone-ave-bannock-regional",
       "name": "I-15 (Yellowstone Ave): Bannock County \u2014 Tier 3 Regional Baseline (Cedar St to I-15 Nb Ramps Ic No. 67)",
-      "description": "Tier 3 (Regional Baseline) of I-15 (Yellowstone Ave): Bannock County. Full regional facility (5.10 mi, 17 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of I-15 (Yellowstone Ave): Bannock County. Full regional facility (4.48 mi, 16 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Cedar St to I-15 Nb Ramps Ic No. 67)",
       "_facility": "i-15-yellowstone-ave-bannock",
       "_facility_name": "I-15 (Yellowstone Ave): Bannock County",
-      "_miles": 5.1,
-      "_n_segments": 17
+      "_miles": 4.481,
+      "_n_segments": 16
     },
     {
       "id": "us-30-bear-lake-core",
@@ -1235,36 +1144,12 @@
       "_mean_lateral_sep_m": 179.0
     },
     {
-      "id": "couplet-91-quinn-rd-us-91",
-      "name": "US-91: Bannock County Couplet (Quinn Rd/Us-91)",
-      "description": "One-way couplet carrying US-91 across Quinn Rd (WB) and Us-91 (EB) in Bannock County (ZIP 83202); 0.67 mi per leg, mean lateral separation 206 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 206.0
-    },
-    {
       "id": "couplet-15-bridge-st-judicial-st",
       "name": "I-15: Bingham County Couplet (Bridge St/Judicial St)",
       "description": "One-way couplet carrying I-15 across Bridge St (WB) and Judicial St (EB) in Bingham County (ZIP 83221); 0.57 mi per leg, mean lateral separation 78 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,
       "_mean_lateral_sep_m": 77.5
-    },
-    {
-      "id": "couplet-34-3rd-e-hooper-ave",
-      "name": "SH-34: Caribou County Couplet (3Rd E/Hooper Ave)",
-      "description": "One-way couplet carrying SH-34 across 3Rd E (SB) and Hooper Ave (NB) in Caribou County (ZIP 83276); 1.14 mi per leg, mean lateral separation 240 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 239.6
-    },
-    {
-      "id": "couplet-38-90-s-50-st-s",
-      "name": "SH-38: Oneida County Couplet (90 S/50 St S)",
-      "description": "One-way couplet carrying SH-38 across 90 S (WB) and 50 St S (EB) in Oneida County (ZIP 83252); 0.30 mi per leg, mean lateral separation 199 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 199.4
     },
     {
       "id": "couplet-39-id-39-s-id-39-n",

@@ -541,21 +541,37 @@
       "id": "i-90-kootenai-commuter-wb",
       "name": "I-90 WB: Kootenai County \u2014 Commuter Corridor",
       "start_latlon": [
-        47.47257,
-        -115.86355
+        47.45329,
+        -115.6942
       ],
       "end_latlon": [
         47.70841,
         -116.85369
       ],
-      "description": "Tier 2 (Commuter Corridor) of I-90: Kootenai County. Commuter extent between regional boundaries (55.08 mi); stitched outward from the core to an AADT step-change (20 -> 10,500 vpd, 100%) and an AADT step-change (63,000 -> 630 vpd, 99%). Upstream boundary: an AADT step-change (20 -> 10,500 vpd, 100%); downstream boundary: an AADT step-change (63,000 -> 630 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 2 (Commuter Corridor) of I-90: Kootenai County. Commuter extent between regional boundaries (64.57 mi); stitched outward from the core to chain start and an AADT step-change (61,000 -> 640 vpd, 99%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (61,000 -> 640 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "i-90-kootenai-commuter",
       "direction": "WB",
       "_tier": "commuter",
       "_facility": "i-90-kootenai",
-      "_split_rationale": "Commuter extent between regional boundaries (55.08 mi); stitched outward from the core to an AADT step-change (20 -> 10,500 vpd, 100%) and an AADT step-change (63,000 -> 630 vpd, 99%)",
-      "_generated_miles": 55.076,
+      "_split_rationale": "Commuter extent between regional boundaries (64.57 mi); stitched outward from the core to chain start and an AADT step-change (61,000 -> 640 vpd, 99%)",
+      "_generated_miles": 64.572,
       "_segment_ids": [
+        1236938127,
+        1236938141,
+        1236938157,
+        450222894,
+        450222895,
+        450222896,
+        450222897,
+        450222898,
+        450223685,
+        448924187,
+        448924188,
+        448924189,
+        386051376,
+        448924190,
+        450223775,
+        450223776,
         450223777,
         450223778,
         1236983930,
@@ -667,16 +683,16 @@
         -116.85479
       ],
       "end_latlon": [
-        47.47249,
-        -115.86361
+        47.46175,
+        -115.69489
       ],
-      "description": "Tier 2 (Commuter Corridor) of I-90: Kootenai County. Commuter extent between regional boundaries (55.08 mi); stitched outward from the core to an AADT step-change (20 -> 10,500 vpd, 100%) and an AADT step-change (63,000 -> 630 vpd, 99%). Upstream boundary: an AADT step-change (20 -> 10,500 vpd, 100%); downstream boundary: an AADT step-change (63,000 -> 630 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 2 (Commuter Corridor) of I-90: Kootenai County. Commuter extent between regional boundaries (64.57 mi); stitched outward from the core to chain start and an AADT step-change (61,000 -> 640 vpd, 99%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (61,000 -> 640 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "i-90-kootenai-commuter",
       "direction": "EB",
       "_tier": "commuter",
       "_facility": "i-90-kootenai",
-      "_split_rationale": "Commuter extent between regional boundaries (55.08 mi); stitched outward from the core to an AADT step-change (20 -> 10,500 vpd, 100%) and an AADT step-change (63,000 -> 630 vpd, 99%)",
-      "_generated_miles": 55.114,
+      "_split_rationale": "Commuter extent between regional boundaries (64.57 mi); stitched outward from the core to chain start and an AADT step-change (61,000 -> 640 vpd, 99%)",
+      "_generated_miles": 63.988,
       "_segment_ids": [
         1236959717,
         1236959731,
@@ -779,7 +795,22 @@
         1237001864,
         1237001878,
         450223768,
-        450223769
+        450223769,
+        450223770,
+        450223771,
+        448924070,
+        448924071,
+        448924072,
+        448924073,
+        450223772,
+        450192983,
+        450223779,
+        450223780,
+        450223781,
+        450223782,
+        1236929696,
+        1236932930,
+        1236932946
       ]
     },
     {
@@ -953,7 +984,7 @@
       "_tier": "regional",
       "_facility": "i-90-kootenai",
       "_split_rationale": "Full regional facility (73.65 mi, 133 segments)",
-      "_generated_miles": 73.655,
+      "_generated_miles": 73.052,
       "_segment_ids": [
         1237052450,
         429048606,
@@ -1085,8 +1116,7 @@
         450223782,
         1236929696,
         1236932930,
-        1236932946,
-        1236932959
+        1236932946
       ]
     },
     {
@@ -1270,12 +1300,12 @@
         47.74481,
         -116.89421
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Kootenai County. Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,800 -> 21,000 vpd, 58%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (8,800 -> 21,000 vpd, 58%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: Kootenai County. Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,900 -> 21,000 vpd, 58%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (8,900 -> 21,000 vpd, 58%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-41-kootenai-commuter",
       "direction": "SB",
       "_tier": "commuter",
       "_facility": "sh-41-kootenai",
-      "_split_rationale": "Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,800 -> 21,000 vpd, 58%)",
+      "_split_rationale": "Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,900 -> 21,000 vpd, 58%)",
       "_generated_miles": 36.005,
       "_segment_ids": [
         1236899004,
@@ -1349,12 +1379,12 @@
         48.17662,
         -117.03768
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Kootenai County. Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,800 -> 21,000 vpd, 58%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (8,800 -> 21,000 vpd, 58%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: Kootenai County. Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,900 -> 21,000 vpd, 58%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (8,900 -> 21,000 vpd, 58%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-41-kootenai-commuter",
       "direction": "NB",
       "_tier": "commuter",
       "_facility": "sh-41-kootenai",
-      "_split_rationale": "Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,800 -> 21,000 vpd, 58%)",
+      "_split_rationale": "Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,900 -> 21,000 vpd, 58%)",
       "_generated_miles": 36.005,
       "_segment_ids": [
         1626512451,
@@ -2673,15 +2703,15 @@
     },
     {
       "id": "i-90-kootenai-commuter",
-      "name": "I-90: Kootenai County \u2014 Tier 2 Commuter Corridor (Golconda Ic No. 64 to Rathdrum Sh-41 Ic No. 7)",
-      "description": "Tier 2 (Commuter Corridor) of I-90: Kootenai County. Commuter extent between regional boundaries (55.08 mi); stitched outward from the core to an AADT step-change (20 -> 10,500 vpd, 100%) and an AADT step-change (63,000 -> 630 vpd, 99%). Upstream boundary: an AADT step-change (20 -> 10,500 vpd, 100%); downstream boundary: an AADT step-change (63,000 -> 630 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "name": "I-90: Kootenai County \u2014 Tier 2 Commuter Corridor (E Mullan Ic No. 69 to Rathdrum Sh-41 Ic No. 7)",
+      "description": "Tier 2 (Commuter Corridor) of I-90: Kootenai County. Commuter extent between regional boundaries (64.57 mi); stitched outward from the core to chain start and an AADT step-change (61,000 -> 640 vpd, 99%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (61,000 -> 640 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Golconda Ic No. 64 to Rathdrum Sh-41 Ic No. 7)",
+      "_tier_label": "Tier 2 Commuter Corridor (E Mullan Ic No. 69 to Rathdrum Sh-41 Ic No. 7)",
       "_facility": "i-90-kootenai",
       "_facility_name": "I-90: Kootenai County",
-      "_miles": 55.076,
-      "_n_segments": 101
+      "_miles": 64.572,
+      "_n_segments": 117
     },
     {
       "id": "i-90-kootenai-regional",
@@ -2734,7 +2764,7 @@
     {
       "id": "sh-41-kootenai-commuter",
       "name": "SH-41: Kootenai County \u2014 Tier 2 Commuter Corridor (Old Priest River Rd to Prairie Ave)",
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Kootenai County. Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,800 -> 21,000 vpd, 58%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (8,800 -> 21,000 vpd, 58%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: Kootenai County. Commuter extent between regional boundaries (36.01 mi); stitched outward from the core to chain start and an AADT step-change (8,900 -> 21,000 vpd, 58%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (8,900 -> 21,000 vpd, 58%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Old Priest River Rd to Prairie Ave)",

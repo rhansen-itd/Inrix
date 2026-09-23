@@ -53,7 +53,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from inrix_tools import aadt as aadt_mod                  # noqa: E402
-from inrix_tools import corridors, geometry, kml, screen, store  # noqa: E402
+from inrix_tools import corridors, geometry, kml, routes, screen, store  # noqa: E402
 from inrix_tools.io import DEFAULT_TZ                     # noqa: E402
 
 DEFAULT_CVALUE = 80
@@ -150,6 +150,18 @@ def corridor_geometry(net, resolution, chains):
 
 
 DEFAULT_SHS = "SHS_Primary.zip"
+MEMBERSHIP = "out/highways/route_membership/d{district}_route_membership.csv"
+
+
+def apply_membership(net, path):
+    """``net`` with ``RoadNumber`` resolved to ITD's route membership (Items 48/52), so
+    the AADT join's route preference reads ITD's routes: Lewiston's Main St no longer
+    claims a US-12 count, and the levee bypass does. The catalogue builder walks the
+    same resolved numbers, so this keeps screening and catalogue on one reading.
+    ``path`` ``None`` leaves INRIX's ``RoadNumber``. (Item 49.)"""
+    if not path:
+        return net
+    return routes.apply_route_membership(net, routes.read_membership(path))
 
 
 def shs_source(path=DEFAULT_SHS):
@@ -206,6 +218,7 @@ def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> 
             "rule": {k: v for k, v in repairs.attrs.items() if k != "source"},
         }),
         "aadt": None,
+        "route_membership": str(args.membership) if args.membership else None,
     }
     if aadt is not None:
         joined = aadt.attrs.get("aadt_join", {})
@@ -1037,7 +1050,7 @@ def run(args) -> dict:
         geo = corridor_geometry(net, resolution, chains)
         # Full network AADT join so both corridor ranking and segment-level delay-density map traces
         # have complete AADT coverage across the district.
-        net_geo = net.copy()
+        net_geo = apply_membership(net, args.membership)
         net_geo["Segment ID"] = net_geo["XDSegID"]
         aadt_cache = args.aadt_cache or (f"geometry_cache/d{args.district}_aadt.parquet" if args.district else None)
         aadt = join_volumes(net_geo, args.aadt, year=args.aadt_year,
@@ -1200,6 +1213,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--shs", default=DEFAULT_SHS,
                    help="ITD State Highway System, used to classify AADT records "
                         "(Item 52); '' falls back to the descriptions")
+    p.add_argument("--membership", default=None,
+                   help="route membership CSV (build_route_membership.py) for the AADT "
+                        "join's route preference; default with --district: "
+                        + MEMBERSHIP + " when it exists; '' = INRIX RoadNumber")
     p.add_argument("--aadt-max-distance-m", type=float, default=60.0)
     p.add_argument("--cvalue-threshold", type=float, default=DEFAULT_CVALUE,
                    help="keep CValue > threshold; 'none' disables the gate")
@@ -1253,6 +1270,10 @@ def parse_args(argv=None):
             cand_rep = Path(f"scripts/d{args.district}_link_repairs.csv")
             if cand_rep.exists():
                 args.repairs = str(cand_rep)
+        if args.membership is None:
+            cand_mem = Path(MEMBERSHIP.format(district=args.district))
+            if cand_mem.exists():
+                args.membership = str(cand_mem)
     elif args.catalogue is None:
         # Fallback to D3 catalogue if present and no district specified
         d3_cat = Path("scripts/d3_corridors.json")

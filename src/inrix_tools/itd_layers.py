@@ -181,8 +181,18 @@ def classify_records_with_shs(aadt, shs):
     (5) it is a ``ramp``. A ``RouteID`` the SHS doesn't draw (local ``OH`` roads) or
     draws as mixed/other keeps its description reading. ``record_kind_source`` says
     which decided.
+
+    **One exception: a record with the ramp signature stays a ramp.** A few ramp counts
+    sit on a roadway route id. ITD writes a ramp record as a movement with no "to"
+    point (``WB ON COTTERELL IC #222`` / ``NONE``); a mainline record names both ends,
+    even when an end is a ramp (``I-84 EB ON RAMP`` → ``WB OFF FRANKLIN IC #1``).
+    There are three such records in 2025, and each put its ramp count on a mainline
+    carriageway (owner-checked, Session 67):
+    - ``01010DIN084`` (6,000) and ``01010AIN084`` (6,100) at the I-84/I-86 junction at
+      Cotterell, where I-84 carries 12,000 east of the junction;
+    - ``01543DUS095`` (150) on Weiser's W 7th St, which carries 6,000–8,000.
     """
-    from .aadt import RECORD_KIND_COL, MAINLINE, RAMP
+    from .aadt import RECORD_KIND_COL, MAINLINE, RAMP, ramp_signature
 
     shs = _shs_frame_from(shs)
     out = aadt.copy()
@@ -192,6 +202,7 @@ def classify_records_with_shs(aadt, shs):
     decided = {rid: (MAINLINE if k == {"roadway"} else RAMP if k == {"ramp"} else None)
                for rid, k in kinds.items()}
     by_shs = out["RouteID"].map(decided)
+    by_shs = by_shs.where(~((by_shs == MAINLINE) & ramp_signature(out)))
     hit = by_shs.notna()
     out[RECORD_KIND_SOURCE_COL] = "description"
     out.loc[hit, RECORD_KIND_COL] = by_shs[hit]

@@ -2317,8 +2317,9 @@ Scope:
         +3.5%) and D3 peak VHD is +2.6%.
       - With correct volumes I-184 is D3's #3–4 (≈4,800 VHD); it was #6 in both years
         before.
-      - Two doubtful SHS readings are listed in DATA_FORMAT: I-84 W Declo–Cotterell
-        6,000, and Weiser's W 7th St 150.
+      - A ramp count filed on a roadway route id stays a ramp (the ramp signature,
+        `aadt.ramp_signature`). I-84 at the Cotterell junction now reads 12,000 /
+        19,500, and Weiser's W 7th St 6,300 (owner-checked).
       - AADT 2025 has almost no `D`-carriageway records, so the join still has one
         centreline. The SHS `D` lines are a geometry a future join could map the
         counts onto.*
@@ -2361,7 +2362,7 @@ Scope:
 *Suggested prompt (done):* "Do Item 52 of ROADMAP.md — load ITD's State Highway System, AADT 2025
 and urban-area layers, and take route identity from the highway system."
 
-## 49 — Ingest the Item 48 add-list and re-run the statewide screening
+## 49 — Ingest the Item 48 add-list and re-run the statewide screening ✅ (Sessions 66, 68)
 
 **Target: one session. Depends on Item 48, and now on Item 52** (re-scoped 2026-09-23):
 the catalogues are rebuilt once, on the highway-system membership and AADT 2025, not
@@ -2380,10 +2381,28 @@ twice.
       partition. Each district's reconciliation reports 0 new requests and 0 returned
       empty. The segments observed but no longer in the inventory (Item 48's drop-list:
       D1 73, D2 14, D4 5, D5 45, D6 9) stay in the stores, out of the catalogues.*
-- [ ] **Regenerate the D1/D2/D4/D5/D6 catalogues** (`build_statewide_catalogues.py`)
+- [x] **Regenerate the D1/D2/D4/D5/D6 catalogues** (`build_statewide_catalogues.py`)
       on Item 52's inventories. The builder uses only observed segments. Lewiston's
       US-12 facility gains the levee bypass, and Sun Valley Rd stays out.
-- [ ] **District 3, the owner's call.** Item 48 reported but did not apply D3's
+      *Re-screened first, so the builder's frames carry the 117 new segments (the old
+      frames predated the ingest). All 169 entries verify.*
+      - *The rebuild shipped two false couplets:*
+        - *Lewiston:* "Us Highway 12" and the Levee Byp were paired twice, as mirror
+          images. Both pairs got the same id, and D2 crashed on it.
+        - *SH-77:* Elba-Almo Rd / Elba-Almo Hwy, two consecutive pieces of one rural
+          road.
+
+        *Two detector guards now reject them (`couplets.drop_mirrored_pairs`,
+        `drop_two_way_legs`; a slice of Item 51). They drop 9 pairs statewide,
+        including Chubbuck, and every registry couplet that matched before still matches. Net change: D2
+        −2 couplets, D4 −1, D5 −3, D6's SH-33 Rexburg core re-tiered.*
+      - *Lewiston: with membership, the Levee Byp **is** US-12 and D St is off it.
+        But it forms its own 1.7-mi chain, because INRIX's `NextXDSegI` continues to
+        D St (DATA_FORMAT trap 4, handed to Item 51). It has no congested core, so
+        neither catalogue carries a Lewiston US-12 entry.*
+      - *No entry walks Sun Valley Rd. Off-route miles inside entries fell in every
+        district (D6 1.9 → 0.2, D3 4.5 → 1.9).*
+- [x] **District 3, the owner's call.** Item 48 reported but did not apply D3's
       membership (50 dropped / 8 added). Most of it is Caldwell/Cleveland Blvd and
       Blaine St, which Item 42 kept out, plus Payette's S Main St / 7th Ave N and
       Nampa's Northside Blvd. Decide whether the curated D3 lists take it. *Evidence
@@ -2396,7 +2415,21 @@ twice.
       - Business loops (Garrity Blvd, Caldwell Blvd, and Mountain Home's I-84
         Business) are state highway and stay in.
       - 16 segments / 1.3 mi of SHS route are not in the curated list.*
-- [ ] Re-run the district and statewide screening on the corrected catalogues. Record
+      ***Decided (owner, 2026-09-23): the D3 lists take the SHS membership, and US-95
+      moves onto 16th St.***
+      - *`scripts/apply_d3_membership.py` removes 77 segments / 23.5 mi from the
+        master and the per-highway lists (Cleveland Blvd, Blaine St, Northside Blvd,
+        Payette's S Main St / S 7th St / 7th Ave N, Old Highway 30, stubs). It keeps
+        Banks-Lowman and writes the 16-segment add-list to
+        `out/export_reconciliation/item49_d3/`. Old lists: `out/highways/pre_item49/`.*
+      - *None of D3's catalogue entries touched Cleveland Blvd, Blaine St, Northside
+        Blvd or Banks-Lowman. Only `us95-fruitland-payette` did, running 1.3 mi down
+        Main St / 7th St. It is replaced by `us95-fruitland` (Whitley Dr, 2.2 mi) and
+        `us95-payette-16th` (2.5 mi): one entry can't span the 16th St junction
+        (DATA_FORMAT trap 4). D3 now has 54 entries / 27 reporting corridors.*
+      - *For the owner: SH-44 urban's extent to Chinden Blvd runs 0.6 mi down
+        Glenwood St, south of where the SHS ends SH-44 (43.649 N). Left as drawn.*
+- [x] Re-run the district and statewide screening on the corrected catalogues. Record
       how the ranking moves, especially:
       - D2 US-12 (bypass instead of downtown);
       - D1 I-90 (Coeur d'Alene's Northwest Blvd / Sherman Ave are off the SHS; the
@@ -2404,9 +2437,23 @@ twice.
       - D4 SH-77;
       - D3 I-184, whose volumes Item 52 corrected. This is the baseline Items 50 and 51 are
       measured against.
-- [ ] DESIGN_HISTORY with the before/after ranking.
+      *`run_statewide_screening.py --mode full --windows both --maps`, all six
+      districts, on AADT 2025. The screening's AADT join now reads the route
+      membership too (`--membership`, recorded in the provenance).
+      115 reporting corridors ranked, down from 120. Tables:
+      `out/statewide_screening/item49_{peak,7day}_ranking_changes.csv`; the old run is
+      in `pre_item49/`.*
+      - *D3 I-184: peak #6 → **#4** (3,217 → 4,843 VHD, +51%), 7-day #36 → #19.*
+      - *D1 I-90: Kootenai core holds at #7 (−3% VHD). D2 US-12: no Lewiston entry
+        either way; the Idaho County core is flat. D4 SH-77: never ranked; its only
+        appearance was the false couplet, caught before shipping.*
+      - *The top 11 are otherwise unchanged. Other movers: Moscow's US-95 cores swap
+        (#15 → #25, #19 → #12), where the core ends were re-read from the refreshed
+        frames; Gooding SH-46 core #33 → #43; D6 SH-33 Rexburg is Tier 2 (#13), no
+        longer Tier 1 (#14).*
+- [x] DESIGN_HISTORY with the before/after ranking. *Session 68.*
 
-*Suggested prompt:* "Do Item 49 of ROADMAP.md — regenerate the catalogues on Item 52's
+*Suggested prompt (done):* "Do Item 49 of ROADMAP.md — regenerate the catalogues on Item 52's
 membership, settle District 3, and re-run the statewide screening."
 
 ---
@@ -2535,9 +2582,23 @@ Scope:
       milepost, not only by `NextXDSegI`. The layer records one route per road, so SH-8
       runs as a gap in its own mileposts where it shares the US-95 couplet. Bridge
       that gap with INRIX `RoadList` concurrency, where the milepost gap shows it.
+      *From Item 49:* two junctions where `NextXDSegI` follows INRIX's old route
+      and not ITD's (DATA_FORMAT, trap 4):
+      - **Lewiston US-12**, where the Levee Byp is its own 1.7-mi chain;
+      - **Payette US-95** on 16th St, which D3's catalogue now carries as two entries,
+        `us95-fruitland` and `us95-payette-16th`.
+
+      An SHS-ordered chain should make each one facility again.
 - [ ] **Couplets must be one-way pairs.**
       - Require that each leg is actually one-way: there is no opposing-bearing XD
-        segment on the same street.
+        segment on the same street. *Partly done in Item 49, because the rebuilt
+        catalogues shipped false couplets at Lewiston and Elba:*
+        `couplets.drop_mirrored_pairs` and `couplets.drop_two_way_legs` (an opposing
+        same-street segment within 15 m over ≥50% of a leg). Chubbuck's Quinn Rd /
+        US-91 now fails, and every registry couplet that matched before still does. What is left here: the
+        route-share test, Sandpoint, the `Travelway` `D` test, and a review of the
+        survivors: Shoshone Greenwood St / US-93, and American Falls ID-39 S / ID-39 N
+        at 28 m.
       - Require that the legs share a route under ITD membership.
       - Remove Sandpoint from `KNOWN_COUPLETS`, with the owner's reason recorded.
       - Use the highway system's `Travelway` `D` lines (Item 52): a divided highway's

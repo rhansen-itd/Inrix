@@ -484,9 +484,107 @@ def detect_couplets(
             ))
             break
 
-    # Step 4: Sort by county then total miles descending
+    # Step 4: a couplet is two one-way streets. A street pair found in **both**
+    # directions, or a leg with its own street's opposing carriageway lying on it, is
+    # a two-way road (Item 49; Item 51 takes the rule further).
+    pairs = drop_mirrored_pairs(pairs)
+    pairs = drop_two_way_legs(pairs, network, metric_crs=metric_crs)
+
+    # Step 5: Sort by county then total miles descending
     pairs.sort(key=lambda p: (p.county, -p.total_miles))
     return pairs
+
+
+TWO_WAY_TOL_M = 15.0
+"""How close an opposing segment of the leg's own street must lie to count as the
+other half of a two-way road: well under the 25 m minimum couplet separation."""
+
+
+def _opposed(b1: float | None, b2: float | None) -> bool:
+    if b1 is None or b2 is None:
+        return False
+    d = abs((b1 - b2 + 180.0) % 360.0 - 180.0)
+    return d > 120.0
+
+
+def drop_two_way_legs(pairs: Sequence[CoupletPair], network: gpd.GeoDataFrame, *,
+                      metric_crs=None, tol_m: float = TWO_WAY_TOL_M,
+                      min_share: float = 0.5) -> list[CoupletPair]:
+    """Drop every pair with a leg that is one carriageway of a two-way street.
+
+    A leg is two-way when, over at least ``min_share`` of its length, a segment of the
+    **same street** (:func:`street_key`) runs the **opposite way** (bearings more than
+    120 degrees apart) within ``tol_m`` of it along its whole length. A one-way couplet
+    street has no such twin. SH-77 at Elba is the case (Item 49): the detector paired
+    Elba-Almo Rd westbound with Elba-Almo Hwy eastbound, two consecutive pieces of one
+    rural two-way road where its name changes, and the 272 m "separation" was the
+    offset along the road. The test is local to the leg's own segments, so a one-way
+    street that continues as a two-way street beyond the couplet still passes.
+    ``XD``'s ``Bearing`` is not used: it is a carriageway label (Elba-Almo's westbound
+    segments carry ``S``), not a direction of travel."""
+    if not pairs or network.empty:
+        return list(pairs)
+    net = network.set_index("XDSegID", drop=False) if "XDSegID" in network.columns \
+        else network
+    names = net["RoadName"].fillna("").map(lambda n: street_key(n).lower())
+    crs = metric_crs or network.estimate_utm_crs()
+    kept = []
+    for p in pairs:
+        two_way = False
+        for leg, street in ((p.dir1_segment_ids, p.dir1_street),
+                            (p.dir2_segment_ids, p.dir2_street)):
+            leg_ids = [s for s in leg if s in net.index]
+            if not leg_ids:
+                continue
+            own = set(leg_ids)
+            leg_streets = {names[s] for s in leg_ids} | {street_key(street).lower()}
+            cand = net[names.isin(leg_streets) & ~net.index.isin(own)]
+            if cand.empty:
+                continue
+            cand_m = cand.geometry.to_crs(crs)
+            cand_b = {i: _geo._bearing_deg(g) for i, g in cand.geometry.items()}
+            leg_geo = net.loc[leg_ids]
+            leg_m = leg_geo.geometry.to_crs(crs)
+            total = twinned = 0.0
+            for sid, g in leg_m.items():
+                total += g.length
+                b = _geo._bearing_deg(leg_geo.geometry[sid])
+                near = cand_m[cand_m.distance(g) <= tol_m]
+                for cid, cg in near.items():
+                    pts = [g.interpolate(f, normalized=True) for f in (0.1, 0.5, 0.9)]
+                    if _opposed(b, cand_b[cid]) and all(cg.distance(pt) <= tol_m
+                                                         for pt in pts):
+                        twinned += g.length
+                        break
+            if total > 0 and twinned / total >= min_share:
+                two_way = True
+                break
+        if not two_way:
+            kept.append(p)
+    return kept
+
+
+def drop_mirrored_pairs(pairs: Sequence[CoupletPair]) -> list[CoupletPair]:
+    """Drop every pair whose two streets were also paired the other way round.
+
+    A couplet is two one-way streets, each carrying one direction. When the detector
+    pairs street A westbound with street B eastbound **and** A eastbound with B
+    westbound, each street carries both directions, so they are two parallel two-way
+    (or divided) roads, and neither pairing is a couplet. Lewiston is the case (Item
+    49): once Item 52's membership put US-12 on the levee bypass, "Us Highway 12" and
+    the Levee Byp were paired twice, 223 m apart, as mirror images. Both pairs got the
+    same catalogue id, which is how the builder found them."""
+    def key(p):
+        return (p.county, frozenset((street_key(p.dir1_street), street_key(p.dir2_street))))
+
+    bearings: dict = {}
+    for p in pairs:
+        bearings.setdefault(key(p), set()).add(
+            (street_key(p.dir1_street), p.dir1_bearing))
+        bearings[key(p)].add((street_key(p.dir2_street), p.dir2_bearing))
+    two_way = {k for k, seen in bearings.items()
+               if any(sum(1 for s2, _ in seen if s2 == s) > 1 for s, _ in seen)}
+    return [p for p in pairs if key(p) not in two_way]
 
 
 def filter_by_district(

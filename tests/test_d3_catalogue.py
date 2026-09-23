@@ -27,13 +27,14 @@ SCREENING_DIR = REPO_ROOT / "out" / "district_screening"
 
 
 def test_d3_catalogue_schema_and_completeness():
-    """All 52 entries and 26 reporting corridors must be well-formed and paired."""
+    """All 54 entries and 27 reporting corridors (Item 49 split US-95 at Payette) must
+    be well-formed and paired."""
     assert D3_CATALOGUE.exists(), "scripts/d3_corridors.json missing"
     entries = corridors.load_catalogue(D3_CATALOGUE)
     groups = corridors.load_reporting_corridors(D3_CATALOGUE)
 
-    assert len(entries) == 52
-    assert len(groups) == 26
+    assert len(entries) == 54
+    assert len(groups) == 27
 
     # Validate each entry
     entry_ids = set()
@@ -97,13 +98,13 @@ def test_d3_catalogue_includes_item44_key_corridors():
 @pytest.mark.skipif(not (D3_NETWORK.exists() and D3_REPAIRS.exists()),
                     reason="D3 network cache or repairs not available")
 def test_all_d3_catalogue_entries_resolve_with_repairs():
-    """All 52 entries must walk to their target and have valid chain geometries."""
+    """All 54 entries must walk to their target and have valid chain geometries."""
     net = gpd.read_parquet(D3_NETWORK)
     repairs = corridors.load_link_repairs(D3_REPAIRS)
     entries = corridors.load_catalogue(D3_CATALOGUE)
 
     res = corridors.resolve_catalogue(net, entries, repairs=repairs)
-    assert len(res) == 52
+    assert len(res) == 54
     assert res["reached_target"].all(), (
         f"Failed to reach target: {res[~res['reached_target']]['id'].tolist()}"
     )

@@ -5350,9 +5350,25 @@ segments (89.4 mi) with no SHS route.
   mainline; only as ramp, a ramp. Otherwise the description rule stands.
 - On the 2025 join it changes 56 segments (16.8 mi). It also fixes Sandpoint's new
   US-95 alignment (was 50), I-90 W at Compressor (was 30), and Pocatello's I-15/I-86
-  system interchange (was 1,500). Two readings are doubtful, listed in DATA_FORMAT:
-  I-84 W between Declo and Cotterell now takes the one I-84 `D` record (6,000), and
-  Weiser's W 7th St takes 150.
+  system interchange (was 1,500).
+- **The owner checked two more readings, and both were ramp counts on a roadway
+  route id:**
+  - I-84 around the Cotterell I-84/I-86 system interchange read ~6,000; the real
+    count is 12,000 east of the split, and ITD's record west of it is 19,500;
+  - Weiser's W 7th St read 150; the real count is 6,000–8,000.
+
+  ITD writes a ramp count as a movement with no "to" point. `aadt.ramp_signature`
+  keeps such a record a ramp against both the SHS rule and Item 34's route roll-up,
+  which had put ~6,000 on I-84 at Cotterell in 2024 as well. There are exactly three
+  such records in 2025; the fix moves 7 segments (3.0 mi) statewide. Record kinds
+  are now recomputed on every load, cache hits included.
+- **The two US-20 Broadways are not mixed.** The owner asked, since a note here
+  had tied a Boise record to Rigby. ITD's 2025 download relabelled the four Boise
+  Broadway ramp records (`02080`–`02083AUS020`) with `MCBRIDE RD` / `US-20 RAMPS N
+  RIGBY IC`. Their geometry, measures and counts equal 2024's, so only the text is
+  wrong. Boise's US-20 on Broadway reads 23,000–33,500 from Boise records; Idaho
+  Falls' reads 13,500–22,500 from Idaho Falls records. 47 of 7,473 matched records
+  changed description in 2025 (DATA_FORMAT).
 - **2024 → 2025 on the SHS classification:** inventory VMT +2.9% (D1 +1.6% … D4
   +3.5%); D3 peak VHD +2.6%.
 - **The classification matters more than the year:** with correct volumes I-184 is
@@ -5375,12 +5391,159 @@ segments (89.4 mi) with no SHS route.
   - a frontage road between carriageways;
   - a business line on the segment outranking a mainline near it;
   - `source` round-trips; the override table has the row retired.
-- `test_itd_layers.py`, new (8): code decoding; the real SHS and urban layers (these
+- `test_itd_layers.py`, new (9): code decoding; the real SHS and urban layers (these
   skip without the fixtures); urban context; SHS record kinds; the I-184 join taking
-  the mainline count.
+  the mainline count; a Cotterell-style ramp count staying a ramp under both the SHS
+  rule and the roll-up.
 - `test_aadt.py` +2: the cache keys on its source; the defaults.
 - `test_reconcile_export_segments.py`: the fixture's year pinned to 2024.
 
-Full suite **730 passed, 2 skipped**. `ruff --select F` is clean on every file this
+Full suite **731 passed, 2 skipped**. `ruff --select F` is clean on every file this
 session touched; the 3 findings in `store.py` / `ingest_backfill_segments.py`
 predate it.
+
+## Session 68 — Item 49: catalogues on the SHS membership, District 3 settled, statewide re-run (2026-09-23)
+
+The ingest was verified in Session 66. This session regenerated the catalogues on
+Item 52's membership and AADT 2025, applied the owner's District 3 decision, and
+re-ran the statewide screening. That run is the baseline for Items 50 and 51.
+
+### 1. Order of operations: screen, build, screen
+
+The catalogue builder reads each district's `segment_peak_screen.parquet`. The frames
+on disk predated the backfill ingest, so none of the 117 new segments were in them.
+The D1/D2/D4/D5/D6 peak screening ran first (now 4 + 25 + 84 + 2 + 2 more segments),
+then the builder, then the full statewide run.
+
+### 2. Screening's volume join reads membership (`run_district_screening --membership`)
+
+The catalogue builder walked ITD's route numbers (Item 48), but the screening joined
+AADT on INRIX `RoadNumber`. So a segment INRIX numbers but ITD doesn't (Lewiston's
+Main St, Payette's S Main St) still attracted that route's counts. The runner now
+resolves `RoadNumber` through `out/highways/route_membership/d<N>_route_membership.csv`
+(the default with `--district`; `''` turns it off) and records the file in the
+provenance.
+
+### 3. Two false couplets, and the detector guards that reject them
+
+The first rebuild crashed on D2. The detector had paired "Us Highway 12" W with
+Levee Byp E, **and** "Us Highway 12" E with Levee Byp W. Both pairs got the same
+catalogue id. Once D2 built, D4 shipped an "SH-77 Cassia County couplet": Elba-Almo
+Rd WB with Elba-Almo Hwy EB, two consecutive pieces of one rural two-way road where
+the name changes. The 272 m "separation" was the offset along the road. Both came
+from Item 52's membership, which made these segments state route. Item 51 owns the
+full one-way rule, but these catalogues could not ship with them, so two guards went
+in now:
+
+- `couplets.drop_mirrored_pairs`: a street pair found in both directions is two
+  two-way roads.
+- `couplets.drop_two_way_legs`: a leg with its own street's opposing segment within
+  15 m over ≥50% of its length is one carriageway of a two-way road. XD's `Bearing`
+  is not used (Elba-Almo's westbound segments are coded `S`).
+
+Statewide the second guard drops 9 detected pairs, each with a plainly two-way leg:
+
+| District | Pair | Note |
+|---|---|---|
+| D2 | Grangeville US-95-BL / King St | |
+| D2 | Moscow US-95 / Main St | |
+| D3 | Nampa 2nd St S / Caldwell Blvd | |
+| D3 | Payette `95 N` / US-95 | |
+| D4 | Elba-Almo | |
+| D4 | Jerome ID-25 / Main St | |
+| D5 | Chubbuck Quinn Rd / US-91 | Item 51 requires it to fail |
+| D5 | Soda Springs 3rd E / Hooper Ave | |
+| D5 | Malad 90 S / 50 St S | |
+
+Every registry couplet that matched before still matches: Moscow, Boise, Nampa,
+Weiser, Twin Falls, Pocatello, Blackfoot, American Falls. Mountain Home, Sandpoint and
+Idaho Falls were `none` before too. Preston's registry row had been "matched" by the
+false Chubbuck pair and now reads `none`, which is correct.
+
+### 4. District 3: the owner's decision
+
+The owner chose (2026-09-23) that the curated D3 lists take the SHS membership and
+US-95 goes onto 16th St.
+
+- `routes.reconcile_curated_list` (pure) + `scripts/apply_d3_membership.py` drop
+  the segments membership leaves on no route: 77 segments / 23.5 mi.
+  - Cleveland Blvd 8.0 mi, Old Highway 30 3.8, Northside Blvd 2.1, Payette 7th Ave N
+    2.0 / S Main St 1.8 / S 7th St 0.8, Blaine St 2.0, and stubs.
+  - The drop covers the master, the no-Caldwell variant and 29 per-highway files. The
+    JSON/CSV counts are recomputed.
+  - Banks-Lowman is exempt (kept on purpose).
+  - The statewide master falls by exactly 77 (17,290 → 17,213). The D1/D2/D4–D6
+    masters are byte-identical on regeneration.
+  - Add-list: 16 SHS segments / 1.27 mi. A second run is a no-op.
+- **Which catalogue entries this touched.** None of the 52 entries used Cleveland
+  Blvd, Blaine St, Northside Blvd or Banks-Lowman. Only `us95-fruitland-payette` did.
+  It ran 1.3 mi down S Main St / S 7th St to 7th Ave N, while ITD's US-95 runs up
+  16th St. It could not simply be re-pointed:
+  - northbound, INRIX's `NextXDSegI` continues from `1187491533` onto S Main St,
+    and the 16th St branch (`384126765`) has no `PreviousXD`;
+  - southbound, 16th St dead-ends 1 m from US-95 with no link.
+
+  These are different `XDGroup`s, so `repair_links` must not bridge them. The entry
+  became two: `us95-fruitland` (Whitley Dr, 2.2 mi) and `us95-payette-16th` (2.5 mi).
+  Both resolve with no repairs. Lewiston's levee bypass is the same trap. Both are
+  recorded as DATA_FORMAT trap 4 and handed to Item 51.
+- Flagged, not changed: the owner-drawn SH-44 urban extent runs 0.6 mi down Glenwood
+  St south of where the SHS ends SH-44.
+
+### 5. The scope lines, traced to the output
+
+- *Lewiston's US-12 gains the levee bypass:* on membership the Levee Byp is US-12 and
+  D St is not. But it is its own 1.7-mi chain (trap 4) with no congested core, so no
+  Lewiston US-12 entry exists before or after. This is recorded rather than claimed.
+- *Sun Valley Rd stays out:* no entry in any district walks it. The off-route miles
+  inside entries fell everywhere:
+
+  | District | Before (mi) | After (mi) |
+  |---|---|---|
+  | D1 | 0.6 | 0.6 |
+  | D2 | 1.3 | 0.6 |
+  | D3 | 4.5 | 1.9 |
+  | D4 | 1.5 | 1.3 |
+  | D5 | 1.3 | 0.7 |
+  | D6 | 1.9 | 0.2 |
+
+  What remains is junction slivers, Twin Falls' Shoshone St E, and D3's Glenwood.
+
+### 6. Before / after (`out/statewide_screening/item49_{peak,7day}_ranking_changes.csv`)
+
+"Before" is the 2026-09-22 run (Item 46 catalogues; AADT 2024; description-classified
+records; INRIX `RoadNumber` in the join). The run ranks 120 → 115 reporting corridors.
+
+| Peak rank | Corridor | VHD before → after |
+|---|---|---|
+| 1 | D3 I-84 Nampa–Boise | 46,191 → 47,365 |
+| 2 | D3 I-84 full valley | 59,006 → 61,052 |
+| 3 | D3 Boise couplet | 1,233 → 1,282 |
+| **6 → 4** | **D3 I-184** | **3,217 → 4,843 (+51%)** |
+| 4 → 5 | D3 SH-55 Eagle | 7,022 → 7,172 |
+| 5 → 6 | D3 SH-55 Karcher | unchanged |
+| 7 | D1 I-90 Kootenai core | 1,128 → 1,095 |
+
+- I-184's 7-day rank goes #36 → #19. Its correction is Item 52's SHS record
+  classification, which this run is the first to carry into the rankings.
+- Elsewhere, district VHD rises 2–5% with AADT 2025.
+- The removed false couplets (D2, D4, D5) were all ranked #34 or lower.
+- Moscow's two US-95 cores swap places (#15 → #25, #19 → #12), because their core ends
+  were re-read from the refreshed frames (the SB core now walks US-95 S, not ID-8 /
+  S Main St).
+- Gooding SH-46 core #33 → #43 (the core lengthened 0.9 → 1.3 mi).
+- D6 SH-33 Rexburg becomes Tier 2 (#13), no longer Tier 1 (#14).
+- Payette's two new corridors rank #35 and #46. The old combined corridor ranked #59.
+
+### 7. Tests
+
+- `test_routes.py` +1: a curated list drops off-system roads, keeps Banks-Lowman,
+  ramps and business loops, reports a missing SHS segment, and keeps unknown ids.
+- `test_couplets.py` +2: the mirrored Lewiston pairs; the Elba-Almo two-way legs. A
+  real one-way pair survives, and one two-way leg is enough to drop a pair.
+- `test_run_district_screening.py` +1: the join reads membership; `--district`
+  finds the file; `''` disables it.
+- `test_d3_catalogue.py` / `test_corridors.py`: the D3 pins move 52/26 → 54/27
+  entries/groups and 20 → 19 repaired links (the old SB Payette entry used one).
+
+Full suite **735 passed, 2 skipped**.

@@ -17,8 +17,8 @@
   },
   "corridors": [
     {
-      "id": "sh-33-jefferson-core-wb",
-      "name": "SH-33 WB: Jefferson County \u2014 Congested Core",
+      "id": "sh-33-jefferson-commuter-wb",
+      "name": "SH-33 WB: Jefferson County \u2014 Commuter Corridor",
       "start_latlon": [
         43.82607,
         -111.77807
@@ -27,12 +27,12 @@
         43.82616,
         -111.81244
       ],
-      "description": "Tier 1 (Congested Core) of SH-33: Jefferson County. Recurrent bottleneck core (1.72 mi, 13 segments at PEAK TTI >= 1.2). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (21,000 -> 11,500 vpd, 45%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "corridor": "sh-33-jefferson-core",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Jefferson County. Commuter extent between regional boundaries (1.72 mi); stitched outward from the core to chain start and an AADT step-change (22,000 -> 11,500 vpd, 48%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (22,000 -> 11,500 vpd, 48%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "corridor": "sh-33-jefferson-commuter",
       "direction": "WB",
-      "_tier": "core",
+      "_tier": "commuter",
       "_facility": "sh-33-jefferson",
-      "_split_rationale": "Recurrent bottleneck core (1.72 mi, 13 segments at PEAK TTI >= 1.2)",
+      "_split_rationale": "Commuter extent between regional boundaries (1.72 mi); stitched outward from the core to chain start and an AADT step-change (22,000 -> 11,500 vpd, 48%)",
       "_generated_miles": 1.717,
       "_segment_ids": [
         461321036,
@@ -51,8 +51,8 @@
       ]
     },
     {
-      "id": "sh-33-jefferson-core-eb",
-      "name": "SH-33 EB: Jefferson County \u2014 Congested Core",
+      "id": "sh-33-jefferson-commuter-eb",
+      "name": "SH-33 EB: Jefferson County \u2014 Commuter Corridor",
       "start_latlon": [
         43.82608,
         -111.81797
@@ -61,12 +61,12 @@
         43.82607,
         -111.77807
       ],
-      "description": "Tier 1 (Congested Core) of SH-33: Jefferson County. Recurrent bottleneck core (1.72 mi, 13 segments at PEAK TTI >= 1.2). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (21,000 -> 11,500 vpd, 45%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "corridor": "sh-33-jefferson-core",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Jefferson County. Commuter extent between regional boundaries (1.72 mi); stitched outward from the core to chain start and an AADT step-change (22,000 -> 11,500 vpd, 48%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (22,000 -> 11,500 vpd, 48%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "corridor": "sh-33-jefferson-commuter",
       "direction": "EB",
-      "_tier": "core",
+      "_tier": "commuter",
       "_facility": "sh-33-jefferson",
-      "_split_rationale": "Recurrent bottleneck core (1.72 mi, 13 segments at PEAK TTI >= 1.2)",
+      "_split_rationale": "Commuter extent between regional boundaries (1.72 mi); stitched outward from the core to chain start and an AADT step-change (22,000 -> 11,500 vpd, 48%)",
       "_generated_miles": 1.994,
       "_segment_ids": [
         461319759,
@@ -412,7 +412,7 @@
         43.82819,
         -111.77807
       ],
-      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County. Recurrent bottleneck core (0.93 mi, 2 segments at PEAK TTI >= 1.2). Upstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%); downstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County. Recurrent bottleneck core (0.93 mi, 2 segments at PEAK TTI >= 1.2). Upstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%); downstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-33-n-2nd-st-madison-core",
       "direction": "SB",
       "_tier": "core",
@@ -435,7 +435,7 @@
         43.84154,
         -111.77822
       ],
-      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County. Recurrent bottleneck core (0.93 mi, 2 segments at PEAK TTI >= 1.2). Upstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%); downstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County. Recurrent bottleneck core (0.93 mi, 2 segments at PEAK TTI >= 1.2). Upstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%); downstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-33-n-2nd-st-madison-core",
       "direction": "NB",
       "_tier": "core",
@@ -459,12 +459,12 @@
         43.82607,
         -111.77807
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-33 (N 2nd St): Madison County. Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,000 -> 18,000 vpd, 72%) and chain end. Upstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 2 (Commuter Corridor) of SH-33 (N 2nd St): Madison County. Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,200 -> 18,500 vpd, 72%) and chain end. Upstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-33-n-2nd-st-madison-commuter",
       "direction": "SB",
       "_tier": "commuter",
       "_facility": "sh-33-n-2nd-st-madison",
-      "_split_rationale": "Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,000 -> 18,000 vpd, 72%) and chain end",
+      "_split_rationale": "Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,200 -> 18,500 vpd, 72%) and chain end",
       "_generated_miles": 1.073,
       "_segment_ids": [
         461321047,
@@ -483,12 +483,12 @@
         43.84154,
         -111.77822
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-33 (N 2nd St): Madison County. Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,000 -> 18,000 vpd, 72%) and chain end. Upstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 2 (Commuter Corridor) of SH-33 (N 2nd St): Madison County. Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,200 -> 18,500 vpd, 72%) and chain end. Upstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-33-n-2nd-st-madison-commuter",
       "direction": "NB",
       "_tier": "commuter",
       "_facility": "sh-33-n-2nd-st-madison",
-      "_split_rationale": "Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,000 -> 18,000 vpd, 72%) and chain end",
+      "_split_rationale": "Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,200 -> 18,500 vpd, 72%) and chain end",
       "_generated_miles": 1.073,
       "_segment_ids": [
         461321044,
@@ -500,22 +500,21 @@
       "id": "sh-33-n-2nd-st-madison-regional-sb",
       "name": "SH-33 (N 2nd St) SB: Madison County \u2014 Regional Baseline",
       "start_latlon": [
-        43.87284,
-        -111.75113
+        43.86272,
+        -111.7611
       ],
       "end_latlon": [
         43.82607,
         -111.77807
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (3.64 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (2.77 mi, 6 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-33-n-2nd-st-madison-regional",
       "direction": "SB",
       "_tier": "regional",
       "_facility": "sh-33-n-2nd-st-madison",
-      "_split_rationale": "Full regional facility (3.64 mi, 7 segments)",
-      "_generated_miles": 3.639,
+      "_split_rationale": "Full regional facility (2.77 mi, 6 segments)",
+      "_generated_miles": 2.768,
       "_segment_ids": [
-        448695196,
         1187511891,
         1187511847,
         1187511807,
@@ -532,24 +531,23 @@
         -111.77807
       ],
       "end_latlon": [
-        43.87284,
-        -111.75113
+        43.86272,
+        -111.7611
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (3.64 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (2.77 mi, 6 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-33-n-2nd-st-madison-regional",
       "direction": "NB",
       "_tier": "regional",
       "_facility": "sh-33-n-2nd-st-madison",
-      "_split_rationale": "Full regional facility (3.64 mi, 7 segments)",
-      "_generated_miles": 3.639,
+      "_split_rationale": "Full regional facility (2.77 mi, 6 segments)",
+      "_generated_miles": 2.768,
       "_segment_ids": [
         461321044,
         461321045,
         461321046,
         1187511741,
         1187511787,
-        1187511826,
-        448695195
+        1187511826
       ]
     },
     {
@@ -1235,8 +1233,8 @@
       "id": "us-20-farnsworth-way-jefferson-core-sb",
       "name": "US-20 (Farnsworth Way) SB: Jefferson County \u2014 Congested Core",
       "start_latlon": [
-        43.68068,
-        -111.90777
+        43.68295,
+        -111.90367
       ],
       "end_latlon": [
         43.6701,
@@ -1248,8 +1246,11 @@
       "_tier": "core",
       "_facility": "us-20-farnsworth-way-jefferson",
       "_split_rationale": "Recurrent bottleneck core (1.27 mi, 7 segments at PEAK TTI >= 1.2)",
-      "_generated_miles": 0.958,
+      "_generated_miles": 1.243,
       "_segment_ids": [
+        1187344988,
+        448719670,
+        448719672,
         448719669,
         1187518341,
         1187652498
@@ -1288,8 +1289,8 @@
       "id": "us-20-farnsworth-way-jefferson-regional-sb",
       "name": "US-20 (Farnsworth Way) SB: Jefferson County \u2014 Regional Baseline",
       "start_latlon": [
-        43.68068,
-        -111.90777
+        43.68295,
+        -111.90367
       ],
       "end_latlon": [
         43.66346,
@@ -1301,8 +1302,11 @@
       "_tier": "regional",
       "_facility": "us-20-farnsworth-way-jefferson",
       "_split_rationale": "Full regional facility (1.78 mi, 8 segments)",
-      "_generated_miles": 1.468,
+      "_generated_miles": 1.752,
       "_segment_ids": [
+        1187344988,
+        448719670,
+        448719672,
         448719669,
         1187518341,
         1187652498,
@@ -2744,12 +2748,12 @@
   ],
   "reporting_corridors": [
     {
-      "id": "sh-33-jefferson-core",
-      "name": "SH-33: Jefferson County \u2014 Tier 1 Congested Core (Main St @ 2Nd W St to 12Th W St, Rexburg)",
-      "description": "Tier 1 (Congested Core) of SH-33: Jefferson County. Recurrent bottleneck core (1.72 mi, 13 segments at PEAK TTI >= 1.2). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (21,000 -> 11,500 vpd, 45%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "_tier": "core",
-      "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Main St @ 2Nd W St to 12Th W St, Rexburg)",
+      "id": "sh-33-jefferson-commuter",
+      "name": "SH-33: Jefferson County \u2014 Tier 2 Commuter Corridor (Main St @ 2Nd W St to Us-20 Sb Ramps Ic No. 333)",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Jefferson County. Commuter extent between regional boundaries (1.72 mi); stitched outward from the core to chain start and an AADT step-change (22,000 -> 11,500 vpd, 48%). Upstream boundary: the start of the mainline chain; downstream boundary: an AADT step-change (22,000 -> 11,500 vpd, 48%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "_tier": "commuter",
+      "_tier_number": 2,
+      "_tier_label": "Tier 2 Commuter Corridor (Main St @ 2Nd W St to Us-20 Sb Ramps Ic No. 333)",
       "_facility": "sh-33-jefferson",
       "_facility_name": "SH-33: Jefferson County",
       "_miles": 1.717,
@@ -2770,7 +2774,7 @@
     {
       "id": "sh-33-n-2nd-st-madison-core",
       "name": "SH-33 (N 2nd St): Madison County \u2014 Tier 1 Congested Core (E 4Th N St to E 1St N St)",
-      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County. Recurrent bottleneck core (0.93 mi, 2 segments at PEAK TTI >= 1.2). Upstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%); downstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County. Recurrent bottleneck core (0.93 mi, 2 segments at PEAK TTI >= 1.2). Upstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%); downstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (E 4Th N St to E 1St N St)",
@@ -2782,7 +2786,7 @@
     {
       "id": "sh-33-n-2nd-st-madison-commuter",
       "name": "SH-33 (N 2nd St): Madison County \u2014 Tier 2 Commuter Corridor (E 4Th N St to Main St @ 2Nd W St)",
-      "description": "Tier 2 (Commuter Corridor) of SH-33 (N 2nd St): Madison County. Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,000 -> 18,000 vpd, 72%) and chain end. Upstream boundary: an AADT step-change (5,000 -> 18,000 vpd, 72%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 2 (Commuter Corridor) of SH-33 (N 2nd St): Madison County. Commuter extent between regional boundaries (1.07 mi); stitched outward from the core to an AADT step-change (5,200 -> 18,500 vpd, 72%) and chain end. Upstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (E 4Th N St to Main St @ 2Nd W St)",
@@ -2793,15 +2797,15 @@
     },
     {
       "id": "sh-33-n-2nd-st-madison-regional",
-      "name": "SH-33 (N 2nd St): Madison County \u2014 Tier 3 Regional Baseline (Teton Island Canal to Main St @ 2Nd W St)",
-      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (3.64 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "name": "SH-33 (N 2nd St): Madison County \u2014 Tier 3 Regional Baseline (E Moody Rd to Main St @ 2Nd W St)",
+      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (2.77 mi, 6 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Teton Island Canal to Main St @ 2Nd W St)",
+      "_tier_label": "Tier 3 Regional Baseline (E Moody Rd to Main St @ 2Nd W St)",
       "_facility": "sh-33-n-2nd-st-madison",
       "_facility_name": "SH-33 (N 2nd St): Madison County",
-      "_miles": 3.639,
-      "_n_segments": 7
+      "_miles": 2.768,
+      "_n_segments": 6
     },
     {
       "id": "sh-33-teton-core",
@@ -2841,11 +2845,11 @@
     },
     {
       "id": "us-20-bonneville-core",
-      "name": "US-20: Bonneville County \u2014 Tier 1 Congested Core (Saturn Ave to Old Butte Rd (26Th W))",
+      "name": "US-20: Bonneville County \u2014 Tier 1 Congested Core (Hansen Ave to Old Butte Rd (26Th W))",
       "description": "Tier 1 (Congested Core) of US-20: Bonneville County. Recurrent bottleneck core (1.84 mi, 3 segments at PEAK TTI >= 1.2). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Saturn Ave to Old Butte Rd (26Th W))",
+      "_tier_label": "Tier 1 Congested Core (Hansen Ave to Old Butte Rd (26Th W))",
       "_facility": "us-20-bonneville",
       "_facility_name": "US-20: Bonneville County",
       "_miles": 1.844,
@@ -2853,11 +2857,11 @@
     },
     {
       "id": "us-20-bonneville-regional",
-      "name": "US-20: Bonneville County \u2014 Tier 3 Regional Baseline (Saturn Ave to Us-26)",
+      "name": "US-20: Bonneville County \u2014 Tier 3 Regional Baseline (Hansen Ave to Us-26)",
       "description": "Tier 3 (Regional Baseline) of US-20: Bonneville County. Full regional facility (23.94 mi, 38 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Saturn Ave to Us-26)",
+      "_tier_label": "Tier 3 Regional Baseline (Hansen Ave to Us-26)",
       "_facility": "us-20-bonneville",
       "_facility_name": "US-20: Bonneville County",
       "_miles": 23.941,

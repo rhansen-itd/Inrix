@@ -291,3 +291,60 @@ class TestCoupletEntryNaming:
         cat = {"corridors": [d1, d2], "reporting_corridors": [rc]}
         assert len(corridors.parse_catalogue(cat)) == 2
         assert corridors.parse_reporting_corridors(cat)[0].one_way_couplet is True
+
+
+def _pair(s1, b1, s2, b2, county="Nez Perce"):
+    return couplets.CoupletPair(
+        dir1_segment_ids=(1,), dir2_segment_ids=(2,), dir1_bearing=b1, dir2_bearing=b2,
+        dir1_street=s1, dir2_street=s2, route_numbers=("12",), total_miles=0.95,
+        mean_lateral_sep_m=223.0, county=county, postal_code="83501")
+
+
+def test_a_street_pair_found_in_both_directions_is_not_a_couplet():
+    """Item 49, Lewiston: 'Us Highway 12' W + Levee Byp E and 'Us Highway 12' E +
+    Levee Byp W. Each street carries both directions, so neither pairing is a
+    couplet. A real one-way pair, and the same streets in another county, survive."""
+    lewiston = [_pair("Us Highway 12", "W", "Levee Byp", "E"),
+                _pair("Us Highway 12", "E", "Levee Byp", "W")]
+    real = _pair("E Main St", "E", "D St", "W")
+    elsewhere = _pair("Us Highway 12", "W", "Levee Byp", "E", county="Idaho")
+    kept = couplets.drop_mirrored_pairs([*lewiston, real, elsewhere])
+    assert kept == [real, elsewhere]
+    # Leg order and the quadrant prefix do not hide the mirror.
+    swapped = [_pair("Us Highway 12", "W", "Levee Byp", "E"),
+               _pair("W Levee Byp", "W", "Us Highway 12", "E")]
+    assert couplets.drop_mirrored_pairs(swapped) == []
+
+
+def test_a_leg_with_its_own_streets_opposing_carriageway_on_it_is_not_a_couplet():
+    """Item 49, SH-77 at Elba: Elba-Almo Rd westbound and Elba-Almo Hwy eastbound were
+    paired, two consecutive pieces of one two-way road. Each leg has an opposing
+    segment of its own street lying on it, so the pair goes. XD's ``Bearing`` label
+    (``S`` on a westbound segment) is ignored; the geometry decides. A real one-way
+    pair a block apart survives."""
+    def seg(sid, name, coords, bearing):
+        return {"XDSegID": sid, "RoadName": name, "Bearing": bearing,
+                "geometry": LineString(coords)}
+
+    y0, y1 = 42.2700, 42.2725                        # ~280 m apart, north-south
+    net = gpd.GeoDataFrame([
+        seg(1, "Elba-Almo Hwy", [(-113.53, y0), (-113.52, y0)], "E"),
+        seg(2, "Elba-Almo Hwy", [(-113.52, y0), (-113.53, y0)], "S"),  # the twin
+        seg(3, "Elba-Almo Rd", [(-113.52, y1), (-113.53, y1)], "W"),
+        seg(4, "Elba-Almo Rd", [(-113.53, y1), (-113.52, y1)], "E"),   # the twin
+        seg(5, "1st Ave", [(-113.53, y0 + 0.01), (-113.52, y0 + 0.01)], "E"),
+        seg(6, "2nd Ave", [(-113.52, y1 + 0.01), (-113.53, y1 + 0.01)], "W"),
+    ], crs="EPSG:4326")
+
+    def pair(a, sa, b, sb):
+        return couplets.CoupletPair(
+            dir1_segment_ids=(a,), dir2_segment_ids=(b,), dir1_bearing="E",
+            dir2_bearing="W", dir1_street=sa, dir2_street=sb, route_numbers=("77",),
+            total_miles=0.5, mean_lateral_sep_m=280.0, county="Cassia", postal_code="")
+
+    elba = pair(1, "Elba-Almo Hwy", 3, "Elba-Almo Rd")
+    real = pair(5, "1st Ave", 6, "2nd Ave")
+    assert couplets.drop_two_way_legs([elba, real], net) == [real]
+    # One two-way leg is enough: a one-way street paired with a two-way one goes too.
+    half = pair(5, "1st Ave", 3, "Elba-Almo Rd")
+    assert couplets.drop_two_way_legs([half], net) == []

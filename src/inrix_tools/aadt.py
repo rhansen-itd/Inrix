@@ -209,6 +209,19 @@ def _describe_kind(desc) -> str:
     return MAINLINE
 
 
+def ramp_signature(aadt) -> pd.Series:
+    """True for a record written the way ITD writes a **ramp count**: a movement in
+    ``Descriptio`` (``WB ON COTTERELL IC #222``) and no "to" point in ``Descript_1``
+    (``NONE`` or blank). A mainline record names both ends, even when one of them is
+    a ramp (``EB ON RAMP IC #49`` → ``EB ON COLE-OVERLAND IC``). (Item 52.)"""
+    idx = aadt.index
+    if "Descriptio" not in aadt.columns or "Descript_1" not in aadt.columns:
+        return pd.Series(False, index=idx)       # no "to" field: no evidence either way
+    frm = aadt["Descriptio"].fillna("").astype(str).str.upper()
+    to = aadt["Descript_1"].fillna("").astype(str).str.strip().str.upper()
+    return frm.str.contains(_DESC_RAMP_RE) & to.isin(["", "NONE"])
+
+
 def classify_aadt_records(aadt):
     """Label every AADT record ``mainline`` / ``ramp`` / ``connector`` / ``unknown``.
 
@@ -253,7 +266,12 @@ def classify_aadt_records(aadt):
         # mainline stretch. A tie (one street + one ramp) keeps the per-record read.
         mainline_routes = set(tally.index[tally[MAINLINE] > tally[RAMP] + tally[CONNECTOR]])
         on_mainline_route = out["RouteID"].isin(mainline_routes)
-        kind = kind.where(~on_mainline_route, MAINLINE)
+        # ...except a record with the ramp signature (a movement, no "to" point),
+        # which is a ramp count filed on the mainline's route id: I-84's
+        # ``EB OFF COTTERELL IC#222`` (6,100) on ``01010AIN084``, where I-84 carries
+        # 12,000 (Item 52, owner-checked). The roll-up's own examples all name a
+        # "to" point, so they are unaffected.
+        kind = kind.where(~on_mainline_route | ramp_signature(out), MAINLINE)
 
     out[RECORD_KIND_COL] = kind
     return out
@@ -520,10 +538,10 @@ def _load_aadt_layer(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_p
         shortfall = _cache_shortfall(cached, meta, year=year, bbox=read_bbox_wgs84,
                                      columns=cols, source=src_key)
         if shortfall is None:
-            # A cache written before Item 34 has no ``record_kind``; classify on the
-            # way out so an old cache can't silently reinstate nearest-wins.
-            out = classify_aadt_records(cached) if (
-                classify and RECORD_KIND_COL not in cached.columns) else cached
+            # Classify on the way out, always: the classification is cheap and its
+            # rules change (Item 34's roll-up, Item 52's ramp signature), and a kind
+            # frozen into an old cache would silently keep the old reading.
+            out = classify_aadt_records(cached) if classify else cached
             out.attrs["aadt_layer"] = {
                 "year": year, "bbox": read_bbox_wgs84, "cache": "hit",
                 "cache_path": str(cache_path),

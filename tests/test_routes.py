@@ -443,3 +443,33 @@ def test_a_business_line_on_the_segment_outranks_a_mainline_near_it():
     m = routes.route_membership(geo, shs=shs)
     assert m.loc[1, "verdict"] == routes.BUSINESS and m.loc[1, "routes"] == "20"
     assert "business loop" in m.loc[1, "reason"]
+
+
+def _membership_frame(rows):
+    """(XDSegID, RoadName, verdict, routes) rows as ``read_membership`` returns them."""
+    return pd.DataFrame(rows, columns=["XDSegID", "RoadName", "verdict", "routes"]
+                        ).set_index("XDSegID")
+
+
+def test_a_curated_list_drops_off_system_roads_but_keeps_what_it_is_told_to():
+    """Item 49, District 3: Cleveland Blvd (INRIX says I-84 BL, the SHS says local) and
+    a road off the system drop out of the hand-curated list; Banks-Lowman is off the
+    system too but kept on purpose; ramps and business loops stay; an SHS route
+    segment the list lacks is reported, not silently added; an id the membership
+    doesn't cover is kept (no evidence either way)."""
+    m = _membership_frame([
+        (1, "I-84", routes.AGREE, "84"),
+        (2, "Cleveland Blvd", routes.INRIX_ONLY, ""),
+        (3, "Banks Lowman Hwy", routes.OFF_SYSTEM, ""),
+        (4, "I-84 Ramp", routes.RAMP, ""),
+        (5, "Garrity Blvd", routes.BUSINESS, "84"),
+        (6, "S 16th St", routes.ITD_ONLY, "95"),
+        (7, "Some Ramp", routes.RAMP, "84"),
+    ])
+    rec = routes.reconcile_curated_list([5, 2, 1, 3, 4, 99], m, keep=[3])
+    assert rec["kept"] == [5, 1, 3, 4, 99]          # order preserved
+    assert rec["dropped"] == [2]
+    assert rec["missing"] == [6]                     # not the ramp (7)
+    assert routes.no_route_segments(m) == {2, 3}
+    # Without the keep, Banks-Lowman would go too.
+    assert routes.reconcile_curated_list([1, 3], m)["dropped"] == [3]

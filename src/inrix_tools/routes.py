@@ -692,6 +692,35 @@ def changes_by_road(membership, miles=None) -> pd.DataFrame:
     return out[cols].sort_values("miles", ascending=False, ignore_index=True)
 
 
+def no_route_segments(membership) -> set:
+    """The segment ids membership leaves on **no** route: dropped, off the system, or
+    a loop with no route of its own. Ramps are exempt (they keep INRIX's reading and
+    the AADT join handles their volume). The same rule the district inventories use."""
+    routes_ = membership["routes"].fillna("")
+    return set(membership.index[(membership["verdict"] != RAMP) & (routes_ == "")])
+
+
+def reconcile_curated_list(ids, membership, *, keep=()) -> dict:
+    """A hand-curated segment list (District 3's) checked against route membership.
+
+    Returns ``kept`` (``ids`` in their order, minus the no-route segments of
+    :func:`no_route_segments` that are not in ``keep``), ``dropped`` (those removed,
+    in order) and ``missing`` (non-ramp segments membership puts on a route that the
+    list lacks, sorted). ``keep`` exempts segments kept on purpose — Banks-Lowman Hwy
+    is off the system but stays in the D3 export for other analyses (owner). Ids the
+    membership frame doesn't cover are kept: no evidence either way. (Item 49.)"""
+    keep = {int(s) for s in keep}
+    off = no_route_segments(membership) - keep
+    ids = [int(s) for s in ids]
+    kept = [s for s in ids if s not in off]
+    dropped = [s for s in ids if s in off]
+    on_route = membership[(membership["verdict"] != RAMP)
+                          & (membership["routes"].fillna("") != "")]
+    have = set(ids)
+    missing = sorted(int(s) for s in on_route.index if int(s) not in have)
+    return {"kept": kept, "dropped": dropped, "missing": missing}
+
+
 def write_membership(membership, path) -> Path:
     """Write a membership frame as CSV (the index as ``XDSegID``)."""
     path = Path(path)

@@ -1017,7 +1017,7 @@ def test_committed_repair_table_resolves_the_whole_d3_catalogue():
     assert res.loc["i184-eb", "chain_miles"] == pytest.approx(4.7174, abs=1e-3)
     assert res.loc["i184-eb", "n_repaired_links"] == 5
     # The catalogue leans on the table far less than the table's size suggests.
-    assert res["n_repaired_links"].sum() == 20
+    assert res["n_repaired_links"].sum() == 19   # 20 before Item 49: the old SB Payette entry took 1
 
 
 @pytest.mark.skipif(not D3_NETWORK.exists(), reason="D3 network cache not available")
@@ -1132,7 +1132,8 @@ def test_resolution_table_carries_the_grouping():
 def test_the_d3_catalogue_groups_its_entries_into_reporting_corridors():
     entries = corridors.load_catalogue(D3_CATALOGUE)
     groups = corridors.load_reporting_corridors(D3_CATALOGUE)
-    assert len(entries) == 52 and len(groups) == 26
+    # 54/27 since Item 49 split US-95 Fruitland–Payette onto ITD's 16th St alignment.
+    assert len(entries) == 54 and len(groups) == 27
     assert all(e.corridor and e.direction for e in entries)
     # Every reporting corridor is exactly two directions, and they differ.
     by_group: dict[str, list[str]] = {}

@@ -143,17 +143,18 @@ def test_load_urban_areas_real_layer():
 def _aadt_records():
     from inrix_tools import aadt
 
-    rows = [  # (RouteID, Descriptio, AADT, dx)
-        ("02410AIN184", "JCT I-84 FLYING WYE IC", 68000, 0.00040),   # I-184 mainline
-        ("25273AIN184", "WB CONN FROM I-184 IC49", 5000, 0.0),        # a connector
-        ("02080AUS020", "MCBRIDE RD", 9500, 0.0),                     # a Broadway ramp
-        ("02070AUS020", "FEDERAL WAY SB OFF RAMP", 29500, 0.00008),  # US-20 mainline
-        ("02717AOH000", "COMMERCE AVE", 10500, 0.01),                 # local, not in SHS
+    rows = [  # (RouteID, Descriptio, Descript_1, AADT, dx) — as ITD writes them
+        ("02410AIN184", "JCT I-84 FLYING WYE IC", "I-84 EB ON RAMP", 68000, 0.00040),
+        ("25273AIN184", "WB CONN FROM I-184 IC49", "NONE", 5000, 0.0),       # connector
+        ("02080AUS020", "MCBRIDE RD", "SH-6", 9500, 0.0),                   # Broadway ramp
+        ("02070AUS020", "FEDERAL WAY SB OFF RAMP", "FEDERAL WAY NB OFF RAMP", 29500,
+         0.00008),                                                          # US-20
+        ("02717AOH000", "COMMERCE AVE", "DEVELOPMENT AVE", 10500, 0.01),    # local
     ]
     layer = gpd.GeoDataFrame(
         {"RouteID": [r[0] for r in rows], "Descriptio": [r[1] for r in rows],
-         "AADT": [float(r[2]) for r in rows],
-         "geometry": [LineString([(-116.2 + r[3], 43.60), (-116.2 + r[3], 43.61)])
+         "Descript_1": [r[2] for r in rows], "AADT": [float(r[3]) for r in rows],
+         "geometry": [LineString([(-116.2 + r[4], 43.60), (-116.2 + r[4], 43.61)])
                       for r in rows]}, crs="EPSG:4326")
     return aadt.classify_aadt_records(layer)
 
@@ -197,3 +198,43 @@ def test_the_join_takes_the_mainline_count_once_records_are_classified_by_the_sh
     assert aadt.join_aadt(seg, layer).loc[1, "AADT"] == 5000            # the connector
     fixed = itd_layers.classify_records_with_shs(layer, _shs_for_records())
     assert aadt.join_aadt(seg, fixed).loc[1, "AADT"] == 68000           # the mainline
+
+
+def test_a_ramp_count_on_a_roadway_route_id_stays_a_ramp():
+    """Cotterell: ITD's only record on I-84's D carriageway is a ramp count, written
+    the way ITD writes a ramp (a movement with no "to" point). The SHS draws the route
+    id as roadway, but the record is still a ramp, and the carriageway takes the
+    12,000 mainline count beside it. A mainline record that merely *names* a ramp as
+    one end (I-184's ``I-84 EB ON RAMP`` → ``WB OFF FRANKLIN IC #1``) is mainline."""
+    from inrix_tools import aadt
+
+    layer = aadt.classify_aadt_records(gpd.GeoDataFrame(
+        {"RouteID": ["01010DIN084", "01010AIN084", "02410AIN184"],
+         "Descriptio": ["WB ON COTTERELL IC #222", "COTTEREL IC #222", "I-84 EB ON RAMP"],
+         "Descript_1": ["NONE", "YALE RD IC #228", "WB OFF FRANKLIN IC #1"],
+         "AADT": [6000.0, 12000.0, 67000.0],
+         "geometry": [LineString([(-113.5, 42.570), (-113.5, 42.58)]),
+                      LineString([(-113.50025, 42.570), (-113.50025, 42.58)]),
+                      LineString([(-116.2, 43.6), (-116.2, 43.61)])]}, crs="EPSG:4326"))
+    shs = itd_layers.shs_frame([
+        {"RouteId": r, "RoadType": 4, "geometry": LineString([(0, 0), (0, 1)])}
+        for r in ("01010DIN084", "01010AIN084", "02410AIN184")])
+    fixed = itd_layers.classify_records_with_shs(layer, shs)
+    kinds = dict(zip(fixed["RouteID"], fixed["record_kind"]))
+    assert kinds == {"01010DIN084": "ramp", "01010AIN084": "mainline",
+                     "02410AIN184": "mainline"}
+    # The description roll-up (Item 34) no longer promotes a ramp count filed on a
+    # mainline route id either: I-84's own ``EB OFF COTTERELL IC#222`` (6,100).
+    rolled = aadt.classify_aadt_records(pd.DataFrame(
+        {"RouteID": ["01010AIN084"] * 5,
+         "Descriptio": ["DECLO IC #216", "COTTEREL IC #222", "E NAMPA IC #38",
+                        "EB OFF COTTERELL IC#222", "EB ON RAMP IC #49"],
+         "Descript_1": ["COTTEREL IC #222", "YALE RD IC #228", "TEN MILE RD IC #42",
+                        "NONE", "EB ON COLE-OVERLAND IC"]}))
+    assert list(rolled["record_kind"]) == ["mainline"] * 3 + ["ramp", "mainline"]
+
+    seg = gpd.GeoDataFrame(
+        {"RoadName": ["I-84 W"], "RoadNumber": ["84"], "RoadList": ["I-84"], "FRC": [1],
+         "geometry": [LineString([(-113.5, 42.571), (-113.5, 42.579)])]},
+        index=pd.Index([1], name=SEGMENT_COL), crs="EPSG:4326")
+    assert aadt.join_aadt(seg, fixed).loc[1, "AADT"] == 12000

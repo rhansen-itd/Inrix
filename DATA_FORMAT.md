@@ -335,6 +335,16 @@ the generated catalogue pass, so they are recorded here rather than rediscovered
   feature defined on a *street* (a couplet leg) is a **run within** a group, split at
   each change of street name, not the group itself.
 
+- **A two-way street shows up as two coincident segments of the same street,
+  running opposite ways.** A one-way couplet street has none. That is how
+  `couplets.drop_two_way_legs` recognises a false couplet (Item 49): a leg with its
+  own street's opposing segment within 15 m over at least half its length. The
+  `Bearing` label is no help here either: Elba-Almo Hwy's westbound segments carry
+  `S` and its eastbound ones `E`. The detector's 25–300 m "lateral separation" also
+  passes two consecutive pieces of one road where the name changes (Elba-Almo Rd /
+  Elba-Almo Hwy, 272 m). Nine detected pairs statewide failed the test. Every
+  registry couplet that matched before still matches.
+
 - **`RoadNumber` alone cannot name the route band.** `95` is US-95 and `55` is SH-55;
   digit count decides nothing. `RoadName` states it (`US-95`, `I-90 W`, `ID-3` —
   normalise `ID-`/`SR-` to this project's `SH-`), and it must be read **per route
@@ -381,6 +391,22 @@ resolving the District 3 catalogue:
    failed entry the `stop_reason` is the finding and the member list is not.
    Route **concurrencies** do the same thing at a junction: SH-16 and SH-52 share
    pavement through Emmett, and a query point at that junction is 1 ft from both.
+4. **The link follows INRIX's route, not ITD's** (Item 49). Where ITD moved a route
+   onto a bypass that INRIX still numbers on the old street, `NextXDSegI` continues
+   down the old street. The bypass is a clean chain on its own, but nothing links
+   into it, and the other direction dead-ends where it rejoins. `repair_links` can't
+   bridge this, because the two roads are different `XDGroup`s. Both known cases:
+   - **Payette, US-95.** Northbound `1187491533` (`XDGroup` 2866405) links to S Main St.
+     ITD's US-95 leaves it partway along, as `95 N` `384126765` (`XDGroup` 2866119),
+     which has no `PreviousXD`, and runs up 16th St. Southbound 16th St ends at
+     `383865907` with a null `NextXDSegI`, 1 m from the US-95 segment `1187629755`,
+     which has no `PreviousXD`.
+   - **Lewiston, US-12.** Walked on ITD membership, US-12 ends at Main St and the Levee
+     Byp is a separate 1.7-mi chain each way; INRIX's link carries on to D St.
+
+   A catalogue entry can't span such a junction. D3's US-95 is two entries (Fruitland,
+   Payette 16th St), and the builder sees Lewiston as two facilities. Joining chains
+   across it is Item 51's job.
 
 **Consequence for corridor definitions:** a corridor is stated as an endpoint pair
 and resolved, and an extent that will not walk is recorded with its `stop_reason` —
@@ -1249,20 +1275,41 @@ of delay, AADT-weighted corridor speed).
   `SHS_Primary.zip` by default (`--shs ''` turns it off); the cache itself stays
   SHS-independent.
 
-  On the 2025 inventory join this changes 56 segments (16.8 mi), nearly all to the
-  right count. Two are doubtful and need checking against known volumes:
-  - I-84 W between Declo and Cotterell (D4, 1.1 mi) goes from 19,500 to 6,000. The
-    6,000 is ITD's only `D`-carriageway record on I-84 (`01010DIN084`, described
-    `WB ON COTTERELL IC #222`).
-  - Weiser's W 7th St (US-95 Spur, 0.09 mi) goes from 6,300 to 150. The record is
-    described as a ramp, on a route id the SHS draws as roadway.
+  **A record with the ramp signature stays a ramp** (`aadt.ramp_signature`). ITD
+  writes a ramp count as a movement with no "to" point (`WB ON COTTERELL IC #222` /
+  `NONE`). A mainline record names both ends, even when an end is a ramp
+  (`I-84 EB ON RAMP` → `WB OFF FRANKLIN IC #1`). A few ramp counts are filed on a
+  roadway route id. The SHS rule would have promoted them, and so did Item 34's
+  route roll-up, which relabelled every record on a mostly-mainline route id. Now
+  neither does. In 2025 there are three such records, all owner-checked against
+  known volumes (Session 67):
+  - `01010AIN084` `EB OFF COTTERELL IC#222` (6,100) and `01010DIN084` `WB ON
+    COTTERELL IC #222` (6,000), at the I-84/I-86 system interchange. I-84 east of
+    the split is 12,000; west of it, where it carries I-86 too, ITD's Declo–Cotterell
+    record is 19,500. Both years had put ~6,000 on 2.8 mi of I-84 there.
+  - `01543DUS095` (150) on Weiser's W 7th St, which carries 6,000–8,000 (6,300
+    from the mainline record beside it).
+
+  Record kinds are recomputed on every load, including a cache hit, so a kind
+  frozen into an old cache can't keep an old rule. On the 2025 inventory join the
+  SHS classification changes 56 segments (16.8 mi) from the description reading,
+  all to the mainline count.
+- **2025's descriptions were partly relabelled.** Of the 7,473 records that match a
+  2024 record by route id and measure, 47 have a changed description. Most fill a
+  blank; some are text from elsewhere. The Boise Broadway ramps `02080`–`02083AUS020`
+  (same geometry, measures and counts as 2024) now read `MCBRIDE RD` → `SH-6` and
+  `US-20 RAMPS N RIGBY IC`, text that belongs 300 miles away. Nothing moves between
+  places, because the join is spatial and each record keeps its own geometry and
+  count. Four records changed both label and count, all ramps; the notable one is
+  `29207AIN015` at the I-15/I-86 interchange in Pocatello, 20,500 → 1,500.
 - **What 2024 → 2025 changed** (Session 67, every D1–D6 inventory segment joined to
   both years with the SHS classification, 17,036 with both):
   - VMT on the inventories rose **+2.9%** (D1 +1.6%, D2 +3.0%, D3 +2.8%, D4 +3.5%,
     D5 +3.4%, D6 +3.2%). A third of segments kept the same count; the middle 80% of
     segment ratios are 0.97–1.08. The biggest real move is Gooding's US-30, 1,900 →
     3,400 on 13 mi.
-  - D3's peak VHD, re-ranked on the same peak screen with each year, rose **+2.6%**.
+  - D3's peak VHD, re-ranked on the same peak screen with each year, rose **+2.6%**
+    (the ramp-signature fix touches no D3 corridor).
     Adjacent pairs swap: 3/4 (the Boise couplet passes I-184), 9/10, 11/12 and
     22/23.
   - **The classification matters more than the year.** With correct volumes I-184 is
@@ -1648,6 +1695,21 @@ the per-road table is `out/highways/route_membership/item52_changes_vs_item48.cs
   out `off_system`. It stays in the curated D3 inventory and the export **on
   purpose**, for analyses outside the ranking (owner). Membership is what filters
   it out of the ranking.
+- **The curated D3 lists take the membership** (Item 49, owner decision
+  2026-09-23; `scripts/apply_d3_membership.py`, `routes.reconcile_curated_list`).
+  77 segments / 23.5 mi that membership leaves on no route are removed from the
+  master and the per-highway lists:
+  - Cleveland Blvd 8.0 mi, Old Highway 30 (Elmore) 3.8, Northside Blvd 2.1,
+    Payette's 7th Ave N 2.0 / S Main St 1.8 / S 7th St 0.8, and Blaine St 2.0;
+  - short stubs making up the rest.
+
+  Banks-Lowman is exempt. The 16 SHS segments (1.27 mi) the lists lack are an
+  add-list in `out/export_reconciliation/item49_d3/`. The segments stay in
+  `d3_store.duckdb`. The old lists are kept in `out/highways/pre_item49/`.
+- **Screening's AADT join reads membership too** (Item 49). `run_district_screening`
+  resolves `RoadNumber` through the district's membership file before the join,
+  the same reading the catalogue builder walks, and the provenance records the
+  file.
 
 ## ITD urban areas (`Urban_Area.zip`, Item 52)
 

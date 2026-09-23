@@ -6,7 +6,7 @@
       "am",
       "pm"
     ],
-    "n_chains": 57,
+    "n_chains": 58,
     "n_facilities": 7,
     "min_core_miles": 0.75,
     "tiers": [
@@ -46,12 +46,12 @@
       "id": "us-95-latah-core-sb",
       "name": "US-95 SB: Latah County \u2014 Congested Core",
       "start_latlon": [
-        46.72614,
-        -117.00009
+        46.68118,
+        -116.9933
       ],
       "end_latlon": [
-        46.72195,
-        -117.00139
+        46.67221,
+        -116.99474
       ],
       "description": "Tier 1 (Congested Core) of US-95: Latah County. Recurrent bottleneck core (1.62 mi, 5 segments at PEAK TTI >= 1.2). Upstream boundary: a congestion discontinuity (freeflow_to_congested, TTI 0.97 -> 1.32); downstream boundary: a congestion discontinuity (congested_to_freeflow, TTI 1.23 -> 0.98). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "us-95-latah-core",
@@ -59,9 +59,9 @@
       "_tier": "core",
       "_facility": "us-95-latah",
       "_split_rationale": "Recurrent bottleneck core (1.62 mi, 5 segments at PEAK TTI >= 1.2)",
-      "_generated_miles": 0.313,
+      "_generated_miles": 0.624,
       "_segment_ids": [
-        385666846
+        771090124
       ]
     },
     {
@@ -171,8 +171,8 @@
       "id": "us-95-latah-regional-sb",
       "name": "US-95 SB: Latah County \u2014 Regional Baseline",
       "start_latlon": [
-        46.72614,
-        -117.00009
+        46.68118,
+        -116.9933
       ],
       "end_latlon": [
         46.47035,
@@ -184,14 +184,8 @@
       "_tier": "regional",
       "_facility": "us-95-latah",
       "_split_rationale": "Full regional facility (48.25 mi, 82 segments)",
-      "_generated_miles": 22.087,
+      "_generated_miles": 18.832,
       "_segment_ids": [
-        385666846,
-        1236925460,
-        771090120,
-        771090121,
-        771090122,
-        771090123,
         771090124,
         771090125,
         771090126,
@@ -1337,36 +1331,6 @@
       ]
     },
     {
-      "id": "couplet-95-us-95-bl-king-st-sb",
-      "name": "US-95 SB: Idaho County (Us-95-Bl)",
-      "start_latlon": [
-        46.06036,
-        -116.34311
-      ],
-      "end_latlon": [
-        46.05619,
-        -116.34642
-      ],
-      "description": "One-way couplet leg on Us-95-Bl (SB) carrying US-95 through Idaho County, 1 segments; the opposing leg runs on King St 283 m away.",
-      "corridor": "couplet-95-us-95-bl-king-st",
-      "direction": "SB"
-    },
-    {
-      "id": "couplet-95-us-95-bl-king-st-nb",
-      "name": "US-95 NB: Idaho County (King St)",
-      "start_latlon": [
-        46.0481,
-        -116.34987
-      ],
-      "end_latlon": [
-        46.05618,
-        -116.34644
-      ],
-      "description": "One-way couplet leg on King St (NB) carrying US-95 through Idaho County, 1 segments; the opposing leg runs on Us-95-Bl 283 m away.",
-      "corridor": "couplet-95-us-95-bl-king-st",
-      "direction": "NB"
-    },
-    {
       "id": "couplet-95-washington-st-jackson-st-nb",
       "name": "US-95 NB: Latah County (Washington St)",
       "start_latlon": [
@@ -1394,36 +1358,6 @@
       ],
       "description": "One-way couplet leg on Jackson St (SB) carrying US-95 through Latah County, 3 segments; the opposing leg runs on Washington St 179 m away.",
       "corridor": "couplet-95-washington-st-jackson-st",
-      "direction": "SB"
-    },
-    {
-      "id": "couplet-95-us-95-main-st-nb",
-      "name": "US-95 NB: Latah County (Us-95)",
-      "start_latlon": [
-        46.71056,
-        -117.00383
-      ],
-      "end_latlon": [
-        46.71571,
-        -117.00336
-      ],
-      "description": "One-way couplet leg on Us-95 (NB) carrying US-95 through Latah County, 1 segments; the opposing leg runs on Main St 289 m away.",
-      "corridor": "couplet-95-us-95-main-st",
-      "direction": "NB"
-    },
-    {
-      "id": "couplet-95-us-95-main-st-sb",
-      "name": "US-95 SB: Latah County (Main St)",
-      "start_latlon": [
-        46.72614,
-        -117.00009
-      ],
-      "end_latlon": [
-        46.71571,
-        -117.00336
-      ],
-      "description": "One-way couplet leg on Main St (SB) carrying US-95 through Latah County, 2 segments; the opposing leg runs on Us-95 289 m away.",
-      "corridor": "couplet-95-us-95-main-st",
       "direction": "SB"
     }
   ],
@@ -1454,11 +1388,11 @@
     },
     {
       "id": "us-95-latah-2-core",
-      "name": "US-95: Latah County (2) \u2014 Tier 1 Congested Core (3Rd St (Sh-8) to Jackson St @ College St)",
+      "name": "US-95: Latah County (2) \u2014 Tier 1 Congested Core (D St to Jackson St @ College St)",
       "description": "Tier 1 (Congested Core) of US-95: Latah County (2). Recurrent bottleneck core (0.96 mi, 3 segments at PEAK TTI >= 1.2). Upstream boundary: a congestion discontinuity (freeflow_to_congested, TTI 0.98 -> 1.3); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (3Rd St (Sh-8) to Jackson St @ College St)",
+      "_tier_label": "Tier 1 Congested Core (D St to Jackson St @ College St)",
       "_facility": "us-95-latah-2",
       "_facility_name": "US-95: Latah County (2)",
       "_miles": 0.965,
@@ -1573,28 +1507,12 @@
       "_n_segments": 5
     },
     {
-      "id": "couplet-95-us-95-bl-king-st",
-      "name": "US-95: Idaho County Couplet (Us-95-Bl/King St)",
-      "description": "One-way couplet carrying US-95 across Us-95-Bl (SB) and King St (NB) in Idaho County (ZIP 83522); 0.53 mi per leg, mean lateral separation 283 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 283.3
-    },
-    {
       "id": "couplet-95-washington-st-jackson-st",
       "name": "US-95: Latah County Couplet (Washington St/Jackson St)",
       "description": "One-way couplet carrying US-95 across Washington St (NB) and Jackson St (SB) in Latah County (ZIP 83843); 0.64 mi per leg, mean lateral separation 179 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,
       "_mean_lateral_sep_m": 179.2
-    },
-    {
-      "id": "couplet-95-us-95-main-st",
-      "name": "US-95: Latah County Couplet (Us-95/Main St)",
-      "description": "One-way couplet carrying US-95 across Us-95 (NB) and Main St (SB) in Latah County (ZIP 83843); 0.56 mi per leg, mean lateral separation 289 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 289.3
     }
   ]
 }
