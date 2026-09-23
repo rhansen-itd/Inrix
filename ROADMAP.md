@@ -2222,37 +2222,122 @@ Scope:
 *Suggested prompt (done):* "Do Item 48 of ROADMAP.md — select route segments by ITD AADT-layer
 route membership with an override file, and fix the Lewiston US-12 couplet."
 
+## 52 — ITD reference layers: the state highway system, AADT 2025, and urban areas
+
+**Target: one session. Depends on Item 48. Do it before the rest of Item 49**, which
+rebuilds the catalogues. Items 50 and 51 build on it. Scoped 2026-09-23 when the owner
+supplied three ITD layers (gitignored fixtures in the repo root; the names are ours, the
+ArcGIS Online download names meant nothing):
+
+- **`SHS_Primary.zip`**: ITD's State Highway System, the authority for route identity.
+  1,179 lines in EPSG:8826, ~6,000 mi. Fields: `RouteId` with `FromMeasur`/`ToMeasure`
+  (a linear reference, so mileposts order a route), `SHSNumber`, `SignTypeCo` (1 = I,
+  2 = US, 3 = SH; matches the `RouteId` band), `LoopSpurCo`, `RouteTypeC` (1: 1,018
+  lines, 2/3/4: the rest, which include ramps), `RoadType`, and `Travelway` (`A` 1,110 /
+  `D` 69; `D` looks like the second carriageway of a divided highway, e.g. `01010DIN084`).
+  It has `FromDate`/`ToDate` (no `ToDate` set; latest `FromDate` 2026-07-28).
+  **"Primary" means one route per road:** US-2/95 at Sandpoint is recorded as 95,
+  US-20/26/93 as 93, ID-3 on SH-8 as 8. Concurrency is **not** in this layer.
+- **`AADT_2025.zip`**: the 2025 year of ITD's AADT layer, 8,423 lines. It has the same fields as
+  `Cumulative_AADT.zip` (1999–2024), so it drops into `aadt.load_aadt`. It carries US-95 on
+  its new alignment south of Moscow (`01540AUS095`, 7,700 AADT). Reisenauer Rd is no
+  longer US-95, and in the 2024 year it still was.
+- **`Urban_Area.zip`**: 26 polygons carrying Census 2020 urban-area codes (`UACE`),
+  population and density. Bonners Ferry, Kellogg and Salmon are not urban areas.
+
+**What a scratch check found (2026-09-23).** Each D1–D6 membership segment was tested
+against the state highway lines, needing ≥80% of its length within 12 m:
+- Item 48 was right almost everywhere. 9,201 of the 9,255 "agree" miles are on the
+  system. Only 19 of the 7,370 off-system miles are on it, and those are mostly ramps.
+  **No new download is implied.**
+- The Reisenauer override is confirmed: 10.5 mi, all off the system.
+- **Sun Valley Rd (4.8 mi, Item 48 `itd_only`, on the add-list and now ingested) is not
+  on the system.** It stays in the store and goes out of the catalogues.
+- Levee Byp (US-12) and Elba-Almo (SH-77) are confirmed.
+- Of Item 48's 187 `unconfirmed` miles, 135 are on the system, including the new US-95
+  alignment. 52 are off: Old Highway 81 (14 mi), WY-89 (8 mi), Elmore Old Highway 30,
+  Cleveland Blvd, Northside Blvd, Payette 7th Ave / S 7th St, Rexburg Center St / ID-33,
+  Coeur d'Alene Sherman Ave and Kellogg Cameron Ave.
+- 53 "agree" miles miss the 12 m buffer, in 1–7-mi pieces: W Chinden Blvd 6.6 mi,
+  Idaho County US-95 3.9 mi, and others. These are probably alignment offsets; the
+  session should check them.
+
+Scope:
+
+- [ ] **Loaders in the pure core** for the highway system and the urban areas (in
+      `routes.py` and a small new module, or one `itd_layers.py`). Handle the one
+      `MultiLineString` and the dropped M values. Decide which `RouteTypeC` /
+      `RoadType` codes are mainline, and what `Travelway` `D` means; record both in
+      DATA_FORMAT.
+- [ ] **Route identity from the highway system.** `routes.route_membership` takes the
+      SHS mainline as the identity source, and the AADT layer only as a fallback. The
+      INRIX `RoadList` concurrency logic stays, because SHS names one route per road.
+      Resolve the `unconfirmed` verdicts and explain the 53-mi buffer misses. Retire
+      the Reisenauer override: keep the file, and note there that the source now agrees.
+- [ ] **Volumes from AADT 2025.** Change `aadt.DEFAULT_YEAR` and the scripts' `--aadt`
+      defaults to `AADT_2025.zip`, and check that the geometry cache keys on the new
+      source. Report how segment AADT and D3 peak VHD shift from 2024 to 2025. Item
+      34's divided-highway problem is unchanged, but note whether the `Travelway` `D`
+      lines give that join a carriageway to match.
+- [ ] **Urban context per segment**: the urban area it lies in (`UACE`, name) and its
+      distance to the boundary. This is a context column, **never a gate**. The owner's
+      rule (2026-09-23): the boundaries show where to look for a rural/urban transition,
+      and they are not cutoffs (see Item 50).
+- [ ] Rebuild membership for D1–D6 and regenerate the D1/D2/D4/D5/D6 inventories. Report
+      the per-road changes against Item 48's in miles, and confirm the add-list diff is
+      empty. Compute and report D3 as Item 48 did, for Item 49's decision.
+- [ ] pytest: an SHS record wins over an AADT-layer route; a `Travelway` `D` carriageway
+      is on the system; an urban tag at a boundary; the synthetic Reisenauer case without
+      its override. DATA_FORMAT: a section per layer. DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 52 of ROADMAP.md — load ITD's State Highway System, AADT 2025
+and urban-area layers, and take route identity from the highway system."
+
 ## 49 — Ingest the Item 48 add-list and re-run the statewide screening
 
-**Target: one session. Depends on Item 48** and on the owner downloading the add-list
-from RITIS/INRIX.
+**Target: one session. Depends on Item 48, and now on Item 52** (re-scoped 2026-09-23):
+the catalogues are rebuilt once, on the highway-system membership and AADT 2025, not
+twice.
 
-- [ ] Ingest the new segments into the district stores. Confirm that everything on the
+- [x] Ingest the new segments into the district stores. Confirm that everything on the
       add-list was delivered: `reconcile_export_segments.py --district N
       --previous-master out/highways/pre_item48/District_N_ALL_Highways.txt` should
       show zero new requests.
+      *Verified 2026-09-23. All 117 add-list segments are observed (D1 4, D2 25, D4 84,
+      D5 2, D6 2). They came from `Backfill-Pacific_…_15_min` (D1/D2) and
+      `Backfill-Mountain_…_15_min` (D4–D6), ingested with
+      `scripts/ingest_backfill_segments.py` through a new `segment_ids` filter on
+      `store.ingest_export[_streaming]`. They use the same 15-min cadence and 2026-01-01 to
+      2026-08-31 span as each store's main export, so each went into the existing
+      partition. Each district's reconciliation reports 0 new requests and 0 returned
+      empty. The segments observed but no longer in the inventory (Item 48's drop-list:
+      D1 73, D2 14, D4 5, D5 45, D6 9) stay in the stores, out of the catalogues.*
 - [ ] **Regenerate the D1/D2/D4/D5/D6 catalogues** (`build_statewide_catalogues.py`)
-      once the new segments are observed. The builder uses only observed segments, so
-      Lewiston's US-12 facility gains the levee bypass only after the ingest.
+      on Item 52's inventories. The builder uses only observed segments. Lewiston's
+      US-12 facility gains the levee bypass, and Sun Valley Rd stays out.
 - [ ] **District 3, the owner's call.** Item 48 reported but did not apply D3's
       membership (50 dropped / 8 added). Most of it is Caldwell/Cleveland Blvd and
       Blaine St, which Item 42 kept out, plus Payette's S Main St / 7th Ave N and
-      Nampa's Northside Blvd. Decide whether the curated D3 lists take it.
+      Nampa's Northside Blvd. Decide whether the curated D3 lists take it. *Evidence
+      from Item 52's scratch check: Cleveland Blvd, Blaine St, Northside Blvd and Payette
+      7th Ave / S 7th St are all off the state highway system.*
 - [ ] Re-run the district and statewide screening on the corrected catalogues. Record
       how the ranking moves, especially D2 US-12 (bypass instead of downtown), D1 I-90
-      (business loops out), and D4 SH-77 / SH-75.
+      (business loops out), and D4 SH-77. This is the baseline Items 50 and 51 are
+      measured against.
 - [ ] DESIGN_HISTORY with the before/after ranking.
 
-*Suggested prompt:* "Do Item 49 of ROADMAP.md — ingest the Item 48 add-list and re-run the
-statewide screening."
+*Suggested prompt:* "Do Item 49 of ROADMAP.md — regenerate the catalogues on Item 52's
+membership, settle District 3, and re-run the statewide screening."
 
 ---
 
 ## 50 — Corridor cores from recurring congestion, not TTI against INRIX's ref speed
 
-**Target: one session.** Best done after Item 49, so the regenerated catalogues include
-the new segments; it does not depend on 49 otherwise. Raised by the owner's Session 65
-review of the maps.
+**Target: one session. Depends on Item 52** (AADT 2025 volumes and the per-segment urban
+context). Best done after Item 49, so the regenerated catalogues include the new
+segments. Raised by the owner's Session 65 review of the maps; amended 2026-09-23 for
+the ITD layers.
 
 **The defect.** `extents.generate_catalogue` keeps a facility when either direction has
 a **core**: at least 0.75 mi (`MIN_CORE_MILES`) of segments whose worse AM/PM TTI is
@@ -2298,8 +2383,8 @@ Scope:
       gap as zero.
 - [ ] **Delay and data-quality floors.** A core needs a minimum VHD/mi or total VHD
       from the AADT join, and a minimum real-time share (`Pct Score30`) or kept
-      fraction. Calibrate both on the Session 65 list and record the values in
-      DATA_FORMAT.
+      fraction. Calibrate both on the Session 65 list, **using AADT 2025 volumes**
+      (Item 52), and record the values in DATA_FORMAT.
 - [ ] **No cliffs.** Replace the per-segment 1.20 / 0.75-mi gates with a length- and
       delay-weighted score, so one long rural segment can't be a core by itself and
       1.199 doesn't fall off an edge. Record where SH-8 through Moscow lands.
@@ -2310,6 +2395,17 @@ Scope:
 - [ ] **Tier 2 and Tier 3 stop at the congestion.** End Tier 2 at the congestion
       discontinuity, not just the next junction. Rank Tier 1 cores; report Tiers 2
       and 3 as context, not as peer rows.
+- [ ] **Urban areas guide the extent; they don't cut it** (owner, 2026-09-23). Use
+      Item 52's urban context as the first place to look for the rural/urban
+      transition where an extent should end. **The boundary is not a hard cutoff.**
+      Keep congestion that runs past the boundary when it is significant, meaning
+      it doesn't significantly dilute the primary congestion. For example, the
+      extended extent's delay per mile stays within some fraction of the core's;
+      calibrate that fraction and record it. Congestion inside an urban area can
+      also end short of the boundary. Being rural must not be what drops a core:
+      Gilbert Grade, Lowell, Idaho County, Benewah and Bonners Ferry must fail the
+      congestion, delay or data-quality tests on their own. Show where Galena,
+      McCammon–Lava, and SH-45 beyond 12th Ave in Nampa land.
 - [ ] **Acceptance: the owner's list, checked segment by segment.**
       - Drop: SH-7 Gilbert Grade, US-12 near Lowell, the US-95 Idaho County core,
         SH-3 Benewah, and Bonners Ferry.
@@ -2328,8 +2424,10 @@ congestion against each road's own baseline, with delay and data-quality floors.
 
 ## 51 — Chains across route-numbering changes, and couplets that are real
 
-**Target: one session. Independent of Item 50**, but both regenerate the catalogues, so
-do one after the other and re-run the screening once, after Item 49.
+**Target: one session. Depends on Item 52** (the highway system's route IDs, mileposts and
+`Travelway`). **Independent of Item 50**, but both regenerate the catalogues, so do one
+after the other and re-run the screening once, after Item 49. Amended 2026-09-23 for
+the ITD layers.
 
 **The defect.** `extents.enumerate_mainline_chains` walks one `RoadNumber` at a time,
 so a street whose number changes along its length becomes several short chains. Each
@@ -2354,17 +2452,23 @@ Scope:
       membership (`routes.py`, including `concurrent` segments), or on street and
       `XDGroup` continuity, so SH-8 through Moscow and Yellowstone Hwy are each one
       facility. Show that SH-8 from the WA line to the east city limits resolves as
-      one chain.
+      one chain. *From Item 52:* order each chain by the highway system's `RouteId` and
+      milepost, not only by `NextXDSegI`. The layer records one route per road, so SH-8
+      runs as a gap in its own mileposts where it shares the US-95 couplet. Bridge
+      that gap with INRIX `RoadList` concurrency, where the milepost gap shows it.
 - [ ] **Couplets must be one-way pairs.**
       - Require that each leg is actually one-way: there is no opposing-bearing XD
         segment on the same street.
       - Require that the legs share a route under ITD membership.
       - Remove Sandpoint from `KNOWN_COUPLETS`, with the owner's reason recorded.
+      - Use the highway system's `Travelway` `D` lines (Item 52): a divided highway's
+        second carriageway is not a couplet leg.
       - The Chubbuck pair and the SH-43 / E 105 N pair must fail.
       - Pocatello 4th/5th Ave and Blackfoot Bridge/Judicial must still pass. Also check
         the 0.67-mi Pocatello Ave extension on Pocatello's legs.
 - [ ] **Names say what the road is.** Facility names come from the street and the
-      city, not "US-20: Bonneville County (2)"; Northgate Mile ranks as #6 under
+      city (the urban-area name from Item 52 where there is one), not "US-20:
+      Bonneville County (2)"; Northgate Mile ranks as #6 under
       that name today. Couplet legs are labelled by their own bearing (NB/SB), not
       WB/EB.
 - [ ] pytest; regenerate the catalogues; DESIGN_HISTORY.

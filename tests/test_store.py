@@ -172,6 +172,27 @@ def test_corridor_name_refuses_an_export_with_no_corridor_column(con, tmp_path):
             call(con, zpath, corridor_name="9th")
 
 
+@pytest.mark.parametrize("ingest", ["streaming", "pandas"])
+def test_segment_ids_filters_ingested_observations_and_metadata(con, tmp_path, ingest):
+    """Loading backfill exports grouped by timezone (e.g. Pacific for D1+D2, Mountain for D4+D5+D6)
+    requires filtering to only the district's appropriate links."""
+    rows = []
+    for t in T5:
+        rows.append(_row(t, 2001, 30, 0.5, 95, corridor="Multi"))
+        rows.append(_row(t, 2002, 35, 0.4, 90, corridor="Multi"))
+    zpath = _make_zip(tmp_path, "Multi", rows, [2001, 2002])
+
+    call = (store.ingest_export_streaming if ingest == "streaming"
+            else store.ingest_export)
+    out = call(con, zpath, corridor_name="D_Target", segment_ids=[2002])
+
+    assert 2002 in store.area_segments(con, out["area_key"])
+    assert 2001 not in store.area_segments(con, out["area_key"])
+    meta = store.load_metadata(con, out["area_key"])
+    assert 2002 in meta.index
+    assert 2001 not in meta.index
+
+
 def test_area_segments_reads_the_observations_not_the_metadata(con, zip_a):
     """What the export *contains* is what was observed. A district export is split
     into parts by segment and each part's ``metadata.csv`` lists only its own, while

@@ -5159,3 +5159,60 @@ Master lists, compared with the pre-Item-48 copies kept in `out/highways/pre_ite
 - `test_couplets.py`: the registry holds none of the four removed pairs.
 
 Full suite **705 passed, 2 skipped**; `ruff --select F` clean.
+
+## Session 66 — Item 49's ingest, verified; the ITD reference layers scoped as Item 52 (2026-09-23)
+
+### 1. The Item 48 add-list is in the stores
+
+The owner downloaded the add-list, grouped by timezone:
+`Backfill-Pacific_2026-01-01_to_2026-09-01_15_min_part_1.zip` for D1/D2 and
+`Backfill-Mountain_…` for D4–D6. They ingested it in a separate session with
+`scripts/ingest_backfill_segments.py`, which gives each district only its own segments
+through a new `segment_ids` filter on `store.ingest_export` and
+`store.ingest_export_streaming`. Verified here:
+- All 117 add-list segments are observed (D1 4, D2 25, D4 84, D5 2, D6 2).
+- Each backfill has the same 15-minute cadence and 2026-01-01 to 2026-08-31 span as its
+  district's main export, so it merged into the existing partition (one `area_key`, a
+  second `_ingests` row).
+- Every district's reconciliation shows 0 new requests and 0 returned empty.
+- `tests/test_store.py` passes (38).
+
+Item 49's first box is checked. The rest of Item 49 now waits on Item 52.
+
+### 2. Three ITD layers, and what they change
+
+The owner supplied ITD's State Highway System (`SHS_Primary.zip`), the 2025 AADT year
+(`AADT_2025.zip`) and the Census 2020 urban areas (`Urban_Area.zip`). The zips were
+renamed from their ArcGIS Online download names. Findings from a scratch comparison
+(the layer details are in ROADMAP Item 52; DATA_FORMAT waits for that item):
+- **Item 48's route membership holds up.** 9,201 of its 9,255 "agree" miles are on the
+  highway system, and only 19 of its 7,370 off-system miles are, mostly ramps. No new
+  download is needed.
+- **One Item 48 error:** Sun Valley Rd (4.8 mi, added as SH-75) is not on the system. It
+  was downloaded and stays in the D4 store, out of the catalogues.
+- **The Reisenauer override is confirmed** twice. The highway system leaves it off, and
+  AADT 2025 moves US-95 to the new alignment, where the 2024 year still had it on
+  Reisenauer. The override can be retired once volumes come from 2025.
+- **The highway system settles most of Item 48's `unconfirmed` segments:** 135 mi on,
+  52 mi off. The off set includes the D3 roads awaiting the owner's call (Cleveland Blvd,
+  Blaine St, Northside Blvd, Payette 7th Ave).
+- **The layer is "Primary": one route per road.** It doesn't record concurrency, so the
+  `RoadList` logic stays. Its value to chain building is the route IDs and mileposts, and
+  the `Travelway` `D` second carriageway.
+
+### 3. Re-scope
+
+- **New Item 52**, before the rest of Item 49: load the three layers, take route identity
+  from the highway system, take volumes from AADT 2025, and tag every segment with its
+  urban context.
+- **Item 49:** now depends on Item 52, so the catalogues are rebuilt once.
+- **Item 50:** its delay floors are calibrated on 2025 volumes. It gains the owner's rule
+  that **urban boundaries guide where an extent ends but are not cutoffs.** Congestion
+  past the boundary is kept when it doesn't significantly dilute the primary congestion,
+  and a rural core must fail the congestion, delay or data tests on its own merits, not
+  because it is rural.
+- **Item 51:** it chains on the highway system's route IDs and mileposts. It bridges
+  concurrency gaps with `RoadList`, uses `Travelway` `D` in the couplet test, and names
+  facilities by urban area.
+
+Order: 52 → 49 (the rest) → 50 → 51.

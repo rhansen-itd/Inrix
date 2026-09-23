@@ -222,7 +222,8 @@ def detect_bin_minutes(df: pd.DataFrame) -> int | None:
 # Ingest (merge into an area)
 # ---------------------------------------------------------------------------
 def ingest_export(con, source, *, ingested_at: datetime | None = None,
-                  corridor_name: str | None = None) -> dict:
+                  corridor_name: str | None = None,
+                  segment_ids: Iterable[int] | None = None) -> dict:
     """Ingest an INRIX export (``source``) — merging it into its corridor **area**.
 
     Reads with the file loaders (:func:`io.load_data` / :func:`io.load_metadata`),
@@ -236,10 +237,20 @@ def ingest_export(con, source, *, ingested_at: datetime | None = None,
     sibling part, and ``n_rows_added`` is the total over all of them. So is
     ``corridor_name``, which files a supplemental export under an existing area's
     label instead of one of its own — see that function for why.
+
+    ``segment_ids`` restricts ingestion to only the specified segment IDs (useful
+    when loading backfill exports covering multiple districts or corridors).
     """
     parts = [Path(p).name for p in _io.discover_parts(source)]
     df = _io.load_data(source)
     metadata = _io.load_metadata(source)
+    if segment_ids is not None:
+        seg_filter = {int(s) for s in segment_ids}
+        df = df[df[SEGMENT_COL].isin(seg_filter)]
+        if metadata.index.name == SEGMENT_COL:
+            metadata = metadata[metadata.index.isin(seg_filter)]
+        elif SEGMENT_COL in metadata.columns:
+            metadata = metadata[metadata[SEGMENT_COL].isin(seg_filter)]
     logged = " + ".join(parts)
     if corridor_name is not None:
         if CORRIDOR_COL not in df.columns:
@@ -577,12 +588,19 @@ def _read_csv_sql(csv_path, header: list[str]) -> str:
 
 
 def _load_chunk(con, csv_path, header: list[str], *, replace: bool,
-                stage: str = STREAM_STAGE, corridor_name=None) -> None:
+                stage: str = STREAM_STAGE, corridor_name=None,
+                segment_ids: set[int] | None = None) -> None:
     """Load one chunk into the ``stage`` table, typed as :func:`io.load_data` types
     it — replacing the stage, or appending to it when the previous chunk was too
     small to decide the export's cadence."""
     proj, _ = _csv_projection(header, corridor_name)
     body = ",\n  ".join(proj) + "\nFROM " + _read_csv_sql(csv_path, header)
+    if segment_ids is not None:
+        if segment_ids:
+            seg_list = ", ".join(str(int(s)) for s in sorted(segment_ids))
+            body += f'\nWHERE TRY_CAST("{SEGMENT_COL}" AS BIGINT) IN ({seg_list})'
+        else:
+            body += "\nWHERE FALSE"
     if replace:
         con.execute(f'CREATE OR REPLACE TABLE "{stage}" AS SELECT\n  ' + body)
     else:
@@ -660,7 +678,8 @@ def _member_corridors(con, part, header: list[str]) -> list[str]:
 
 def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
                             chunk_bytes: int = STREAM_CHUNK_BYTES,
-                            corridor_name: str | None = None) -> dict:
+                            corridor_name: str | None = None,
+                            segment_ids: Iterable[int] | None = None) -> dict:
     """Ingest an INRIX export **without materialising it in pandas** — the zip member
     is streamed straight into DuckDB.  (ROADMAP Item 35)
 
@@ -682,6 +701,9 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
             rather than an area of its own (see below). Raises when the export has no
             ``Corridor/Region Name`` column — there is nothing to relabel, and this
             does not invent one.
+        segment_ids: optional collection of Segment IDs. When given, only observations
+            and metadata for these segments are ingested (useful when loading backfill
+            exports covering multiple districts or corridors).
 
     Returns:
         The same summary dict :func:`ingest_export` returns — ``area_key`` /
@@ -733,6 +755,7 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
     documents; the difference is only reachable on an export that overlaps itself.
     """
     _ensure_registry(con)
+    seg_filter: set[int] | None = {int(s) for s in segment_ids} if segment_ids is not None else None
     parts = _io.discover_parts(source)
     headers = [list(_io._read_member_csv(p, "data.csv", nrows=0).columns) for p in parts]
     if corridor_name is not None and not all(CORRIDOR_COL in h for h in headers):
@@ -768,7 +791,8 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
                 pending = next(chunks, None)
                 while pending is not None:
                     _load_chunk(con, pending, header, replace=True,
-                                corridor_name=corridor_name)
+                                corridor_name=corridor_name,
+                                segment_ids=seg_filter)
                     pending = next(chunks, None)
                     # The cadence is read from the first staged chunk. A chunk too
                     # small to hold two timestamps for any one segment cannot decide
@@ -776,7 +800,8 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
                     while (area_key is None and pending is not None
                            and not _bin_histogram(con, STREAM_STAGE)):
                         _load_chunk(con, pending, header, replace=False,
-                                    corridor_name=corridor_name)
+                                    corridor_name=corridor_name,
+                                    segment_ids=seg_filter)
                         pending = next(chunks, None)
                     info = _stage_summary(con, header)
                     for d, n in info["bin_histogram"].items():
@@ -789,8 +814,10 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
                     n_added += _merge_stage(con, _obs_table(area_key), header,
                                             bin_minutes)
                     lo, hi = info["span"]
-                    span_lo = lo if span_lo is None else min(span_lo, lo or span_lo)
-                    span_hi = hi if span_hi is None else max(span_hi, hi or span_hi)
+                    if lo is not None:
+                        span_lo = lo if span_lo is None else min(span_lo, lo)
+                    if hi is not None:
+                        span_hi = hi if span_hi is None else max(span_hi, hi)
     finally:
         con.execute(f'DROP VIEW IF EXISTS "{STREAM_STAGE}_src"')
         con.execute(f'DROP TABLE IF EXISTS "{STREAM_STAGE}"')
@@ -808,6 +835,11 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
 
     # Metadata: single-source, exactly as ``ingest_export`` reads it.
     metadata = _io.load_metadata(source)
+    if seg_filter is not None:
+        if metadata.index.name == SEGMENT_COL:
+            metadata = metadata[metadata.index.isin(seg_filter)]
+        elif SEGMENT_COL in metadata.columns:
+            metadata = metadata[metadata[SEGMENT_COL].isin(seg_filter)]
     meta_flat = metadata.reset_index() if metadata.index.name else metadata.copy()
     _merge_frame(con, _meta_table(area_key), meta_flat, keys=[SEGMENT_COL])
 
