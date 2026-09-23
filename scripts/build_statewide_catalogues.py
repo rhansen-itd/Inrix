@@ -34,6 +34,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from inrix_tools import aadt as aadt_mod          # noqa: E402
 from inrix_tools import corridors, couplets, extents  # noqa: E402
+from inrix_tools import routes                        # noqa: E402
+
+MEMBERSHIP = "out/highways/route_membership/d{district}_route_membership.csv"
+
+
+def apply_membership(net: gpd.GeoDataFrame, district: int) -> gpd.GeoDataFrame:
+    """``net`` with ``RoadNumber`` resolved against ITD's layer (ROADMAP Item 48), so
+    the chains and couplets are walked on ITD's routes — Lewiston's US-12 on the levee
+    bypass, not downtown Main St / D St. Requires ``build_route_membership.py``."""
+    path = Path(MEMBERSHIP.format(district=district))
+    if not path.exists():
+        raise SystemExit(f"{path} missing — run scripts/build_route_membership.py first")
+    return routes.apply_route_membership(net, routes.read_membership(path))
 
 DEFAULT_DISTRICTS = [1, 2, 4, 5, 6]
 """District 3's catalogue is the Item 44 empirical rebuild
@@ -46,6 +59,7 @@ def load_district(district: int, *, aadt_source: str | None,
     net = gpd.read_parquet(f"geometry_cache/d{district}_network.geoparquet")
     repairs = corridors.load_link_repairs(f"scripts/d{district}_link_repairs.csv")
     net = corridors.apply_link_repairs(net, repairs)
+    net = apply_membership(net, district)
 
     if aadt_source:
         layer = aadt_mod.load_aadt(aadt_source, year=aadt_year,
@@ -198,9 +212,9 @@ def main() -> int:
             cache = Path(f"geometry_cache/d{d}_network.geoparquet")
             if not cache.exists():
                 continue
-            other = corridors.apply_link_repairs(
+            other = apply_membership(corridors.apply_link_repairs(
                 gpd.read_parquet(cache),
-                corridors.load_link_repairs(f"scripts/d{d}_link_repairs.csv"))
+                corridors.load_link_repairs(f"scripts/d{d}_link_repairs.csv")), d)
             all_pairs.extend(couplets.detect_couplets(
                 other, counties=couplets.DISTRICT_COUNTIES.get(d)))
 

@@ -6,7 +6,7 @@
       "am",
       "pm"
     ],
-    "n_chains": 45,
+    "n_chains": 44,
     "n_facilities": 10,
     "min_core_miles": 0.75,
     "tiers": [
@@ -1090,219 +1090,6 @@
       ]
     },
     {
-      "id": "i-90-northwest-blvd-kootenai-core-wb",
-      "name": "I-90 (Northwest Blvd) WB: Kootenai County \u2014 Congested Core",
-      "start_latlon": [
-        47.68886,
-        -116.79835
-      ],
-      "end_latlon": [
-        47.70209,
-        -116.80788
-      ],
-      "description": "Tier 1 (Congested Core) of I-90 (Northwest Blvd): Kootenai County. Recurrent bottleneck core (1.03 mi, 7 segments at PEAK TTI >= 1.2). Upstream boundary: a congestion discontinuity (freeflow_to_congested, TTI 1.05 -> 1.84); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "corridor": "i-90-northwest-blvd-kootenai-core",
-      "direction": "WB",
-      "_tier": "core",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_split_rationale": "Recurrent bottleneck core (1.03 mi, 7 segments at PEAK TTI >= 1.2)",
-      "_generated_miles": 1.034,
-      "_segment_ids": [
-        448907189,
-        448907190,
-        1626456926,
-        440926379,
-        440952567,
-        1236975464,
-        440952568
-      ]
-    },
-    {
-      "id": "i-90-northwest-blvd-kootenai-core-eb",
-      "name": "I-90 (Northwest Blvd) EB: Kootenai County \u2014 Congested Core",
-      "start_latlon": [
-        47.70067,
-        -116.80798
-      ],
-      "end_latlon": [
-        47.68744,
-        -116.79713
-      ],
-      "description": "Tier 1 (Congested Core) of I-90 (Northwest Blvd): Kootenai County. Recurrent bottleneck core (1.03 mi, 7 segments at PEAK TTI >= 1.2). Upstream boundary: a congestion discontinuity (freeflow_to_congested, TTI 1.05 -> 1.84); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "corridor": "i-90-northwest-blvd-kootenai-core",
-      "direction": "EB",
-      "_tier": "core",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_split_rationale": "Recurrent bottleneck core (1.03 mi, 7 segments at PEAK TTI >= 1.2)",
-      "_generated_miles": 1.051,
-      "_segment_ids": [
-        1236946276,
-        440952566,
-        440926378,
-        1626456925,
-        448907187,
-        448907188,
-        429023561
-      ]
-    },
-    {
-      "id": "i-90-northwest-blvd-kootenai-commuter-wb",
-      "name": "I-90 (Northwest Blvd) WB: Kootenai County \u2014 Commuter Corridor",
-      "start_latlon": [
-        47.67993,
-        -116.79147
-      ],
-      "end_latlon": [
-        47.70209,
-        -116.80788
-      ],
-      "description": "Tier 2 (Commuter Corridor) of I-90 (Northwest Blvd): Kootenai County. Commuter extent between regional boundaries (1.73 mi); stitched outward from the core to an AADT step-change (14,000 -> 25,500 vpd, 45%) and chain end. Upstream boundary: an AADT step-change (14,000 -> 25,500 vpd, 45%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "corridor": "i-90-northwest-blvd-kootenai-commuter",
-      "direction": "WB",
-      "_tier": "commuter",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_split_rationale": "Commuter extent between regional boundaries (1.73 mi); stitched outward from the core to an AADT step-change (14,000 -> 25,500 vpd, 45%) and chain end",
-      "_generated_miles": 1.733,
-      "_segment_ids": [
-        448907213,
-        448907214,
-        429023564,
-        429023562,
-        448907189,
-        448907190,
-        1626456926,
-        440926379,
-        440952567,
-        1236975464,
-        440952568
-      ]
-    },
-    {
-      "id": "i-90-northwest-blvd-kootenai-commuter-eb",
-      "name": "I-90 (Northwest Blvd) EB: Kootenai County \u2014 Commuter Corridor",
-      "start_latlon": [
-        47.70067,
-        -116.80798
-      ],
-      "end_latlon": [
-        47.67988,
-        -116.79158
-      ],
-      "description": "Tier 2 (Commuter Corridor) of I-90 (Northwest Blvd): Kootenai County. Commuter extent between regional boundaries (1.73 mi); stitched outward from the core to an AADT step-change (14,000 -> 25,500 vpd, 45%) and chain end. Upstream boundary: an AADT step-change (14,000 -> 25,500 vpd, 45%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "corridor": "i-90-northwest-blvd-kootenai-commuter",
-      "direction": "EB",
-      "_tier": "commuter",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_split_rationale": "Commuter extent between regional boundaries (1.73 mi); stitched outward from the core to an AADT step-change (14,000 -> 25,500 vpd, 45%) and chain end",
-      "_generated_miles": 1.637,
-      "_segment_ids": [
-        1236946276,
-        440952566,
-        440926378,
-        1626456925,
-        448907187,
-        448907188,
-        429023561,
-        429023563,
-        448907215,
-        448907216
-      ]
-    },
-    {
-      "id": "i-90-northwest-blvd-kootenai-regional-wb",
-      "name": "I-90 (Northwest Blvd) WB: Kootenai County \u2014 Regional Baseline",
-      "start_latlon": [
-        47.67332,
-        -116.75033
-      ],
-      "end_latlon": [
-        47.70209,
-        -116.80788
-      ],
-      "description": "Tier 3 (Regional Baseline) of I-90 (Northwest Blvd): Kootenai County. Full regional facility (3.89 mi, 26 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "corridor": "i-90-northwest-blvd-kootenai-regional",
-      "direction": "WB",
-      "_tier": "regional",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_split_rationale": "Full regional facility (3.89 mi, 26 segments)",
-      "_generated_miles": 3.893,
-      "_segment_ids": [
-        1236978821,
-        429048040,
-        1236882233,
-        440956777,
-        448907204,
-        448907205,
-        448907206,
-        448907207,
-        440953154,
-        448907199,
-        448907200,
-        448907201,
-        448907202,
-        475095693,
-        475096088,
-        448907213,
-        448907214,
-        429023564,
-        429023562,
-        448907189,
-        448907190,
-        1626456926,
-        440926379,
-        440952567,
-        1236975464,
-        440952568
-      ]
-    },
-    {
-      "id": "i-90-northwest-blvd-kootenai-regional-eb",
-      "name": "I-90 (Northwest Blvd) EB: Kootenai County \u2014 Regional Baseline",
-      "start_latlon": [
-        47.70067,
-        -116.80798
-      ],
-      "end_latlon": [
-        47.67331,
-        -116.74973
-      ],
-      "description": "Tier 3 (Regional Baseline) of I-90 (Northwest Blvd): Kootenai County. Full regional facility (3.89 mi, 26 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "corridor": "i-90-northwest-blvd-kootenai-regional",
-      "direction": "EB",
-      "_tier": "regional",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_split_rationale": "Full regional facility (3.89 mi, 26 segments)",
-      "_generated_miles": 3.826,
-      "_segment_ids": [
-        1236946276,
-        440952566,
-        440926378,
-        1626456925,
-        448907187,
-        448907188,
-        429023561,
-        429023563,
-        448907215,
-        448907216,
-        475096500,
-        475096089,
-        448907195,
-        448907196,
-        448907197,
-        448907198,
-        440953153,
-        448907208,
-        448907209,
-        448907210,
-        448907211,
-        440956758,
-        1236882244,
-        429048039,
-        1236978809,
-        440951934
-      ]
-    },
-    {
       "id": "sh-53-kootenai-core-eb",
       "name": "SH-53 EB: Kootenai County \u2014 Congested Core",
       "start_latlon": [
@@ -1838,8 +1625,8 @@
       "id": "us-2-bonner-core-wb",
       "name": "US-2 WB: Bonner County \u2014 Congested Core",
       "start_latlon": [
-        48.29035,
-        -116.54883
+        48.27311,
+        -116.55366
       ],
       "end_latlon": [
         48.25754,
@@ -1851,14 +1638,8 @@
       "_tier": "core",
       "_facility": "us-2-bonner",
       "_split_rationale": "Recurrent bottleneck core (2.62 mi, 8 segments at PEAK TTI >= 1.2)",
-      "_generated_miles": 3.257,
+      "_generated_miles": 1.928,
       "_segment_ids": [
-        1236967770,
-        429023314,
-        1236958860,
-        124900591,
-        429045286,
-        771135074,
         1236893477,
         1236991325,
         1236991351
@@ -1939,8 +1720,8 @@
       "id": "us-2-bonner-regional-wb",
       "name": "US-2 WB: Bonner County \u2014 Regional Baseline",
       "start_latlon": [
-        48.29035,
-        -116.54883
+        48.27311,
+        -116.55366
       ],
       "end_latlon": [
         48.18401,
@@ -1952,14 +1733,8 @@
       "_tier": "regional",
       "_facility": "us-2-bonner",
       "_split_rationale": "Full regional facility (29.83 mi, 50 segments)",
-      "_generated_miles": 29.7,
+      "_generated_miles": 28.37,
       "_segment_ids": [
-        1236967770,
-        429023314,
-        1236958860,
-        124900591,
-        429045286,
-        771135074,
         1236893477,
         1236991325,
         1236991351,
@@ -2146,6 +1921,32 @@
         1236898646,
         448922727,
         1236898462
+      ]
+    },
+    {
+      "id": "us-2-n-5th-ave-bonner-regional-sb",
+      "name": "US-2 (N 5th Ave) SB: Bonner County \u2014 Regional Baseline",
+      "start_latlon": [
+        48.29035,
+        -116.54883
+      ],
+      "end_latlon": [
+        48.27313,
+        -116.55352
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-2 (N 5th Ave): Bonner County. Full regional facility (1.31 mi, 5 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "corridor": "us-2-n-5th-ave-bonner-regional",
+      "direction": "SB",
+      "_tier": "regional",
+      "_facility": "us-2-n-5th-ave-bonner",
+      "_split_rationale": "Full regional facility (1.31 mi, 5 segments)",
+      "_generated_miles": 1.315,
+      "_segment_ids": [
+        1236967770,
+        429023314,
+        1236958860,
+        124900591,
+        429045286
       ]
     },
     {
@@ -2895,42 +2696,6 @@
       "_n_segments": 133
     },
     {
-      "id": "i-90-northwest-blvd-kootenai-core",
-      "name": "I-90 (Northwest Blvd): Kootenai County \u2014 Tier 1 Congested Core (Ironwood Dr/Seltice Way to Seg 006100 N Of I-90)",
-      "description": "Tier 1 (Congested Core) of I-90 (Northwest Blvd): Kootenai County. Recurrent bottleneck core (1.03 mi, 7 segments at PEAK TTI >= 1.2). Upstream boundary: a congestion discontinuity (freeflow_to_congested, TTI 1.05 -> 1.84); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "_tier": "core",
-      "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Ironwood Dr/Seltice Way to Seg 006100 N Of I-90)",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_facility_name": "I-90 (Northwest Blvd): Kootenai County",
-      "_miles": 1.034,
-      "_n_segments": 7
-    },
-    {
-      "id": "i-90-northwest-blvd-kootenai-commuter",
-      "name": "I-90 (Northwest Blvd): Kootenai County \u2014 Tier 2 Commuter Corridor (Us-95 Ic No. 430 to Seg 006100 N Of I-90)",
-      "description": "Tier 2 (Commuter Corridor) of I-90 (Northwest Blvd): Kootenai County. Commuter extent between regional boundaries (1.73 mi); stitched outward from the core to an AADT step-change (14,000 -> 25,500 vpd, 45%) and chain end. Upstream boundary: an AADT step-change (14,000 -> 25,500 vpd, 45%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "_tier": "commuter",
-      "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Us-95 Ic No. 430 to Seg 006100 N Of I-90)",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_facility_name": "I-90 (Northwest Blvd): Kootenai County",
-      "_miles": 1.733,
-      "_n_segments": 11
-    },
-    {
-      "id": "i-90-northwest-blvd-kootenai-regional",
-      "name": "I-90 (Northwest Blvd): Kootenai County \u2014 Tier 3 Regional Baseline (I-90 Eb Ramps Ic No. 15 to Seg 006100 N Of I-90)",
-      "description": "Tier 3 (Regional Baseline) of I-90 (Northwest Blvd): Kootenai County. Full regional facility (3.89 mi, 26 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
-      "_tier": "regional",
-      "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (I-90 Eb Ramps Ic No. 15 to Seg 006100 N Of I-90)",
-      "_facility": "i-90-northwest-blvd-kootenai",
-      "_facility_name": "I-90 (Northwest Blvd): Kootenai County",
-      "_miles": 3.893,
-      "_n_segments": 26
-    },
-    {
       "id": "sh-53-kootenai-core",
       "name": "SH-53: Kootenai County \u2014 Tier 1 Congested Core (1.14 mi)",
       "description": "Tier 1 (Congested Core) of SH-53: Kootenai County. Recurrent bottleneck core (1.14 mi, 2 segments at PEAK TTI >= 1.2). Upstream boundary: the start of the mainline chain; downstream boundary: a congestion discontinuity (congested_to_freeflow, TTI 1.33 -> 1.08). Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
@@ -3037,6 +2802,18 @@
       "_facility_name": "SH-54: Kootenai County",
       "_miles": 11.85,
       "_n_segments": 25
+    },
+    {
+      "id": "us-2-n-5th-ave-bonner-regional",
+      "name": "US-2 (N 5th Ave): Bonner County \u2014 Tier 3 Regional Baseline (Us-95 Nb On Ramp to 5Th Ave @Pine St (Us-2))",
+      "description": "Tier 3 (Regional Baseline) of US-2 (N 5th Ave): Bonner County. Full regional facility (1.31 mi, 5 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Us-95 Nb On Ramp to 5Th Ave @Pine St (Us-2))",
+      "_facility": "us-2-n-5th-ave-bonner",
+      "_facility_name": "US-2 (N 5th Ave): Bonner County",
+      "_miles": 1.315,
+      "_n_segments": 5
     },
     {
       "id": "sh-200-bonner-core",

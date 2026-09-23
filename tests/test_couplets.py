@@ -111,7 +111,13 @@ class TestDetectCouplets:
         """The KNOWN_COUPLETS registry has expected districts and valid entries."""
         districts = {c["district"] for c in couplets.KNOWN_COUPLETS}
         assert districts == {1, 2, 3, 4, 5, 6}
-        assert len(couplets.KNOWN_COUPLETS) >= 15
+        assert len(couplets.KNOWN_COUPLETS) >= 12
+
+    def test_registry_holds_no_pair_itd_carries_as_local(self):
+        """Item 48: entries whose streets ITD's route layer carries as local roads
+        were removed, and must not creep back."""
+        cities = {c["city"] for c in couplets.KNOWN_COUPLETS}
+        assert not cities & {"Lewiston", "Coeur d'Alene", "Payette", "Caldwell"}
 
     def test_filter_by_district(self):
         """Filtering by district preserves only matching counties."""
@@ -247,14 +253,13 @@ class TestMatchKnownCouplets:
         assert boise["detected_miles"] > 0
 
     def test_a_route_only_match_is_dropped_when_a_stronger_row_owns_the_pair(self):
-        """Caldwell and Mountain Home are both I-84B in counties that also hold
-        Nampa's couplet; without the downgrade each reports as found against it."""
+        """Mountain Home is I-84B in a district that also holds Nampa's couplet;
+        without the downgrade it reports as found against it."""
         net = _grid_network(name_a="3rd St S", name_b="2nd St S",
                             bearing_a="W", bearing_b="E", route="84")
         pairs = couplets.detect_couplets(net, min_length_mi=0.5)
         table = couplets.match_known_couplets(pairs, district=3).set_index("city")
         assert table.loc["Nampa", "match_kind"] == "streets"
-        assert table.loc["Caldwell", "match_kind"] == "none"
         assert table.loc["Mountain Home", "match_kind"] == "none"
 
     def test_registry_route_numbers(self):

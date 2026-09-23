@@ -6,7 +6,7 @@
       "am",
       "pm"
     ],
-    "n_chains": 59,
+    "n_chains": 57,
     "n_facilities": 5,
     "min_core_miles": 0.75,
     "tiers": [

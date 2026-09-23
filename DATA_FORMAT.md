@@ -1405,6 +1405,73 @@ source**, so a `source` that is itself a `.parquet`/`.geoparquet` is now read di
 rather than handed to pyogrio. And a bbox of `(nan, nan, nan, nan)` — what
 `geo.total_bounds` returns for an empty frame — reads as *no restriction*, not as a box.
 
+### Route membership: ITD's route, not INRIX `RoadNumber` (ROADMAP Item 48)
+
+**INRIX `RoadNumber` is not the state's route inventory, and it is wrong both ways.**
+Lewiston's downtown Main St / D St couplet is `RoadNumber` 12, but ITD's layer carries
+both streets on local (`OH`) records (`06830AOH000`, `01900AOH000`, `47980AOH000`,
+`06820AOH000`). US-12 (`01910AUS012`) runs the levee bypass, which INRIX names
+`Levee Byp` and leaves **unnumbered**. The same pattern appears statewide:
+- *Numbered by INRIX, local in ITD's layer:* the I-90 business loops (Coeur d'Alene
+  Northwest Blvd / Sherman Ave; Kellogg Bunker Ave / Cameron Ave), SH-37 south of
+  Holbrook, Rexburg's N 7th E, and Payette's S Main St / 7th Ave N.
+- *On a state route in ITD's layer, unnumbered by INRIX:* the levee bypass, SH-77 on
+  the Elba-Almo Hwy (~30 mi), and SH-75 on Sun Valley Rd.
+
+`routes.route_membership` decides each segment's route from the layer, and
+`scripts/build_route_membership.py` writes the per-district tables to
+`out/highways/route_membership/`. The inventory generator and the statewide catalogue
+builder read those tables instead of `RoadNumber`. Four facts about the layer shape
+the rules:
+
+- **One record where routes share a road.** US-20/26/93 near Arco is one
+  `02220AUS093` record; INRIX says 20. INRIX's `RoadList` names every route the road
+  carries, in several spellings: `US-20|US-26|US-93`, `N ID-34`, `Highway 30`,
+  `N Highway 34`. So a mismatch that the segment's own `RoadList` explains is a
+  `concurrent` verdict, not an error. Chains keep INRIX's number there, and the
+  segment joins both route files.
+- **Business loops are banded as their parent route.** ITD bands I-84 Business
+  `IN084` (Caldwell Blvd `02042`, Burley's Overland Ave `02290`, Mountain Home
+  `01020`), I-15 Business `IN015`, and US-93 Business in Twin Falls `US093`. Only the
+  5-digit route-segment number tells them from the mainline (`01010AIN084` is I-84
+  itself). Two rules follow:
+  - an `IN` band is never *given* to a segment that INRIX does not number as that
+    interstate, because INRIX numbers interstate mainline reliably;
+  - a band that the `RoadList` names only as a business route (`US-93-BR`, `I-84-BL`)
+    keeps INRIX's number (the `business` verdict).
+
+  The same `IN` rule stops frontage roads beside I-90/I-84 (Grouse Creek Rd,
+  Markwell Ave) from being given the interstate.
+- **Descriptions name the cross street at a break, not the road.** On the levee,
+  `01910AUS012` reads `5TH ST` and `18TH ST/DIKE BYPASS RD`, so street-name identity
+  (`aadt.classify_on_system`) rejects the bypass. Membership identity is geometric
+  instead:
+  - *on* the segment means ≤ 10 m, and within 15 m for at least 80% of the segment's
+    length;
+  - *near* it means ≤ 40 m and alongside ≥ 50%, which reaches a divided highway's
+    single centreline.
+
+  The same reading resolves the `OH` descriptions that name a route:
+  - Reubens-Gifford Rd's record, 3.8 km from US-95, reads just `US-95`;
+  - E Palouse River Dr's reads `S MAIN ST (US-95)`.
+
+  Both mean "to US-95". So for **membership only**, a route that appears only in an
+  `OH` record's description is ambiguous: it can neither add a route nor, lying on a
+  segment, take one away. This does not change `aadt.record_route_number`'s reading
+  for the volume join's tie-break (Item 42); that answers a different question.
+- **The layer can lag a realignment.** Reisenauer Rd south of Moscow is still a US-95
+  record, but US-95 moved to its new alignment in ~2025 and the old road went to Latah
+  County (owner, Session 65). The new alignment has no record at all yet.
+  `scripts/route_overrides.csv` (county + road + note) beats the layer. A segment INRIX
+  numbers that no record decides either way is kept as `unconfirmed`, not dropped:
+  that is what new construction looks like.
+
+Dropping needs more evidence than adding, on purpose. A route is taken away
+(`inrix_only`) only when a clearly local record lies *on* the segment **and** no
+numbered record lies *near* it. A frontage-road record can sit closer to a carriageway
+than the highway's own centreline (22–30 m away), and the *near* test is what protects
+the carriageway.
+
 **License:** treat like the data exports — gitignored, not redistributed.
 
 ## Direction convention & directional map display (Item 20)

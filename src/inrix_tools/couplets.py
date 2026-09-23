@@ -94,32 +94,33 @@ class CoupletPair:
 
 
 # ─── Known Couplet Registry ──────────────────────────────────────────
-# Validated from AADT layer "COUPLET"/"ONE-WAY" labels and XD topology.
+# Validated from AADT layer "COUPLET"/"ONE-WAY" labels and XD topology, and (Item 48)
+# against ITD route membership (``inrix_tools.routes``): a pair both of whose streets
+# ITD carries as local roads is not a state-highway couplet, whatever INRIX numbers
+# them. Removed on that test, with the evidence in route_membership/:
+#   * Lewiston US-12 Main St / D St — local (06830AOH000, 01900AOH000, 47980AOH000,
+#     06820AOH000); US-12 runs the levee bypass (01910AUS012).
+#   * Coeur d'Alene STC-7195 3rd St / 4th St — no route on either street.
+#   * Payette "US-95 Conn" Main St / 7th Ave N — local; INRIX's 95 on both is dropped.
+#   * Caldwell I-84B/SH-19 Blaine St / Canyon St — I-84B was relinquished to the City of
+#     Caldwell (owner, Item 42); Blaine St is local in the layer, Canyon St unnumbered.
 
 KNOWN_COUPLETS: list[dict] = [
     # District 1
     {"district": 1, "city": "Sandpoint", "route": "US-2/US-95",
      "street1": "1st Ave", "street2": "5th Ave", "miles": 1.4},
-    {"district": 1, "city": "Coeur d'Alene", "route": "STC-7195",
-     "street1": "3rd St", "street2": "4th St", "miles": 0.8},
     # District 2
     {"district": 2, "city": "Moscow", "route": "US-95",
      "street1": "S Washington St", "street2": "S Jackson St", "miles": 0.65},
-    {"district": 2, "city": "Lewiston", "route": "US-12",
-     "street1": "Main St", "street2": "D St", "miles": 0.75},
     # District 3
     {"district": 3, "city": "Boise", "route": "US-20/26",
      "street1": "W Myrtle St", "street2": "W Front St", "miles": 1.15},
     {"district": 3, "city": "Nampa", "route": "I-84B",
      "street1": "3rd St S", "street2": "2nd St S", "miles": 0.70},
-    {"district": 3, "city": "Caldwell", "route": "I-84B/SH-19",
-     "street1": "Blaine St", "street2": "Canyon St", "miles": 0.9},
     {"district": 3, "city": "Mountain Home", "route": "I-84B/SH-51",
      "street1": "American Legion Blvd", "street2": "Jackson St", "miles": 1.1},
     {"district": 3, "city": "Weiser", "route": "US-95 Spur",
      "street1": "W Idaho St", "street2": "W Main St", "miles": 0.52},
-    {"district": 3, "city": "Payette", "route": "US-95 Conn",
-     "street1": "Main St", "street2": "7th St", "miles": 0.4},
     # District 4
     {"district": 4, "city": "Twin Falls", "route": "US-30",
      "street1": "2nd Ave S", "street2": "2nd Ave N", "miles": 1.30},

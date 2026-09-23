@@ -7,15 +7,27 @@ Creates RITIS/INRIX-paste-ready text files for all six ITD districts:
 - Per-highway directional files (_ALL.txt, _EB.txt/_WB.txt or _NB.txt/_SB.txt)
 - Detailed summary JSON catalogues and CSV tables.
 
-Matches ITD's official administrative districts (all 44 counties mapped 1-to-1)
-and the official Idaho State Highway System as confirmed by ITD's AADT GIS layer.
+Matches ITD's official administrative districts (all 44 counties mapped 1-to-1).
+Route membership is **ITD's AADT layer's**, not INRIX ``RoadNumber`` (ROADMAP Item 48):
+a route's segments are those ``inrix_tools.routes.route_membership`` puts on it, read
+from ``out/highways/route_membership/d<N>_route_membership.csv`` — build those first
+with ``scripts/build_route_membership.py``. INRIX's number is the fallback only where
+no ITD record decides.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
+
 import pyogrio
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from inrix_tools import routes  # noqa: E402
+
+MEMBERSHIP_DIR = Path("out") / "highways" / "route_membership"
 
 # ITD Administrative Districts by County
 DISTRICT_COUNTIES = {
@@ -569,15 +581,28 @@ def main() -> None:
 
         all_hw_rn = [rn for meta in hws.values() for rn in meta.get("rn", [])]
 
+        member_path = base_dir / MEMBERSHIP_DIR / f"d{d}_route_membership.csv"
+        if not member_path.exists():
+            raise SystemExit(f"{member_path} missing — run scripts/build_route_membership.py")
+        member = routes.read_membership(member_path)
+        on_route = {rn: set(routes.route_segments(member, rn)) for rn in all_hw_rn}
+        resolved = member["route_number"].reindex(dist_df["XDSegID_int"])
+        resolved.index = dist_df.index
+        dropped = set(member.index[member["verdict"].isin((routes.INRIX_ONLY, routes.OVERRIDE))
+                                   & (member["routes"] == "")])
+
         for hw_code, meta in hws.items():
             if meta.get("is_ramp"):
-                # Ramps
-                cond = (dist_df["SlipRoad"] == "1") & (~dist_df["RoadNumber"].astype(str).isin(all_hw_rn))
+                # Ramps: slip roads not on any of this district's routes
+                cond = (dist_df["SlipRoad"] == "1") & (~resolved.astype(str).isin(all_hw_rn))
                 hw_df = dist_df[cond].copy()
             else:
-                cond = dist_df["RoadNumber"].astype(str).isin(meta["rn"])
+                ids = set().union(*(on_route[rn] for rn in meta["rn"]))
+                cond = dist_df["XDSegID_int"].isin(ids)
                 if "extra_names" in meta:
-                    cond = cond | (dist_df["RoadName"].isin(meta["extra_names"]) & dist_df["RoadNumber"].isna())
+                    cond = cond | (dist_df["RoadName"].isin(meta["extra_names"])
+                                   & dist_df["RoadNumber"].isna()
+                                   & ~dist_df["XDSegID_int"].isin(dropped))
                 hw_df = dist_df[cond].copy()
 
             hw_ids = hw_df["XDSegID_int"].tolist()
@@ -650,7 +675,7 @@ def main() -> None:
 
         # Special timezone split for District 2 (Goff Bridge / Salmon River: lat 45.446976)
         if d == 2:
-            us95_df = dist_df[dist_df["RoadNumber"] == "95"].copy()
+            us95_df = dist_df[dist_df["XDSegID_int"].isin(on_route["95"])].copy()
             us95_df["mid_lat"] = (us95_df["StartLat"].astype(float) + us95_df["EndLat"].astype(float)) / 2.0
             
             d2_mt_df = us95_df[us95_df["mid_lat"] < 45.446976]

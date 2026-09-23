@@ -2127,6 +2127,127 @@ from the Session 60 review."
 
 ---
 
+## 48 — Route membership from ITD's AADT layer, not INRIX `RoadNumber` ✅ (Session 65)
+
+**Target: one session.** Raised by the owner in Session 65 while reviewing the D2 export.
+
+**The defect.** `scripts/generate_district_highway_inventories.py` (D1, D2, D4–D6) picks
+a route's segments by INRIX `RoadNumber` alone. The AADT layer is used only later, for
+volume. INRIX's route numbering is wrong in both directions:
+- **Lewiston:** INRIX puts US-12 on the downtown Main St / D St couplet. Both streets are
+  local (`OH`) records in ITD's layer (`06830AOH000`, `01900AOH000`, `47980AOH000`,
+  `06820AOH000`). US-12 (`01910AUS012`) actually runs the levee bypass. INRIX names it
+  "Levee Byp" with no route number, so ~3.3 mi (12 segments) were never downloaded.
+  `couplets.KNOWN_COUPLETS` also lists Main St/D St as a "validated" US-12 couplet, so
+  the D2 catalogue holds two false couplet corridors.
+- **Session 65 audit** (a scratch join of every district segment to its AADT record,
+  keeping only matches ≤10 m apart, ≥80% overlap, main road only):
+  - *Exported as a state route but ITD shows a local road:* Coeur d'Alene Northwest
+    Blvd / Sherman Ave (I-90, ~6 mi); Kellogg Bunker Ave / Division St (I-90); Sandpoint
+    Pine St / Cedar St (US-2); Caldwell Cleveland / Blaine (I-84B, already recorded in
+    Item 42); Nampa Northside / Karcher (SH-55); SH-37 south of the SH-38 junction in
+    Oneida (27.6 mi); Rexburg Center St / 7th E (SH-33).
+  - *On a state route in ITD's layer but unnumbered in INRIX, so never selected:* D2
+    Levee Byp (US-12, 3.3 mi); D4 Elba-Almo Hwy (SH-77, ~33 mi); D4 Sun Valley Rd
+    (SH-75, 4.8 mi). Each district also has short gaps under 0.2 mi.
+- **The AADT layer is not always the newer source.** D2 Reisenauer Rd (10.1 mi) matches
+  a US-95 record in ITD's layer, but the owner confirms INRIX is right: US-95 moved to a
+  new alignment within the past year, and the old one was renamed and handed to the
+  county. The AADT layer is therefore authoritative for route identity, but not newer
+  than a recent realignment. The rule needs a reviewed escape hatch.
+- **Shared roads are not errors.** Where two routes share a road, ITD records only one
+  route number: US-20/26/93 near Arco and Carey, US-2/95 at Bonners Ferry, US-20 on
+  I-184. A segment whose INRIX number differs from its ITD number is still on the state
+  system. Most of the raw mismatch count in the audit is this case.
+
+Scope:
+
+- [x] **Pure-core route membership** (`aadt.py`, or a new `routes.py`): each segment's
+      ITD route and a verdict — `agree` / `concurrent` / `inrix_only` (INRIX numbers a
+      route, but ITD shows a local road) / `itd_only` (ITD route, but INRIX has no
+      number) / `no_record`. Name agreement cannot be the identity test here: AADT
+      descriptions name the *cross street* at each break ("5TH ST"), so
+      `classify_on_system`'s street-name test rejects Levee Byp. Decide the test from
+      distance, overlap and bearing, and record why.
+      *New `routes.py`, with `business` added as a verdict. Identity is geometric: on
+      ≤ 10 m and ≥ 80% alongside; near ≤ 40 m. It has its own search, because
+      `join_aadt`'s route bonus prefers INRIX's number. Only the `RouteID` **band** is
+      trusted: a route named in an `OH` record's description means "to that route".
+      That bug first added 12 mi of Reubens-Gifford Rd to US-95.*
+- [x] **Shared-road handling from the data:** decide `concurrent` from the ITD record's
+      own description or route list where it names both routes. Otherwise use a small
+      explicit table. Never read "any number mismatch" as an error.
+      *From the segment's `RoadList`/`RoadName`, in every spelling INRIX uses (`N ID-34`,
+      `Highway 30`); the record descriptions never name two routes. Business loops are
+      banded like their parent route (`IN084` Caldwell Blvd, `US093` Twin Falls). So an
+      `IN` band is never given to a segment INRIX doesn't number as that interstate, and
+      a band the `RoadList` names only as `-BL`/`-BR` keeps INRIX's number.*
+- [x] **An owner-reviewed override file** (e.g. `scripts/route_overrides.csv`: segment
+      range or road, route, keep/drop, reason, date). The first entry: Reisenauer Rd is
+      **not** US-95 (realigned ~2025, handed to the county). A segment INRIX numbers with
+      no AADT record nearby (new construction) is kept and flagged, not dropped.
+      *`scripts/route_overrides.csv`; a note is required. The new US-95 alignment's 14
+      segments come out `unconfirmed` and are kept.*
+- [x] **Rewire the inventory generator** to select by ITD route membership plus
+      overrides, with INRIX `RoadNumber` as a backup only. Regenerate `out/highways/`
+      for D1–D6 and report the per-route changes in miles.
+      *Done for D1/D2/D4/D5/D6, reading `out/highways/route_membership/` (built by
+      `scripts/build_route_membership.py`). Changes by road are in
+      `route_changes_by_road.csv` and DESIGN_HISTORY Session 65. **D3 was not
+      regenerated** — its lists are the owner-curated Item 42/44 set. D3 membership is
+      computed and reported, and the decision is carried into Item 49. The old masters
+      are kept in `out/highways/pre_item48/`.*
+- [x] **Generalise Item 42's reconciliation to D1–D6** and write the add-list of
+      segments to download (Levee Byp, SH-77 Elba-Almo, SH-75 Sun Valley Rd, the short
+      gaps). The drop-list stays in the stores but out of the catalogues.
+      *`--district` / `--previous-master`. The add-lists total **117 segments**: D1 4,
+      D2 25, D4 84, D5 2, D6 2. They are paste-ready and labelled by road in
+      `out/export_reconciliation/item48_add_lists.txt`. None of the earlier requests
+      came back empty.*
+- [x] **Fix `KNOWN_COUPLETS`**: remove Lewiston US-12 Main/D St. Check every other entry
+      against ITD route membership (Coeur d'Alene `STC-7195` and Payette `US-95 Conn` in
+      particular). Regenerate the D1–D6 catalogues so the false couplet corridors drop out.
+      *Removed Lewiston, Coeur d'Alene STC-7195, Payette and Caldwell (all local in ITD's
+      layer). The D1/D2/D4/D5/D6 catalogues regenerated and verified. D2 loses its three
+      false US-12 couplet legs, D1 its six I-90 business-loop entries, and D6 four false
+      SH-43 "couplet" legs.*
+- [x] pytest: a synthetic bypass/couplet where the numbering is on the wrong street;
+      a shared-road segment is not flagged; an override beats the layer; a numbered
+      segment with no record is kept and flagged. DATA_FORMAT: INRIX `RoadNumber` vs ITD
+      route identity, the cross-street descriptions, and the AADT layer lagging
+      realignments. DESIGN_HISTORY.
+      *`test_routes.py` +21 (including the real Lewiston case), reconcile +3, and a
+      couplet-registry guard. Suite 705 passed, 2 skipped.*
+
+*Suggested prompt (done):* "Do Item 48 of ROADMAP.md — select route segments by ITD AADT-layer
+route membership with an override file, and fix the Lewiston US-12 couplet."
+
+## 49 — Ingest the Item 48 add-list and re-run the statewide screening
+
+**Target: one session. Depends on Item 48** and on the owner downloading the add-list
+from RITIS/INRIX.
+
+- [ ] Ingest the new segments into the district stores. Confirm that everything on the
+      add-list was delivered: `reconcile_export_segments.py --district N
+      --previous-master out/highways/pre_item48/District_N_ALL_Highways.txt` should
+      show zero new requests.
+- [ ] **Regenerate the D1/D2/D4/D5/D6 catalogues** (`build_statewide_catalogues.py`)
+      once the new segments are observed. The builder uses only observed segments, so
+      Lewiston's US-12 facility gains the levee bypass only after the ingest.
+- [ ] **District 3, the owner's call.** Item 48 reported but did not apply D3's
+      membership (50 dropped / 8 added). Most of it is Caldwell/Cleveland Blvd and
+      Blaine St, which Item 42 kept out, plus Payette's S Main St / 7th Ave N and
+      Nampa's Northside Blvd. Decide whether the curated D3 lists take it.
+- [ ] Re-run the district and statewide screening on the corrected catalogues. Record
+      how the ranking moves, especially D2 US-12 (bypass instead of downtown), D1 I-90
+      (business loops out), and D4 SH-77 / SH-75.
+- [ ] DESIGN_HISTORY with the before/after ranking.
+
+*Suggested prompt:* "Do Item 49 of ROADMAP.md — ingest the Item 48 add-list and re-run the
+statewide screening."
+
+---
+
 ## Future (not yet scoped — need a planning pass before they're actionable)
 
 - **Directional AADT (direction-aware *volume* + a time-of-day directional

@@ -6,7 +6,7 @@
       "am",
       "pm"
     ],
-    "n_chains": 59,
+    "n_chains": 58,
     "n_facilities": 10,
     "min_core_miles": 0.75,
     "tiers": [
@@ -500,24 +500,21 @@
       "id": "sh-33-n-2nd-st-madison-regional-sb",
       "name": "SH-33 (N 2nd St) SB: Madison County \u2014 Regional Baseline",
       "start_latlon": [
-        43.88366,
-        -111.73792
+        43.87284,
+        -111.75113
       ],
       "end_latlon": [
         43.82607,
         -111.77807
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (5.00 mi, 10 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (3.64 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-33-n-2nd-st-madison-regional",
       "direction": "SB",
       "_tier": "regional",
       "_facility": "sh-33-n-2nd-st-madison",
-      "_split_rationale": "Full regional facility (5.00 mi, 10 segments)",
-      "_generated_miles": 4.999,
+      "_split_rationale": "Full regional facility (3.64 mi, 7 segments)",
+      "_generated_miles": 3.639,
       "_segment_ids": [
-        1187440312,
-        461321054,
-        461321055,
         448695196,
         1187511891,
         1187511847,
@@ -535,16 +532,16 @@
         -111.77807
       ],
       "end_latlon": [
-        43.88366,
-        -111.73792
+        43.87284,
+        -111.75113
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (5.00 mi, 10 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (3.64 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-33-n-2nd-st-madison-regional",
       "direction": "NB",
       "_tier": "regional",
       "_facility": "sh-33-n-2nd-st-madison",
-      "_split_rationale": "Full regional facility (5.00 mi, 10 segments)",
-      "_generated_miles": 4.999,
+      "_split_rationale": "Full regional facility (3.64 mi, 7 segments)",
+      "_generated_miles": 3.639,
       "_segment_ids": [
         461321044,
         461321045,
@@ -552,10 +549,7 @@
         1187511741,
         1187511787,
         1187511826,
-        448695195,
-        461321056,
-        461321057,
-        1187440329
+        448695195
       ]
     },
     {
@@ -1187,8 +1181,8 @@
         -112.03914
       ],
       "end_latlon": [
-        43.52931,
-        -112.02363
+        43.52787,
+        -112.02362
       ],
       "description": "Tier 3 (Regional Baseline) of US-20: Bonneville County (2). Full regional facility (2.83 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "us-20-bonneville-2-regional",
@@ -1196,7 +1190,7 @@
       "_tier": "regional",
       "_facility": "us-20-bonneville-2",
       "_split_rationale": "Full regional facility (2.83 mi, 7 segments)",
-      "_generated_miles": 2.931,
+      "_generated_miles": 2.832,
       "_segment_ids": [
         450150255,
         384133653,
@@ -1206,8 +1200,7 @@
         119258996,
         440885120,
         440871259,
-        1187404770,
-        440871261
+        1187404770
       ]
     },
     {
@@ -2747,66 +2740,6 @@
         463714333,
         463714334
       ]
-    },
-    {
-      "id": "couplet-43-id-43-105-n-eb",
-      "name": "SH-43 EB: Bonneville County (Id-43)",
-      "start_latlon": [
-        43.59445,
-        -111.97276
-      ],
-      "end_latlon": [
-        43.59272,
-        -111.96928
-      ],
-      "description": "One-way couplet leg on Id-43 (EB) carrying SH-43 through Bonneville County, 2 segments; the opposing leg runs on 105 N 170 m away.",
-      "corridor": "couplet-43-id-43-105-n",
-      "direction": "EB"
-    },
-    {
-      "id": "couplet-43-id-43-105-n-wb",
-      "name": "SH-43 WB: Bonneville County (105 N)",
-      "start_latlon": [
-        43.59019,
-        -111.96383
-      ],
-      "end_latlon": [
-        43.59272,
-        -111.96928
-      ],
-      "description": "One-way couplet leg on 105 N (WB) carrying SH-43 through Bonneville County, 2 segments; the opposing leg runs on Id-43 170 m away.",
-      "corridor": "couplet-43-id-43-105-n",
-      "direction": "WB"
-    },
-    {
-      "id": "couplet-43-105-n-id-43-eb",
-      "name": "SH-43 EB: Bonneville County (105 N)",
-      "start_latlon": [
-        43.59272,
-        -111.96928
-      ],
-      "end_latlon": [
-        43.59019,
-        -111.96383
-      ],
-      "description": "One-way couplet leg on 105 N (EB) carrying SH-43 through Bonneville County, 2 segments; the opposing leg runs on Id-43 274 m away.",
-      "corridor": "couplet-43-105-n-id-43",
-      "direction": "EB"
-    },
-    {
-      "id": "couplet-43-105-n-id-43-wb",
-      "name": "SH-43 WB: Bonneville County (Id-43)",
-      "start_latlon": [
-        43.59272,
-        -111.96928
-      ],
-      "end_latlon": [
-        43.59445,
-        -111.97276
-      ],
-      "description": "One-way couplet leg on Id-43 (WB) carrying SH-43 through Bonneville County, 2 segments; the opposing leg runs on 105 N 274 m away.",
-      "corridor": "couplet-43-105-n-id-43",
-      "direction": "WB"
     }
   ],
   "reporting_corridors": [
@@ -2860,15 +2793,15 @@
     },
     {
       "id": "sh-33-n-2nd-st-madison-regional",
-      "name": "SH-33 (N 2nd St): Madison County \u2014 Tier 3 Regional Baseline (Sh-33 Spur to Main St @ 2Nd W St)",
-      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (5.00 mi, 10 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "name": "SH-33 (N 2nd St): Madison County \u2014 Tier 3 Regional Baseline (Teton Island Canal to Main St @ 2Nd W St)",
+      "description": "Tier 3 (Regional Baseline) of SH-33 (N 2nd St): Madison County. Full regional facility (3.64 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Sh-33 Spur to Main St @ 2Nd W St)",
+      "_tier_label": "Tier 3 Regional Baseline (Teton Island Canal to Main St @ 2Nd W St)",
       "_facility": "sh-33-n-2nd-st-madison",
       "_facility_name": "SH-33 (N 2nd St): Madison County",
-      "_miles": 4.999,
-      "_n_segments": 10
+      "_miles": 3.639,
+      "_n_segments": 7
     },
     {
       "id": "sh-33-teton-core",
@@ -3061,22 +2994,6 @@
       "_facility_name": "SH-75: Custer County",
       "_miles": 71.959,
       "_n_segments": 105
-    },
-    {
-      "id": "couplet-43-id-43-105-n",
-      "name": "SH-43: Bonneville County Couplet (Id-43/105 N)",
-      "description": "One-way couplet carrying SH-43 across Id-43 (EB) and 105 N (WB) in Bonneville County (ZIP 83401); 0.28 mi per leg, mean lateral separation 170 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 170.1
-    },
-    {
-      "id": "couplet-43-105-n-id-43",
-      "name": "SH-43: Bonneville County Couplet (105 N/Id-43)",
-      "description": "One-way couplet carrying SH-43 across 105 N (EB) and Id-43 (WB) in Bonneville County (ZIP 83401); 0.28 mi per leg, mean lateral separation 274 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 273.8
     }
   ]
 }

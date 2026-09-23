@@ -6,7 +6,7 @@
       "am",
       "pm"
     ],
-    "n_chains": 56,
+    "n_chains": 67,
     "n_facilities": 7,
     "min_core_miles": 0.75,
     "tiers": [
@@ -1402,22 +1402,21 @@
       "id": "sh-74-washington-st-twin-falls-regional-wb",
       "name": "SH-74 (Washington St) WB: Twin Falls County \u2014 Regional Baseline",
       "start_latlon": [
-        42.56316,
-        -114.46037
+        42.55655,
+        -114.46914
       ],
       "end_latlon": [
         42.52017,
         -114.47965
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-74 (Washington St): Twin Falls County. Full regional facility (3.37 mi, 8 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of SH-74 (Washington St): Twin Falls County. Full regional facility (2.73 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-74-washington-st-twin-falls-regional",
       "direction": "WB",
       "_tier": "regional",
       "_facility": "sh-74-washington-st-twin-falls",
-      "_split_rationale": "Full regional facility (3.37 mi, 8 segments)",
-      "_generated_miles": 3.372,
+      "_split_rationale": "Full regional facility (2.73 mi, 7 segments)",
+      "_generated_miles": 2.729,
       "_segment_ids": [
-        117761605,
         1187541180,
         1187538180,
         440886633,
@@ -1435,16 +1434,16 @@
         -114.47965
       ],
       "end_latlon": [
-        42.56316,
-        -114.46037
+        42.55655,
+        -114.46914
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-74 (Washington St): Twin Falls County. Full regional facility (3.37 mi, 8 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of SH-74 (Washington St): Twin Falls County. Full regional facility (2.73 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "corridor": "sh-74-washington-st-twin-falls-regional",
       "direction": "EB",
       "_tier": "regional",
       "_facility": "sh-74-washington-st-twin-falls",
-      "_split_rationale": "Full regional facility (3.37 mi, 8 segments)",
-      "_generated_miles": 3.372,
+      "_split_rationale": "Full regional facility (2.73 mi, 7 segments)",
+      "_generated_miles": 2.729,
       "_segment_ids": [
         428967784,
         1187442051,
@@ -1452,8 +1451,7 @@
         1187545448,
         440866479,
         1187538119,
-        1187329260,
-        119213819
+        1187329260
       ]
     },
     {
@@ -2104,14 +2102,14 @@
     {
       "id": "sh-74-washington-st-twin-falls-regional",
       "name": "SH-74 (Washington St): Twin Falls County \u2014 Tier 3 Regional Baseline (2Nd Ave W (Us-30) to Washington St @3600N Rd)",
-      "description": "Tier 3 (Regional Baseline) of SH-74 (Washington St): Twin Falls County. Full regional facility (3.37 mi, 8 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
+      "description": "Tier 3 (Regional Baseline) of SH-74 (Washington St): Twin Falls County. Full regional facility (2.73 mi, 7 segments). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (2Nd Ave W (Us-30) to Washington St @3600N Rd)",
       "_facility": "sh-74-washington-st-twin-falls",
       "_facility_name": "SH-74 (Washington St): Twin Falls County",
-      "_miles": 3.372,
-      "_n_segments": 8
+      "_miles": 2.729,
+      "_n_segments": 7
     },
     {
       "id": "i-84-overland-ave-cassia-core",

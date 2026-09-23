@@ -6,7 +6,7 @@
       "am",
       "pm"
     ],
-    "n_chains": 55,
+    "n_chains": 57,
     "n_facilities": 7,
     "min_core_miles": 0.75,
     "tiers": [
@@ -1425,66 +1425,6 @@
       "description": "One-way couplet leg on Main St (SB) carrying US-95 through Latah County, 2 segments; the opposing leg runs on Us-95 289 m away.",
       "corridor": "couplet-95-us-95-main-st",
       "direction": "SB"
-    },
-    {
-      "id": "couplet-12-d-st-main-st-wb",
-      "name": "US-12 WB: Nez Perce County (D St)",
-      "start_latlon": [
-        46.41907,
-        -117.01907
-      ],
-      "end_latlon": [
-        46.42185,
-        -117.03169
-      ],
-      "description": "One-way couplet leg on D St (WB) carrying US-12 through Nez Perce County, 4 segments; the opposing leg runs on Main St 71 m away.",
-      "corridor": "couplet-12-d-st-main-st",
-      "direction": "WB"
-    },
-    {
-      "id": "couplet-12-d-st-main-st-eb",
-      "name": "US-12 EB: Nez Perce County (Main St)",
-      "start_latlon": [
-        46.42062,
-        -117.03252
-      ],
-      "end_latlon": [
-        46.41907,
-        -117.01907
-      ],
-      "description": "One-way couplet leg on Main St (EB) carrying US-12 through Nez Perce County, 6 segments; the opposing leg runs on D St 71 m away.",
-      "corridor": "couplet-12-d-st-main-st",
-      "direction": "EB"
-    },
-    {
-      "id": "couplet-12-us-highway-12-main-st-wb",
-      "name": "US-12 WB: Nez Perce County (Us Highway 12)",
-      "start_latlon": [
-        46.41557,
-        -117.00212
-      ],
-      "end_latlon": [
-        46.41722,
-        -117.00619
-      ],
-      "description": "One-way couplet leg on Us Highway 12 (WB) carrying US-12 through Nez Perce County, 1 segments; the opposing leg runs on Main St 182 m away.",
-      "corridor": "couplet-12-us-highway-12-main-st",
-      "direction": "WB"
-    },
-    {
-      "id": "couplet-12-us-highway-12-main-st-eb",
-      "name": "US-12 EB: Nez Perce County (Main St)",
-      "start_latlon": [
-        46.41907,
-        -117.01907
-      ],
-      "end_latlon": [
-        46.41711,
-        -117.00622
-      ],
-      "description": "One-way couplet leg on Main St (EB) carrying US-12 through Nez Perce County, 3 segments; the opposing leg runs on Us Highway 12 182 m away.",
-      "corridor": "couplet-12-us-highway-12-main-st",
-      "direction": "EB"
     }
   ],
   "reporting_corridors": [
@@ -1655,22 +1595,6 @@
       "one_way_couplet": true,
       "_couplet": true,
       "_mean_lateral_sep_m": 289.3
-    },
-    {
-      "id": "couplet-12-d-st-main-st",
-      "name": "US-12: Nez Perce County Couplet (D St/Main St)",
-      "description": "One-way couplet carrying US-12 across D St (WB) and Main St (EB) in Nez Perce County (ZIP 83501); 0.69 mi per leg, mean lateral separation 71 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 70.6
-    },
-    {
-      "id": "couplet-12-us-highway-12-main-st",
-      "name": "US-12: Nez Perce County Couplet (Us Highway 12/Main St)",
-      "description": "One-way couplet carrying US-12 across Us Highway 12 (WB) and Main St (EB) in Nez Perce County (ZIP 83501); 0.43 mi per leg, mean lateral separation 182 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
-      "one_way_couplet": true,
-      "_couplet": true,
-      "_mean_lateral_sep_m": 182.5
     }
   ]
 }

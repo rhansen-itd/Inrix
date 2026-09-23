@@ -5015,3 +5015,147 @@ rather than widens; a sidecar-less cache is judged on its own data; a missing co
 rebuilds; the shortfall reasons name what is wrong; a GeoParquet source is read
 directly; a degenerate bbox reads as no restriction. Full suite: **680 passed, 2
 skipped**.
+
+## Session 65 — Item 48: route membership from ITD's AADT layer, not INRIX `RoadNumber` (2026-09-22)
+
+The owner reviewed the D2 export and found that INRIX's "US-12" in Lewiston is the
+downtown Main St / D St couplet. The real US-12 is the levee bypass around downtown. A
+statewide audit found the same defect in both directions in every district, and Item 48
+was scoped from that audit. Correction from the owner, taken into the design:
+Reisenauer Rd, which the layer still shows as US-95, is right in INRIX. US-95 moved to
+its new alignment about a year ago, and the old road went to the county. So the layer
+is the authority, but not always the newer source.
+
+### 1. Where route identity came from, and why it was wrong
+
+`generate_district_highway_inventories.py` selected a route's segments by `RoadNumber`
+inside the district's counties. The catalogue builder walked chains and detected
+couplets on the same field. The AADT layer entered only afterwards, for volume. So
+Main St / D St went into US-12 and got catalogued as a "US-12 couplet". Levee Byp,
+which INRIX leaves unnumbered, was never requested. `couplets.KNOWN_COUPLETS` listed
+the Lewiston pair as validated.
+
+### 2. `routes.py` — the design choices
+
+New pure-core module, `route_membership(geo, aadt, overrides)`. It gives one verdict
+per segment: `agree`, `concurrent`, `business`, `renumbered`, `inrix_only` (dropped),
+`itd_only` (added), `unconfirmed` (kept and flagged), `off_system`, `ramp` or
+`override`. The rules came from the data, and three of them only after a first pass
+got the data wrong:
+
+- **The volume join could not be reused.** `join_aadt` ranks a record whose route
+  matches INRIX's number ahead of distance. That is right for choosing a volume, but it
+  settles the membership question in INRIX's favour before it is asked: several Main
+  St segments took the bypass record at 55% coverage. Membership uses its own
+  unbiased search, with *on* at ≤ 10 m / ≥ 80% alongside and *near* at ≤ 40 m /
+  ≥ 50%.
+- **Street-name identity could not be reused either.** ITD's descriptions name the
+  cross street at each break (`5TH ST`, `18TH ST/DIKE BYPASS RD` on the levee), so
+  `classify_on_system`'s name test rejects the bypass.
+- **An `OH` description naming a route means "to that route".** The first all-district
+  run added 12 miles of Reubens-Gifford Rd to US-95. Its record reads `US-95` and lies
+  3.8 km from the highway. Greencreek Rd, Neyens Rd and E Palouse River Dr
+  (`S MAIN ST (US-95)`) were added the same way. Membership now trusts only the
+  `RouteID` band. A description-only route is *ambiguous*: it can neither add a route
+  nor take one away. D2's additions fell from 77 segments (25.4 mi) to 25 (3.8 mi),
+  every one on a US or SH band. The volume join keeps Item 42's reading for its
+  tie-break; that answers a different question.
+- **Business loops wear the parent route's band.** Caldwell Blvd, Burley's Overland
+  Ave and Mountain Home's American Legion Blvd are `IN084`; Blackfoot's Main St and
+  Idaho Falls' Broadway are `IN015`; Twin Falls' US-93 Business is `US093`. The second
+  run "renumbered" these to the interstate, and gave I-90 to frontage roads (Grouse
+  Creek Rd, Markwell Ave) that lie on an `IN` band. Two rules fix this:
+  - an `IN` band is never given to a segment INRIX doesn't number as that interstate;
+  - a band that the `RoadList` names only as a business route keeps INRIX's number
+    (the `business` verdict).
+- **Concurrency comes from `RoadList`.** ITD carries one record where routes share a
+  road, so the test is whether the segment's `RoadList` or `RoadName` names ITD's
+  route. INRIX writes `ID-34`, `N ID-34`, `Highway 30` and `N Highway 34`. Missing the
+  spaced forms renumbered 8 miles of SH-36/SH-34 near Preston. Business spellings
+  (`-BL`, `-BR`) are excluded.
+- **Asymmetric evidence.** A drop needs a clearly local record *on* the segment and no
+  numbered record *near* it, because a frontage road can lie nearer a carriageway than
+  the highway's own centreline does. An addition needs a numbered, non-interstate
+  mainline record on the segment that no local record matches as well.
+- **Overrides** (`scripts/route_overrides.csv`, county + road + note, the note
+  required) beat the layer. The first entry is Reisenauer Rd. The new US-95 alignment
+  has no record yet; its 14 segments come out `unconfirmed` and are kept, as intended.
+
+`apply_route_membership` writes the resolved route into `RoadNumber` and keeps
+INRIX's value as `RoadNumber_inrix`. `extents` and `couplets` needed no change.
+
+### 3. What moved
+
+| District | Dropped (INRIX-only) | Added (ITD-only) | Other |
+|---|---|---|---|
+| D1 | 73 segs / 9.4 mi: I-90 business loops in Coeur d'Alene (Northwest Blvd, Sherman Ave) and the Silver Valley | 8 / 0.4 | — |
+| D2 | 14 / 3.8: Main St, D St, 1.3 mi of the Cavendish Hwy past SH-7's end | 25 / 3.8: Levee Byp 3.4 mi plus its connectors | Reisenauer Rd override, 26 / 10.3 |
+| D3 | 50 / 12.2 | 8 / 0.7 | report only (see 5) |
+| D4 | 5 / 2.8 | 84 / 35.5: SH-77 Elba-Almo 30 mi, SH-75 Sun Valley Rd 4.8 mi | — |
+| D5 | 65 / 40.4: SH-37 south of Holbrook 27.6 mi, plus county roads INRIX numbers 1 | 5 / 0.3 | 3 renumbered |
+| D6 | 15 / 4.3: Rexburg N 7th E, SH-43 end stubs | 2 / 0.1 | 2 renumbered |
+
+Master lists, compared with the pre-Item-48 copies kept in `out/highways/pre_item48/`:
+
+| District | Before | After |
+|---|---|---|
+| D1 | 2284 | 2215 |
+| D2 | 2095 | 2106 |
+| D4 | 2934 | 3013 |
+| D5 | 2633 | 2590 |
+| D6 | 3454 | 3447 |
+
+### 4. Reconciliation, registry, catalogues
+
+- `reconcile_export_segments.py` takes `--district` and `--previous-master`. It writes
+  `segments_to_add.txt` (in the revised master, never observed, never requested
+  before) and `segments_to_drop.txt`, keeping apart ids that were requested before and
+  returned nothing. That last category is zero in every district. The add-lists total
+  **117 segments**:
+
+  | District | Segments | Main item |
+  |---|---|---|
+  | D1 | 4 | |
+  | D2 | 25 | Levee Byp |
+  | D4 | 84 | SH-77, SH-75 |
+  | D5 | 2 | |
+  | D6 | 2 | |
+
+  They are collected, labelled by road, in
+  `out/export_reconciliation/item48_add_lists.txt`.
+- `KNOWN_COUPLETS` lost four entries whose streets ITD carries as local, with the
+  reasons recorded in place: Lewiston US-12, Coeur d'Alene STC-7195, Payette US-95
+  Conn, and Caldwell I-84B/SH-19 (relinquished, per the owner in Item 42).
+- The D1/D2/D4/D5/D6 catalogues were regenerated on ITD's routes, and all verified:
+  - D1 lost the six I-90 "Northwest Blvd" business-loop entries (46 → 41 entries,
+    with one US-2 N 5th Ave entry gained);
+  - D2 lost its three false US-12 couplet legs (29 → 26);
+  - D6 lost four "SH-43 couplet" legs that paired two-way SH-43 with the parallel
+    E 105 N, which the trimmed end stubs had held together (46 → 42);
+  - D4 and D5 keep their entry names, with extents that moved.
+
+  The bypass is not in D2's US-12 facility yet: the catalogue builder only uses
+  observed segments, and Levee Byp comes with the Item 49 download.
+
+### 5. Not done here
+
+- **District 3's inventory and catalogue were not regenerated.** D3's lists are the
+  owner-curated Item 42/44 set, and its catalogue is the empirical rebuild, not the
+  generated one. D3 membership is computed and reported; its 50 dropped / 8 added
+  segments are there for review. Most of them are Caldwell/Cleveland Blvd and Blaine
+  St, which Item 42 had already kept out.
+- The statewide rankings are stale against the new catalogues until Item 49 re-runs
+  the screening.
+
+### 6. Tests
+
+- `tests/test_routes.py`, new (21): every verdict on synthetic geometry (the Lewiston
+  bypass/couplet, a shared road, a divided highway beside a frontage road, new
+  construction, an override, an ambiguous description, an interstate band, a
+  business band, a renumbering, a ramp), plus `RoadList` parsing, apply,
+  group-by-road, a CSV round trip, override validation, and the Lewiston case on the
+  real D2 layer, which skips without the gitignored caches.
+- `test_reconcile_export_segments.py` +3.
+- `test_couplets.py`: the registry holds none of the four removed pairs.
+
+Full suite **705 passed, 2 skipped**; `ruff --select F` clean.

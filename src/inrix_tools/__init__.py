@@ -22,6 +22,7 @@ Modules are scaffolded as stubs until built per ROADMAP.md:
     screen      — district-wide corridor screening + ranking (Item 35)
     couplets    — statewide one-way couplet detection & pairing (Item 45)
     extents     — corridor split criteria & multi-scale tiers (Item 45)
+    routes      — state-route membership from ITD's AADT layer (Item 48)
 """
 
 __version__ = "0.1.0"

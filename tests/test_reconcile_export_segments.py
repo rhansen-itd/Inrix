@@ -221,3 +221,38 @@ def test_candidates_by_road_is_empty_when_nothing_qualifies(district):
             on_system_distance_m=aadt.DEFAULT_ON_SYSTEM_DISTANCE_M),
         rec.inventory_membership(district["highways"]))
     assert rec.candidates_by_road(classified).empty
+
+
+# ---------------------------------------------------------------------------
+# Any district; the add/drop lists a revised inventory implies (Item 48)
+# ---------------------------------------------------------------------------
+def test_master_lists_of_any_district_are_not_corridor_files(tmp_path):
+    for name in ("District_2_ALL_Highways.txt", "District_2_Pacific_ALL_Highways.txt",
+                 "Statewide_ALL_Highways.txt", "US-12_ALL.txt", "US-95_Pacific_ALL.txt"):
+        (tmp_path / name).write_text("1")
+    assert [p.name for p in rec.corridor_files(tmp_path)] == ["US-12_ALL.txt",
+                                                             "US-95_Pacific_ALL.txt"]
+    assert rec.master_name(2) == "District_2_ALL_Highways.txt"
+
+
+def test_request_changes_separates_new_requests_from_ones_that_came_back_empty():
+    changes = rec.request_changes(master_ids=[1, 2, 3, 4], observed=[1, 5],
+                                  previous_master_ids=[1, 3, 5])
+    assert changes == {"add": [2, 4], "still_empty": [3], "drop": [5]}
+
+
+def test_district_and_previous_master_write_the_add_and_drop_lists(district, tmp_path):
+    highways = district["highways"]
+    (highways / "District_3_ALL_Highways.txt").rename(highways / "District_5_ALL_Highways.txt")
+    revised = IN_EXPORT[:1] + NEVER_RETURNED + [ABSENT_ON_ROUTE]      # drops 1001
+    (highways / "District_5_ALL_Highways.txt").write_text(",".join(map(str, revised)))
+    previous = tmp_path / "previous.txt"
+    previous.write_text(",".join(str(s) for s in IN_EXPORT + NEVER_RETURNED))
+    args = _args(district, previous_master=previous)
+    args.district = 5
+    out = rec.run(args)
+    assert out["changes"] == {"add": [ABSENT_ON_ROUTE], "still_empty": NEVER_RETURNED,
+                              "drop": [1001]}
+    assert Path(out["written"]["segments_to_add"]).read_text() == str(ABSENT_ON_ROUTE)
+    assert Path(out["written"]["segments_to_drop"]).read_text() == "1001"
+    assert "PASTE-READY ADD LIST" in out["report"]

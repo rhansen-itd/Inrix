@@ -1,0 +1,6 @@
+# Owner-reviewed exceptions to ITD's AADT layer (ROADMAP Item 48, inrix_tools.routes).
+# The layer is the authority for route membership, except where it lags reality.
+# One row per road: county + INRIX RoadName (+ INRIX RoadNumber, optional).
+# route blank = not a state route.  Every row needs a note saying why and who decided.
+county,road_name,inrix_route,route,note
+Latah,Reisenauer Rd,,,"Old US-95 alignment south of Moscow; US-95 moved to the new alignment ~2025 and this road went to Latah County. The AADT layer still shows it as US-95 (owner, Session 65)."

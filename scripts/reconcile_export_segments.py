@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconcile the export's segment set against the corridor inventory.  (Item 42)
+"""Reconcile the export's segment set against the corridor inventory.  (Items 42, 48)
 
 Two questions, asked of the same export and kept apart:
 
@@ -61,10 +61,32 @@ def read_id_file(path) -> list[int]:
     return [int(tok) for tok in text.replace("\n", ",").split(",") if tok.strip()]
 
 
+def master_name(district: int) -> str:
+    """The district's master id list, ``District_<N>_ALL_Highways.txt``."""
+    return f"District_{int(district)}_ALL_Highways.txt"
+
+
 def corridor_files(highways_dir) -> list[Path]:
-    """The per-corridor ``*_ALL.txt`` lists, master lists excluded."""
+    """The per-corridor ``*_ALL.txt`` lists, master lists (any district's, the D2
+    timezone halves, the statewide one) excluded."""
     return sorted(p for p in Path(highways_dir).glob("*_ALL.txt")
-                  if not p.name.startswith("District_3"))
+                  if not p.name.startswith(("District_", "Statewide_")))
+
+
+def request_changes(master_ids, observed, previous_master_ids) -> dict:
+    """What a revised inventory asks the next download to change (Item 48).
+
+    ``add`` — in the revised master, never observed, and **not** in the master the
+    export was downloaded from: new requests. Ids the previous master already asked
+    for that returned nothing are ``still_empty``, kept apart because re-requesting
+    them is a different bet (Item 42: usually a sub-100-ft stub). ``drop`` — observed,
+    but the revised master no longer names them; they stay in the store and fall out
+    of the catalogues.
+    """
+    master, obs, prev = set(master_ids), set(observed), set(previous_master_ids)
+    return {"add": sorted(master - obs - prev),
+            "still_empty": sorted((master - obs) & prev),
+            "drop": sorted(obs - master)}
 
 
 def reconcile_inventory(highways_dir, master_ids, observed) -> pd.DataFrame:
@@ -255,6 +277,17 @@ def render(inventory, classified, candidates, prov) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_changes(changes) -> str:
+    lines = ["", "3. WHAT THE REVISED INVENTORY ASKS THE NEXT DOWNLOAD TO CHANGE", "-" * 78,
+             f"  new requests (never asked for)        {len(changes['add']):>6}",
+             f"  asked for before, still returned none {len(changes['still_empty']):>6}",
+             f"  observed, no longer in the inventory  {len(changes['drop']):>6}"]
+    if changes["add"]:
+        lines += ["", f"  PASTE-READY ADD LIST -- {len(changes['add'])} segments",
+                  "  " + ",".join(str(i) for i in changes["add"])]
+    return "\n".join(lines) + "\n"
+
+
 def write_outputs(out_dir, inventory, classified, candidates, prov, report) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -316,8 +349,12 @@ def run(args) -> dict:
     finally:
         con.close()
 
-    master_path = Path(args.master) if args.master else Path(args.highways_dir) / MASTER_NAME
-    inventory = reconcile_inventory(args.highways_dir, read_id_file(master_path), observed)
+    default_master = MASTER_NAME if args.district is None else master_name(args.district)
+    master_path = Path(args.master) if args.master else Path(args.highways_dir) / default_master
+    master_ids = read_id_file(master_path)
+    inventory = reconcile_inventory(args.highways_dir, master_ids, observed)
+    changes = (None if args.previous_master is None else
+               request_changes(master_ids, observed, read_id_file(args.previous_master)))
 
     classified = candidates = None
     if args.aadt:
@@ -346,11 +383,21 @@ def run(args) -> dict:
             "on_system": classified.attrs.get("on_system"),
         },
     }
+    if changes is not None:
+        prov["previous_master"] = str(args.previous_master)
+        prov["request_changes"] = {k: len(v) for k, v in changes.items()}
     report = render(inventory, classified, candidates, prov)
+    if changes is not None:
+        report += render_changes(changes)
     written = write_outputs(args.out_dir, inventory, classified,
                             candidates if candidates is not None else pd.DataFrame(),
                             prov, report)
-    return {"inventory": inventory, "classified": classified,
+    if changes is not None:
+        for key in ("add", "drop"):
+            path = Path(args.out_dir) / f"segments_to_{key}.txt"
+            path.write_text(",".join(str(i) for i in changes[key]))
+            written[f"segments_to_{key}"] = str(path)
+    return {"inventory": inventory, "classified": classified, "changes": changes,
             "candidates": candidates, "report": report, "written": written}
 
 
@@ -362,8 +409,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--db", required=True, help="DuckDB store (store.connect)")
     p.add_argument("--area", default=None, help="area key or name (default: the only one)")
     p.add_argument("--highways-dir", default="out/highways")
+    p.add_argument("--district", type=int, default=None,
+                   help="district number; picks the master District_<N>_ALL_Highways.txt")
     p.add_argument("--master", default=None,
-                   help=f"master id list (default: <highways-dir>/{MASTER_NAME})")
+                   help=f"master id list (default: <highways-dir>/{MASTER_NAME}, or the "
+                        f"--district one)")
+    p.add_argument("--previous-master", default=None,
+                   help="the master the export was downloaded from; writes the add/drop "
+                        "lists (Item 48)")
     p.add_argument("--network", default="USA_Idaho_shapefile.zip")
     p.add_argument("--network-cache", default=None)
     p.add_argument("--aadt", default=None,
