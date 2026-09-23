@@ -1876,6 +1876,150 @@ Delivered: Rebuilt `scripts/d3_corridors.json` via `scripts/rebuild_d3_catalogue
 *Suggested prompt:* "Do Item 44 of ROADMAP.md — rebuild the D3 catalogue from Item 43's
 extracted runs, and re-run the district screening."
 
+
+---
+
+## 45 — Statewide Corridor Extent Alternatives, Couplet Synthesis, and Objective Triage
+
+**Target: Opus / Automated Pipeline.** Builds on Items 40, 43, and 44. Statewide scope (Districts 1–6).
+
+When scaling from District 3 to the entire state of Idaho, local highway intuition is sparse. The corridor screening pipeline cannot rely on hand-drawn endpoints or route-specific hardcoding. Instead, the data itself must propose corridor extents, synthesize one-way couplets, generate hierarchical alternatives (core vs. commuter vs. regional baseline), and triage candidate runs using objective, statewide rules. Scope:
+
+- [ ] **Objective Split Criteria for Corridor Extents**  *(module built & tested in
+      `src/inrix_tools/extents.py`; **not wired into the catalogue builder** — see Item 46)*:
+      Formalize four orthogonal data-driven split dimensions along each linear state highway chain:
+      1. **City Limits & Urban/Rural Transitions**: Detect crossings using ITD Urban Adjusted Boundaries (UAB) / municipal polygons, corroborated by sudden shifts in segment density, speed limits, and functional road classification (FRC). Prevents dilution of concentrated urban arterial bottlenecks by long rural tails (e.g. SH-45 Nampa vs. Melba/Owyhee).
+      2. **Major Highway-to-Highway Junctions & Interchanges**: Graph-topological splits where state routes cross or merge (degree $\ge 3$) and system interchange terminals (e.g. I-84/I-184, US-95/US-2, US-91/US-30, I-15/US-26), where commuter demand profiles bifurcate.
+      3. **AADT Volume Step-Changes**: Detect sharp volume gradients ($|\Delta\text{AADT}| / \text{AADT} > 40\%$ or crossing ITD volume tiers) along the chain, separating high-volume metropolitan commuter sheds from intercity corridors.
+      4. **Congestion Discontinuities (TTI & Delay Rate)**: Segment-level change-point detection identifying where recurring peak TTI drops below 1.15 or delay density drops from bottleneck levels ($> 150$ vhd/mi) to free-flowing baseline ($< 25$ vhd/mi).
+- [ ] **Multi-Scale Extent Alternatives & Comparative Ranking**  *(module built & tested;
+      the shipped tiers are hand-listed in `aggregate_statewide_rankings.EXTENT_TIER_GROUPS`,
+      not generated — see Item 46)*:
+      Rather than forcing a single arbitrary extent per route, automatically construct and rank three standardized extent alternatives per congested corridor:
+      - **Tier 1: Congested Core (Empirical Hotspot)** — The contiguous recurring congestion run snapped to nearest major cross-streets; maximizes delay rate (VHD/mile).
+      - **Tier 2: Commuter Corridor (Functional Facility)** — Stitched across moderate-delay gaps between regional junctions or city limits; evaluates trip-level reliability and corridor-wide travel time.
+      - **Tier 3: Regional Highway Baseline (Full Facility / Rural Control)** — Full county/district extent; provides total delay volume context and establishes the non-congested baseline.
+      - **Comparison Matrix**: Report all alternatives side-by-side ranked by Rate (Peak VHD/mi), Volume (Total Peak VHD), and Reliability (95th percentile TTI), explicitly highlighting the "dilution factor" of extended lengths.
+- [ ] **Statewide One-Way Couplet Detection & Pairing**  *(detector built & tested in
+      `src/inrix_tools/couplets.py`; the shipped couplet entries are hand-authored — see Item 46)*:
+      Couplets are directional carriageways on parallel, separate street alignments (e.g., Boise Myrtle/Front, Nampa 2nd/3rd St S). Codify an automated topological detector:
+      1. **Geometric Signature**: Opposing one-way segments on distinct street alignments separated by $30\text{ m} \le d \le 300\text{ m}$ (1–2 city blocks) running parallel for $\ge 0.2$ miles.
+      2. **Topological Split/Merge**: Branch-and-converge cycles in the directed highway graph where a two-way mainline bifurcates into two opposing one-way links and rejoins downstream.
+      3. **Corridor Synthesis**: Automatically pair detected couplet branches under a single reporting corridor ID, assigning matching directional tags (`one_way_couplet: true`) and resolving them in `corridors.resolve_catalogue`.
+      - **Statewide Couplet Registry**: Validate against the statewide catalogue:
+        - **D1**: Sandpoint US-2/US-95 Byway & downtown split; Coeur d'Alene 3rd/4th St (I-90 connector).
+        - **D2**: Moscow US-95 (Jackson St SB / Washington St NB); Lewiston US-12 (Main St EB / D St & 1st St WB).
+        - **D3**: Boise US-20/26 (Front/Myrtle); Nampa I-84B (2nd/3rd St S); Caldwell I-84B/SH-19 (Canyon/Blaine/Cleveland); Mountain Home I-84B/SH-51 (Main/American Legion/8th/Jackson); Weiser US-95 Spur (Idaho/Main).
+        - **D4**: Twin Falls US-30 (2nd Ave North WB / 2nd Ave South EB).
+        - **D5**: Pocatello I-15B/US-91 (4th Ave NB / 5th Ave SB); Blackfoot I-15B (W Bridge St WB / W Judicial St EB — clarifying D5 Bingham County administration vs. D6/US-20); Preston US-91/SH-34 (State St / 800 W); American Falls SH-39 (Idaho St / Lamb Weston Rd).
+        - **D6**: Idaho Falls & Rexburg grade-separated splits / business loops.
+- [x] **Objective Generalization of Triage Code (`triage_candidates.py`)**:
+      Refactor `triage_candidates.py` to eliminate D3-specific hardcoded route lists (`in ("78", "51", ...)` and `CORE_ACCEPTED_RUN_CHECKS`), replacing them with rule-based criteria:
+      - **ACCEPTED**: Run length $\ge 1.0$ mile, recurrence $\ge 0.50$, peak TTI $\ge 1.20$, on a designated state highway mainline forming an empirical corridor extent.
+      - **MERGED**: Contiguous or bridging candidate subsumed into an extent across minor signal gaps ($\le 0.5$ mi) or matching an active corridor chain.
+      - **REJECTED**: Explicitly audited rejections categorized by rule:
+        - *Rule R1 (Topology)*: Ramp stubs, turning loops, or unnumbered local roads outside the state system.
+        - *Rule R2 (Isolated Signal Queue)*: Queue length $< 0.35$ miles at an isolated rural junction without upstream corridor congestion.
+        - *Rule R3 (Geometric Delay)*: Low free-flow speed on mountain passes or tight curves without commute delay or volume.
+      - Output comprehensive, machine-readable audit tables (`candidate_triage.csv` and `.json`) with exact rule IDs and metric thresholds.
+- [x] **Automated Integration & Reporting**:
+      Provide a CLI runner (`scripts/run_statewide_screening.py` or generalized `run_district_screening.py`) that accepts any district or statewide DuckDB store, executes candidate extraction, generates multi-scale extents and couplet pairings, triages candidates, and exports comparative ranking tables and interactive maps.
+
+**Status after Session 60 (review pass).** The two rule-based pieces — the triage
+generalization and the CLI runner — landed and drive the shipped output. The three
+*generative* pieces did not: `extents.py` and `couplets.py` are written and unit-tested
+but are imported by nothing outside their own tests, and the D1/D2/D4/D5/D6 catalogues in
+`scripts/build_statewide_catalogues.py` are built from hand-written lat/lon hints per
+district. Item 46 closes that gap; do not treat Item 45 as delivered until it does.
+
+---
+
+## 45R — Review fixes: the statewide VHD/mile join (Session 60) ✅
+
+Found by review of the Item 42–45 branch: every statewide segment rendered at 0 VHD/mi.
+
+- [x] `generate_statewide_maps.load_statewide_data` joins AADT per segment instead of
+      passing the raw ITD route-measure layer cache, and concatenates the *joined* frames
+      (the old positional-index dedupe dropped 6,510 of 9,317 rows). New `--aadt` /
+      `--aadt-year`; the VHD maps are skipped rather than zero-drawn without a source.
+- [x] Unmatched AADT stays **NaN** through `_segment_tti_frame` rather than being
+      zero-filled, and gets a `No AADT Data (unvolumed)` map tier — a dead join can no
+      longer read as "everything is free-flowing". Tooltips print `n/a` via `_fmt_or_na`.
+- [x] Verified: statewide non-low segments (2,017) now equal the sum across D1–D6 (2,017).
+      Re-run that equality if this regresses.
+- [x] `tests/test_district_inventories.py` skips when `out/` is absent (it asserted on
+      gitignored artifacts and failed on a clean checkout); D2 timezone counts replaced
+      with a partition assertion.
+- [x] `aggregate_statewide_rankings.build_couplet_analysis` no longer raises
+      `KeyError: False` when `one_way_couplet` is missing.
+- [x] `generate_screening_maps.py` runs the full-network AADT join before the
+      corridor-bounds one (shared cache, `load_aadt` ignores bbox on a hit). Root cause
+      is Item 47.
+- [x] `extents.detect_urban_rural_splits` scores on `abs(frc_prev - frc_curr) - 1`, so a
+      boundary no longer scores differently depending on the chain's direction.
+
+---
+
+## 46 — Wire the extent/couplet detectors into the statewide catalogue builder
+
+**Target: one session.** Depends on Item 45 (the modules exist and are tested).
+
+`src/inrix_tools/extents.py` and `src/inrix_tools/couplets.py` are dead code today:
+`build_statewide_catalogues.py` imports `couplets` and never calls it, and the five
+district catalogues are hand-drawn coordinate hints in `build_district_{1,2,4,5,6}_catalogue`.
+That is exactly the hand-specification Item 45 existed to remove, and it does not scale to a
+re-run on a new export. Scope:
+
+- [ ] Replace the hand-written hints in `build_statewide_catalogues.py` with a generated
+      pass: walk each district's numbered mainline chains, call `extents.analyse_chain`, and
+      emit the Tier 1/2/3 alternatives as catalogue entries with `split_rationale` carried
+      into the entry `description` so every extent states why it ends where it does.
+- [ ] Replace the hand-authored `one_way_couplet` entries with `couplets.detect_couplets` +
+      `couplets.couplet_catalogue_entries`, and validate the result against
+      `couplets.KNOWN_COUPLETS` (which is currently only asserted for shape, never for
+      whether the detector actually finds those 15 couplets).
+- [ ] Replace the hardcoded `EXTENT_TIER_GROUPS` list in `aggregate_statewide_rankings.py`
+      with the generated tiers, so the dilution comparison covers every corridor rather than
+      six hand-picked facilities.
+- [ ] Keep the hand-built catalogues in `legacy/` for diffing, and record in DESIGN_HISTORY
+      which extents the generated pass moved and by how much.
+- [ ] Re-check the Item 45 boxes only once the generated catalogues resolve at 100%
+      `reached_target` through `corridors.resolve_catalogue`.
+
+*Suggested prompt:* "Do Item 46 of ROADMAP.md — wire `extents.py` and `couplets.py` into
+`build_statewide_catalogues.py` so the statewide catalogues are generated rather than
+hand-drawn, and reconcile the result against the current hand-built ones."
+
+---
+
+## 47 — Screening-pipeline hardening: cache keying, hoisted joins, script hygiene
+
+**Target: one session.** Small, independent cleanups found in the Session 60 review.
+
+None of these change a number today; each is a trap that will change one later. Scope:
+
+- [ ] **Key the AADT layer cache by bbox.** `aadt.load_aadt` returns a cache hit while
+      *ignoring* the `bbox` argument, so whichever caller writes `geometry_cache/d{N}_aadt.parquet`
+      first decides the spatial extent every later caller gets. Session 60 reordered
+      `generate_screening_maps.py` to hide this; fix the cause — record the bbox (and year)
+      in the cache and rebuild on a miss, or refuse a cache that does not cover the request.
+- [ ] **Hoist the junction-split adjacency map.** `extents.detect_junction_splits` rebuilds
+      its incoming-route map with `full.iterrows()` over the whole network on *every* call.
+      Build it once and pass it in before this runs per-chain statewide.
+- [ ] **`build_statewide_catalogues.py` hygiene:** it writes the catalogue JSON even when
+      `verify_catalogue` returns False (a failed verification should not silently ship a
+      file), and `find_chain_endpoints` measures distance in degrees on EPSG:4326 — fine for
+      hand-picked hints, wrong the moment it is reused automatically. Project to a metric CRS.
+- [ ] **`build_district_stores.py`** calls private `io._discover_parts`; promote it or use the
+      public path. Its `parts` result is only used for printing.
+- [ ] Clear the remaining `ruff --select F` unused imports (23 across `scripts/`, `src/`,
+      `tests/` — mostly the new statewide scripts plus a few older files). Session 60 fixed
+      only those in the files it touched; doing the rest piecemeal keeps re-dirtying diffs.
+- [ ] Cover the AADT cache-keying change in `tests/test_aadt.py`.
+
+*Suggested prompt:* "Do Item 47 of ROADMAP.md — the screening-pipeline hardening cleanups
+from the Session 60 review."
+
 ---
 
 ## Future (not yet scoped — need a planning pass before they're actionable)

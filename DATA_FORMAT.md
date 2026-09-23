@@ -1323,6 +1323,21 @@ not the window's own duration — the code records the caveat
 travel time stays a pure sum** across segments (Item 12); AADT does not re-weight
 it — volume weighting only applies where a *mean across segments* is summarized.
 
+**The layer cache is not a join.** `load_aadt(cache_path=...)` caches the **raw
+route-measure layer** — `Year / RouteID / FromMeasur / ToMeasure / AADT / geometry`,
+indexed by row number, *no segment key*. `join_aadt` produces the different thing:
+a frame indexed by **`Segment ID`** (== `XDSegID`) carrying the matched `AADT`.
+`geometry_cache/d{N}_aadt.parquet` holds the **former**. Reading it and treating it
+as per-segment volume matches nothing and, if the result is zero-filled, renders as
+universal free flow — which is exactly what the statewide VHD/mile map did until
+Session 60. Anything that needs per-segment volume must call `join_aadt` (or
+`run_district_screening.join_volumes`), never load the cache directly.
+
+**The cache ignores `bbox` on a hit.** `load_aadt` short-circuits to the cached file
+without checking that it covers the requested bbox or year, so whichever caller
+writes it first fixes the extent every later caller sees. When two joins in one run
+share a cache path, do the widest-bbox one first. (ROADMAP Item 47 fixes the cause.)
+
 **License:** treat like the data exports — gitignored, not redistributed.
 
 ## Direction convention & directional map display (Item 20)
