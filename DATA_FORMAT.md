@@ -1384,10 +1384,26 @@ universal free flow — which is exactly what the statewide VHD/mile map did unt
 Session 60. Anything that needs per-segment volume must call `join_aadt` (or
 `run_district_screening.join_volumes`), never load the cache directly.
 
-**The cache ignores `bbox` on a hit.** `load_aadt` short-circuits to the cached file
-without checking that it covers the requested bbox or year, so whichever caller
-writes it first fixes the extent every later caller sees. When two joins in one run
-share a cache path, do the widest-bbox one first. (ROADMAP Item 47 fixes the cause.)
+**The cache is keyed on what it covers (Item 47).** It used to short-circuit to the
+cached file without checking that it covered the requested bbox or year, so whichever
+caller wrote it first fixed the extent every later caller saw — and the later caller
+had no way to tell. `load_aadt` now writes a `<cache>.meta.json` sidecar recording the
+`year`, `bbox` and `columns` it was built for, serves the cache only when that covers
+the request, and otherwise rebuilds for the **union** of the two extents, so a cache
+shared by a corridor-bounds caller and a full-network one widens to serve both instead
+of thrashing. `attrs['aadt_layer']` says which happened (`hit` / `written` /
+`rebuilt (<reason>)`).
+
+A cache with no sidecar (written before Item 47) is judged on the extent of the data
+it holds, which is conservative in the safe direction: the features in a bbox-filtered
+read never reach past the bbox, so a request the data covers was certainly covered by
+the request that built it, and one it does not may only mean the layer has nothing out
+there — that rebuilds needlessly, never under-answers.
+
+Two consequences worth knowing. A request that cannot be proved covered **re-reads the
+source**, so a `source` that is itself a `.parquet`/`.geoparquet` is now read directly
+rather than handed to pyogrio. And a bbox of `(nan, nan, nan, nan)` — what
+`geo.total_bounds` returns for an empty frame — reads as *no restriction*, not as a box.
 
 **License:** treat like the data exports — gitignored, not redistributed.
 

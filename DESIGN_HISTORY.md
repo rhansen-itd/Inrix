@@ -4900,3 +4900,118 @@ free-flowing route is not catalogued, and that an unobserved one is not).
 street runs inside a longer carriageway, the registry matcher and its downgrade, and entry
 naming). Full suite: **668 passed, 2 skipped**; `ruff --select F` on the touched files is
 clean (the repo-wide count Item 47 tracks is down from 23 to 13).
+
+---
+
+## Session 64 — Item 47: the screening-pipeline hardening cleanups (2026-09-22)
+
+Five small, independent findings from the Session 60 review, plus the two that Item 46
+had to resolve early. The ROADMAP's own framing was *"none of these change a number
+today; each is a trap that will change one later"* — and that held: the statewide
+rankings before and after this session differ by at most **7e-12** on `vhd`, pure
+float summation order, with every rank, name and integer count identical.
+
+### 1. The AADT layer cache is keyed on what it covers
+
+`load_aadt(cache_path=...)` returned a hit *ignoring* `bbox` and `year`, so whichever
+caller wrote `geometry_cache/d{N}_aadt.parquet` first decided the spatial extent every
+later caller got — and the later caller had no way to tell. Session 60 fixed the
+symptom by reordering `generate_screening_maps.py` so the widest-bbox join ran first.
+
+`load_aadt` now writes a `<cache>.meta.json` sidecar recording the `year`, `bbox` and
+`columns` the cache was built for, and `_cache_shortfall` serves the cache only when
+that covers the request. On a miss it rebuilds for the **union** of the cached and
+requested extents, so a cache shared between a corridor-bounds caller and a
+full-network one *widens* to serve both rather than thrashing between them. The
+returned frame carries `attrs['aadt_layer']` — `hit` / `written` /
+`rebuilt (<reason>)` — so a surprising re-read explains itself.
+
+A cache with no sidecar is judged on the extent of the data it holds. That is
+conservative in the safe direction, and the reasoning is worth keeping: the features
+in a bbox-filtered read never reach past the bbox, so a request the *data* covers was
+certainly covered by the request that built it; one the data does not cover may only
+mean the layer has nothing out there, and rebuilding then is wasted work rather than a
+wrong answer.
+
+**Checked before trusting it.** The existing caches could have been under-covering
+Item 46's numbers. They were not: on District 1 the cached 1,394-record layer and a
+fresh statewide 8,301-record read produce an *identical* join — 4,652 matched, the
+same 31,417,670 total. The cause of the near-miss is that the district screening had
+already primed each cache with the district's full extent. After this session's first
+run all six caches are unrestricted statewide layers (`"bbox": null`), so every later
+caller hits, whatever it asks for — the cache converged upward instead of being pinned
+by whoever wrote first.
+
+### 2. Two regressions the cache change exposed, and what they were hiding
+
+The unconditional short-circuit had been hiding two real defects in the *rebuild*
+path, which nothing had reached since the cache always won:
+
+- **A `.geoparquet` source went to pyogrio.** `tests/test_reconcile_export_segments`
+  passes the same GeoParquet as both `aadt_source` and `aadt_cache`, which is a
+  legitimate pattern — a saved layer used as its own source. The rebuild handed it to
+  `_resolve_shp_path` and GDAL's driver probe died on an unrelated broken DuckDB
+  plugin (`libduckdb.so: cannot open shared object file`). `load_aadt` now reads a
+  `.parquet`/`.geoparquet` source directly and filters it in memory.
+- **A bbox of `(nan, nan, nan, nan)` reached shapely.** `reconcile_export_segments`
+  derives its bbox from `geo.total_bounds`, which is all-NaN when nothing is absent.
+  `_clean_bbox` reads a non-finite box as *no restriction*, which is what the caller
+  means.
+
+Both now have their own tests. Neither was reachable before, which is the argument for
+the change rather than against it.
+
+### 3. The junction adjacency map is built once
+
+`extents.detect_junction_splits` rebuilt its incoming-route map with
+`full.iterrows()` over the whole network on **every** call — 0.103 s over District 1's
+5,007 rows. Item 46 made that matter: `generate_catalogue` calls `analyse_chain` for
+both directions of every paired mainline, ~45 chains per district, so the rebuild was
+**~4.6 s of the ~5 s** each district's catalogue generation took.
+
+New public `extents.incoming_route_map(network)`, built once in `generate_catalogue`
+and threaded through `analyse_chain` → `detect_split_points` →
+`detect_junction_splits` as an optional argument (it still builds its own when not
+given, so the function stands alone). District 1 generation: **4.0 s → 1.19 s**, and
+all five catalogues regenerate byte-identical to the committed ones.
+
+The vectorised rewrite also drops the literal string `"None"` from the route set —
+`RoadNumber` is `"None"` on unnumbered XD segments and the old `iterrows` loop
+accepted it as a crossing route name. No catalogue moved, so nothing was riding on it.
+
+### 4. `io.discover_parts` is public
+
+`build_district_stores.py` reached past the underscore for `io._discover_parts`. It is
+not an implementation detail — it is *why* handing `load_data` or `ingest_export` any
+one `..._part_N.zip` ingests the whole export (Session 48's finding), and a script that
+wants to print which files a run will touch needs it by name. Promoted, with
+`_discover_parts` kept as an alias; `store.py`, the script and `tests/test_io.py`
+updated.
+
+### 5. `ruff --select F` is clean
+
+Was 23 across `scripts/`, `src/`, `tests/` at the Session 60 review, 13 after Item 46
+cleared the files it touched, and **0** now across `src/`, `scripts/`, `tests/` and
+`gui/`. Three were genuinely dead locals rather than imports — `dr_med` in
+`gui/validation_report.py`, `t_type` in `generate_district_highway_inventories.py`,
+`ids` in `geometry.offset_overlapping_segments` — each computed and never read.
+
+### 6. Carried over from Item 46
+
+The `build_statewide_catalogues.py` hygiene box was ticked in Session 63: the
+rewritten builder writes a catalogue only when every entry resolves, and
+`find_chain_endpoints`'s degree-space distance on EPSG:4326 went with the hand-built
+builder (`extents._nearest_index` and `mirror_extent` measure in a projected metric
+CRS). Both were load-bearing there, because Item 46 is exactly the automatic reuse
+that made degrees wrong.
+
+### 7. Tests
+
+`tests/test_aadt.py` +12: the sidecar records the coverage; a contained request hits;
+a wider one rebuilds and answers the *wider* question; a rebuild widens rather than
+narrows so two callers stop thrashing; an unrestricted cache serves any bbox and a
+bbox-restricted one does not serve an unrestricted read; a year mismatch replaces
+rather than widens; a sidecar-less cache is judged on its own data; a missing column
+rebuilds; the shortfall reasons name what is wrong; a GeoParquet source is read
+directly; a degenerate bbox reads as no restriction. Full suite: **680 passed, 2
+skipped**.

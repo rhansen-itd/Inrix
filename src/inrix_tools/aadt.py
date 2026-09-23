@@ -270,13 +270,153 @@ def _bbox_to_crs(bbox, src_crs, dst_crs):
     return (min(xs), min(ys), max(xs), max(ys))
 
 
+# ---------------------------------------------------------------------------
+# Layer cache keying (ROADMAP Item 47)
+# ---------------------------------------------------------------------------
+# The cache holds a *subset* of the layer — one year, one bounding box, one set of
+# columns — so a hit is only a hit if that subset covers what is being asked for.
+# Returning it unconditionally means whichever caller writes the file first decides
+# the spatial extent every later caller gets, and the later caller has no way to
+# tell. That is the defect this section exists to close: what the cache covers is
+# recorded beside it, and a request it cannot serve rebuilds rather than under-
+# answering.
+
+CACHE_META_SUFFIX = ".meta.json"
+"""Sidecar written beside a ``cache_path`` recording what the cache covers."""
+
+
+def _clean_bbox(bbox):
+    """``(minx, miny, maxx, maxy)`` as floats, or ``None`` for absent/degenerate.
+
+    A caller that derives its bbox from ``geo.total_bounds`` hands over
+    ``(nan, nan, nan, nan)`` when the frame is empty
+    (``reconcile_export_segments`` does exactly this when nothing is absent). That
+    is "no restriction", not a box — before Item 47 the cache short-circuit meant
+    nothing ever looked at it.
+    """
+    if bbox is None:
+        return None
+    try:
+        out = tuple(float(v) for v in bbox)
+    except (TypeError, ValueError):
+        return None
+    if len(out) != 4 or not all(math.isfinite(v) for v in out):
+        return None
+    return out
+
+
+def _is_geoparquet(source) -> bool:
+    """True for a ``.parquet`` / ``.geoparquet`` path — a layer geopandas reads directly."""
+    if isinstance(source, (list, tuple)):
+        return False
+    try:
+        return Path(source).suffix.lower() in (".parquet", ".geoparquet")
+    except TypeError:
+        return False
+
+
+def cache_meta_path(cache_path) -> Path:
+    """Path of the sidecar that records a layer cache's coverage."""
+    return Path(str(cache_path) + CACHE_META_SUFFIX)
+
+
+def read_cache_meta(cache_path) -> dict | None:
+    """The recorded coverage of a layer cache, or ``None`` when it has none.
+
+    ``None`` means *unknown*, not *unrestricted* — a cache written before Item 47
+    has no sidecar, and :func:`_cache_shortfall` falls back to what the data
+    itself can prove.
+    """
+    import json
+
+    path = cache_meta_path(cache_path)
+    if not path.exists():
+        return None
+    try:
+        meta = json.loads(path.read_text())
+    except (ValueError, OSError):
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def _write_cache_meta(cache_path, *, year, bbox, columns, n_rows) -> None:
+    import json
+
+    cache_meta_path(cache_path).write_text(json.dumps({
+        "year": year,
+        "bbox": list(bbox) if bbox is not None else None,
+        "columns": list(columns),
+        "n_rows": int(n_rows),
+        "note": ("What this cache covers. A request outside it rebuilds the cache "
+                 "rather than being served a subset (ROADMAP Item 47)."),
+    }, indent=2) + "\n")
+
+
+def _contains(outer, inner) -> bool:
+    """True when bbox ``outer`` contains bbox ``inner`` (both ``(minx, miny, maxx, maxy)``)."""
+    return (outer[0] <= inner[0] and outer[1] <= inner[1]
+            and outer[2] >= inner[2] and outer[3] >= inner[3])
+
+
+def _bbox_union(a, b):
+    """The smallest bbox containing both; ``None`` (unrestricted) absorbs anything."""
+    if a is None or b is None:
+        return None
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
+
+def _cache_shortfall(cached, meta, *, year, bbox, columns) -> str | None:
+    """``None`` when the cache covers the request, else why it does not.
+
+    With a sidecar this is an exact test against the *requested* extent. Without
+    one the cache's own ``total_bounds`` stands in, which is conservative in the
+    safe direction: the features in a bbox-filtered read never reach past the
+    bbox, so a bbox the data covers was certainly requested, and one it does not
+    may only mean the layer has nothing out there — that rebuilds unnecessarily,
+    never under-answers.
+    """
+    missing = [c for c in columns if c not in cached.columns]
+    if missing:
+        return f"cache is missing column(s) {missing}"
+
+    if meta is not None and "year" in meta:
+        if meta["year"] != year:
+            return f"cache holds year {meta['year']!r}, request is {year!r}"
+    elif year is None:
+        return "cache has no recorded year and an all-years read cannot be proved"
+    elif "Year" in cached.columns:
+        held = {int(y) for y in pd.to_numeric(cached["Year"], errors="coerce").dropna()}
+        if held != {int(year)}:
+            return f"cache holds year(s) {sorted(held)}, request is {year}"
+
+    if meta is not None and "bbox" in meta:
+        covered = meta["bbox"]
+        if covered is None:                      # built unrestricted: covers anything
+            return None
+        if bbox is None:
+            return "cache is bbox-restricted, request is unrestricted"
+        return None if _contains(covered, tuple(bbox)) else (
+            f"cache covers {[round(v, 3) for v in covered]}, request needs "
+            f"{[round(v, 3) for v in bbox]}")
+
+    if bbox is None:
+        return "cache has no recorded extent and an unrestricted read cannot be proved"
+    if len(cached) == 0:
+        return "cache is empty, so it can prove no coverage"
+    return None if _contains(tuple(cached.total_bounds), tuple(bbox)) else (
+        "cache data reaches only "
+        f"{[round(v, 3) for v in cached.total_bounds]}, request needs "
+        f"{[round(v, 3) for v in bbox]}")
+
+
 def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=None,
               classify=True):
     """Load (a subset of) the ITD cumulative AADT layer as a GeoDataFrame in WGS84.
 
     Args:
         source: the AADT ``.zip`` (e.g. ``Cumulative_AADT.zip``), a directory
-            containing it, or a ``.shp`` path.
+            containing it, a ``.shp`` path, or a ``.parquet``/``.geoparquet``
+            holding an already-read layer (filtered in memory).
         year: keep only rows for this ``Year`` (default ``2024`` — the layer is
             cumulative across years, so an unfiltered read double-counts every
             road; see DATA_FORMAT.md). ``None`` keeps all years.
@@ -285,8 +425,14 @@ def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=Non
             the 251k statewide features aren't all held). Typically the study
             export's geometry bounds.
         columns: attribute columns to keep (default :data:`_KEEP_COLS`).
-        cache_path: optional GeoParquet cache — read from it when it exists, else
-            build and write it.
+        cache_path: optional GeoParquet cache. It is used only when it **covers the
+            request** — same ``year``, all the requested ``columns``, and a
+            ``bbox`` inside the one it was built for, as recorded in the
+            ``.meta.json`` sidecar beside it (:func:`read_cache_meta`). A request
+            it cannot serve rebuilds it for the **union** of the two extents, so
+            the cache widens rather than thrashing between callers. Before Item 47
+            a hit was returned *ignoring* ``bbox``, which let whichever caller
+            wrote the file first decide the extent every later caller got.
         classify: also label each record ``mainline`` / ``ramp`` / ``connector``
             (:func:`classify_aadt_records`, Item 34) — what :func:`join_aadt` ranks
             on. Default ``True``; pass ``False`` for the raw layer.
@@ -296,40 +442,91 @@ def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=Non
         ``LineString`` geometry (the source is in EPSG:8826), plus ``route_class`` /
         ``route_number`` parsed from ``RouteID`` and a ``Route`` populated from it
         (the shipped ``Route`` column is **null on every Idaho row**), and
-        ``record_kind`` unless ``classify=False``.
+        ``record_kind`` unless ``classify=False``. ``attrs['aadt_layer']`` records
+        the resolved ``year``/``bbox`` and whether the cache was used, rebuilt, or
+        absent — so a caller can see what it was actually handed.
     """
     import geopandas as gpd
 
+    cols = list(columns) if columns is not None else _KEEP_COLS
+    read_bbox_wgs84 = _clean_bbox(bbox)
+    cache_state = "no_cache"
+
     if cache_path is not None and Path(cache_path).exists():
         cached = gpd.read_parquet(cache_path)
-        # A cache written before Item 34 has neither; classify on the way out so an
-        # old cache can't silently reinstate the nearest-wins behaviour.
-        return classify_aadt_records(cached) if (
-            classify and RECORD_KIND_COL not in cached.columns) else cached
+        meta = read_cache_meta(cache_path)
+        shortfall = _cache_shortfall(cached, meta, year=year, bbox=read_bbox_wgs84,
+                                     columns=cols)
+        if shortfall is None:
+            # A cache written before Item 34 has no ``record_kind``; classify on the
+            # way out so an old cache can't silently reinstate nearest-wins.
+            out = classify_aadt_records(cached) if (
+                classify and RECORD_KIND_COL not in cached.columns) else cached
+            out.attrs["aadt_layer"] = {
+                "year": year, "bbox": read_bbox_wgs84, "cache": "hit",
+                "cache_path": str(cache_path),
+            }
+            return out
+        # Widen rather than narrow: a rebuild for the union of the two extents ends
+        # the thrash between a corridor-bounds caller and a full-network one that
+        # made Session 60 reorder generate_screening_maps.py by hand.
+        if meta is not None and "bbox" in meta:
+            previous = tuple(meta["bbox"]) if meta["bbox"] is not None else None
+            if meta.get("year") == year:
+                read_bbox_wgs84 = _bbox_union(previous, read_bbox_wgs84)
+        cache_state = f"rebuilt ({shortfall})"
 
-    from pyogrio import read_dataframe, read_info
+    if _is_geoparquet(source):
+        # A GeoParquet source is the layer itself, already read once — a saved
+        # subset, or a cache being re-read after it stopped covering the request.
+        # Filtering it in memory keeps that case working; routing it through
+        # pyogrio does not (GDAL has no business probing drivers for a file
+        # geopandas can open), and before Item 47 it was never exercised because
+        # the cache short-circuited before the source was touched.
+        gdf = gpd.read_parquet(source)
+        if year is not None and "Year" in gdf.columns:
+            gdf = gdf[pd.to_numeric(gdf["Year"], errors="coerce") == int(year)]
+        if gdf.crs is None:
+            gdf = gdf.set_crs(WGS84)
+        elif gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(WGS84)
+        if read_bbox_wgs84 is not None:
+            minx, miny, maxx, maxy = read_bbox_wgs84
+            gdf = gdf.cx[minx:maxx, miny:maxy]
+        keep = [c for c in cols if c in gdf.columns]
+        gdf = gdf[keep + ["geometry"]] if keep else gdf
+        gdf = gdf.reset_index(drop=True)
+    else:
+        from pyogrio import read_dataframe, read_info
 
-    shp = _resolve_shp_path(source)
-    cols = list(columns) if columns is not None else _KEEP_COLS
+        shp = _resolve_shp_path(source)
 
-    where = None if year is None else f"Year = {int(year)}"
+        where = None if year is None else f"Year = {int(year)}"
 
-    read_bbox = None
-    if bbox is not None:
-        src_crs = read_info(shp)["crs"] or WGS84
-        read_bbox = _bbox_to_crs(tuple(bbox), WGS84, src_crs)
+        read_bbox = None
+        if read_bbox_wgs84 is not None:
+            src_crs = read_info(shp)["crs"] or WGS84
+            read_bbox = _bbox_to_crs(read_bbox_wgs84, WGS84, src_crs)
 
-    gdf = read_dataframe(shp, columns=cols, where=where, bbox=read_bbox)
-    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs(WGS84)
-    elif gdf.crs is None:
-        gdf = gdf.set_crs(WGS84)
-    gdf = gdf.reset_index(drop=True)
+        gdf = read_dataframe(shp, columns=cols, where=where, bbox=read_bbox)
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(WGS84)
+        elif gdf.crs is None:
+            gdf = gdf.set_crs(WGS84)
+        gdf = gdf.reset_index(drop=True)
     gdf = classify_aadt_records(gdf) if classify else _derive_route_fields(gdf)
 
     if cache_path is not None:
         Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
         gdf.to_parquet(cache_path)
+        _write_cache_meta(cache_path, year=year, bbox=read_bbox_wgs84,
+                          columns=cols, n_rows=len(gdf))
+        if cache_state == "no_cache":
+            cache_state = "written"
+    gdf.attrs["aadt_layer"] = {
+        "year": year, "bbox": read_bbox_wgs84, "cache": cache_state,
+        "cache_path": str(cache_path) if cache_path is not None else None,
+    }
     return gdf
 
 

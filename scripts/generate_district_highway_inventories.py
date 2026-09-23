@@ -529,7 +529,6 @@ def main() -> None:
         for comp_name, comp_data in d3_json.get("components", {}).items():
             if comp_name == "SH-55_Full":
                 continue
-            t_type = comp_data.get("type", "EW")
             t_segs = comp_data.get("total_segments", 0)
             t_miles = comp_data.get("total_miles", 0.0)
             eb_segs = comp_data.get("EB", {}).get("count")

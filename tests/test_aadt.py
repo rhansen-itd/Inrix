@@ -707,3 +707,195 @@ def test_real_myrtle_bbox_join():
     assert j.loc[j["aadt_source"] == "matched", "AADT"].notna().all()
     assert j.loc[j["aadt_source"] != "matched", "AADT"].isna().all()
     assert (j.loc[j["aadt_source"] == "matched", "aadt_dist_m"] < 35).all()
+
+
+# ---------------------------------------------------------------------------
+# Layer cache keying (ROADMAP Item 47)
+# ---------------------------------------------------------------------------
+def _write_layer_shapefile(path):
+    """A four-record AADT layer spread over ~0.4°, written where pyogrio can read it.
+
+    Two records sit in a tight western cluster and two well to the east, so a cache
+    built for the cluster provably cannot answer a question about the whole extent.
+    """
+    rows = []
+    for i, (lon, year) in enumerate([(-116.24, 2024), (-116.23, 2024),
+                                     (-115.90, 2024), (-115.88, 2024)]):
+        rows.append({
+            "Year": year,
+            "RouteID": f"0{i}001AUS095",
+            "Route": None,
+            "Segment": f"S{i}",
+            "FromMeasur": 0.0,
+            "ToMeasure": 1.0,
+            "AADT": 10000 + i,
+            "PassengerA": 9000,
+            "Commercial": 1000,
+            "Descriptio": f"RECORD {i}",
+            "Descript_1": "NONE",
+            "geometry": LineString([(lon, 43.60), (lon, 43.62)]),
+        })
+    # One 2023 record in the western cluster, so a year filter has something to drop.
+    rows.append({**rows[0], "Year": 2023, "AADT": 999, "RouteID": "09001AUS095",
+                 "Segment": "S9", "Descriptio": "OLD RECORD"})
+    gpd.GeoDataFrame(rows, crs="EPSG:4326").to_file(path, engine="pyogrio")
+    return path
+
+
+@pytest.fixture
+def layer_shp(tmp_path):
+    return _write_layer_shapefile(tmp_path / "aadt_fixture.shp")
+
+
+WEST = (-116.25, 43.59, -116.22, 43.63)     # the two western records
+WIDE = (-116.30, 43.55, -115.85, 43.65)     # all four
+
+
+def test_cache_records_what_it_covers(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    layer = aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    assert len(layer) == 2
+    assert layer.attrs["aadt_layer"]["cache"] == "written"
+
+    meta = aadt.read_cache_meta(cache)
+    assert meta["year"] == 2024
+    assert tuple(meta["bbox"]) == WEST
+    assert meta["n_rows"] == 2
+
+
+def test_a_contained_request_is_a_cache_hit(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    layer = aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    assert layer.attrs["aadt_layer"]["cache"] == "hit"
+
+
+def test_a_wider_request_is_not_served_by_a_narrow_cache(layer_shp, tmp_path):
+    """The Item 47 defect: whichever caller wrote the cache first decided the extent
+    every later caller got, and the later caller had no way to tell."""
+    cache = tmp_path / "layer.parquet"
+    narrow = aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    assert len(narrow) == 2
+
+    wide = aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    assert wide.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    assert len(wide) == 4, "a rebuild must answer the wider question, not the cached one"
+
+
+def test_a_rebuild_widens_the_cache_rather_than_narrowing_it(layer_shp, tmp_path):
+    """Two callers with different bounds must not thrash the cache between them —
+    what made Session 60 reorder generate_screening_maps.py by hand."""
+    cache = tmp_path / "layer.parquet"
+    east = (-115.95, 43.55, -115.85, 43.65)
+    aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    aadt.load_aadt(layer_shp, year=2024, bbox=east, cache_path=cache)
+
+    # The cache now spans both requests, so each is a hit from here on.
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=WEST,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=east,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+
+
+def test_an_unrestricted_cache_serves_any_bbox(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    full = aadt.load_aadt(layer_shp, year=2024, cache_path=cache)
+    assert len(full) == 4
+    assert aadt.read_cache_meta(cache)["bbox"] is None
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=WEST,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+
+
+def test_a_bbox_restricted_cache_does_not_answer_an_unrestricted_read(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    full = aadt.load_aadt(layer_shp, year=2024, cache_path=cache)
+    assert full.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    assert len(full) == 4
+
+
+def test_a_different_year_rebuilds(layer_shp, tmp_path):
+    """Year is a filter, not an extent: the rebuild replaces rather than widens."""
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    old = aadt.load_aadt(layer_shp, year=2023, bbox=WEST, cache_path=cache)
+    assert old.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    assert (old["Year"] == 2023).all() and len(old) == 1
+
+
+def test_a_cache_without_a_sidecar_is_judged_on_its_own_extent(layer_shp, tmp_path):
+    """A cache written before Item 47 records nothing, so the extent of the data it
+    holds stands in for the extent it was asked for.
+
+    That is conservative in the safe direction. The features in a bbox-filtered read
+    never reach past the bbox, so a request the *data* covers was certainly covered
+    by the request that built it; one the data does not cover may only mean the layer
+    has nothing out there, and rebuilding then is wasted work rather than a wrong
+    answer.
+    """
+    cache = tmp_path / "legacy.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    aadt.cache_meta_path(cache).unlink()
+
+    inside = (-116.10, 43.605, -116.00, 43.615)      # inside the cached data's reach
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=inside,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+    # Past the data's reach it cannot prove coverage, so it rebuilds rather than guess.
+    beyond = aadt.load_aadt(layer_shp, year=2024, bbox=(-117.0, 43.0, -115.0, 44.0),
+                            cache_path=cache)
+    assert beyond.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    # ...and it cannot prove it holds the whole layer either.
+    aadt.cache_meta_path(cache).unlink()
+    unrestricted = aadt.load_aadt(layer_shp, year=2024, cache_path=cache)
+    assert unrestricted.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+
+
+def test_a_cache_missing_a_requested_column_rebuilds(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE,
+                   columns=["Year", "RouteID", "AADT"], cache_path=cache)
+    full = aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    assert full.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    assert "Descriptio" in full.columns
+
+
+def test_shortfall_reasons_name_what_is_wrong():
+    """The reason travels with the rebuild so a surprising re-read explains itself."""
+    cached = gpd.GeoDataFrame(
+        {"Year": [2024, 2024], "AADT": [1, 2]},
+        geometry=[LineString([(-116.30, 43.55), (-116.30, 43.65)]),
+                  LineString([(-116.20, 43.55), (-116.20, 43.65)])], crs="EPSG:4326")
+
+    assert aadt._cache_shortfall(cached, None, year=2024, bbox=WEST,
+                                 columns=["Year", "AADT"]) is None
+    assert "missing column" in aadt._cache_shortfall(
+        cached, None, year=2024, bbox=WEST, columns=["Year", "Descriptio"])
+    assert "year" in aadt._cache_shortfall(
+        cached, {"year": 2023, "bbox": None}, year=2024, bbox=None, columns=["Year"])
+    assert "request needs" in aadt._cache_shortfall(
+        cached, {"year": 2024, "bbox": list(WEST)}, year=2024, bbox=WIDE, columns=["Year"])
+
+
+def test_a_geoparquet_source_is_read_directly(layer_shp, tmp_path):
+    """A saved layer is a source in its own right — and a cache that has stopped
+    covering the request is re-read as one, which before Item 47 never happened
+    because the cache short-circuited before the source was touched."""
+    saved = tmp_path / "saved_layer.geoparquet"
+    aadt.load_aadt(layer_shp, year=2024).to_parquet(saved)
+
+    layer = aadt.load_aadt(saved, year=2024, bbox=WEST)
+    assert len(layer) == 2 and layer.crs.to_epsg() == 4326
+    assert (layer["Year"] == 2024).all()
+
+    older = aadt.load_aadt(saved, year=2023)
+    assert len(older) == 0, "the year filter applies to a parquet source too"
+
+
+def test_a_degenerate_bbox_reads_as_no_restriction(layer_shp, tmp_path):
+    """``geo.total_bounds`` on an empty frame is ``(nan, nan, nan, nan)``; a caller
+    that derives its bbox that way means 'everything', not a box shapely will refuse."""
+    cache = tmp_path / "layer.parquet"
+    nan_bbox = (float("nan"),) * 4
+    layer = aadt.load_aadt(layer_shp, year=2024, bbox=nan_bbox, cache_path=cache)
+    assert len(layer) == 4
+    assert aadt.read_cache_meta(cache)["bbox"] is None

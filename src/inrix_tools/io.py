@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import re
 import zipfile
-from datetime import time as _time
 from pathlib import Path
 from typing import Iterable
 
@@ -65,9 +64,16 @@ def _read_member_csv(source, member_suffix: str, nrows: int | None = None) -> pd
     return pd.read_csv(p, nrows=nrows)
 
 
-def _discover_parts(source) -> list:
-    """Expand a single ``..._part_1.zip`` into all sibling ``..._part_N.zip``
-    parts. Any other source is returned as a one-element list unchanged."""
+def discover_parts(source) -> list:
+    """Expand a single ``..._part_1.zip`` into all sibling ``..._part_N.zip`` parts.
+
+    Any other source comes back as a one-element list unchanged. This is public
+    (ROADMAP Item 47) because it is not an implementation detail: it is *why*
+    handing :func:`load_data` or ``store.ingest_export`` any one part ingests the
+    **whole** export, and a caller that wants to say which files a run will touch
+    — ``scripts/build_district_stores.py`` prints them — needs it by name rather
+    than by reaching past an underscore.
+    """
     if isinstance(source, (list, tuple)):
         return list(source)
     p = Path(source)
@@ -77,6 +83,10 @@ def _discover_parts(source) -> list:
         if siblings:
             return siblings
     return [p]
+
+
+# Kept so older call sites and notebooks keep working; ``discover_parts`` is the name.
+_discover_parts = discover_parts
 
 
 def detect_units(columns: Iterable[str]) -> dict:
@@ -106,7 +116,7 @@ def load_data(source, nrows: int | None = None) -> pd.DataFrame:
         ``Segment ID`` as int64, numeric metrics coerced, and ``Road Closure`` as
         bool. Detected units are stored on ``df.attrs['units']``.
     """
-    parts = _discover_parts(source)
+    parts = discover_parts(source)
     frames = [_read_member_csv(s, "data.csv", nrows=nrows) for s in parts]
     df = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
 

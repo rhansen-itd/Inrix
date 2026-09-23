@@ -232,12 +232,12 @@ def ingest_export(con, source, *, ingested_at: datetime | None = None,
     plus ``n_parts`` / ``parts``.
 
     As in :func:`ingest_export_streaming`, ``source`` is expanded by
-    :func:`io._discover_parts`: handing it any ``..._part_N.zip`` reads **every**
+    :func:`io.discover_parts`: handing it any ``..._part_N.zip`` reads **every**
     sibling part, and ``n_rows_added`` is the total over all of them. So is
     ``corridor_name``, which files a supplemental export under an existing area's
     label instead of one of its own — see that function for why.
     """
-    parts = [Path(p).name for p in _io._discover_parts(source)]
+    parts = [Path(p).name for p in _io.discover_parts(source)]
     df = _io.load_data(source)
     metadata = _io.load_metadata(source)
     logged = " + ".join(parts)
@@ -691,7 +691,7 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
     **Five things worth knowing:**
 
     - **One call can ingest the whole export, and usually does.** ``source`` is
-      expanded by :func:`io._discover_parts`, so handing it *any* ``..._part_N.zip``
+      expanded by :func:`io.discover_parts`, so handing it *any* ``..._part_N.zip``
       ingests **every sibling part**, and ``n_rows_added`` is the total across all of
       them. That is by design and matches :func:`io.load_data`, but it is easy to
       misread as one part carrying everything: the 2026 D3 export returns
@@ -733,7 +733,7 @@ def ingest_export_streaming(con, source, *, ingested_at: datetime | None = None,
     documents; the difference is only reachable on an export that overlaps itself.
     """
     _ensure_registry(con)
-    parts = _io._discover_parts(source)
+    parts = _io.discover_parts(source)
     headers = [list(_io._read_member_csv(p, "data.csv", nrows=0).columns) for p in parts]
     if corridor_name is not None and not all(CORRIDOR_COL in h for h in headers):
         raise ValueError(

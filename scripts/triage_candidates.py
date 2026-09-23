@@ -10,7 +10,6 @@ Replaces the previous D3-specific version that used hardcoded route lists.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 

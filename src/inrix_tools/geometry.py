@@ -318,7 +318,6 @@ def offset_overlapping_segments(geo, offset_m: float = 6.0, tol_m: float = 20.0,
 
     out = geo.copy()
     geoms = list(out["geometry"])
-    ids = list(out.index)
     bearings = [_bearing_deg(g) for g in geoms]
 
     # Mean latitude for the metre<->degree conversion (small study area).

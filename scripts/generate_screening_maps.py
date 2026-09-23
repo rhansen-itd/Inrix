@@ -70,9 +70,13 @@ def main():
     membership = res.loc[res["accepted"], ["id", "corridor", "direction"]]
 
     # Full network AADT join for segment-level VHD/mile visualization.
-    # This runs FIRST: both joins share one layer cache, and load_aadt returns a
-    # cache hit *ignoring bbox*. Priming it from the corridor-only bounds would
-    # leave the full-network join reading an under-covered layer.
+    #
+    # Both joins share one layer cache. Before ROADMAP Item 47 the order mattered —
+    # ``load_aadt`` returned a hit *ignoring* bbox, so priming the cache from the
+    # corridor-only bounds left the full-network join reading an under-covered
+    # layer — and Session 60 fixed the symptom by running this one first. The cache
+    # is keyed on its coverage now and widens to the union on a miss, so either
+    # order is correct; this one is kept because it builds the wider layer once.
     net_geo = net.copy()
     net_geo["Segment ID"] = net_geo["XDSegID"]
     aadt_all = join_volumes(net_geo, AADT_ZIP, year=2024, cache_path="geometry_cache/d3_aadt.parquet",

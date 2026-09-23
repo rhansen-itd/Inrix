@@ -33,13 +33,13 @@ def build_district_store(district: int, usb_dir: Path, out_dir: Path,
     if not p1.exists():
         raise FileNotFoundError(f"District {district} part 1 not found: {p1}")
 
-    parts = io._discover_parts(p1)
+    parts = io.discover_parts(p1)
     db_path = out_dir / f"d{district}_store.duckdb"
     corridor_label = f"D{district}"
 
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"BUILDING DISTRICT {district} STORE: {db_path.name}")
-    print(f"=======================================================")
+    print("=======================================================")
     print(f"Source: {p1}")
     print(f"Discovered {len(parts)} parts:")
     for p in parts:
@@ -89,7 +89,7 @@ def main():
     out_dir = Path(args.out_dir)
     dist_list = [int(x.strip()) for x in args.districts.split(",") if x.strip()]
 
-    print(f"Per-District DuckDB Store Builder")
+    print("Per-District DuckDB Store Builder")
     print(f"USB Directory: {usb_dir}")
     print(f"Output Directory (SSD): {out_dir.resolve()}")
     print(f"Districts to process: {dist_list}")
@@ -112,10 +112,10 @@ def main():
         built.append(db_path)
 
     total_elapsed = time.perf_counter() - total_t0
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"ALL {len(built)} DISTRICT STORES BUILT SUCCESSFULLY")
     print(f"Total time: {total_elapsed:.1f}s ({total_elapsed/60:.2f} min)")
-    print(f"=======================================================")
+    print("=======================================================")
     for b in built:
         print(f"  {b.name:20} Size: {b.stat().st_size / 1e6:7.1f} MB")
 

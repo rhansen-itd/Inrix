@@ -2059,23 +2059,30 @@ hand-drawn, and reconcile the result against the current hand-built ones."
 
 ---
 
-## 47 — Screening-pipeline hardening: cache keying, hoisted joins, script hygiene
+## 47 — Screening-pipeline hardening: cache keying, hoisted joins, script hygiene ✅ (Session 64)
 
 **Target: one session.** Small, independent cleanups found in the Session 60 review.
 
 None of these change a number today; each is a trap that will change one later. Scope:
 
-- [ ] **Key the AADT layer cache by bbox.** `aadt.load_aadt` returns a cache hit while
-      *ignoring* the `bbox` argument, so whichever caller writes `geometry_cache/d{N}_aadt.parquet`
-      first decides the spatial extent every later caller gets. Session 60 reordered
-      `generate_screening_maps.py` to hide this; fix the cause — record the bbox (and year)
-      in the cache and rebuild on a miss, or refuse a cache that does not cover the request.
-- [ ] **Hoist the junction-split adjacency map.** `extents.detect_junction_splits` rebuilds
-      its incoming-route map with `full.iterrows()` over the whole network on *every* call.
-      Build it once and pass it in. **This now runs per-chain statewide** (Item 46 calls
-      `analyse_chain` for both directions of every paired mainline — ~100 rebuilds over a
-      5,000-row network per district), so it is no longer hypothetical; it is most of the
-      ~4 s each district's catalogue generation takes.
+- [x] **The AADT layer cache is keyed on what it covers.** `load_aadt` writes a
+      `<cache>.meta.json` sidecar recording the `year` / `bbox` / `columns` it was built
+      for, serves the cache only when that covers the request, and otherwise rebuilds for
+      the **union** of the two extents — so a cache shared by a corridor-bounds caller and
+      a full-network one widens to serve both instead of thrashing.
+      `attrs['aadt_layer']` reports `hit` / `written` / `rebuilt (<reason>)`. A cache with
+      no sidecar is judged on the extent of the data it holds, which is conservative in
+      the safe direction (a bbox-filtered read's features never reach past the bbox, so it
+      rebuilds needlessly rather than under-answering). **Verified it was not already
+      wrong:** on District 1 the cached 1,394-record layer and a fresh statewide
+      8,301-record read give an identical join (4,652 matched, same 31,417,670 total), so
+      Item 46's numbers stand.
+- [x] **The junction adjacency map is built once.** New public
+      `extents.incoming_route_map(network)`, built in `generate_catalogue` and threaded
+      through `analyse_chain` → `detect_split_points` → `detect_junction_splits` as an
+      optional argument (each still builds its own when not given, so the functions stand
+      alone). District 1 catalogue generation **4.0 s → 1.19 s**, and all five catalogues
+      regenerate byte-identical.
 - [x] **`build_statewide_catalogues.py` hygiene — landed early, in Item 46 (Session 63)**,
       because both halves were load-bearing there. The rewritten builder writes a catalogue
       **only when every entry resolves** (a *generated* pass overwriting a good catalogue
@@ -2083,13 +2090,37 @@ None of these change a number today; each is a trap that will change one later. 
       `find_chain_endpoints` is gone with the rest of the hand-built builder —
       `extents._nearest_index` and `extents.mirror_extent` measure in a projected metric CRS,
       which is exactly the automatic reuse that made degrees-on-EPSG:4326 wrong.
-- [ ] **`build_district_stores.py`** calls private `io._discover_parts`; promote it or use the
-      public path. Its `parts` result is only used for printing.
-- [ ] Clear the remaining `ruff --select F` unused imports (**13** across `scripts/`, `src/`,
-      `tests/` — was 23; Session 63 cleared the ones in the files Item 46 touched). Sessions
-      60 and 63 each fixed only their own files; doing the rest piecemeal keeps re-dirtying
-      diffs.
-- [ ] Cover the AADT cache-keying change in `tests/test_aadt.py`.
+- [x] **`io.discover_parts` is public.** It is not an implementation detail — it is *why*
+      handing `load_data` or `ingest_export` any one `..._part_N.zip` ingests the whole
+      export (Session 48). `_discover_parts` kept as an alias; `store.py`, the script and
+      `tests/test_io.py` updated.
+- [x] **`ruff --select F` is clean** across `src/`, `scripts/`, `tests/` **and** `gui/`
+      (23 at the Session 60 review → 13 after Item 46 → 0). Three were dead *locals* rather
+      than imports — `dr_med`, `t_type`, and `ids` in `geometry.offset_overlapping_segments`
+      — each computed and never read.
+- [x] **`tests/test_aadt.py` +12** on the cache keying: the sidecar records the coverage;
+      a contained request hits; a wider one rebuilds and answers the *wider* question; a
+      rebuild widens rather than narrows; an unrestricted cache serves any bbox and a
+      restricted one does not serve an unrestricted read; a year mismatch replaces rather
+      than widens; a sidecar-less cache is judged on its own data; a missing column
+      rebuilds; the shortfall reasons name what is wrong.
+
+**Two regressions the cache change exposed**, both in the *rebuild* path that nothing
+had reached while the cache always won unconditionally — each now with its own test:
+
+- a `.geoparquet` **source** went to pyogrio (`tests/test_reconcile_export_segments`
+  legitimately passes one file as both source and cache), and GDAL's driver probe died
+  on an unrelated broken DuckDB plugin. `load_aadt` reads a `.parquet`/`.geoparquet`
+  source directly now.
+- a bbox of `(nan, nan, nan, nan)` — what `geo.total_bounds` returns for an empty frame,
+  which `reconcile_export_segments` produces when nothing is absent — reached shapely.
+  `_clean_bbox` reads a non-finite box as *no restriction*, which is what the caller means.
+
+**Verification that the ROADMAP's framing held** ("none of these change a number today"):
+the statewide rankings before and after differ by at most **7e-12** on `vhd` — float
+summation order, nothing else — with every rank, name and integer count identical.
+
+**Tests:** `tests/test_aadt.py` +12. Full suite **680 passed, 2 skipped**.
 
 *Suggested prompt:* "Do Item 47 of ROADMAP.md — the screening-pipeline hardening cleanups
 from the Session 60 review."

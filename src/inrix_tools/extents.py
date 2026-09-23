@@ -240,32 +240,47 @@ def detect_urban_rural_splits(
     return splits
 
 
+def incoming_route_map(network: gpd.GeoDataFrame | pd.DataFrame) -> dict[int, set[str]]:
+    """``{segment: {route numbers arriving at it}}`` — the junction adjacency.
+
+    Build this **once** and hand it to :func:`detect_junction_splits`. It is a
+    property of the network, not of the chain being analysed, and rebuilding it
+    per chain costs ~0.1 s over a 5,000-row district network — about 4.6 s per
+    district once Item 46 started calling :func:`analyse_chain` for both
+    directions of every mainline (ROADMAP Item 47).
+    """
+    net = _ensure_indexed(network)
+    out: dict[int, set[str]] = {}
+    if "NextXDSegI" not in net.columns or "RoadNumber" not in net.columns:
+        return out
+    nxt = pd.to_numeric(net["NextXDSegI"], errors="coerce")
+    routes = net["RoadNumber"].astype(str).str.strip()
+    keep = nxt.notna() & routes.ne("") & routes.ne("nan") & routes.ne("None")
+    for target, route in zip(nxt[keep].astype("int64"), routes[keep]):
+        out.setdefault(int(target), set()).add(route)
+    return out
+
+
 def detect_junction_splits(
     chain_segments: Sequence[int],
     network: gpd.GeoDataFrame | pd.DataFrame,
     full_network: gpd.GeoDataFrame | pd.DataFrame | None = None,
+    *,
+    incoming_routes: dict[int, set[str]] | None = None,
 ) -> list[SplitPoint]:
-    """Detect major highway-to-highway junctions along a chain."""
+    """Detect major highway-to-highway junctions along a chain.
+
+    ``incoming_routes`` is :func:`incoming_route_map` of ``full_network``; pass it
+    when analysing many chains over one network so it is built once.
+    """
     if len(chain_segments) < 2:
         return []
     net = _ensure_indexed(network)
-    full = _ensure_indexed(full_network) if full_network is not None else net
     splits: list[SplitPoint] = []
 
-    # Map target segment -> incoming segments
-    incoming_routes: dict[int, set[str]] = {}
-    if "NextXDSegI" in full.columns:
-        for sid, row in full.iterrows():
-            nxt = row.get("NextXDSegI")
-            rn = row.get("RoadNumber")
-            if pd.notna(nxt) and pd.notna(rn):
-                rstr = str(rn).strip()
-                if rstr:
-                    try:
-                        nxt_int = int(nxt)
-                        incoming_routes.setdefault(nxt_int, set()).add(rstr)
-                    except (ValueError, TypeError):
-                        pass
+    if incoming_routes is None:
+        incoming_routes = incoming_route_map(
+            full_network if full_network is not None else net)
 
     for i in range(1, len(chain_segments)):
         seg_prev = chain_segments[i - 1]
@@ -474,11 +489,17 @@ def detect_split_points(
     recurrence: pd.DataFrame | None = None,
     screen_data: pd.DataFrame | None = None,
     window: str = "am",
+    incoming_routes: dict[int, set[str]] | None = None,
 ) -> list[SplitPoint]:
-    """Detect all split points along a chain, combining all four criteria."""
+    """Detect all split points along a chain, combining all four criteria.
+
+    ``incoming_routes`` is :func:`incoming_route_map`, built once by the caller
+    when many chains are analysed over one network.
+    """
     splits: list[SplitPoint] = []
     splits.extend(detect_urban_rural_splits(chain_segments, network))
-    splits.extend(detect_junction_splits(chain_segments, network, full_network))
+    splits.extend(detect_junction_splits(chain_segments, network, full_network,
+                                         incoming_routes=incoming_routes))
     splits.extend(detect_aadt_splits(chain_segments, network))
     splits.extend(detect_congestion_splits(chain_segments, recurrence, screen_data, window))
 
@@ -749,14 +770,20 @@ def analyse_chain(
     window: str = "am",
     min_core_miles: float = 0.0,
     core_gap_tolerance: int = 2,
+    incoming_routes: dict[int, set[str]] | None = None,
 ) -> ChainAnalysis:
-    """Complete chain analysis: detect splits and build tier alternatives."""
+    """Complete chain analysis: detect splits and build tier alternatives.
+
+    ``incoming_routes`` is :func:`incoming_route_map`; pass it when analysing many
+    chains over one network (:func:`generate_catalogue` does).
+    """
     splits = detect_split_points(
         chain_segments, network,
         full_network=full_network,
         recurrence=recurrence,
         screen_data=screen_data,
         window=window,
+        incoming_routes=incoming_routes,
     )
     tiers = build_extent_tiers(
         chain_segments, network, splits,
@@ -1510,6 +1537,8 @@ def generate_catalogue(
 
     chains = enumerate_mainline_chains(network, min_miles=min_chain_miles)
     pairs = pair_chains(chains, network, metric_crs=metric_crs)
+    # Once, not once per chain: this is a property of the network (Item 47).
+    junctions = incoming_route_map(network)
 
     def _analyse(chain: MainlineChain) -> dict | None:
         analysis = analyse_chain(
@@ -1519,6 +1548,7 @@ def generate_catalogue(
             window=window,
             min_core_miles=min_core_miles,
             core_gap_tolerance=core_gap_tolerance,
+            incoming_routes=junctions,
         )
         # A core found by the *fallback* (no congestion data at all) is a guess, not
         # a measurement; the whole point of Item 43/45 is not to catalogue those.

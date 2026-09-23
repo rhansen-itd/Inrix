@@ -149,7 +149,7 @@ def test_mark_complete_expected_total_vs_max():
 
 def test_split_part_discovery(sample_zip, tmp_path):
     """A single ..._part_1.zip pointing at a lone part still loads (one part)."""
-    parts = io._discover_parts(sample_zip)
+    parts = io.discover_parts(sample_zip)
     assert len(parts) == 1
 
 

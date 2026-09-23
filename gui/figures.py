@@ -12,7 +12,7 @@ miles/hour)``), so labels are derived, never hard-coded to mph/minutes.
 """
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from typing import Mapping
 
 import numpy as np
 import pandas as pd
