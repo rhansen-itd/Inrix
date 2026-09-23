@@ -199,6 +199,46 @@ Note that one call ingests a **whole** export: handing `ingest_export_streaming`
 all of them (`n_parts` / `parts` say which). Output lands under `out/`, which is
 gitignored — regenerate it rather than committing it.
 
+## Generate a district's catalogue instead of drawing it
+
+The corridor catalogue a screening run reads is itself derived from the network for
+Districts 1, 2, 4, 5 and 6 (District 3's is the Item 44 empirical rebuild):
+
+```bash
+# 1. screen once, so the extent pass has TTI to read (any catalogue will do)
+python scripts/run_statewide_screening.py --mode full --districts 1 2 4 5 6
+
+# 2. generate the catalogues from the network + that screening
+python scripts/build_statewide_catalogues.py          # --dry-run to verify only
+
+# 3. re-screen on the generated catalogues
+python scripts/run_statewide_screening.py --mode full --districts 1 2 4 5 6
+```
+
+`extents.enumerate_mainline_chains` walks each numbered route into directional
+chains, `extents.analyse_chain` cuts them at detected split points (urban/rural FRC
+transitions, highway junctions, AADT step-changes, congestion discontinuities), and
+each facility is emitted at up to three scales — **Tier 1 Congested Core**, **Tier 2
+Commuter Corridor**, **Tier 3 Regional Baseline** — so the ranking can show how much
+of a bottleneck's delay density a longer extent dilutes away. Every entry's
+`description` states the split that ended it. `couplets.detect_couplets` finds the
+one-way couplets topologically and pairs them under one reporting corridor.
+
+Two rules worth knowing. **A catalogue is written only when every entry resolves**
+through `corridors.resolve_catalogue`; a failed verification leaves the file as it
+was rather than shipping a broken catalogue that looks like a good one. And **only a
+measured bottleneck is catalogued**: a facility whose peak TTI never reaches 1.20
+over a core of at least 0.75 miles is not a corridor, which is why the generated
+District 4/5/6 catalogues drop I-84 at Twin Falls (peak TTI 1.05), I-15 at Pocatello
+(1.02) and I-15 at Idaho Falls (1.08) that the hand-built ones carried. The
+predecessor catalogues are kept in `legacy/handbuilt_catalogues/` for diffing.
+
+`scripts/aggregate_statewide_rankings.py` reads the tiers back out of the generated
+catalogues for `statewide_extent_tiers_comparison.csv`, and
+`out/statewide_screening/couplet_registry_validation.csv` scores the detector against
+`couplets.KNOWN_COUPLETS` — it reports rather than asserts, because several registry
+entries name a leg the XD network carries no route number for.
+
 ## Documents
 
 - [ROADMAP.md](ROADMAP.md) — planned work as named, numbered, session-sized

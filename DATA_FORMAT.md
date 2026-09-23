@@ -299,6 +299,49 @@ and the statewide file fully covers the Ada County study area (zero unmatched).
 **License:** INRIX/NPMRDS geometry — treat like the data exports: gitignored,
 not redistributed.
 
+### What the attribute fields do **not** mean (Item 46)
+
+Four of these columns invite a reading they do not support. Each cost a defect in
+the generated catalogue pass, so they are recorded here rather than rediscovered.
+
+- **`StartLat`/`StartLong` are not guaranteed to lie on the geometry.** On the 2026
+  District 6 network, record `1187395985` declares a start **294 m from its own
+  LINESTRING**. That is enough for a catalogue endpoint written from the declared
+  value to snap onto a different road — in that case a piece of SH-43 776 ft away,
+  which resolved `off_network`. Take an endpoint's **position** from the geometry and
+  use the declared values only to decide *which* terminal it is, by proximity
+  (`extents.segment_endpoint`). That also absorbs a geometry digitised against the
+  travel direction, where `coords[0]` is the segment's end.
+
+- **`Bearing` is the segment's compass heading, not the carriageway's direction of
+  travel.** Boise's Front St carries US-20/26 **westbound** and is coded `Bearing =
+  "N"`, because the street curves. Any test of the form "the opposing direction of E
+  is W" therefore fails on exactly the cases that matter: it rejected the best-known
+  one-way couplet in the state. Compare **geometric** bearings (start of the first
+  segment to end of the last) and test for anti-parallel within a tolerance.
+
+- **`PostalCode` is a ZIP code, not a place name** (`83702`, not `Boise`), and
+  **`RoadList` holds the segment's own aliases, not the roads that cross it**
+  (`College Ave|S Emida College Ave|W College Ave`). Neither can name a corridor or
+  its endpoints. The only offline cross-street/place naming in this project is the
+  ITD AADT layer's `Descriptio`, carried per segment as `aadt_desc` by
+  `aadt.join_aadt` (`W POST FALLS IC #5`, `SH-3, FERNWOOD`). Note that those strings
+  contain `#`, which collides with the `# key: value` provenance header every CSV
+  here carries — see the note under *District-wide screening*.
+
+- **`XDGroup` is a carriageway, and a carriageway spans more than one street.**
+  Boise's westbound US-20/26 is one 3.98-mile group that runs up S Broadway Ave and
+  only then turns onto Front St; its majority `RoadName` is "S Broadway Ave". A
+  feature defined on a *street* (a couplet leg) is a **run within** a group, split at
+  each change of street name, not the group itself.
+
+- **`RoadNumber` alone cannot name the route band.** `95` is US-95 and `55` is SH-55;
+  digit count decides nothing. `RoadName` states it (`US-95`, `I-90 W`, `ID-3` —
+  normalise `ID-`/`SR-` to this project's `SH-`), and it must be read **per route
+  across the network**, not per chain: no segment of I-90's Coeur d'Alene business
+  route is named "I-90" — every one is named "Northwest Blvd" — so a per-chain read
+  labels it "SH-90". `extents.route_label` does this, falling back to FRC 0 = interstate.
+
 ### What `NextXDSegI` does and does not connect (Item 36)
 
 The topology table is real and usable — it is what `corridors.build_chain` walks —
@@ -1082,6 +1125,14 @@ downtown Boise couplet resolves as a 12-segment chain of which the three `RoadNu
 null `W Front St` members west of 15th St have no rows at all, leaving it **73.1%
 covered by mileage**. That is a finding about the download, not about the road, and it
 is why catalogue acceptance tests coverage as well as connectivity.
+
+**A `#` anywhere in a value truncates its own row on the way back in (Item 46).** Every
+CSV these runners write carries the run's provenance as a leading block of
+`# key: value` lines, and the obvious way to skip it — `pd.read_csv(comment="#")` —
+treats `#` **anywhere** in a line as the start of a comment. A corridor named after an
+interchange ("US-95 IC #12") therefore arrives with every column after the name blank:
+ranked in the right place, all metrics null. Skip the header by **counting** its leading
+`#` lines instead, and keep `#` out of generated names.
 
 ## Recurring-congestion corridor extraction (`screen.py`, Item 43)
 

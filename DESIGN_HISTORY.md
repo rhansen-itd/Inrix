@@ -4712,3 +4712,191 @@ Five new tests in `tests/test_run_district_screening.py` pin the tier behaviour:
 segments get their own tier, the tier edges are half-open `[lower, upper)`, an all-NaN frame
 produces one grey tier rather than a free-flowing map, NaN survives `_segment_tti_frame`
 un-zero-filled, and `_fmt_or_na` prints `n/a`. Full suite: **623 passed, 2 skipped**.
+
+---
+
+## Session 63 — Item 46: the statewide catalogues, generated rather than drawn (2026-09-22)
+
+Item 45 built the split criteria (`extents.py`) and the couplet detector (`couplets.py`)
+and unit-tested both; the Session 60 review found that nothing outside their own tests
+called them, and the District 1/2/4/5/6 catalogues were still hand-written lat/lon hints.
+This session wires them in. The five catalogues are now **derived from the network**, and
+`scripts/build_statewide_catalogues.py` is a thin runner over the core rather than 981
+lines of coordinates.
+
+**Result: 194 directional entries across 100 reporting corridors, 194/194 reaching their
+target and 194/194 accepted** through `corridors.resolve_catalogue`, against the 56
+entries / 28 groups of the hand-built set. That gate is what Item 46 made a
+precondition for re-checking the Item 45 boxes.
+
+### 1. What was missing between Item 45's two halves: the input
+
+`extents.analyse_chain` took a chain and returned tiers. Nothing produced the chains.
+`extents.enumerate_mainline_chains` now walks them off the topology: `NextXDSegI`
+followed **only through segments carrying the same route number**, so a chain ends where
+the route ends instead of continuing onto whatever lies ahead at a junction. Each
+maximal walk is one carriageway (`NextXDSegI` is directional), so a divided highway
+yields two chains, and `pair_chains` marries them.
+
+Pairing is route identity **plus** proximity, and the second test is not optional: US-95
+in District 1 walks as a 101-mile pair *and* a 28-mile pair, and matching on route alone
+marries Coeur d'Alene's northbound to Bonners Ferry's southbound. The counterpart is the
+opposing-bearing chain on the same route with the smallest mean lateral separation, and
+only under 200 m.
+
+`route_label` reads the band off `RoadName` rather than guessing it. The digit-count
+heuristic the first couplet draft used (`len(rnum) <= 2` means US) calls SH-55 "US-55";
+and reading the name per *chain* rather than per *route* called I-90's Coeur d'Alene
+business route "SH-90", because no segment of it is named "I-90" — every segment is named
+"Northwest Blvd". `facility_label` keeps the two apart as `I-90` and
+`I-90 (Northwest Blvd)`, which are genuinely different facilities and rank 3rd and 1st in
+the district.
+
+### 2. Three defects the real data exposed in the Item 45 code
+
+- **A Tier 1 core spanned min-to-max congested index.** On a chain with two separate
+  bottlenecks that returns one "core" covering the free-flowing miles between them — the
+  exact dilution Tier 1 exists to avoid. Cores are now *contiguous runs* (`_contiguous_runs`,
+  gap tolerance 2 segments), one alternative each, filtered by `min_core_miles`.
+- **`_get_coords` read `StartLat`/`StartLong`.** XD record `1187395985` declares a start
+  **294 m from its own geometry**; an entry written from the declared value snapped onto a
+  piece of SH-43 776 ft away and the entry resolved `off_network`. `segment_endpoint` now
+  takes the position from the geometry and uses the declared values only to decide *which*
+  terminal — which also absorbs geometries digitised against the travel direction. That
+  single change took the generated catalogues from 137/140 resolving to 140/140.
+  `couplets.couplet_catalogue_entries` had the same bug and now shares the function.
+- **The tiers carried no bounding splits.** `build_extent_tiers` now records the split at
+  each boundary, and `describe_split` renders it, so every generated entry's `description`
+  ends with *"Upstream boundary: an AADT step-change (34,000 -> 11,000 vpd, 68%);
+  downstream boundary: a highway junction (crossing 53)"*. `parse_catalogue` refuses an
+  empty description for exactly this reason; a generated catalogue that cannot explain its
+  own extents is the hand-drawn one with the author's name removed.
+
+### 3. The couplet detector found one of the sixteen registry couplets. Now it finds nine.
+
+`KNOWN_COUPLETS` was only ever asserted for *shape*. Running `detect_couplets` against the
+six district networks found 2 couplets statewide and **missed Boise's Myrtle/Front**, the
+best-known couplet in the state. Three causes, all structural:
+
+1. **Pairing required exact cardinal opposition.** XD codes Boise's westbound Front St
+   carriageway `Bearing = "N"` because the street curves, so "E needs W" rejected it. The
+   `bearing_tolerance_deg` argument was in the signature and never used. Pairing is now
+   anti-parallel on the chain's **geometric** heading, and the reported `dir1_bearing` /
+   `dir2_bearing` come from that heading too.
+2. **A candidate was a whole `XDGroup` chain.** Boise's westbound US-20/26 is one
+   3.98-mile group that runs up Broadway Ave and only then turns onto Front St, so the
+   0.20–3.50-mile length filter threw it out and its majority street name was
+   "S Broadway Ave". Candidates are now **street runs** — a chain split at every change of
+   `street_key` — which is also the couplet definition itself.
+3. **`street_key` first stripped the trailing quadrant too.** That merges `E Front St` with
+   `W Front St` (right) *and* `2nd Ave N` with `2nd Ave S` (wrong — those are the Twin Falls
+   US-30 couplet). Only the **leading** quadrant is stripped now, and the divided-highway
+   case that opened up (`US-95 N` / `US-95 S`) is closed by a separate test: on a divided
+   highway the trailing quadrant restates the carriageway's own direction of travel, and on
+   a grid couplet it names the side of the numbering origin.
+
+`match_known_couplets` is the check the registry never had. It **reports** rather than
+asserts, because several registry entries are not findable from the XD network at all:
+
+| verdict | n | entries |
+|---|---|---|
+| `streets` — both leg names recognised | 8 | Moscow, Lewiston, Boise, Nampa, Weiser, Twin Falls, Pocatello, Blackfoot |
+| `one_street` | 1 | Payette |
+| `route_county` — right route and county, neither street name matched | 2 | Preston, American Falls (both legs are named after the route, so no token can match) |
+| `none` | 5 | Sandpoint, Coeur d'Alene, Caldwell, Mountain Home, Idaho Falls |
+
+Two of the misses are registry problems, not detector problems: Sandpoint's 1st Ave is
+absent from the XD network under a route number, and Coeur d'Alene's 3rd/4th St carries
+`RoadNumber = None` (the registry calls it STC-7195, which XD does not number). A detector
+tuned until those passed would be tuned to the wrong target. The table ships as
+`out/statewide_screening/couplet_registry_validation.csv`.
+
+A weak `route_county` match is **downgraded when a stronger row already owns that detected
+pair** — Caldwell and Mountain Home are both I-84B in counties that also hold Nampa's
+couplet, and without the downgrade each reported as "found" against Nampa's 3rd/2nd St.
+
+Known limitation, recorded rather than papered over: splitting candidates by street run
+reports a couplet that changes street name mid-way as **two half-couplets** (Twin Falls'
+US-30 appears as `2nd Ave E/2nd Ave S` 0.77 mi and `2nd Ave N/2nd Ave W` 0.56 mi; SH-43 in
+Bonneville County likewise). The halves are correct; merging them is not attempted here.
+
+### 4. A `#` in a generated name silently nulled its own CSV row
+
+Endpoint names come from the AADT layer's `Descriptio` (`W POST FALLS IC #5`), which is the
+only cross-street naming this pipeline has offline — XD's `PostalCode` is a ZIP, not a place
+name, and `RoadList` holds the segment's own aliases. But every CSV here carries a
+`# key: value` provenance header, and **`pd.read_csv(comment="#")` treats a `#` anywhere in a
+line as the start of a comment**. Six of District 1's sixteen corridors arrived downstream as
+rows of nulls — ranked correctly, every metric blank — and the statewide dilution table
+inherited them.
+
+Fixed at both ends: `_endpoint_name` writes `No. ` for `#`, and
+`aggregate_statewide_rankings.load_district_table` skips the header by **counting** its
+leading `#` lines instead of using `comment="#"`. The second half is the one that matters —
+any future value containing a `#` would have hit the same trap.
+
+### 5. Reading one peak window dropped real corridors
+
+The first generated pass read the PM peak only and produced no catalogue entry for
+US-20 Idaho Falls–Rexburg, an **AM** inbound commute. `worst_window_tti` collapses several
+windows to the worst TTI per segment, and `--window` now defaults to `am,pm`. That recovered
+three facilities (D1 7→10, D2 6→7, D6 9→10).
+
+The five hand-built corridors with **no** generated counterpart were then checked rather than
+assumed, and four are simply not congested by Item 45's own criterion:
+
+| hand-built corridor | peak TTI (worst of am/pm) | segments ≥ 1.20 |
+|---|---|---|
+| `i84-twinfalls` | 1.050 | 0 |
+| `i15-pocatello` | 1.017 | 0 |
+| `i15-idaho-falls` | 1.084 | 0 |
+| `us20-if-rexburg` | 1.146 | 0 |
+| `us20-if-urban` | 1.267 | 2 (core under the 0.75-mile floor) |
+
+The hand-built catalogue carried them because they are the region's main facilities; the
+generated one says the measurement does not support them as *congested corridors*. Only
+`us20-if-urban` is arguable — it clears the TTI threshold over too short a run. Fourteen of
+the 28 hand-built corridors are ≥ 80% covered by a generated extent; the full mapping is
+in the session's diff and is reproducible from `legacy/handbuilt_catalogues/`.
+
+### 6. The dilution comparison stopped being a hand-kept list
+
+`aggregate_statewide_rankings.EXTENT_TIER_GROUPS` was six hand-picked facilities.
+`load_extent_tier_groups` now reads the tiering out of the generated catalogues, which carry
+it as `_facility` / `_tier_number` / `_tier_label` on each reporting corridor:
+**36 facilities, 80 tier rows, zero null rates**, against 6
+facilities before. District 3 is
+absent and says so in the run output — its catalogue is the Item 44 empirical rebuild, not a
+generated pass, so it carries no tier metadata and is not back-filled by hand.
+
+Where a facility's tiers cut the same segments, the **widest** label survives: a commuter
+extent that reaches both ends of its chain *is* the regional baseline, and calling it
+"Tier 2" would understate what was measured.
+
+### 7. Other decisions
+
+- **The builder writes a catalogue only when it verifies.** The predecessor wrote the JSON
+  even when `verify_catalogue` returned False. This is listed under Item 47, but a
+  *generated* pass that overwrites a good catalogue with a broken one is a different risk
+  from a hand-built one, so it landed here; Item 47's box is ticked with the reference.
+- **`find_chain_endpoints` measured distance in degrees on EPSG:4326** — also an Item 47
+  line, and also load-bearing here, because Item 46 is precisely the automatic reuse that
+  made it wrong. It is gone with the rest of the hand-built builder; `_nearest_index` and
+  `mirror_extent` measure in a projected metric CRS.
+- **A facility is catalogued only if its core is observed in the export**, and a couplet
+  only if *every* segment of both legs is; an entry that resolves on the network but has
+  nothing to screen ranks as a blank row.
+- The hand-built builder and its five catalogues are in `legacy/handbuilt_catalogues/` with
+  a README, per CLAUDE.md.
+
+### 8. Tests
+
+`tests/test_extents.py` +31 (route labelling, chain enumeration and its route-change stop,
+pairing and the proximity test, geometry-first endpoints, the TTI frame, contiguous cores,
+split descriptions, extent mirroring, and nine on `generate_catalogue` — that it parses,
+that every entry states both boundaries, that both directions are emitted, that a
+free-flowing route is not catalogued, and that an unobserved one is not).
+`tests/test_couplets.py` +14 (street keys, geometric pairing, the divided-highway rejection,
+street runs inside a longer carriageway, the registry matcher and its downgrade, and entry
+naming). Full suite: **668 passed, 2 skipped**; `ruff --select F` on the touched files is
+clean (the repo-wide count Item 47 tracks is down from 23 to 13).

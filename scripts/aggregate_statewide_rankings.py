@@ -20,74 +20,70 @@ Produces:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
 
-# Multi-scale extent tier pairings for comparison analysis
-EXTENT_TIER_GROUPS = [
-    {
-        "facility": "I-84 (Treasure Valley)",
-        "district": 3,
-        "tiers": [
-            ("i84", "Core Bottleneck (Nampa IC 35 to Boise IC 49)"),
-            ("i84-full-valley", "Full Commuter Extent (Caldwell Exit 27 to East Boise Exit 59)"),
-        ],
-    },
-    {
-        "facility": "SH-55 (Treasure Valley to West Central Mountains)",
-        "district": 3,
-        "tiers": [
-            ("sh55-eagle", "Urban Commercial Core (I-84 to State St)"),
-            ("sh55-eagle-hsb", "Suburban/Foothill Commuter (Eagle to Horseshoe Bend)"),
-            ("sh55-hsb-cascade", "Payette River Canyon (Horseshoe Bend to Cascade)"),
-            ("sh55-cascade-mccall", "Long Valley Mountain Arterial (Cascade to McCall)"),
-            ("sh55-mccall-town", "Resort Town Bottleneck (McCall Town Center)"),
-        ],
-    },
-    {
-        "facility": "SH-75 (Wood River Valley)",
-        "district": 4,
-        "tiers": [
-            ("sh75-ketchum", "Core Resort Bottleneck (Ketchum Urban Core)"),
-            ("sh75-hailey", "Commuter Bottleneck (Bellevue to Hailey)"),
-            ("sh75-galena", "Rural Recreational Baseline (Galena Summit)"),
-        ],
-    },
-    {
-        "facility": "US-20 (Upper Snake River Valley)",
-        "district": 6,
-        "tiers": [
-            ("us20-if-urban", "Urban Commercial Bypass (Idaho Falls Core)"),
-            ("us20-if-rexburg", "Regional Commuter Expressway (Idaho Falls to Rexburg)"),
-        ],
-    },
-    {
-        "facility": "US-95 (District 2 / Palouse)",
-        "district": 2,
-        "tiers": [
-            ("moscow-couplet", "Core Couplet Bottleneck (Washington/Jackson)"),
-            ("us95-moscow", "Extended Urban Arterial (Moscow City Limits)"),
-            ("us95-lewiston-hill", "Regional Arterial (Lewiston Hill Grade)"),
-        ],
-    },
-    {
-        "facility": "US-95 (District 1 / Panhandle)",
-        "district": 1,
-        "tiers": [
-            ("us95-cda-hayden", "Core Commercial Bottleneck (CDA to Hayden)"),
-            ("sandpoint-couplet", "Urban Couplet Bottleneck (Sandpoint 1st/5th)"),
-            ("us95-bonners-ferry", "Northern Commercial Arterial (Bonners Ferry)"),
-        ],
-    },
-]
+DEFAULT_CATALOGUE = "scripts/d{district}_corridors.json"
+
+
+def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE) -> list[dict]:
+    """Read the multi-scale extent tiers out of the **generated** catalogues.
+
+    Before ROADMAP Item 46 this was a hand-written list of six facilities
+    (``EXTENT_TIER_GROUPS``), so the dilution comparison covered whatever someone
+    had thought to type. The generated catalogues carry the tiering as data —
+    each reporting corridor knows its ``_facility`` and ``_tier_number`` — so the
+    comparison now covers every facility the pipeline catalogued.
+
+    A catalogue with no tier metadata (District 3's, which is the Item 44
+    empirical rebuild rather than a generated pass) contributes nothing and is
+    reported as such, rather than being back-filled by hand.
+    """
+    groups: list[dict] = []
+    for d in districts:
+        path = Path(pattern.format(district=d))
+        if not path.exists():
+            continue
+        cat = json.loads(path.read_text())
+        by_facility: dict[str, list[dict]] = {}
+        for grp in cat.get("reporting_corridors", []):
+            facility = grp.get("_facility")
+            if not facility:
+                continue
+            by_facility.setdefault(facility, []).append(grp)
+        for facility, tier_groups in by_facility.items():
+            tier_groups.sort(key=lambda g: g.get("_tier_number", 0))
+            if len(tier_groups) < 2:
+                continue        # one extent is not a comparison
+            groups.append({
+                "facility": tier_groups[0].get("_facility_name", facility),
+                "district": d,
+                "tiers": [(g["id"], g.get("_tier_label", g.get("name", g["id"])))
+                          for g in tier_groups],
+            })
+    return groups
 
 
 def load_district_table(csv_path: Path, district: int) -> pd.DataFrame | None:
-    """Load a corridor totals CSV, skipping comment lines."""
+    """Load a corridor totals CSV, skipping its leading provenance header.
+
+    The header is a block of ``# key: value`` lines at the top of the file, and it
+    is skipped by **counting** those lines rather than by ``comment="#"`` — that
+    option treats a ``#`` anywhere in a line as the start of a comment, so a
+    corridor named after an interchange ("IC #12") silently truncates its own row
+    and arrives as a line of nulls.
+    """
     if not csv_path.exists():
         return None
-    df = pd.read_csv(csv_path, comment="#")
+    with csv_path.open() as fh:
+        skip = 0
+        for line in fh:
+            if not line.startswith("#"):
+                break
+            skip += 1
+    df = pd.read_csv(csv_path, skiprows=skip)
     if df.empty:
         return None
     df["district"] = district
@@ -175,14 +171,18 @@ def build_couplet_analysis(
 
 
 def build_extent_tiers_analysis(
-    peak_df: pd.DataFrame, day7_df: pd.DataFrame
+    peak_df: pd.DataFrame, day7_df: pd.DataFrame, tier_groups: list[dict]
 ) -> pd.DataFrame:
-    """Analyze dilution and metric shifts across multi-scale extent tiers."""
+    """Analyze dilution and metric shifts across multi-scale extent tiers.
+
+    ``tier_groups`` comes from :func:`load_extent_tier_groups` — the generated
+    catalogues' own tiering, not a hand-kept list.
+    """
     p_indexed = peak_df.set_index("corridor_group") if not peak_df.empty else None
     d7_indexed = day7_df.set_index("corridor_group") if not day7_df.empty else None
 
     rows = []
-    for grp in EXTENT_TIER_GROUPS:
+    for grp in tier_groups:
         facility = grp["facility"]
         dist = grp["district"]
         tiers = grp["tiers"]
@@ -264,6 +264,8 @@ def main():
     parser.add_argument("--dir", default="out/statewide_screening",
                         help="Base directory containing d{1..6} screening outputs")
     parser.add_argument("--districts", nargs="*", type=int, default=[1, 2, 3, 4, 5, 6])
+    parser.add_argument("--catalogue", default=DEFAULT_CATALOGUE,
+                        help="catalogue path pattern the extent tiers are read from")
     args = parser.parse_args()
 
     base_dir = Path(args.dir)
@@ -295,7 +297,16 @@ def main():
             print(f"  -> Written {c_path} ({len(couplets)} couplets)")
 
         print("Generating multi-scale extent tiers comparison...")
-        tiers = build_extent_tiers_analysis(peak_rankings, day7_rankings)
+        tier_groups = load_extent_tier_groups(args.districts, args.catalogue)
+        covered = sorted({g["district"] for g in tier_groups})
+        missing = [d for d in args.districts if d not in covered]
+        print(f"  {len(tier_groups)} tiered facilities read from the generated "
+              f"catalogues (districts {covered or 'none'}).")
+        if missing:
+            print(f"  Districts {missing} carry no tier metadata — their catalogues "
+                  f"are not generated passes, so they are absent from the dilution "
+                  f"table rather than hand-listed.")
+        tiers = build_extent_tiers_analysis(peak_rankings, day7_rankings, tier_groups)
         if not tiers.empty:
             t_path = base_dir / "statewide_extent_tiers_comparison.csv"
             tiers.to_csv(t_path, index=False)

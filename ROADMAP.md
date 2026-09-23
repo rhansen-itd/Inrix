@@ -1879,29 +1879,32 @@ extracted runs, and re-run the district screening."
 
 ---
 
-## 45 — Statewide Corridor Extent Alternatives, Couplet Synthesis, and Objective Triage
+## 45 — Statewide Corridor Extent Alternatives, Couplet Synthesis, and Objective Triage ✅ (Sessions 61–62, completed by Item 46 / Session 63)
 
 **Target: Opus / Automated Pipeline.** Builds on Items 40, 43, and 44. Statewide scope (Districts 1–6).
 
 When scaling from District 3 to the entire state of Idaho, local highway intuition is sparse. The corridor screening pipeline cannot rely on hand-drawn endpoints or route-specific hardcoding. Instead, the data itself must propose corridor extents, synthesize one-way couplets, generate hierarchical alternatives (core vs. commuter vs. regional baseline), and triage candidate runs using objective, statewide rules. Scope:
 
-- [ ] **Objective Split Criteria for Corridor Extents**  *(module built & tested in
-      `src/inrix_tools/extents.py`; **not wired into the catalogue builder** — see Item 46)*:
+- [x] **Objective Split Criteria for Corridor Extents** ✅ *(module in
+      `src/inrix_tools/extents.py`; wired into the catalogue builder by Item 46,
+      Session 63 — the D1/2/4/5/6 catalogues are cut at these split points)*:
       Formalize four orthogonal data-driven split dimensions along each linear state highway chain:
       1. **City Limits & Urban/Rural Transitions**: Detect crossings using ITD Urban Adjusted Boundaries (UAB) / municipal polygons, corroborated by sudden shifts in segment density, speed limits, and functional road classification (FRC). Prevents dilution of concentrated urban arterial bottlenecks by long rural tails (e.g. SH-45 Nampa vs. Melba/Owyhee).
       2. **Major Highway-to-Highway Junctions & Interchanges**: Graph-topological splits where state routes cross or merge (degree $\ge 3$) and system interchange terminals (e.g. I-84/I-184, US-95/US-2, US-91/US-30, I-15/US-26), where commuter demand profiles bifurcate.
       3. **AADT Volume Step-Changes**: Detect sharp volume gradients ($|\Delta\text{AADT}| / \text{AADT} > 40\%$ or crossing ITD volume tiers) along the chain, separating high-volume metropolitan commuter sheds from intercity corridors.
       4. **Congestion Discontinuities (TTI & Delay Rate)**: Segment-level change-point detection identifying where recurring peak TTI drops below 1.15 or delay density drops from bottleneck levels ($> 150$ vhd/mi) to free-flowing baseline ($< 25$ vhd/mi).
-- [ ] **Multi-Scale Extent Alternatives & Comparative Ranking**  *(module built & tested;
-      the shipped tiers are hand-listed in `aggregate_statewide_rankings.EXTENT_TIER_GROUPS`,
-      not generated — see Item 46)*:
+- [x] **Multi-Scale Extent Alternatives & Comparative Ranking** ✅ *(Item 46,
+      Session 63: `aggregate_statewide_rankings.load_extent_tier_groups` reads the
+      tiering out of the generated catalogues — **36 facilities / 80 tier rows**,
+      against the 6 hand-listed facilities `EXTENT_TIER_GROUPS` carried)*:
       Rather than forcing a single arbitrary extent per route, automatically construct and rank three standardized extent alternatives per congested corridor:
       - **Tier 1: Congested Core (Empirical Hotspot)** — The contiguous recurring congestion run snapped to nearest major cross-streets; maximizes delay rate (VHD/mile).
       - **Tier 2: Commuter Corridor (Functional Facility)** — Stitched across moderate-delay gaps between regional junctions or city limits; evaluates trip-level reliability and corridor-wide travel time.
       - **Tier 3: Regional Highway Baseline (Full Facility / Rural Control)** — Full county/district extent; provides total delay volume context and establishes the non-congested baseline.
       - **Comparison Matrix**: Report all alternatives side-by-side ranked by Rate (Peak VHD/mi), Volume (Total Peak VHD), and Reliability (95th percentile TTI), explicitly highlighting the "dilution factor" of extended lengths.
-- [ ] **Statewide One-Way Couplet Detection & Pairing**  *(detector built & tested in
-      `src/inrix_tools/couplets.py`; the shipped couplet entries are hand-authored — see Item 46)*:
+- [x] **Statewide One-Way Couplet Detection & Pairing** ✅ *(Item 46, Session 63: the
+      shipped couplet entries are `detect_couplets` output; the registry is validated
+      by `match_known_couplets`, 9 of 16 matched on street names — see the table below)*:
       Couplets are directional carriageways on parallel, separate street alignments (e.g., Boise Myrtle/Front, Nampa 2nd/3rd St S). Codify an automated topological detector:
       1. **Geometric Signature**: Opposing one-way segments on distinct street alignments separated by $30\text{ m} \le d \le 300\text{ m}$ (1–2 city blocks) running parallel for $\ge 0.2$ miles.
       2. **Topological Split/Merge**: Branch-and-converge cycles in the directed highway graph where a two-way mainline bifurcates into two opposing one-way links and rejoins downstream.
@@ -1927,10 +1930,20 @@ When scaling from District 3 to the entire state of Idaho, local highway intuiti
 
 **Status after Session 60 (review pass).** The two rule-based pieces — the triage
 generalization and the CLI runner — landed and drive the shipped output. The three
-*generative* pieces did not: `extents.py` and `couplets.py` are written and unit-tested
-but are imported by nothing outside their own tests, and the D1/D2/D4/D5/D6 catalogues in
-`scripts/build_statewide_catalogues.py` are built from hand-written lat/lon hints per
-district. Item 46 closes that gap; do not treat Item 45 as delivered until it does.
+*generative* pieces did not: `extents.py` and `couplets.py` were written and unit-tested
+but imported by nothing outside their own tests, and the D1/D2/D4/D5/D6 catalogues in
+`scripts/build_statewide_catalogues.py` were built from hand-written lat/lon hints per
+district. Item 46 was added to close that gap.
+
+**Closed by Item 46 (Session 63, 2026-09-22).** The five catalogues are generated:
+**194 directional entries / 100 reporting corridors, 194/194 reaching target and
+194/194 accepted** through `corridors.resolve_catalogue`, against 56/28 hand-built.
+The couplet registry is validated for the first time (8 `streets`, 1 `one_street`,
+2 `route_county`, 5 `none` — two of the misses are registry entries the XD network
+carries no route number for). The validation table ships as
+`out/statewide_screening/couplet_registry_validation.csv`. See DESIGN_HISTORY
+Session 63 for what the generated extents moved and the four hand-built corridors
+the measurement does not support as congested.
 
 ---
 
@@ -1960,31 +1973,85 @@ Found by review of the Item 42–45 branch: every statewide segment rendered at 
 
 ---
 
-## 46 — Wire the extent/couplet detectors into the statewide catalogue builder
+## 46 — Wire the extent/couplet detectors into the statewide catalogue builder ✅ (Session 63)
 
 **Target: one session.** Depends on Item 45 (the modules exist and are tested).
 
-`src/inrix_tools/extents.py` and `src/inrix_tools/couplets.py` are dead code today:
-`build_statewide_catalogues.py` imports `couplets` and never calls it, and the five
-district catalogues are hand-drawn coordinate hints in `build_district_{1,2,4,5,6}_catalogue`.
-That is exactly the hand-specification Item 45 existed to remove, and it does not scale to a
-re-run on a new export. Scope:
+`src/inrix_tools/extents.py` and `src/inrix_tools/couplets.py` **were** dead code:
+`build_statewide_catalogues.py` imported `couplets` and never called it, and the five
+district catalogues were hand-drawn coordinate hints in
+`build_district_{1,2,4,5,6}_catalogue`. That is exactly the hand-specification Item 45
+existed to remove, and it does not scale to a re-run on a new export. Scope, all
+delivered in Session 63:
 
-- [ ] Replace the hand-written hints in `build_statewide_catalogues.py` with a generated
-      pass: walk each district's numbered mainline chains, call `extents.analyse_chain`, and
-      emit the Tier 1/2/3 alternatives as catalogue entries with `split_rationale` carried
-      into the entry `description` so every extent states why it ends where it does.
-- [ ] Replace the hand-authored `one_way_couplet` entries with `couplets.detect_couplets` +
-      `couplets.couplet_catalogue_entries`, and validate the result against
-      `couplets.KNOWN_COUPLETS` (which is currently only asserted for shape, never for
-      whether the detector actually finds those 15 couplets).
-- [ ] Replace the hardcoded `EXTENT_TIER_GROUPS` list in `aggregate_statewide_rankings.py`
-      with the generated tiers, so the dilution comparison covers every corridor rather than
-      six hand-picked facilities.
-- [ ] Keep the hand-built catalogues in `legacy/` for diffing, and record in DESIGN_HISTORY
-      which extents the generated pass moved and by how much.
-- [ ] Re-check the Item 45 boxes only once the generated catalogues resolve at 100%
-      `reached_target` through `corridors.resolve_catalogue`.
+- [x] **Replaced the hand-written hints with a generated pass.** New pure-core
+      `extents.enumerate_mainline_chains` (walks `NextXDSegI` within one route number, so a
+      chain ends where the route ends), `pair_chains` (route identity **plus** proximity —
+      matching on route alone marries Coeur d'Alene's US-95 northbound to Bonners Ferry's
+      southbound), `mirror_extent` (the opposing direction's extent is projected onto it,
+      not analysed separately, or the two halves of a corridor end at different
+      cross-streets) and `generate_catalogue`. `build_statewide_catalogues.py` is now a
+      ~200-line runner over the core instead of 981 lines of coordinates. Every entry's
+      `description` carries `split_rationale` **and both bounding splits**, rendered by the
+      new `describe_split`: *"Upstream boundary: an AADT step-change (34,000 -> 11,000 vpd,
+      68%); downstream boundary: a highway junction (crossing 53)"*.
+- [x] **Couplet entries are detector output, and the registry is validated.** The detector
+      found **2** couplets statewide as written and missed Boise's Myrtle/Front; three
+      structural causes were fixed — pairing required exact cardinal opposition (XD codes
+      Front St's westbound carriageway `Bearing = "N"`, and the declared
+      `bearing_tolerance_deg` was never used; pairing is now anti-parallel on the chain's
+      *geometric* heading), a candidate was a whole `XDGroup` chain (Boise's westbound
+      US-20/26 runs up Broadway Ave first, so the length filter threw it out — candidates
+      are now **street runs**), and `street_key` stripped the trailing quadrant, merging
+      Twin Falls' `2nd Ave N`/`2nd Ave S`. **17 couplets now ship in the five generated
+      catalogues**; six more are detected in District 3 for the registry check, whose
+      catalogue Item 44 owns. New `couplets.match_known_couplets`
+      scores the registry and **reports rather than asserts** — two registry entries name a
+      leg the XD network carries no `RoadNumber` for, and a detector tuned until those
+      passed would be tuned to the wrong target.
+- [x] **`EXTENT_TIER_GROUPS` is gone**, replaced by `load_extent_tier_groups`, which reads
+      `_facility` / `_tier_number` / `_tier_label` off the generated catalogues'
+      reporting corridors: **36 facilities and 80 tier rows** against six hand-picked
+      facilities. District 3 is absent *and the run says so* — its catalogue is the Item 44
+      empirical rebuild, so it carries no tier metadata and is not back-filled by hand.
+- [x] **`legacy/handbuilt_catalogues/`** holds the old builder, the five hand-built
+      catalogues at `e0fec0b`, and a README. The mapping is recorded in DESIGN_HISTORY
+      Session 63: **14 of the 28** hand-built corridors are ≥80% covered by a generated
+      extent; **5** have no generated counterpart, and four of those are measurably not
+      congested (I-84 Twin Falls peak TTI 1.050, I-15 Pocatello 1.017, I-15 Idaho Falls
+      1.084, US-20 Idaho Falls–Rexburg 1.146 — none with a single segment at ≥1.20). Only
+      `us20-if-urban` is arguable: it clears 1.20 on two segments but over a core under the
+      0.75-mile floor.
+- [x] **The gate was met before the Item 45 boxes were re-checked: 194/194
+      `reached_target` and 194/194 `accepted`**, with zero findings in every district's
+      `screening_provenance.json`. Getting there needed `extents.segment_endpoint`: XD
+      record `1187395985` declares a start **294 m from its own geometry**, so an entry
+      written from `StartLat`/`StartLong` snapped onto a piece of SH-43 776 ft away.
+      Endpoints are now taken from the geometry, with the declared values deciding only
+      *which* terminal. `couplets.couplet_catalogue_entries` had the same bug and now
+      shares the function.
+
+**Two things found along the way that were not in scope and are worth knowing:**
+
+- **A `#` in a generated name nulled its own CSV row.** Endpoint names come from the AADT
+  layer's `Descriptio` (`W POST FALLS IC #5`) — the only cross-street naming available
+  offline. Every CSV here carries a `# key: value` provenance header, and
+  `pd.read_csv(comment="#")` treats a `#` **anywhere** in a line as a comment start, so six
+  of District 1's sixteen corridors arrived downstream as rows of nulls. Fixed at both
+  ends: `#` is written as `No. `, and `load_district_table` skips the header by counting
+  its leading `#` lines. The second half is the one that matters for any future value.
+- **Reading one peak window dropped real corridors.** The first pass read PM only and
+  produced nothing for US-20 Idaho Falls–Rexburg, an **AM** inbound commute. New
+  `extents.worst_window_tti`; `--window` now defaults to `am,pm`. Recovered three
+  facilities (D1 7→10, D2 6→7, D6 9→10).
+
+**Known limitation, not papered over:** splitting couplet candidates by street run reports
+a couplet that changes street name mid-way as two half-couplets (Twin Falls' US-30 as
+`2nd Ave E/2nd Ave S` 0.77 mi and `2nd Ave N/2nd Ave W` 0.56 mi; SH-43 in Bonneville County
+likewise). The halves are correct; merging them is not attempted.
+
+**Tests:** +31 in `tests/test_extents.py`, +14 in `tests/test_couplets.py`. Full suite
+**668 passed, 2 skipped**.
 
 *Suggested prompt:* "Do Item 46 of ROADMAP.md — wire `extents.py` and `couplets.py` into
 `build_statewide_catalogues.py` so the statewide catalogues are generated rather than
@@ -2005,16 +2072,23 @@ None of these change a number today; each is a trap that will change one later. 
       in the cache and rebuild on a miss, or refuse a cache that does not cover the request.
 - [ ] **Hoist the junction-split adjacency map.** `extents.detect_junction_splits` rebuilds
       its incoming-route map with `full.iterrows()` over the whole network on *every* call.
-      Build it once and pass it in before this runs per-chain statewide.
-- [ ] **`build_statewide_catalogues.py` hygiene:** it writes the catalogue JSON even when
-      `verify_catalogue` returns False (a failed verification should not silently ship a
-      file), and `find_chain_endpoints` measures distance in degrees on EPSG:4326 — fine for
-      hand-picked hints, wrong the moment it is reused automatically. Project to a metric CRS.
+      Build it once and pass it in. **This now runs per-chain statewide** (Item 46 calls
+      `analyse_chain` for both directions of every paired mainline — ~100 rebuilds over a
+      5,000-row network per district), so it is no longer hypothetical; it is most of the
+      ~4 s each district's catalogue generation takes.
+- [x] **`build_statewide_catalogues.py` hygiene — landed early, in Item 46 (Session 63)**,
+      because both halves were load-bearing there. The rewritten builder writes a catalogue
+      **only when every entry resolves** (a *generated* pass overwriting a good catalogue
+      with a broken one is a worse risk than a hand-built one doing it), and
+      `find_chain_endpoints` is gone with the rest of the hand-built builder —
+      `extents._nearest_index` and `extents.mirror_extent` measure in a projected metric CRS,
+      which is exactly the automatic reuse that made degrees-on-EPSG:4326 wrong.
 - [ ] **`build_district_stores.py`** calls private `io._discover_parts`; promote it or use the
       public path. Its `parts` result is only used for printing.
-- [ ] Clear the remaining `ruff --select F` unused imports (23 across `scripts/`, `src/`,
-      `tests/` — mostly the new statewide scripts plus a few older files). Session 60 fixed
-      only those in the files it touched; doing the rest piecemeal keeps re-dirtying diffs.
+- [ ] Clear the remaining `ruff --select F` unused imports (**13** across `scripts/`, `src/`,
+      `tests/` — was 23; Session 63 cleared the ones in the files Item 46 touched). Sessions
+      60 and 63 each fixed only their own files; doing the rest piecemeal keeps re-dirtying
+      diffs.
 - [ ] Cover the AADT cache-keying change in `tests/test_aadt.py`.
 
 *Suggested prompt:* "Do Item 47 of ROADMAP.md — the screening-pipeline hardening cleanups

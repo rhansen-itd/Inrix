@@ -1,0 +1,218 @@
+{
+  "_note": "ITD District 4 screening catalogue derived from candidate triage and couplet synthesis.",
+  "corridors": [
+    {
+      "id": "us93-twinfalls-nb",
+      "name": "US-93 NB: Twin Falls (Perrine Bridge to IC 173)",
+      "start_latlon": [
+        42.56317,
+        -114.46028
+      ],
+      "end_latlon": [
+        42.59142,
+        -114.46009
+      ],
+      "description": "US-93 northbound on Blue Lakes Blvd across Perrine Bridge toward I-84.",
+      "corridor": "us93-twinfalls",
+      "direction": "NB"
+    },
+    {
+      "id": "us93-twinfalls-sb",
+      "name": "US-93 SB: I-84 (IC 173) to Twin Falls (Perrine Bridge)",
+      "start_latlon": [
+        42.59142,
+        -114.46009
+      ],
+      "end_latlon": [
+        42.56317,
+        -114.46028
+      ],
+      "description": "US-93 southbound from I-84 across Perrine Bridge into commercial Twin Falls.",
+      "corridor": "us93-twinfalls",
+      "direction": "SB"
+    },
+    {
+      "id": "sh75-hailey-nb",
+      "name": "SH-75 NB: Bellevue through Hailey",
+      "start_latlon": [
+        43.46875,
+        -114.26284
+      ],
+      "end_latlon": [
+        43.52863,
+        -114.32215
+      ],
+      "description": "SH-75 northbound through Bellevue and Hailey in the Wood River Valley commuter corridor.",
+      "corridor": "sh75-hailey",
+      "direction": "NB"
+    },
+    {
+      "id": "sh75-hailey-sb",
+      "name": "SH-75 SB: Hailey through Bellevue",
+      "start_latlon": [
+        43.52863,
+        -114.32215
+      ],
+      "end_latlon": [
+        43.46875,
+        -114.26284
+      ],
+      "description": "SH-75 southbound through Hailey and Bellevue.",
+      "corridor": "sh75-hailey",
+      "direction": "SB"
+    },
+    {
+      "id": "sh75-ketchum-nb",
+      "name": "SH-75 NB: Ketchum Main St Bottleneck",
+      "start_latlon": [
+        43.63798,
+        -114.35442
+      ],
+      "end_latlon": [
+        43.6615,
+        -114.35261
+      ],
+      "description": "SH-75 northbound through downtown Ketchum along Main St to Sun Valley Rd.",
+      "corridor": "sh75-ketchum",
+      "direction": "NB"
+    },
+    {
+      "id": "sh75-ketchum-sb",
+      "name": "SH-75 SB: Ketchum Main St Bottleneck",
+      "start_latlon": [
+        43.6615,
+        -114.35261
+      ],
+      "end_latlon": [
+        43.63798,
+        -114.35442
+      ],
+      "description": "SH-75 southbound through downtown Ketchum.",
+      "corridor": "sh75-ketchum",
+      "direction": "SB"
+    },
+    {
+      "id": "twinfalls-couplet-wb",
+      "name": "Twin Falls Couplet WB: 2nd Ave N",
+      "start_latlon": [
+        42.55005,
+        -114.46022
+      ],
+      "end_latlon": [
+        42.56275,
+        -114.47763
+      ],
+      "description": "Westbound leg of Twin Falls couplet on 2nd Ave N.",
+      "corridor": "twinfalls-couplet",
+      "direction": "WB"
+    },
+    {
+      "id": "twinfalls-couplet-eb",
+      "name": "Twin Falls Couplet EB: 2nd Ave S",
+      "start_latlon": [
+        42.56172,
+        -114.48001
+      ],
+      "end_latlon": [
+        42.54863,
+        -114.46022
+      ],
+      "description": "Eastbound leg of Twin Falls couplet on 2nd Ave S.",
+      "corridor": "twinfalls-couplet",
+      "direction": "EB"
+    },
+    {
+      "id": "i84-twinfalls-eb",
+      "name": "I-84 EB: Jerome (IC 168) to US-93 (IC 173)",
+      "start_latlon": [
+        42.70378,
+        -114.52941
+      ],
+      "end_latlon": [
+        42.62049,
+        -114.38559
+      ],
+      "description": "Eastbound I-84 through Jerome County connecting to US-93 Twin Falls interchange.",
+      "corridor": "i84-twinfalls",
+      "direction": "EB"
+    },
+    {
+      "id": "i84-twinfalls-wb",
+      "name": "I-84 WB: US-93 (IC 173) to Jerome (IC 168)",
+      "start_latlon": [
+        42.6213,
+        -114.38617
+      ],
+      "end_latlon": [
+        42.70496,
+        -114.52987
+      ],
+      "description": "Westbound I-84 from US-93 to Jerome interchange.",
+      "corridor": "i84-twinfalls",
+      "direction": "WB"
+    },
+    {
+      "id": "sh75-galena-nb",
+      "name": "SH-75 NB: Ketchum North to Galena",
+      "start_latlon": [
+        43.72829,
+        -114.38225
+      ],
+      "end_latlon": [
+        43.85407,
+        -114.64357
+      ],
+      "description": "SH-75 northbound climbing towards Galena Summit.",
+      "corridor": "sh75-galena",
+      "direction": "NB"
+    },
+    {
+      "id": "sh75-galena-sb",
+      "name": "SH-75 SB: Galena to Ketchum North",
+      "start_latlon": [
+        43.85407,
+        -114.64356
+      ],
+      "end_latlon": [
+        43.72828,
+        -114.38225
+      ],
+      "description": "SH-75 southbound descending into the Ketchum basin.",
+      "corridor": "sh75-galena",
+      "direction": "SB"
+    }
+  ],
+  "reporting_corridors": [
+    {
+      "id": "us93-twinfalls",
+      "name": "US-93: Twin Falls Blue Lakes Blvd (Perrine Bridge)",
+      "description": "The 2.0-mile commercial bottleneck arterial connecting Twin Falls across the Snake River canyon."
+    },
+    {
+      "id": "sh75-hailey",
+      "name": "SH-75: Wood River Valley (Bellevue to Hailey)",
+      "description": "The 4.8-mile core commuter arterial section of SH-75 in southern Blaine County."
+    },
+    {
+      "id": "sh75-ketchum",
+      "name": "SH-75: Ketchum Urban Bottleneck",
+      "description": "The 1.8-mile acute commercial bottleneck through downtown Ketchum."
+    },
+    {
+      "id": "twinfalls-couplet",
+      "name": "Twin Falls Couplet: 2nd Ave N WB / 2nd Ave S EB (US-30)",
+      "description": "Downtown Twin Falls one-way arterial couplet.",
+      "one_way_couplet": true
+    },
+    {
+      "id": "i84-twinfalls",
+      "name": "I-84: Magic Valley Freeway (IC 168 to IC 173)",
+      "description": "The 6.0-mile freight and commuter freeway corridor in District 4."
+    },
+    {
+      "id": "sh75-galena",
+      "name": "SH-75: Galena Summit Recreation Baseline",
+      "description": "The 10.5-mile rural mountain highway baseline facility."
+    }
+  ]
+}
