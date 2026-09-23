@@ -2248,6 +2248,132 @@ statewide screening."
 
 ---
 
+## 50 — Corridor cores from recurring congestion, not TTI against INRIX's ref speed
+
+**Target: one session.** Best done after Item 49, so the regenerated catalogues include
+the new segments; it does not depend on 49 otherwise. Raised by the owner's Session 65
+review of the maps.
+
+**The defect.** `extents.generate_catalogue` keeps a facility when either direction has
+a **core**: at least 0.75 mi (`MIN_CORE_MILES`) of segments whose worse AM/PM TTI is
+≥ 1.20 (`TTI_CONGESTED`), bridging up to 2 uncongested segments. TTI here is
+`ref_speed / mean speed`. Nothing checks volume, delay, data quality, or whether the
+road is equally slow off-peak. Session 65 measured the result on the store data
+(Jan–Aug 2026, weekdays, CValue ≥ 80):
+- **Geometry and low data pass as congestion.**
+  - *SH-7 Gilbert Grade:* ref speed 32–34 mph; peak TTI 1.33 against 1.27 at night;
+    180 AADT; about 2 VHD/mi; about 65% real-time data.
+  - *US-12 near Lowell:* 550 AADT; 53% real-time data; no overnight data passes
+    the CValue gate.
+  - *US-95 in Idaho County:* peak TTI 1.32 against 1.29 at night.
+  - *SH-3 in Benewah County:* 460 AADT.
+- **One segment can be the whole core.** Bonners Ferry's core is one 0.84-mi
+  northbound segment at TTI 1.26 (3,600 AADT, 22 VHD/mi).
+- **Hard cliffs.** SH-8 through Moscow misses on a Pullman Rd segment at **1.199**,
+  which leaves a 0.59-mi run on 3rd St, under the 0.75-mi floor.
+- **Mirroring puts an extent on a free-flowing direction.** The opposite direction
+  gets the lead direction's extent without its own data being checked:
+  - I-90 eastbound in Coeur d'Alene: TTI 1.04 against 1.67 westbound;
+  - Bonners Ferry southbound;
+  - Rexburg SH-33 eastbound, whose extent opens with a 0.98-mi ID-33 segment at TTI
+    0.92 (the owner's "west end with TTI < 1").
+- **Tier 2 and Tier 3 sweep in free flow, and the rankings mix all tiers.**
+  - Tier 3 is the whole chain, up to 180 mi. SH-75's 98.5 mi includes Galena, and
+    US-30's 83 mi includes McCammon–Lava.
+  - Tier 2 extends to the nearest split point. Coeur d'Alene's Northwest Blvd Tier 2,
+    ranked #2, added 5 free-flow segments to a ~0.3-mi hotspot.
+  - The rankings list Tier 1, 2 and 3 as peers.
+
+Scope:
+
+- [ ] **A congestion test against the road's own baseline.** Compare peak travel time
+      with the same segment's off-peak baseline (overnight, or a low percentile of
+      weekday travel time), not only against INRIX's `Ref Speed`. The peak/night
+      ratios are already in hand from Session 65's diagnostics:
+      - real hotspots are 1.2–1.5 (I-90 westbound 1.54, US-95 Coeur d'Alene 1.30,
+        SH-75 Hailey 1.23, Rexburg 1.23);
+      - the geometric ones are 1.00–1.04.
+
+      Decide how to handle a segment with too little overnight data; don't treat the
+      gap as zero.
+- [ ] **Delay and data-quality floors.** A core needs a minimum VHD/mi or total VHD
+      from the AADT join, and a minimum real-time share (`Pct Score30`) or kept
+      fraction. Calibrate both on the Session 65 list and record the values in
+      DATA_FORMAT.
+- [ ] **No cliffs.** Replace the per-segment 1.20 / 0.75-mi gates with a length- and
+      delay-weighted score, so one long rural segment can't be a core by itself and
+      1.199 doesn't fall off an edge. Record where SH-8 through Moscow lands.
+- [ ] **Each direction answers for itself.** Trim a mirrored extent to where that
+      direction's own data supports it. A direction with no core of its own is either
+      reported as the lead direction's companion, clearly labelled, or dropped;
+      decide which.
+- [ ] **Tier 2 and Tier 3 stop at the congestion.** End Tier 2 at the congestion
+      discontinuity, not just the next junction. Rank Tier 1 cores; report Tiers 2
+      and 3 as context, not as peer rows.
+- [ ] **Acceptance: the owner's list, checked segment by segment.**
+      - Drop: SH-7 Gilbert Grade, US-12 near Lowell, the US-95 Idaho County core,
+        SH-3 Benewah, and Bonners Ferry.
+      - Keep: I-90 westbound IC 12–11, the US-95 Coeur d'Alene core, SH-75 Hailey,
+        the Rexburg Main St hotspot, and Twin Falls US-93.
+      - Galena and McCammon–Lava stay out of the ranked set.
+      - Settle the I-90 westbound winter/summer ratio of 0.43: is it summer-only,
+        and possibly construction?
+- [ ] pytest on synthetic chains: a geometric grade, a one-segment core, a mirrored
+      free-flow direction, and a 1.199 neighbour. Regenerate D1/D2/D4–D6, re-run the
+      screening and maps, and record in DATA_FORMAT and DESIGN_HISTORY how the
+      rankings move.
+
+*Suggested prompt:* "Do Item 50 of ROADMAP.md — base corridor cores on recurring peak
+congestion against each road's own baseline, with delay and data-quality floors."
+
+## 51 — Chains across route-numbering changes, and couplets that are real
+
+**Target: one session. Independent of Item 50**, but both regenerate the catalogues, so
+do one after the other and re-run the screening once, after Item 49.
+
+**The defect.** `extents.enumerate_mainline_chains` walks one `RoadNumber` at a time,
+so a street whose number changes along its length becomes several short chains. Each
+one has to clear the 1-mi chain minimum and find its own core:
+- **SH-8 through Moscow** splits in two where it runs concurrently with the US-95
+  couplet, which is numbered 95 there.
+- **Idaho Falls Yellowstone Hwy / Northgate Mile** is numbered as five routes along its
+  length: I-15 BL, US-20 BR, US-26, SH-43 and US-91.
+- **Broadway east of I-15** is a 0.9-mi I-15 BL chain, under the minimum. West of
+  I-15 it is ranked, as US-20.
+
+The couplet detector pairs parallel roads that are not one-way pairs:
+- **Chubbuck:** Yellowstone Ave / Quinn Rd paired with US-91 as a "US-91 couplet",
+  miles north of the real Pocatello couplet.
+- **SH-43 with E 105 N.** Item 48 removed this pair indirectly.
+- **Sandpoint** (US-2/US-95, 1st Ave / 5th Ave) is still in `KNOWN_COUPLETS`. The owner
+  says it is a divided highway, not a couplet.
+
+Scope:
+
+- [ ] **Walk a road through its numbering changes.** Build chains on ITD route
+      membership (`routes.py`, including `concurrent` segments), or on street and
+      `XDGroup` continuity, so SH-8 through Moscow and Yellowstone Hwy are each one
+      facility. Show that SH-8 from the WA line to the east city limits resolves as
+      one chain.
+- [ ] **Couplets must be one-way pairs.**
+      - Require that each leg is actually one-way: there is no opposing-bearing XD
+        segment on the same street.
+      - Require that the legs share a route under ITD membership.
+      - Remove Sandpoint from `KNOWN_COUPLETS`, with the owner's reason recorded.
+      - The Chubbuck pair and the SH-43 / E 105 N pair must fail.
+      - Pocatello 4th/5th Ave and Blackfoot Bridge/Judicial must still pass. Also check
+        the 0.67-mi Pocatello Ave extension on Pocatello's legs.
+- [ ] **Names say what the road is.** Facility names come from the street and the
+      city, not "US-20: Bonneville County (2)"; Northgate Mile ranks as #6 under
+      that name today. Couplet legs are labelled by their own bearing (NB/SB), not
+      WB/EB.
+- [ ] pytest; regenerate the catalogues; DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 51 of ROADMAP.md — walk corridor chains across route-number
+changes and require couplets to be real one-way pairs."
+
+---
+
 ## Future (not yet scoped — need a planning pass before they're actionable)
 
 - **Directional AADT (direction-aware *volume* + a time-of-day directional
