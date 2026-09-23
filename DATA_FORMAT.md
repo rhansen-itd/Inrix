@@ -1780,8 +1780,8 @@ real hotspots run 1.2–2.4 per segment, geometric roads 0.95–1.05.
 | `CORE_GAP_SEGMENTS` / `_MILES` | 2 / 0.5 mi | a core bridges up to this much in between (so SH-8's 1.199 is inside it) |
 | `SEGMENT_MILES_CAP` | 0.5 mi | a segment counts toward effective miles only up to this |
 | `MIN_EFFECTIVE_CORE_MILES` | 0.6 | Σ min(miles, cap) × weight; one long segment can't pass alone |
-| `MIN_CORE_VHD_PER_MILE` | 60 | keep list 126–540; Bonners Ferry 45; rural geometric < 5; the qualifying cores have a gap between 55 and 65 |
-| `MIN_CORE_VHD` | 25 | total vehicle-hours |
+| `MIN_CORE_VHD_PER_MILE` | 10 | a **noise floor**, not a policy cut. VHD is an index (window delay × daily AADT as a weight), so a cut between two real towns would be arbitrary. It removes only the rural geometric and low-volume roads (1–5); the smallest towns (Blackfoot 44, Bonners Ferry 45, Soda Springs 50) stay in and rank low. Thinning to a top-N is the ranking's job (owner, Session 69) |
+| `MIN_CORE_VHD` | 10 | total vehicle-hours, the same noise floor |
 | `MIN_REALTIME_SHARE` | 0.90 | mile-weighted, peak window. Keep list ≥ 0.98; Lowell 0.01, Benewah 0.02–0.03, Idaho County 0.16, Gilbert Grade 0.02–0.04, Galena 0.01 |
 | `SPILL_RETENTION` | 0.5 | Tier 2 grows while the grown extent keeps ≥ 50% of the core's VHD/mi |
 | `CONTEXT_PAD_MILES` | 3 mi | Tier 3 goes at most this far past Tier 2 |
@@ -1809,6 +1809,22 @@ longest core on a chain was catalogued. That lost Hailey behind Ketchum on SH-75
 second facility is named after the town its core lies in (`SH-75: Blaine County
 (Hailey)`).
 
+**Monthly profile and flags (never exclusions).** `screen.segment_monthly_screen` gives
+AM/PM travel time per segment per local month. It is cached as
+`segment_monthly_screen.parquet` (about 18–28k segment-months per district).
+`extents.monthly_delay_profile` turns it into a core's VHD per month, against the
+segment's **export-wide** baseline, so a work-zone month shows as delay instead of
+moving its own baseline. Each facility carries `_monthly_vhd`, and `_flags` when its
+busiest third of months holds a large share of the delay (an even spread over 8
+months is 0.375):
+- `episodic` (≥ 0.70): check for a work zone or event. I-90 WB Coeur d'Alene 0.96,
+  US-95 SB Sandpoint 0.77.
+- `seasonal` (≥ 0.55): recurring but summer-heavy. Soda Springs 0.68, Burley I-84 BL
+  0.67, Twin Falls Blue Lakes 0.66, Ketchum 0.65, Victor 0.63.
+- 30 of the 39 cores sit at 0.40–0.47.
+
+The flags travel into the statewide ranking as a `flags` column.
+
 **Audit.** `out/statewide_screening/d<N>/core_audit.csv` has one row per analysed
 direction: its best candidate, the candidate's metrics, and the floors it failed.
 
@@ -1820,9 +1836,8 @@ of 0.43 is real. Look at weekday 16:00–18:30 travel time over the five core se
   August. Weekends and middays rise with it; nights don't.
 
 A permanent step on one day, affecting daytime and weekends but not nights, looks
-like a daytime work zone rather than recurring commute congestion. **Confirm the
-project with ITD District 1.** The core ranks on it because the export window
-includes the summer. Until then it is not evidence of a recurring bottleneck.
+like a daytime work zone rather than recurring commute congestion. It stays in the
+ranking, carrying the `episodic` flag.
 
 ## Direction convention & directional map display (Item 20)
 

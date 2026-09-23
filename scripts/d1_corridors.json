@@ -6,7 +6,7 @@
       "pm"
     ],
     "n_chains": 44,
-    "n_facilities": 8,
+    "n_facilities": 13,
     "tiers": [
       "core",
       "commuter",
@@ -24,10 +24,16 @@
       ],
       "segment_miles_cap": 0.5,
       "min_effective_core_miles": 0.6,
-      "min_core_vhd_per_mile": 60.0,
-      "min_core_vhd": 25.0,
+      "min_core_vhd_per_mile": 10.0,
+      "min_core_vhd": 10.0,
       "min_realtime_share": 0.9,
       "spill_retention": 0.5,
+      "episodic": {
+        "top_fraction_of_months": 0.333,
+        "share": 0.7,
+        "seasonal_share": 0.55,
+        "min_months": 3
+      },
       "context_pad_miles": 3.0
     }
   },
@@ -405,6 +411,30 @@
       ]
     },
     {
+      "id": "sh-53-kootenai-core-wb",
+      "name": "SH-53 WB: Kootenai County \u2014 Congested Core",
+      "start_latlon": [
+        47.75584,
+        -116.99501
+      ],
+      "end_latlon": [
+        47.74194,
+        -117.02754
+      ],
+      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County, WB. Recurrent congestion core (1.79 mi): peak/baseline 1.15, 42 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-core",
+      "direction": "WB",
+      "_tier": "core",
+      "_facility": "sh-53-kootenai",
+      "_split_rationale": "Recurrent congestion core (1.79 mi): peak/baseline 1.15, 42 VHD/mi, 100% real-time data",
+      "_generated_miles": 1.79,
+      "_segment_ids": [
+        1236986933,
+        448907291,
+        448849764
+      ]
+    },
+    {
       "id": "sh-53-kootenai-commuter-eb",
       "name": "SH-53 EB: Kootenai County \u2014 Commuter Corridor",
       "start_latlon": [
@@ -428,6 +458,32 @@
         448907292,
         440952360,
         475096099
+      ]
+    },
+    {
+      "id": "sh-53-kootenai-commuter-wb",
+      "name": "SH-53 WB: Kootenai County \u2014 Commuter Corridor",
+      "start_latlon": [
+        47.76327,
+        -116.98146
+      ],
+      "end_latlon": [
+        47.73589,
+        -117.04172
+      ],
+      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County, WB. Congested extent grown from the core (3.17 mi, 30 VHD/mi, 71% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-commuter",
+      "direction": "WB",
+      "_tier": "commuter",
+      "_facility": "sh-53-kootenai",
+      "_split_rationale": "Congested extent grown from the core (3.17 mi, 30 VHD/mi, 71% of the core's)",
+      "_generated_miles": 3.174,
+      "_segment_ids": [
+        475094492,
+        1236986933,
+        448907291,
+        448849764,
+        1236986992
       ]
     },
     {
@@ -459,6 +515,37 @@
         1236987053,
         1236987241,
         1236987215
+      ]
+    },
+    {
+      "id": "sh-53-kootenai-regional-wb",
+      "name": "SH-53 WB: Kootenai County \u2014 Regional Baseline",
+      "start_latlon": [
+        47.78924,
+        -116.93667
+      ],
+      "end_latlon": [
+        47.73589,
+        -117.04172
+      ],
+      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County, WB. Context around the congested extent (5.92 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-regional",
+      "direction": "WB",
+      "_tier": "regional",
+      "_facility": "sh-53-kootenai",
+      "_split_rationale": "Context around the congested extent (5.92 mi; reported, not ranked)",
+      "_generated_miles": 5.922,
+      "_segment_ids": [
+        1236987213,
+        1236987229,
+        124101709,
+        1236987067,
+        124764639,
+        475094492,
+        1236986933,
+        448907291,
+        448849764,
+        1236986992
       ]
     },
     {
@@ -1073,6 +1160,29 @@
       ]
     },
     {
+      "id": "sh-41-kootenai-2-core-nb",
+      "name": "SH-41 NB: Kootenai County (2) \u2014 Congested Core",
+      "start_latlon": [
+        47.95532,
+        -116.86836
+      ],
+      "end_latlon": [
+        47.97404,
+        -116.86851
+      ],
+      "description": "Tier 1 (Congested Core) of SH-41: Kootenai County (2), NB. Recurrent congestion core (1.29 mi): peak/baseline 1.17, 49 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-41-kootenai-2-core",
+      "direction": "NB",
+      "_tier": "core",
+      "_facility": "sh-41-kootenai-2",
+      "_split_rationale": "Recurrent congestion core (1.29 mi): peak/baseline 1.17, 49 VHD/mi, 99% real-time data",
+      "_generated_miles": 1.294,
+      "_segment_ids": [
+        1236980839,
+        1236981014
+      ]
+    },
+    {
       "id": "sh-41-kootenai-2-regional-sb",
       "name": "SH-41 SB: Kootenai County (2) \u2014 Regional Baseline",
       "start_latlon": [
@@ -1101,6 +1211,550 @@
         124416641,
         1236892481,
         1236892513
+      ]
+    },
+    {
+      "id": "sh-41-kootenai-2-regional-nb",
+      "name": "SH-41 NB: Kootenai County (2) \u2014 Regional Baseline",
+      "start_latlon": [
+        47.92174,
+        -116.84837
+      ],
+      "end_latlon": [
+        48.00207,
+        -116.89676
+      ],
+      "description": "Tier 3 (Regional Baseline) of SH-41: Kootenai County (2), NB. Context around the congested extent (6.47 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-41-kootenai-2-regional",
+      "direction": "NB",
+      "_tier": "regional",
+      "_facility": "sh-41-kootenai-2",
+      "_split_rationale": "Context around the congested extent (6.47 mi; reported, not ranked)",
+      "_generated_miles": 6.47,
+      "_segment_ids": [
+        1236892296,
+        1236892498,
+        124735152,
+        1236892435,
+        1236980839,
+        1236981014,
+        1236963740,
+        1236963926,
+        1236963897,
+        1236963872
+      ]
+    },
+    {
+      "id": "us-2-boundary-core-nb",
+      "name": "US-2 NB: Boundary County \u2014 Congested Core",
+      "start_latlon": [
+        48.67275,
+        -116.33701
+      ],
+      "end_latlon": [
+        48.69154,
+        -116.31639
+      ],
+      "description": "Tier 1 (Congested Core) of US-2: Boundary County, NB. Recurrent congestion core (1.67 mi): peak/baseline 1.17, 45 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-boundary-core",
+      "direction": "NB",
+      "_tier": "core",
+      "_facility": "us-2-boundary",
+      "_split_rationale": "Recurrent congestion core (1.67 mi): peak/baseline 1.17, 45 VHD/mi, 99% real-time data",
+      "_generated_miles": 1.673,
+      "_segment_ids": [
+        450203608,
+        1236970083,
+        1236970096
+      ]
+    },
+    {
+      "id": "us-2-boundary-core-sb",
+      "name": "US-2 SB: Boundary County \u2014 Congested Core",
+      "start_latlon": [
+        48.69127,
+        -116.31634
+      ],
+      "end_latlon": [
+        48.67662,
+        -116.3323
+      ],
+      "description": "Tier 1 (Congested Core) of US-2: Boundary County, SB. Recurrent congestion core (1.31 mi): peak/baseline 1.16, 47 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-boundary-core",
+      "direction": "SB",
+      "_tier": "core",
+      "_facility": "us-2-boundary",
+      "_split_rationale": "Recurrent congestion core (1.31 mi): peak/baseline 1.16, 47 VHD/mi, 98% real-time data",
+      "_generated_miles": 1.308,
+      "_segment_ids": [
+        1236986223,
+        1236986247
+      ]
+    },
+    {
+      "id": "us-2-boundary-commuter-nb",
+      "name": "US-2 NB: Boundary County \u2014 Commuter Corridor",
+      "start_latlon": [
+        48.65962,
+        -116.33891
+      ],
+      "end_latlon": [
+        48.6952,
+        -116.31128
+      ],
+      "description": "Tier 2 (Commuter Corridor) of US-2: Boundary County, NB. Congested extent grown from the core (2.97 mi, 32 VHD/mi, 71% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.96 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-boundary-commuter",
+      "direction": "NB",
+      "_tier": "commuter",
+      "_facility": "us-2-boundary",
+      "_split_rationale": "Congested extent grown from the core (2.97 mi, 32 VHD/mi, 71% of the core's)",
+      "_generated_miles": 2.965,
+      "_segment_ids": [
+        450203607,
+        450203608,
+        1236970083,
+        1236970096,
+        450192986
+      ]
+    },
+    {
+      "id": "us-2-boundary-commuter-sb",
+      "name": "US-2 SB: Boundary County \u2014 Commuter Corridor",
+      "start_latlon": [
+        48.69822,
+        -116.31171
+      ],
+      "end_latlon": [
+        48.67236,
+        -116.33715
+      ],
+      "description": "Tier 2 (Commuter Corridor) of US-2: Boundary County, SB. Congested extent grown from the core (2.37 mi, 34 VHD/mi, 73% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.93 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-boundary-commuter",
+      "direction": "SB",
+      "_tier": "commuter",
+      "_facility": "us-2-boundary",
+      "_split_rationale": "Congested extent grown from the core (2.37 mi, 34 VHD/mi, 73% of the core's)",
+      "_generated_miles": 2.368,
+      "_segment_ids": [
+        450192985,
+        450220341,
+        450192987,
+        1236986223,
+        1236986247,
+        450222922
+      ]
+    },
+    {
+      "id": "us-2-boundary-regional-nb",
+      "name": "US-2 NB: Boundary County \u2014 Regional Baseline",
+      "start_latlon": [
+        48.62455,
+        -116.34991
+      ],
+      "end_latlon": [
+        48.72659,
+        -116.30289
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-2: Boundary County, NB. Context around the congested extent (8.27 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-boundary-regional",
+      "direction": "NB",
+      "_tier": "regional",
+      "_facility": "us-2-boundary",
+      "_split_rationale": "Context around the congested extent (8.27 mi; reported, not ranked)",
+      "_generated_miles": 8.27,
+      "_segment_ids": [
+        1236986073,
+        1236986128,
+        1236984032,
+        1236953500,
+        450203607,
+        450203608,
+        1236970083,
+        1236970096,
+        450192986,
+        450220340,
+        450192984,
+        1236965569,
+        1236965585,
+        1236965615,
+        450222901
+      ]
+    },
+    {
+      "id": "us-2-boundary-regional-sb",
+      "name": "US-2 SB: Boundary County \u2014 Regional Baseline",
+      "start_latlon": [
+        48.72892,
+        -116.30143
+      ],
+      "end_latlon": [
+        48.63298,
+        -116.34758
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-2: Boundary County, SB. Context around the congested extent (7.85 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-boundary-regional",
+      "direction": "SB",
+      "_tier": "regional",
+      "_facility": "us-2-boundary",
+      "_split_rationale": "Context around the congested extent (7.85 mi; reported, not ranked)",
+      "_generated_miles": 7.851,
+      "_segment_ids": [
+        1236967050,
+        1236966866,
+        385686233,
+        1236966878,
+        450192985,
+        450220341,
+        450192987,
+        1236986223,
+        1236986247,
+        450222922,
+        450222923,
+        1236984233,
+        1236986141,
+        385666850
+      ]
+    },
+    {
+      "id": "us-2-bonner-core-wb",
+      "name": "US-2 WB: Bonner County \u2014 Congested Core",
+      "start_latlon": [
+        48.27311,
+        -116.55366
+      ],
+      "end_latlon": [
+        48.26301,
+        -116.57669
+      ],
+      "description": "Tier 1 (Congested Core) of US-2: Bonner County, WB. Recurrent congestion core (1.29 mi): peak/baseline 1.15, 54 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-bonner-core",
+      "direction": "WB",
+      "_tier": "core",
+      "_facility": "us-2-bonner",
+      "_split_rationale": "Recurrent congestion core (1.29 mi): peak/baseline 1.15, 54 VHD/mi, 99% real-time data",
+      "_generated_miles": 1.285,
+      "_segment_ids": [
+        1236893477,
+        1236991325
+      ]
+    },
+    {
+      "id": "us-2-bonner-regional-wb",
+      "name": "US-2 WB: Bonner County \u2014 Regional Baseline",
+      "start_latlon": [
+        48.27311,
+        -116.55366
+      ],
+      "end_latlon": [
+        48.25225,
+        -116.62797
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-2: Bonner County, WB. Context around the congested extent (3.86 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-bonner-regional",
+      "direction": "WB",
+      "_tier": "regional",
+      "_facility": "us-2-bonner",
+      "_split_rationale": "Context around the congested extent (3.86 mi; reported, not ranked)",
+      "_generated_miles": 3.856,
+      "_segment_ids": [
+        1236893477,
+        1236991325,
+        1236991351,
+        1236991380,
+        1236985521,
+        1236985319
+      ]
+    },
+    {
+      "id": "us-2-bonner-sandpoint-core-nb",
+      "name": "US-2 NB: Bonner County (Sandpoint) \u2014 Congested Core",
+      "start_latlon": [
+        48.29757,
+        -116.54823
+      ],
+      "end_latlon": [
+        48.31614,
+        -116.54623
+      ],
+      "description": "Tier 1 (Congested Core) of US-2: Bonner County (Sandpoint), NB. Recurrent congestion core (1.30 mi): peak/baseline 1.16, 52 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-bonner-sandpoint-core",
+      "direction": "NB",
+      "_tier": "core",
+      "_facility": "us-2-bonner-sandpoint",
+      "_split_rationale": "Recurrent congestion core (1.30 mi): peak/baseline 1.16, 52 VHD/mi, 100% real-time data",
+      "_generated_miles": 1.298,
+      "_segment_ids": [
+        1236909964,
+        386068682
+      ]
+    },
+    {
+      "id": "us-2-bonner-sandpoint-regional-nb",
+      "name": "US-2 NB: Bonner County (Sandpoint) \u2014 Regional Baseline",
+      "start_latlon": [
+        48.28998,
+        -116.54898
+      ],
+      "end_latlon": [
+        48.33476,
+        -116.54795
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-2: Bonner County (Sandpoint), NB. Context around the congested extent (3.12 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-bonner-sandpoint-regional",
+      "direction": "NB",
+      "_tier": "regional",
+      "_facility": "us-2-bonner-sandpoint",
+      "_split_rationale": "Context around the congested extent (3.12 mi; reported, not ranked)",
+      "_generated_miles": 3.121,
+      "_segment_ids": [
+        429023331,
+        1236909952,
+        1236909964,
+        386068682,
+        1236909980,
+        1236910005
+      ]
+    },
+    {
+      "id": "sh-53-kootenai-2-core-eb",
+      "name": "SH-53 EB: Kootenai County (2) \u2014 Congested Core",
+      "start_latlon": [
+        47.81723,
+        -116.82015
+      ],
+      "end_latlon": [
+        47.81843,
+        -116.78781
+      ],
+      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County (2), EB. Recurrent congestion core (1.52 mi): peak/baseline 1.19, 36 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-2-core",
+      "direction": "EB",
+      "_tier": "core",
+      "_facility": "sh-53-kootenai-2",
+      "_split_rationale": "Recurrent congestion core (1.52 mi): peak/baseline 1.19, 36 VHD/mi, 100% real-time data",
+      "_generated_miles": 1.523,
+      "_segment_ids": [
+        1236932884,
+        463808307,
+        475085303,
+        475092655
+      ]
+    },
+    {
+      "id": "sh-53-kootenai-2-core-wb",
+      "name": "SH-53 WB: Kootenai County (2) \u2014 Congested Core",
+      "start_latlon": [
+        47.81849,
+        -116.78808
+      ],
+      "end_latlon": [
+        47.81718,
+        -116.83221
+      ],
+      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County (2), WB. Recurrent congestion core (2.06 mi): peak/baseline 1.15, 25 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-2-core",
+      "direction": "WB",
+      "_tier": "core",
+      "_facility": "sh-53-kootenai-2",
+      "_split_rationale": "Recurrent congestion core (2.06 mi): peak/baseline 1.15, 25 VHD/mi, 100% real-time data",
+      "_generated_miles": 2.065,
+      "_segment_ids": [
+        475110927,
+        463803030,
+        1236932898,
+        1236932868
+      ]
+    },
+    {
+      "id": "sh-53-kootenai-2-commuter-eb",
+      "name": "SH-53 EB: Kootenai County (2) \u2014 Commuter Corridor",
+      "start_latlon": [
+        47.81723,
+        -116.82015
+      ],
+      "end_latlon": [
+        47.81843,
+        -116.78781
+      ],
+      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County (2), EB. Congested extent grown from the core (1.52 mi, 36 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.56 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-2-commuter",
+      "direction": "EB",
+      "_tier": "commuter",
+      "_facility": "sh-53-kootenai-2",
+      "_split_rationale": "Congested extent grown from the core (1.52 mi, 36 VHD/mi, 100% of the core's)",
+      "_generated_miles": 1.523,
+      "_segment_ids": [
+        1236932884,
+        463808307,
+        475085303,
+        475092655
+      ]
+    },
+    {
+      "id": "sh-53-kootenai-2-commuter-wb",
+      "name": "SH-53 WB: Kootenai County (2) \u2014 Commuter Corridor",
+      "start_latlon": [
+        47.81849,
+        -116.78808
+      ],
+      "end_latlon": [
+        47.81684,
+        -116.88042
+      ],
+      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County (2), WB. Congested extent grown from the core (4.30 mi, 35 VHD/mi, 139% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-2-commuter",
+      "direction": "WB",
+      "_tier": "commuter",
+      "_facility": "sh-53-kootenai-2",
+      "_split_rationale": "Congested extent grown from the core (4.30 mi, 35 VHD/mi, 139% of the core's)",
+      "_generated_miles": 4.304,
+      "_segment_ids": [
+        475110927,
+        463803030,
+        1236932898,
+        1236932868,
+        1236932840,
+        385686849,
+        1236933003,
+        1236932976
+      ]
+    },
+    {
+      "id": "sh-53-kootenai-2-regional-eb",
+      "name": "SH-53 EB: Kootenai County (2) \u2014 Regional Baseline",
+      "start_latlon": [
+        47.81688,
+        -116.88032
+      ],
+      "end_latlon": [
+        47.81843,
+        -116.78781
+      ],
+      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County (2), EB. Context around the congested extent (4.32 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-2-regional",
+      "direction": "EB",
+      "_tier": "regional",
+      "_facility": "sh-53-kootenai-2",
+      "_split_rationale": "Context around the congested extent (4.32 mi; reported, not ranked)",
+      "_generated_miles": 4.322,
+      "_segment_ids": [
+        1236932972,
+        1236932991,
+        1236933017,
+        1236932826,
+        1236932852,
+        1236932884,
+        463808307,
+        475085303,
+        475092655
+      ]
+    },
+    {
+      "id": "sh-53-kootenai-2-regional-wb",
+      "name": "SH-53 WB: Kootenai County (2) \u2014 Regional Baseline",
+      "start_latlon": [
+        47.81849,
+        -116.78808
+      ],
+      "end_latlon": [
+        47.81684,
+        -116.88042
+      ],
+      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County (2), WB. Context around the congested extent (4.30 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-53-kootenai-2-regional",
+      "direction": "WB",
+      "_tier": "regional",
+      "_facility": "sh-53-kootenai-2",
+      "_split_rationale": "Context around the congested extent (4.30 mi; reported, not ranked)",
+      "_generated_miles": 4.304,
+      "_segment_ids": [
+        475110927,
+        463803030,
+        1236932898,
+        1236932868,
+        1236932840,
+        385686849,
+        1236933003,
+        1236932976
+      ]
+    },
+    {
+      "id": "us-2-bonner-2-core-wb",
+      "name": "US-2 WB: Bonner County (2) \u2014 Congested Core",
+      "start_latlon": [
+        48.18054,
+        -116.90222
+      ],
+      "end_latlon": [
+        48.18063,
+        -116.93012
+      ],
+      "description": "Tier 1 (Congested Core) of US-2: Bonner County (2), WB. Recurrent congestion core (1.29 mi): peak/baseline 1.16, 41 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-bonner-2-core",
+      "direction": "WB",
+      "_tier": "core",
+      "_facility": "us-2-bonner-2",
+      "_split_rationale": "Recurrent congestion core (1.29 mi): peak/baseline 1.16, 41 VHD/mi, 99% real-time data",
+      "_generated_miles": 1.285,
+      "_segment_ids": [
+        1237060481,
+        1236901359
+      ]
+    },
+    {
+      "id": "us-2-bonner-2-commuter-wb",
+      "name": "US-2 WB: Bonner County (2) \u2014 Commuter Corridor",
+      "start_latlon": [
+        48.18,
+        -116.8884
+      ],
+      "end_latlon": [
+        48.18063,
+        -116.93012
+      ],
+      "description": "Tier 2 (Commuter Corridor) of US-2: Bonner County (2), WB. Congested extent grown from the core (1.93 mi, 31 VHD/mi, 74% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-bonner-2-commuter",
+      "direction": "WB",
+      "_tier": "commuter",
+      "_facility": "us-2-bonner-2",
+      "_split_rationale": "Congested extent grown from the core (1.93 mi, 31 VHD/mi, 74% of the core's)",
+      "_generated_miles": 1.928,
+      "_segment_ids": [
+        1236988090,
+        1237060481,
+        1236901359
+      ]
+    },
+    {
+      "id": "us-2-bonner-2-regional-wb",
+      "name": "US-2 WB: Bonner County (2) \u2014 Regional Baseline",
+      "start_latlon": [
+        48.1548,
+        -116.84842
+      ],
+      "end_latlon": [
+        48.18025,
+        -116.98586
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-2: Bonner County (2), WB. Context around the congested extent (7.07 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-2-bonner-2-regional",
+      "direction": "WB",
+      "_tier": "regional",
+      "_facility": "us-2-bonner-2",
+      "_split_rationale": "Context around the congested extent (7.07 mi; reported, not ranked)",
+      "_generated_miles": 7.069,
+      "_segment_ids": [
+        1236984993,
+        1236985007,
+        1236985022,
+        1236985034,
+        1236988090,
+        1237060481,
+        1236901359,
+        1236901375,
+        1236901395,
+        1236901408,
+        1236901423
       ]
     }
   ],
@@ -1136,7 +1790,18 @@
       "_directions": [
         "NB",
         "SB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 3328.9,
+        "2026-02": 3352.7,
+        "2026-03": 3290.8,
+        "2026-04": 3697.7,
+        "2026-05": 4148.4,
+        "2026-06": 4557.1,
+        "2026-07": 4843.7,
+        "2026-08": 4996.0
+      }
     },
     {
       "id": "us-95-kootenai-commuter",
@@ -1169,7 +1834,18 @@
       "_directions": [
         "NB",
         "SB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 3328.9,
+        "2026-02": 3352.7,
+        "2026-03": 3290.8,
+        "2026-04": 3697.7,
+        "2026-05": 4148.4,
+        "2026-06": 4557.1,
+        "2026-07": 4843.7,
+        "2026-08": 4996.0
+      }
     },
     {
       "id": "us-95-kootenai-regional",
@@ -1202,7 +1878,18 @@
       "_directions": [
         "NB",
         "SB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 3328.9,
+        "2026-02": 3352.7,
+        "2026-03": 3290.8,
+        "2026-04": 3697.7,
+        "2026-05": 4148.4,
+        "2026-06": 4557.1,
+        "2026-07": 4843.7,
+        "2026-08": 4996.0
+      }
     },
     {
       "id": "i-90-kootenai-core",
@@ -1235,6 +1922,19 @@
       "_directions": [
         "WB"
       ],
+      "_flags": [
+        "episodic: 96% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months) \u2014 check for a work zone or event before reading it as recurring"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 0.0,
+        "2026-02": 0.0,
+        "2026-03": 189.6,
+        "2026-04": 24.5,
+        "2026-05": 100.3,
+        "2026-06": 1084.8,
+        "2026-07": 3375.1,
+        "2026-08": 2631.6
+      },
       "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.01, 16 VHD/mi over the mirrored span)"
     },
     {
@@ -1268,6 +1968,19 @@
       "_directions": [
         "WB"
       ],
+      "_flags": [
+        "episodic: 96% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months) \u2014 check for a work zone or event before reading it as recurring"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 0.0,
+        "2026-02": 0.0,
+        "2026-03": 189.6,
+        "2026-04": 24.5,
+        "2026-05": 100.3,
+        "2026-06": 1084.8,
+        "2026-07": 3375.1,
+        "2026-08": 2631.6
+      },
       "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.01, 16 VHD/mi over the mirrored span)"
     },
     {
@@ -1301,6 +2014,19 @@
       "_directions": [
         "WB"
       ],
+      "_flags": [
+        "episodic: 96% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months) \u2014 check for a work zone or event before reading it as recurring"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 0.0,
+        "2026-02": 0.0,
+        "2026-03": 189.6,
+        "2026-04": 24.5,
+        "2026-05": 100.3,
+        "2026-06": 1084.8,
+        "2026-07": 3375.1,
+        "2026-08": 2631.6
+      },
       "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.01, 16 VHD/mi over the mirrored span)"
     },
     {
@@ -1332,9 +2058,22 @@
         "fails": []
       },
       "_directions": [
-        "EB"
+        "EB",
+        "WB"
       ],
-      "_companion": "WB not catalogued: no qualifying core of its own opposite the EB one (peak/baseline 1.10, 27 VHD/mi over the mirrored span)"
+      "_flags": [
+        "seasonal: 59% of peak delay in 2026-05, 2026-06, 2026-07 (3 of 8 months)"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 145.2,
+        "2026-02": 137.8,
+        "2026-03": 258.9,
+        "2026-04": 282.5,
+        "2026-05": 482.4,
+        "2026-06": 517.6,
+        "2026-07": 681.4,
+        "2026-08": 344.2
+      }
     },
     {
       "id": "sh-53-kootenai-commuter",
@@ -1365,9 +2104,22 @@
         "fails": []
       },
       "_directions": [
-        "EB"
+        "EB",
+        "WB"
       ],
-      "_companion": "WB not catalogued: no qualifying core of its own opposite the EB one (peak/baseline 1.10, 27 VHD/mi over the mirrored span)"
+      "_flags": [
+        "seasonal: 59% of peak delay in 2026-05, 2026-06, 2026-07 (3 of 8 months)"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 145.2,
+        "2026-02": 137.8,
+        "2026-03": 258.9,
+        "2026-04": 282.5,
+        "2026-05": 482.4,
+        "2026-06": 517.6,
+        "2026-07": 681.4,
+        "2026-08": 344.2
+      }
     },
     {
       "id": "sh-53-kootenai-regional",
@@ -1398,9 +2150,22 @@
         "fails": []
       },
       "_directions": [
-        "EB"
+        "EB",
+        "WB"
       ],
-      "_companion": "WB not catalogued: no qualifying core of its own opposite the EB one (peak/baseline 1.10, 27 VHD/mi over the mirrored span)"
+      "_flags": [
+        "seasonal: 59% of peak delay in 2026-05, 2026-06, 2026-07 (3 of 8 months)"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 145.2,
+        "2026-02": 137.8,
+        "2026-03": 258.9,
+        "2026-04": 282.5,
+        "2026-05": 482.4,
+        "2026-06": 517.6,
+        "2026-07": 681.4,
+        "2026-08": 344.2
+      }
     },
     {
       "id": "sh-41-kootenai-core",
@@ -1433,7 +2198,18 @@
       "_directions": [
         "SB",
         "NB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 454.8,
+        "2026-02": 440.4,
+        "2026-03": 430.9,
+        "2026-04": 492.8,
+        "2026-05": 320.4,
+        "2026-06": 311.8,
+        "2026-07": 283.6,
+        "2026-08": 635.3
+      }
     },
     {
       "id": "sh-41-kootenai-commuter",
@@ -1466,7 +2242,18 @@
       "_directions": [
         "SB",
         "NB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 454.8,
+        "2026-02": 440.4,
+        "2026-03": 430.9,
+        "2026-04": 492.8,
+        "2026-05": 320.4,
+        "2026-06": 311.8,
+        "2026-07": 283.6,
+        "2026-08": 635.3
+      }
     },
     {
       "id": "sh-41-kootenai-regional",
@@ -1499,7 +2286,18 @@
       "_directions": [
         "SB",
         "NB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 454.8,
+        "2026-02": 440.4,
+        "2026-03": 430.9,
+        "2026-04": 492.8,
+        "2026-05": 320.4,
+        "2026-06": 311.8,
+        "2026-07": 283.6,
+        "2026-08": 635.3
+      }
     },
     {
       "id": "sh-41-kootenai-rathdrum-core",
@@ -1532,7 +2330,18 @@
       "_directions": [
         "NB",
         "SB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 486.1,
+        "2026-02": 478.2,
+        "2026-03": 458.2,
+        "2026-04": 487.4,
+        "2026-05": 495.9,
+        "2026-06": 354.8,
+        "2026-07": 331.3,
+        "2026-08": 333.9
+      }
     },
     {
       "id": "sh-41-kootenai-rathdrum-commuter",
@@ -1565,7 +2374,18 @@
       "_directions": [
         "NB",
         "SB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 486.1,
+        "2026-02": 478.2,
+        "2026-03": 458.2,
+        "2026-04": 487.4,
+        "2026-05": 495.9,
+        "2026-06": 354.8,
+        "2026-07": 331.3,
+        "2026-08": 333.9
+      }
     },
     {
       "id": "sh-41-kootenai-rathdrum-regional",
@@ -1598,7 +2418,18 @@
       "_directions": [
         "NB",
         "SB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 486.1,
+        "2026-02": 478.2,
+        "2026-03": 458.2,
+        "2026-04": 487.4,
+        "2026-05": 495.9,
+        "2026-06": 354.8,
+        "2026-07": 331.3,
+        "2026-08": 333.9
+      }
     },
     {
       "id": "us-95-bonner-core",
@@ -1631,6 +2462,19 @@
       "_directions": [
         "SB"
       ],
+      "_flags": [
+        "episodic: 77% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months) \u2014 check for a work zone or event before reading it as recurring"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 79.7,
+        "2026-02": 34.7,
+        "2026-03": 23.8,
+        "2026-04": 32.8,
+        "2026-05": 44.6,
+        "2026-06": 90.3,
+        "2026-07": 318.3,
+        "2026-08": 301.4
+      },
       "_companion": "NB not catalogued: no qualifying core of its own opposite the SB one (peak/baseline 1.05, 19 VHD/mi over the mirrored span)"
     },
     {
@@ -1664,6 +2508,19 @@
       "_directions": [
         "SB"
       ],
+      "_flags": [
+        "episodic: 77% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months) \u2014 check for a work zone or event before reading it as recurring"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 79.7,
+        "2026-02": 34.7,
+        "2026-03": 23.8,
+        "2026-04": 32.8,
+        "2026-05": 44.6,
+        "2026-06": 90.3,
+        "2026-07": 318.3,
+        "2026-08": 301.4
+      },
       "_companion": "NB not catalogued: no qualifying core of its own opposite the SB one (peak/baseline 1.05, 19 VHD/mi over the mirrored span)"
     },
     {
@@ -1697,6 +2554,19 @@
       "_directions": [
         "SB"
       ],
+      "_flags": [
+        "episodic: 77% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months) \u2014 check for a work zone or event before reading it as recurring"
+      ],
+      "_monthly_vhd": {
+        "2026-01": 79.7,
+        "2026-02": 34.7,
+        "2026-03": 23.8,
+        "2026-04": 32.8,
+        "2026-05": 44.6,
+        "2026-06": 90.3,
+        "2026-07": 318.3,
+        "2026-08": 301.4
+      },
       "_companion": "NB not catalogued: no qualifying core of its own opposite the SB one (peak/baseline 1.05, 19 VHD/mi over the mirrored span)"
     },
     {
@@ -1730,7 +2600,18 @@
       "_directions": [
         "EB",
         "WB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 231.1,
+        "2026-02": 230.6,
+        "2026-03": 235.8,
+        "2026-04": 235.9,
+        "2026-05": 244.8,
+        "2026-06": 136.8,
+        "2026-07": 106.4,
+        "2026-08": 101.5
+      }
     },
     {
       "id": "sh-53-kootenai-rathdrum-commuter",
@@ -1763,7 +2644,18 @@
       "_directions": [
         "EB",
         "WB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 231.1,
+        "2026-02": 230.6,
+        "2026-03": 235.8,
+        "2026-04": 235.9,
+        "2026-05": 244.8,
+        "2026-06": 136.8,
+        "2026-07": 106.4,
+        "2026-08": 101.5
+      }
     },
     {
       "id": "sh-53-kootenai-rathdrum-regional",
@@ -1796,7 +2688,18 @@
       "_directions": [
         "EB",
         "WB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 231.1,
+        "2026-02": 230.6,
+        "2026-03": 235.8,
+        "2026-04": 235.9,
+        "2026-05": 244.8,
+        "2026-06": 136.8,
+        "2026-07": 106.4,
+        "2026-08": 101.5
+      }
     },
     {
       "id": "sh-41-kootenai-2-core",
@@ -1827,9 +2730,20 @@
         "fails": []
       },
       "_directions": [
-        "SB"
+        "SB",
+        "NB"
       ],
-      "_companion": "NB not catalogued: no qualifying core of its own opposite the SB one (peak/baseline 1.17, 49 VHD/mi over the mirrored span)"
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 160.4,
+        "2026-02": 169.0,
+        "2026-03": 173.3,
+        "2026-04": 174.4,
+        "2026-05": 176.6,
+        "2026-06": 120.4,
+        "2026-07": 96.2,
+        "2026-08": 91.0
+      }
     },
     {
       "id": "sh-41-kootenai-2-regional",
@@ -1860,9 +2774,592 @@
         "fails": []
       },
       "_directions": [
+        "SB",
+        "NB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 160.4,
+        "2026-02": 169.0,
+        "2026-03": 173.3,
+        "2026-04": 174.4,
+        "2026-05": 176.6,
+        "2026-06": 120.4,
+        "2026-07": 96.2,
+        "2026-08": 91.0
+      }
+    },
+    {
+      "id": "us-2-boundary-core",
+      "name": "US-2: Boundary County \u2014 Tier 1 Congested Core (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
+      "description": "Tier 1 (Congested Core) of US-2: Boundary County, NB. Recurrent congestion core (1.67 mi): peak/baseline 1.17, 45 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "core",
+      "_tier_number": 1,
+      "_tier_label": "Tier 1 Congested Core (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
+      "_facility": "us-2-boundary",
+      "_facility_name": "US-2: Boundary County",
+      "_miles": 1.673,
+      "_n_segments": 3,
+      "_ranked": true,
+      "_core": {
+        "miles": 1.673,
+        "effective_miles": 0.953,
+        "vhd": 75.8,
+        "vhd_per_mile": 45.3,
+        "delay_per_mile": 0.313,
+        "realtime_share": 0.99,
+        "peak_ratio": 1.167,
+        "ref_tti": 1.207,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "NB",
         "SB"
       ],
-      "_companion": "NB not catalogued: no qualifying core of its own opposite the SB one (peak/baseline 1.17, 49 VHD/mi over the mirrored span)"
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 144.5,
+        "2026-02": 145.7,
+        "2026-03": 145.0,
+        "2026-04": 151.6,
+        "2026-05": 159.0,
+        "2026-06": 121.1,
+        "2026-07": 127.4,
+        "2026-08": 118.3
+      }
+    },
+    {
+      "id": "us-2-boundary-commuter",
+      "name": "US-2: Boundary County \u2014 Tier 2 Commuter Corridor (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
+      "description": "Tier 2 (Commuter Corridor) of US-2: Boundary County, NB. Congested extent grown from the core (2.97 mi, 32 VHD/mi, 71% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.96 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "commuter",
+      "_tier_number": 2,
+      "_tier_label": "Tier 2 Commuter Corridor (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
+      "_facility": "us-2-boundary",
+      "_facility_name": "US-2: Boundary County",
+      "_miles": 2.965,
+      "_n_segments": 5,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.673,
+        "effective_miles": 0.953,
+        "vhd": 75.8,
+        "vhd_per_mile": 45.3,
+        "delay_per_mile": 0.313,
+        "realtime_share": 0.99,
+        "peak_ratio": 1.167,
+        "ref_tti": 1.207,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "NB",
+        "SB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 144.5,
+        "2026-02": 145.7,
+        "2026-03": 145.0,
+        "2026-04": 151.6,
+        "2026-05": 159.0,
+        "2026-06": 121.1,
+        "2026-07": 127.4,
+        "2026-08": 118.3
+      }
+    },
+    {
+      "id": "us-2-boundary-regional",
+      "name": "US-2: Boundary County \u2014 Tier 3 Regional Baseline (Kootenai Trail Rd to Chinook St)",
+      "description": "Tier 3 (Regional Baseline) of US-2: Boundary County, NB. Context around the congested extent (8.27 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Kootenai Trail Rd to Chinook St)",
+      "_facility": "us-2-boundary",
+      "_facility_name": "US-2: Boundary County",
+      "_miles": 8.27,
+      "_n_segments": 15,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.673,
+        "effective_miles": 0.953,
+        "vhd": 75.8,
+        "vhd_per_mile": 45.3,
+        "delay_per_mile": 0.313,
+        "realtime_share": 0.99,
+        "peak_ratio": 1.167,
+        "ref_tti": 1.207,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "NB",
+        "SB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 144.5,
+        "2026-02": 145.7,
+        "2026-03": 145.0,
+        "2026-04": 151.6,
+        "2026-05": 159.0,
+        "2026-06": 121.1,
+        "2026-07": 127.4,
+        "2026-08": 118.3
+      }
+    },
+    {
+      "id": "us-2-bonner-core",
+      "name": "US-2: Bonner County \u2014 Tier 1 Congested Core (Pine St @ Jct Us-2 to Old Us-2, Dover)",
+      "description": "Tier 1 (Congested Core) of US-2: Bonner County, WB. Recurrent congestion core (1.29 mi): peak/baseline 1.15, 54 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "core",
+      "_tier_number": 1,
+      "_tier_label": "Tier 1 Congested Core (Pine St @ Jct Us-2 to Old Us-2, Dover)",
+      "_facility": "us-2-bonner",
+      "_facility_name": "US-2: Bonner County",
+      "_miles": 1.285,
+      "_n_segments": 2,
+      "_ranked": true,
+      "_core": {
+        "miles": 1.285,
+        "effective_miles": 0.671,
+        "vhd": 69.3,
+        "vhd_per_mile": 53.9,
+        "delay_per_mile": 0.31,
+        "realtime_share": 0.991,
+        "peak_ratio": 1.149,
+        "ref_tti": 1.101,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 65.0,
+        "2026-02": 58.9,
+        "2026-03": 57.0,
+        "2026-04": 60.4,
+        "2026-05": 77.7,
+        "2026-06": 71.5,
+        "2026-07": 92.6,
+        "2026-08": 83.7
+      },
+      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.03, 13 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "us-2-bonner-regional",
+      "name": "US-2: Bonner County \u2014 Tier 3 Regional Baseline (Pine St @ Jct Us-2 to Pine St Loop)",
+      "description": "Tier 3 (Regional Baseline) of US-2: Bonner County, WB. Context around the congested extent (3.86 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Pine St @ Jct Us-2 to Pine St Loop)",
+      "_facility": "us-2-bonner",
+      "_facility_name": "US-2: Bonner County",
+      "_miles": 3.856,
+      "_n_segments": 6,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.285,
+        "effective_miles": 0.671,
+        "vhd": 69.3,
+        "vhd_per_mile": 53.9,
+        "delay_per_mile": 0.31,
+        "realtime_share": 0.991,
+        "peak_ratio": 1.149,
+        "ref_tti": 1.101,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 65.0,
+        "2026-02": 58.9,
+        "2026-03": 57.0,
+        "2026-04": 60.4,
+        "2026-05": 77.7,
+        "2026-06": 71.5,
+        "2026-07": 92.6,
+        "2026-08": 83.7
+      },
+      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.03, 13 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "us-2-bonner-sandpoint-core",
+      "name": "US-2: Bonner County (Sandpoint) \u2014 Tier 1 Congested Core (Tibbetts Ln to End Divided Hwy)",
+      "description": "Tier 1 (Congested Core) of US-2: Bonner County (Sandpoint), NB. Recurrent congestion core (1.30 mi): peak/baseline 1.16, 52 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "core",
+      "_tier_number": 1,
+      "_tier_label": "Tier 1 Congested Core (Tibbetts Ln to End Divided Hwy)",
+      "_facility": "us-2-bonner-sandpoint",
+      "_facility_name": "US-2: Bonner County (Sandpoint)",
+      "_miles": 1.298,
+      "_n_segments": 2,
+      "_ranked": true,
+      "_core": {
+        "miles": 1.298,
+        "effective_miles": 0.727,
+        "vhd": 67.1,
+        "vhd_per_mile": 51.7,
+        "delay_per_mile": 0.246,
+        "realtime_share": 0.997,
+        "peak_ratio": 1.159,
+        "ref_tti": 1.168,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "NB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 77.2,
+        "2026-02": 65.8,
+        "2026-03": 61.7,
+        "2026-04": 61.3,
+        "2026-05": 65.6,
+        "2026-06": 71.2,
+        "2026-07": 65.3,
+        "2026-08": 70.5
+      },
+      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 1.11, 35 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "us-2-bonner-sandpoint-regional",
+      "name": "US-2: Bonner County (Sandpoint) \u2014 Tier 3 Regional Baseline (Ic No. 475 Sh-200 to End Divided Hwy)",
+      "description": "Tier 3 (Regional Baseline) of US-2: Bonner County (Sandpoint), NB. Context around the congested extent (3.12 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Ic No. 475 Sh-200 to End Divided Hwy)",
+      "_facility": "us-2-bonner-sandpoint",
+      "_facility_name": "US-2: Bonner County (Sandpoint)",
+      "_miles": 3.121,
+      "_n_segments": 6,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.298,
+        "effective_miles": 0.727,
+        "vhd": 67.1,
+        "vhd_per_mile": 51.7,
+        "delay_per_mile": 0.246,
+        "realtime_share": 0.997,
+        "peak_ratio": 1.159,
+        "ref_tti": 1.168,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "NB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 77.2,
+        "2026-02": 65.8,
+        "2026-03": 61.7,
+        "2026-04": 61.3,
+        "2026-05": 65.6,
+        "2026-06": 71.2,
+        "2026-07": 65.3,
+        "2026-08": 70.5
+      },
+      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 1.11, 35 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "sh-53-kootenai-2-core",
+      "name": "SH-53: Kootenai County (2) \u2014 Tier 1 Congested Core (Meyer Rd to Old Us-95)",
+      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County (2), EB. Recurrent congestion core (1.52 mi): peak/baseline 1.19, 36 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "core",
+      "_tier_number": 1,
+      "_tier_label": "Tier 1 Congested Core (Meyer Rd to Old Us-95)",
+      "_facility": "sh-53-kootenai-2",
+      "_facility_name": "SH-53: Kootenai County (2)",
+      "_miles": 1.523,
+      "_n_segments": 4,
+      "_ranked": true,
+      "_core": {
+        "miles": 1.523,
+        "effective_miles": 0.944,
+        "vhd": 54.5,
+        "vhd_per_mile": 35.8,
+        "delay_per_mile": 0.265,
+        "realtime_share": 0.997,
+        "peak_ratio": 1.189,
+        "ref_tti": 1.165,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "EB",
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 114.4,
+        "2026-02": 102.9,
+        "2026-03": 101.1,
+        "2026-04": 103.8,
+        "2026-05": 120.1,
+        "2026-06": 108.8,
+        "2026-07": 105.4,
+        "2026-08": 102.6
+      }
+    },
+    {
+      "id": "sh-53-kootenai-2-commuter",
+      "name": "SH-53: Kootenai County (2) \u2014 Tier 2 Commuter Corridor (Meyer Rd to Old Us-95)",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County (2), EB. Congested extent grown from the core (1.52 mi, 36 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.56 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "commuter",
+      "_tier_number": 2,
+      "_tier_label": "Tier 2 Commuter Corridor (Meyer Rd to Old Us-95)",
+      "_facility": "sh-53-kootenai-2",
+      "_facility_name": "SH-53: Kootenai County (2)",
+      "_miles": 1.523,
+      "_n_segments": 4,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.523,
+        "effective_miles": 0.944,
+        "vhd": 54.5,
+        "vhd_per_mile": 35.8,
+        "delay_per_mile": 0.265,
+        "realtime_share": 0.997,
+        "peak_ratio": 1.189,
+        "ref_tti": 1.165,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "EB",
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 114.4,
+        "2026-02": 102.9,
+        "2026-03": 101.1,
+        "2026-04": 103.8,
+        "2026-05": 120.1,
+        "2026-06": 108.8,
+        "2026-07": 105.4,
+        "2026-08": 102.6
+      }
+    },
+    {
+      "id": "sh-53-kootenai-2-regional",
+      "name": "SH-53: Kootenai County (2) \u2014 Tier 3 Regional Baseline (Sh-41 (Nw Jct) to Old Us-95)",
+      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County (2), EB. Context around the congested extent (4.32 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Sh-41 (Nw Jct) to Old Us-95)",
+      "_facility": "sh-53-kootenai-2",
+      "_facility_name": "SH-53: Kootenai County (2)",
+      "_miles": 4.322,
+      "_n_segments": 9,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.523,
+        "effective_miles": 0.944,
+        "vhd": 54.5,
+        "vhd_per_mile": 35.8,
+        "delay_per_mile": 0.265,
+        "realtime_share": 0.997,
+        "peak_ratio": 1.189,
+        "ref_tti": 1.165,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "EB",
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 114.4,
+        "2026-02": 102.9,
+        "2026-03": 101.1,
+        "2026-04": 103.8,
+        "2026-05": 120.1,
+        "2026-06": 108.8,
+        "2026-07": 105.4,
+        "2026-08": 102.6
+      }
+    },
+    {
+      "id": "us-2-bonner-2-core",
+      "name": "US-2: Bonner County (2) \u2014 Tier 1 Congested Core (9Th St (Sh-57) to Bodie Canyon Rd)",
+      "description": "Tier 1 (Congested Core) of US-2: Bonner County (2), WB. Recurrent congestion core (1.29 mi): peak/baseline 1.16, 41 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "core",
+      "_tier_number": 1,
+      "_tier_label": "Tier 1 Congested Core (9Th St (Sh-57) to Bodie Canyon Rd)",
+      "_facility": "us-2-bonner-2",
+      "_facility_name": "US-2: Bonner County (2)",
+      "_miles": 1.285,
+      "_n_segments": 2,
+      "_ranked": true,
+      "_core": {
+        "miles": 1.285,
+        "effective_miles": 0.747,
+        "vhd": 53.3,
+        "vhd_per_mile": 41.5,
+        "delay_per_mile": 0.284,
+        "realtime_share": 0.992,
+        "peak_ratio": 1.161,
+        "ref_tti": 1.189,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 50.7,
+        "2026-02": 48.1,
+        "2026-03": 42.9,
+        "2026-04": 50.1,
+        "2026-05": 56.0,
+        "2026-06": 56.4,
+        "2026-07": 64.9,
+        "2026-08": 56.1
+      },
+      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.06, 13 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "us-2-bonner-2-commuter",
+      "name": "US-2: Bonner County (2) \u2014 Tier 2 Commuter Corridor (Larch St, Priest River to Bodie Canyon Rd)",
+      "description": "Tier 2 (Commuter Corridor) of US-2: Bonner County (2), WB. Congested extent grown from the core (1.93 mi, 31 VHD/mi, 74% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "commuter",
+      "_tier_number": 2,
+      "_tier_label": "Tier 2 Commuter Corridor (Larch St, Priest River to Bodie Canyon Rd)",
+      "_facility": "us-2-bonner-2",
+      "_facility_name": "US-2: Bonner County (2)",
+      "_miles": 1.928,
+      "_n_segments": 3,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.285,
+        "effective_miles": 0.747,
+        "vhd": 53.3,
+        "vhd_per_mile": 41.5,
+        "delay_per_mile": 0.284,
+        "realtime_share": 0.992,
+        "peak_ratio": 1.161,
+        "ref_tti": 1.189,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 50.7,
+        "2026-02": 48.1,
+        "2026-03": 42.9,
+        "2026-04": 50.1,
+        "2026-05": 56.0,
+        "2026-06": 56.4,
+        "2026-07": 64.9,
+        "2026-08": 56.1
+      },
+      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.06, 13 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "us-2-bonner-2-regional",
+      "name": "US-2: Bonner County (2) \u2014 Tier 3 Regional Baseline (East Side Rd to Le Clerc Rd)",
+      "description": "Tier 3 (Regional Baseline) of US-2: Bonner County (2), WB. Context around the congested extent (7.07 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (East Side Rd to Le Clerc Rd)",
+      "_facility": "us-2-bonner-2",
+      "_facility_name": "US-2: Bonner County (2)",
+      "_miles": 7.069,
+      "_n_segments": 11,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.285,
+        "effective_miles": 0.747,
+        "vhd": 53.3,
+        "vhd_per_mile": 41.5,
+        "delay_per_mile": 0.284,
+        "realtime_share": 0.992,
+        "peak_ratio": 1.161,
+        "ref_tti": 1.189,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 50.7,
+        "2026-02": 48.1,
+        "2026-03": 42.9,
+        "2026-04": 50.1,
+        "2026-05": 56.0,
+        "2026-06": 56.4,
+        "2026-07": 64.9,
+        "2026-08": 56.1
+      },
+      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.06, 13 VHD/mi over the mirrored span)"
     }
   ]
 }

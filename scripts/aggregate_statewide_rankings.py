@@ -71,7 +71,7 @@ def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE) -> list
 
 
 def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE) -> dict:
-    """``(district, corridor_group) -> (tier_number, ranked, facility)`` from the
+    """``(district, corridor_group) -> (tier_number, ranked, facility, flags)`` from the
     generated catalogues. A group with no tier metadata (a couplet, District 3's
     curated entries) is absent and ranks as before."""
     out = {}
@@ -84,7 +84,8 @@ def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE) -> dict:
             if "_tier_number" not in grp:
                 continue
             ranked = grp.get("_ranked", grp["_tier_number"] == 1)
-            out[(d, grp["id"])] = (grp["_tier_number"], bool(ranked), grp.get("_facility"))
+            out[(d, grp["id"])] = (grp["_tier_number"], bool(ranked), grp.get("_facility"),
+                                   "; ".join(grp.get("_flags", [])))
     return out
 
 
@@ -104,6 +105,9 @@ def split_ranked(combined: pd.DataFrame, group_tiers: dict,
     combined = combined.copy()
     combined["tier"] = [m[0] if m else pd.NA for m in meta]
     combined["facility"] = [m[2] if m else pd.NA for m in meta]
+    # Flags (e.g. an episodic, work-zone-like core) travel with the row: they are
+    # for the reader, never a reason to drop it (Item 50).
+    combined["flags"] = [m[3] if m and len(m) > 3 else "" for m in meta]
     is_ranked = pd.Series([m is None or m[1] for m in meta], index=combined.index)
 
     ranked = combined[is_ranked].drop(columns=["statewide_rank"], errors="ignore")

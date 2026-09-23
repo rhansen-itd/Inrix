@@ -678,3 +678,54 @@ class TestContextExtent:
         lo, hi, up, down = extents.context_extent(ids, seg, 13, 17, urban=True)
         assert (ids[lo], ids[hi - 1]) == (1010, 1019)
         assert up.kind is extents.SplitKind.URBAN_BOUNDARY
+
+
+def _monthly(ids, pm_by_month, night_tt=1.0):
+    """A monthly screen: every segment's PM mean per month; AM at the night level."""
+    rows = [{"Segment ID": s, "month": m, "am_travel_time": night_tt, "am_n_obs": 100,
+             "pm_travel_time": tt, "pm_n_obs": 100}
+            for s in ids for m, tt in pm_by_month.items()]
+    return pd.DataFrame(rows)
+
+
+class TestEpisodicFlag:
+    MONTHS = [f"2026-{m:02d}" for m in range(1, 9)]
+
+    def test_a_summer_step_is_flagged(self):
+        """I-90 WB: at the night level until late June, then 3-4x slower."""
+        net = _linear_chain(4)
+        ids = list(net.index)
+        seg = extents.segment_congestion(_baseline(ids, {s: 1.8 for s in ids}), net)
+        pm = {m: (1.0 if m < "2026-06" else 3.5) for m in self.MONTHS}
+        profile = extents.monthly_delay_profile(ids, seg, _monthly(ids, pm))
+        assert list(profile.index) == self.MONTHS
+        assert profile["2026-01"] == 0.0
+        flag = extents.episodic_flag(profile)
+        assert flag.startswith("episodic: 100%")
+        assert "2026-06, 2026-07, 2026-08" in flag
+
+    def test_a_queue_every_month_is_not_flagged(self):
+        net = _linear_chain(4)
+        ids = list(net.index)
+        seg = extents.segment_congestion(_baseline(ids, {s: 1.5 for s in ids}), net)
+        pm = {m: 1.5 + 0.05 * i for i, m in enumerate(self.MONTHS)}
+        assert extents.episodic_flag(
+            extents.monthly_delay_profile(ids, seg, _monthly(ids, pm))) == ""
+
+    def test_a_summer_heavy_queue_is_seasonal_not_episodic(self):
+        profile = pd.Series({m: (10.0 if m < "2026-06" else 25.0) for m in self.MONTHS})
+        assert extents.episodic_flag(profile).startswith("seasonal: 60%")
+
+    def test_too_few_months_is_not_judged(self):
+        assert extents.episodic_flag(pd.Series({"2026-07": 10.0, "2026-08": 0.0})) == ""
+
+    def test_the_flag_is_carried_not_used_to_drop(self):
+        net = _linear_chain(8)
+        ids = list(net.index)
+        ratios = {1002: 2.0, 1003: 2.0, 1004: 2.0}
+        pm = {m: (1.0 if m < "2026-07" else 3.0) for m in self.MONTHS}
+        cat = extents.generate_catalogue(net, _baseline(ids, ratios),
+                                         monthly=_monthly(ids, pm))
+        core = next(g for g in cat["reporting_corridors"] if g["_tier"] == "core")
+        assert core["_flags"] and core["_flags"][0].startswith("episodic")
+        assert core["_ranked"] is True

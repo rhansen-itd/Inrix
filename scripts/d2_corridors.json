@@ -24,10 +24,16 @@
       ],
       "segment_miles_cap": 0.5,
       "min_effective_core_miles": 0.6,
-      "min_core_vhd_per_mile": 60.0,
-      "min_core_vhd": 25.0,
+      "min_core_vhd_per_mile": 10.0,
+      "min_core_vhd": 10.0,
       "min_realtime_share": 0.9,
       "spill_retention": 0.5,
+      "episodic": {
+        "top_fraction_of_months": 0.333,
+        "share": 0.7,
+        "seasonal_share": 0.55,
+        "min_months": 3
+      },
       "context_pad_miles": 3.0
     }
   },
@@ -335,7 +341,18 @@
       "_directions": [
         "EB",
         "WB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 386.0,
+        "2026-02": 513.0,
+        "2026-03": 431.6,
+        "2026-04": 636.6,
+        "2026-05": 548.9,
+        "2026-06": 400.8,
+        "2026-07": 490.3,
+        "2026-08": 730.3
+      }
     },
     {
       "id": "sh-8-w-pullman-rd-latah-commuter",
@@ -368,7 +385,18 @@
       "_directions": [
         "EB",
         "WB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 386.0,
+        "2026-02": 513.0,
+        "2026-03": 431.6,
+        "2026-04": 636.6,
+        "2026-05": 548.9,
+        "2026-06": 400.8,
+        "2026-07": 490.3,
+        "2026-08": 730.3
+      }
     },
     {
       "id": "us-95-latah-core",
@@ -401,6 +429,17 @@
       "_directions": [
         "NB"
       ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 184.1,
+        "2026-02": 212.6,
+        "2026-03": 205.9,
+        "2026-04": 239.8,
+        "2026-05": 238.1,
+        "2026-06": 214.6,
+        "2026-07": 233.3,
+        "2026-08": 272.6
+      },
       "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 0.99, 0 VHD/mi over the mirrored span)"
     },
     {
@@ -434,6 +473,17 @@
       "_directions": [
         "NB"
       ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 184.1,
+        "2026-02": 212.6,
+        "2026-03": 205.9,
+        "2026-04": 239.8,
+        "2026-05": 238.1,
+        "2026-06": 214.6,
+        "2026-07": 233.3,
+        "2026-08": 272.6
+      },
       "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 0.99, 0 VHD/mi over the mirrored span)"
     },
     {
@@ -467,6 +517,17 @@
       "_directions": [
         "NB"
       ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 184.1,
+        "2026-02": 212.6,
+        "2026-03": 205.9,
+        "2026-04": 239.8,
+        "2026-05": 238.1,
+        "2026-06": 214.6,
+        "2026-07": 233.3,
+        "2026-08": 272.6
+      },
       "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 0.99, 0 VHD/mi over the mirrored span)"
     },
     {
@@ -499,7 +560,18 @@
       },
       "_directions": [
         "SB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 170.5,
+        "2026-02": 193.2,
+        "2026-03": 184.4,
+        "2026-04": 205.5,
+        "2026-05": 199.1,
+        "2026-06": 161.8,
+        "2026-07": 183.8,
+        "2026-08": 183.9
+      }
     },
     {
       "id": "us-95-latah-moscow-regional",
@@ -531,7 +603,18 @@
       },
       "_directions": [
         "SB"
-      ]
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 170.5,
+        "2026-02": 193.2,
+        "2026-03": 184.4,
+        "2026-04": 205.5,
+        "2026-05": 199.1,
+        "2026-06": 161.8,
+        "2026-07": 183.8,
+        "2026-08": 183.9
+      }
     },
     {
       "id": "couplet-95-washington-st-jackson-st",

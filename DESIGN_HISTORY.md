@@ -5588,7 +5588,7 @@ The Item 46 generator and the Item 49 catalogues it produced are kept in
   concurrent US-2 chain, it is 3 Main St segments at 45 VHD/mi. The qualifying cores
   have a gap between 55 and 65. With Bonners Ferry, these also fall below 60:
   - Blackfoot US-91 (44);
-  - Montpelier US-30 (50);
+  - Soda Springs US-30 (50; first written here as Montpelier, but its core is 2nd S in ZIP 83276);
   - Sandpoint US-2 WB (54);
   - Ammon US-26 (55);
   - Rathdrum's second SH-53 core (36).
@@ -5689,3 +5689,39 @@ with ITD D1.** The core is kept per the owner, but its rank reflects summer 2026
 - `test_screen.py` +2 (quantiles and real-time share; quantile validation).
 - New `test_aggregate_statewide_rankings.py` (the ranked/context split).
 - Full suite: 760 passed, 2 skipped.
+
+### 6. Follow-up: a noise floor instead of a cut, and flags instead of exclusions
+
+The owner reviewed the 60 VHD/mi floor, and it has been lowered to a noise floor.
+Their reasoning: the figure is an index (window delay times a daily AADT used as a
+weight), not vehicle-hours, so a cut between two real towns is arbitrary. It is
+better to catalogue permissively and let the ranking, or a later top-20/top-50 cut,
+leave the small ones out. So:
+
+- **`MIN_CORE_VHD_PER_MILE` = `MIN_CORE_VHD` = 10.** This removes only non-delay
+  (the rural geometric and low-volume roads at 1–5 VHD/mi). All of these are back
+  as low-ranked cores:
+  - Bonners Ferry (45; US-2/95 Main St);
+  - Blackfoot US-91;
+  - Soda Springs US-30;
+  - Sandpoint US-2 (two cores);
+  - Ammon US-26;
+  - a second Rathdrum SH-53 core;
+  - Jerome US-93.
+
+  Statewide there are now 39 generated cores.
+- **Work zones are flagged, not excluded** (owner: "there are a few of those
+  throughout the state").
+  - New `screen.segment_monthly_screen` gives AM/PM travel time per segment per
+    local month, cached as `segment_monthly_screen.parquet`.
+  - `extents.monthly_delay_profile` gives a core's VHD per month against the
+    export-wide baseline.
+  - `extents.episodic_flag` takes the busiest third of months' share of the delay
+    (an even spread over 8 months is 0.375). **Episodic** is ≥ 0.70: I-90 WB Coeur
+    d'Alene 0.96, US-95 SB Sandpoint 0.77. **Seasonal** is ≥ 0.55: Soda Springs,
+    Burley, Blue Lakes, Ketchum, Victor. 30 of the 39 cores sit at 0.40–0.47.
+  - Facilities carry `_flags` and `_monthly_vhd`. `aggregate_statewide_rankings.py`
+    carries a `flags` column into the ranked and context tables.
+- Tests: `TestEpisodicFlag` (a summer step is episodic, an every-month queue is not
+  flagged, summer-heavy is seasonal, too few months are not judged, a flagged core
+  still ranks), a monthly-screen test, and flags in the aggregation test.

@@ -405,6 +405,70 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
     return out
 
 
+def segment_monthly_screen(con, area_key: str, windows=None,
+                           cvalue_threshold: int | float | None = DEFAULT_CVALUE_THRESHOLD, *,
+                           bin_minutes: int | None = None, tz=DEFAULT_TZ,
+                           date_start=None, date_end=None) -> pd.DataFrame:
+    """Per segment, per **local calendar month**, per window: mean travel time and
+    gated observation count (ROADMAP Item 50).
+
+    The month-by-month view :func:`segment_screen` collapses. It exists to show
+    **when** a segment's delay happened: a queue that is there every month and a
+    summer work zone can have the same export-wide mean (I-90 WB in Coeur d'Alene
+    sat at its overnight level until 22 June 2026, then ran 3-4x slower).
+
+    Returns a long frame with ``Segment ID``, ``month`` (``"YYYY-MM"``, local), and
+    per window ``<name>_travel_time`` / ``<name>_n_obs``. ``windows`` defaults to the
+    AM/PM peaks.
+    """
+    row = _store._area_row(con, area_key)
+    if row is None:
+        raise KeyError(f"No area {area_key!r} in the store.")
+    wins = resolve_windows(windows if windows is not None else ["am", "pm"])
+    zone = _validated_tz(tz)
+    bin_minutes = _store._resolve_bin(con, area_key, bin_minutes)
+    obs = _store._obs_table(area_key)
+    cols = _table_columns(con, obs)
+    m = _metric_columns(cols)
+    if m["travel_time"] is None:
+        raise ValueError(f"Area {area_key!r} carries no 'Travel Time(...)' column.")
+    if cvalue_threshold is not None and CVALUE_COL not in cols:
+        raise ValueError(f"Area {area_key!r} carries no {CVALUE_COL!r} column but a gate "
+                         f"of {cvalue_threshold} was requested.")
+    where = [f'"{_store.BIN_COL}" = ?']
+    params: list = [bin_minutes]
+    lo, hi = _store._date_bounds_utc(date_start, date_end, zone)
+    if lo is not None:
+        where.append(f'"{DATETIME_COL}" >= ?')
+        params.append(lo)
+    if hi is not None:
+        where.append(f'"{DATETIME_COL}" < ?')
+        params.append(hi)
+    gate = "TRUE" if cvalue_threshold is None else f'"{CVALUE_COL}" > {float(cvalue_threshold)}'
+    agg = [f'  sid AS "{SEGMENT_COL}"', "  strftime(local_dt, '%Y-%m') AS month"]
+    for name, w in wins.items():
+        pred = w.sql_predicate()
+        agg += [f'  avg(tt) FILTER (WHERE kept AND {pred}) AS "{name}_travel_time"',
+                f'  count(*) FILTER (WHERE kept AND {pred}) AS "{name}_n_obs"']
+    sql = (
+        f'WITH src AS (SELECT "{SEGMENT_COL}" AS sid, "{m["travel_time"]}" AS tt, '
+        f"\"{DATETIME_COL}\" AT TIME ZONE '{zone}' AS local_dt, ({gate}) AS kept "
+        f'FROM "{obs}" WHERE {" AND ".join(where)}), tagged AS (\n'
+        "SELECT sid, tt, kept, local_dt,\n"
+        "  date_part('hour', local_dt) * 3600 + date_part('minute', local_dt) * 60"
+        " + date_part('second', local_dt) AS tod,\n"
+        "  isodow(local_dt) AS dow FROM src)\nSELECT\n" + ",\n".join(agg) +
+        "\nFROM tagged GROUP BY 1, 2 ORDER BY 1, 2"
+    )
+    out = con.execute(sql, params).df()
+    if len(out):
+        out[SEGMENT_COL] = out[SEGMENT_COL].astype("int64")
+    out.attrs = {"area_key": area_key, "tz": zone, "cvalue_threshold": cvalue_threshold,
+                 "windows": {n: w.to_dict() for n, w in wins.items()},
+                 "bin_minutes": bin_minutes}
+    return out
+
+
 def _quantile_name(q: float) -> str:
     """``0.15`` -> ``"tt_p15"``; ``0.025`` -> ``"tt_p2.5"``."""
     pct = round(100.0 * float(q), 6)
@@ -2038,7 +2102,7 @@ __all__ = [
     "rank_corridor_groups", "corridor_peak_totals", "corridor_breakout",
     "GROUP_COL", "DIRECTION_COL", "RANK_METRICS", "DEFAULT_RANK_METRIC",
     "PeakWindow", "PEAK_WINDOWS", "WEEKDAYS", "resolve_windows",
-    "segment_screen", "rank_corridors",
+    "segment_screen", "segment_monthly_screen", "rank_corridors",
     # Item 43 — recurring-congestion corridor extraction
     "segment_recurrence", "CongestionRun", "extract_congestion_runs",
     "tidy_run_endpoints", "pair_directions", "emit_candidates",

@@ -2512,7 +2512,7 @@ Scope:
       from the AADT join, and a minimum real-time share (`Pct Score30`) or kept
       fraction. Calibrate both on the Session 65 list, **using AADT 2025 volumes**
       (Item 52), and record the values in DATA_FORMAT.
-      *Done: ≥ 60 VHD/mi, ≥ 25 VHD (AADT 2025), ≥ 90% `Pct Score30` real-time at peak. Recorded in DATA_FORMAT. Bonners Ferry (45) and five small-town cores fall under 60; the owner should confirm them (DESIGN_HISTORY Session 69).*
+      *Done: ≥ 90% `Pct Score30` real-time at peak, plus a **noise floor** of 10 VHD/mi and 10 VHD (AADT 2025), recorded in DATA_FORMAT. The owner (Session 69) chose a permissive floor over a 60 VHD/mi cut: VHD is an index, and thinning to a top-N belongs to the ranking. Small towns (Blackfoot, Bonners Ferry, Soda Springs, Sandpoint, Ammon) stay in and rank low.*
 - [x] **No cliffs.** Replace the per-segment 1.20 / 0.75-mi gates with a length- and
       delay-weighted score, so one long rural segment can't be a core by itself and
       1.199 doesn't fall off an edge. Record where SH-8 through Moscow lands.
@@ -2546,7 +2546,7 @@ Scope:
       - Galena and McCammon–Lava stay out of the ranked set.
       - Settle the I-90 westbound winter/summer ratio of 0.43: is it summer-only,
         and possibly construction?
-      *Done: see the Session 69 table. All five drops fail, all five keeps rank. Also fixed: several cores per chain (SH-75 Hailey had been lost behind Ketchum). I-90 WB is summer-only: a step change on 22–23 June 2026 with nights unaffected, most likely a work zone; confirm with ITD D1.*
+      *Done: see the Session 69 table. Gilbert Grade, Lowell, Idaho County and Benewah fail on delay and data. Bonners Ferry passes the noise floor and ranks near the bottom (owner's permissive-floor decision). All five keeps rank. Also fixed: several cores per chain (SH-75 Hailey had been lost behind Ketchum). I-90 WB is summer-only: a step change on 22–23 June 2026 with nights unaffected, a work zone. It carries an `episodic` flag rather than being excluded.*
 - [x] pytest on synthetic chains: a geometric grade, a one-segment core, a mirrored
       free-flow direction, and a 1.199 neighbour. Regenerate D1/D2/D4–D6, re-run the
       screening and maps, and record in DATA_FORMAT and DESIGN_HISTORY how the

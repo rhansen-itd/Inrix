@@ -1523,16 +1523,19 @@ long rural segment cannot be a core by itself."""
 MIN_EFFECTIVE_CORE_MILES = 0.6
 """Floor on ``sum(min(miles, SEGMENT_MILES_CAP) x weight)`` over the core."""
 
-MIN_CORE_VHD_PER_MILE = 60.0
-"""Floor on the core's vehicle-hours of delay per mile (AADT 2025 x peak delay
-against the segment's own baseline). Calibrated on Session 65's list (Session 69):
-the keep list is 130–650; the rural geometric cores are under 3; Bonners Ferry, on
-AADT 2025 volumes and read as the concurrent US-2 chain, is 45. The qualifying cores
-fall into a gap between 55 and 65, and the floor sits in it — with Bonners Ferry
-below it are Blackfoot, Montpelier, Sandpoint's US-2 and Rathdrum's SH-53."""
+MIN_CORE_VHD_PER_MILE = 10.0
+"""A **noise floor** on the core's vehicle-hours of delay per mile, not a policy cut.
 
-MIN_CORE_VHD = 25.0
-"""Floor on the core's total vehicle-hours of delay."""
+VHD here is an index — mean window delay times a daily AADT used as a weight — so a
+cut placed between two real towns would be arbitrary (owner, Session 69: "be pretty
+permissive ... a later decision can filter them back out if they rank too low").
+The floor only removes what is not delay at all: the rural geometric and low-volume
+cores sit at 1–5 (Gilbert Grade 1.1–1.4, Lowell ~2, Benewah 2–4, Galena 2–3). The
+smallest real town cores (Blackfoot 44, Bonners Ferry 45, Soda Springs 50) pass and
+rank at the bottom; thinning to a top-N belongs to the ranking, not the catalogue."""
+
+MIN_CORE_VHD = 10.0
+"""Noise floor on the core's total vehicle-hours of delay."""
 
 MIN_REALTIME_SHARE = 0.90
 """Floor on the core's mile-weighted ``Pct Score30`` share in its peak window. Every
@@ -1549,6 +1552,22 @@ URBAN_SHARE_INSIDE = 0.5
 
 CONTEXT_PAD_MILES = 3.0
 """Tier 3 (context) reaches at most this far past Tier 2 on each side."""
+
+EPISODIC_TOP_FRACTION = 1 / 3
+EPISODIC_SHARE = 0.70
+SEASONAL_SHARE = 0.55
+"""Flags on how a core's peak delay is spread over the months (its busiest third of
+months' share; an even spread over 8 months is 0.375). Flags, never exclusions.
+
+* ``episodic`` (>= 0.70): a step or event — check for a work zone. I-90 WB in Coeur
+  d'Alene is 0.96 (at its overnight level until 22 June 2026), US-95 SB in
+  Sandpoint 0.77.
+* ``seasonal`` (>= 0.55): recurring but summer-heavy — the resort and recreation
+  towns (Ketchum 0.65, Victor 0.63, Soda Springs 0.68, Burley 0.67).
+
+Calibrated on the 39 cores of Session 69: 30 of them sit at 0.40–0.47."""
+
+EPISODIC_MIN_MONTHS = 3
 
 FAIL_EFFECTIVE_MILES = "effective_miles"
 FAIL_VHD_PER_MILE = "vhd_per_mile"
@@ -1789,6 +1808,52 @@ def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame) -> list[CoreCan
         ))
     out.sort(key=lambda c: (-c.vhd, -c.effective_miles))
     return out
+
+
+def monthly_delay_profile(
+    segment_ids: Sequence[int],
+    seg: pd.DataFrame,
+    monthly: pd.DataFrame,
+    *,
+    peak_windows: Sequence[str] = PEAK_WINDOWS,
+) -> pd.Series:
+    """A core's vehicle-hours of peak delay **per month**, indexed by ``"YYYY-MM"``.
+
+    Each segment-month is read at its worse peak window and measured against the
+    segment's **export-wide** baseline (``seg["baseline_tt"]``), so a month that is
+    slow because of a work zone shows as delay rather than moving its own baseline.
+    Segments with no baseline or AADT contribute nothing.
+    """
+    ids = [int(x) for x in segment_ids]
+    sub = monthly[monthly["Segment ID"].isin(ids)]
+    cols = [f"{w}_travel_time" for w in peak_windows if f"{w}_travel_time" in sub.columns]
+    if sub.empty or not cols:
+        return pd.Series(dtype="float64")
+    peak = sub[cols].max(axis=1)
+    base = sub["Segment ID"].map(seg["baseline_tt"])
+    aadt = sub["Segment ID"].map(seg["aadt"])
+    vhd = ((peak - base).clip(lower=0.0) / 60.0 * aadt).where(aadt > 0)
+    return vhd.groupby(sub["month"]).sum(min_count=1).dropna().sort_index()
+
+
+def episodic_flag(profile: pd.Series) -> str:
+    """``""``, or an ``episodic:`` / ``seasonal:`` sentence saying the delay is
+    concentrated in a few months (:data:`EPISODIC_SHARE`, :data:`SEASONAL_SHARE`)."""
+    profile = profile[profile.notna()]
+    n = len(profile)
+    total = float(profile.sum())
+    if n < EPISODIC_MIN_MONTHS or total <= 0:
+        return ""
+    k = max(1, int(np.ceil(n * EPISODIC_TOP_FRACTION)))
+    top = profile.sort_values(ascending=False).iloc[:k]
+    share = float(top.sum()) / total
+    months = ", ".join(sorted(top.index))
+    if share >= EPISODIC_SHARE:
+        return (f"episodic: {share:.0%} of peak delay in {months} ({k} of {n} months) — "
+                f"check for a work zone or event before reading it as recurring")
+    if share >= SEASONAL_SHARE:
+        return f"seasonal: {share:.0%} of peak delay in {months} ({k} of {n} months)"
+    return ""
 
 
 def _stop(kind: SplitKind, ids: Sequence[int], index: int, detail: str) -> SplitPoint:
@@ -2058,6 +2123,7 @@ def generate_catalogue(
     observed: set[int] | None = None,
     note: str = "",
     audit: list | None = None,
+    monthly: pd.DataFrame | None = None,
 ) -> dict:
     """Build a whole corridor catalogue from a district network (Items 46, 50).
 
@@ -2084,6 +2150,9 @@ def generate_catalogue(
         baseline: the baseline screen (see :func:`segment_congestion`).
         max_facilities: keep only the N facilities with the most core delay.
         observed: segment ids in the export; a core with none is not catalogued.
+        monthly: ``screen.segment_monthly_screen`` over the peak windows. When given,
+            each facility is checked for delay concentrated in a few months
+            (:func:`episodic_flag`) and flagged — never dropped — in ``_flags``.
         audit: when given, one row per analysed direction is appended — every chain's
             strongest candidate with its metrics and the floors it failed — so the
             decisions can be checked segment by segment.
@@ -2256,7 +2325,20 @@ def generate_catalogue(
         meta = {
             "_core": lead.core.metrics(),
             "_directions": [m.chain.direction for m in members],
+            "_flags": [],
         }
+        if monthly is not None:
+            core_ids = [s for m in members for s in m.core.segment_ids]
+            profile = monthly_delay_profile(core_ids, seg, monthly,
+                                            peak_windows=peak_windows)
+            flag = episodic_flag(profile)
+            if flag:
+                meta["_flags"].append(flag)
+            meta["_monthly_vhd"] = {k: round(float(v), 1) for k, v in profile.items()}
+        if audit is not None and meta["_flags"]:
+            for row in audit:
+                if row.get("facility") == facility_id:
+                    row["flags"] = "; ".join(meta["_flags"])
         if fac["note"]:
             meta["_companion"] = fac["note"]
         for tier in keep:
@@ -2296,6 +2378,9 @@ def generate_catalogue(
                 "min_core_vhd": MIN_CORE_VHD,
                 "min_realtime_share": MIN_REALTIME_SHARE,
                 "spill_retention": SPILL_RETENTION,
+                "episodic": {"top_fraction_of_months": round(EPISODIC_TOP_FRACTION, 3),
+                             "share": EPISODIC_SHARE, "seasonal_share": SEASONAL_SHARE,
+                             "min_months": EPISODIC_MIN_MONTHS},
                 "context_pad_miles": CONTEXT_PAD_MILES,
             },
         },

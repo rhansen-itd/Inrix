@@ -755,3 +755,13 @@ def test_quantiles_outside_zero_one_are_rejected(area):
     con, key = area
     with pytest.raises(ValueError):
         screen.segment_screen(con, key, quantiles=(15,))
+
+
+def test_monthly_screen_splits_by_local_month(area):
+    con, key = area
+    mon = screen.segment_monthly_screen(con, key, cvalue_threshold=None)
+    # The fixture week lies inside March 2026: one month per segment.
+    assert set(mon["month"]) == {"2026-03"}
+    assert len(mon) == mon["Segment ID"].nunique()
+    assert mon["pm_travel_time"].eq(TT_PM).all()
+    assert mon["am_travel_time"].eq(TT_AM).all()
