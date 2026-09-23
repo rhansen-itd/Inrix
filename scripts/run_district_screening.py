@@ -94,7 +94,7 @@ def resolve_area(con, area: str | None) -> str:
 def load_repairs(path, enabled: bool):
     """The topology patch table, or ``None`` when the run is asked to walk on
     ``NextXDSegI`` exactly as published (Item 38)."""
-    if not enabled:
+    if not enabled or path is None:
         return None
     p = Path(path)
     if not p.exists():
@@ -206,24 +206,29 @@ def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> 
 
 
 def write_outputs(out_dir, ranking, resolution, prov, geo, *, grouped=None,
-                  totals=None, breakout=None, write_kml=True) -> dict:
+                  totals=None, breakout=None, write_kml=True, is_7day: bool = False) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written = {}
 
-    prov_path = out_dir / "screening_provenance.json"
+    prov_fname = "screening_7day_provenance.json" if is_7day else "screening_provenance.json"
+    prov_path = out_dir / prov_fname
     prov_path.write_text(json.dumps(prov, indent=2, default=str) + "\n")
     written["provenance"] = prov_path
 
     header = "".join(f"# {k}: {json.dumps(v, default=str)}\n" for k, v in prov.items())
-    tables = [("corridor_rankings.csv", ranking, False),
+    ranking_fname = "corridor_7day_rankings.csv" if is_7day else "corridor_rankings.csv"
+    tables = [(ranking_fname, ranking, False),
               ("corridor_resolution.csv", resolution, False)]
     if grouped is not None:
-        tables.insert(0, ("reporting_corridor_rankings.csv", grouped, False))
+        grouped_fname = "reporting_corridor_7day_rankings.csv" if is_7day else "reporting_corridor_rankings.csv"
+        tables.insert(0, (grouped_fname, grouped, False))
     if breakout is not None:
-        tables.insert(0, ("corridor_breakout.csv", breakout, True))
+        breakout_fname = "corridor_7day_breakout.csv" if is_7day else "corridor_breakout.csv"
+        tables.insert(0, (breakout_fname, breakout, True))
     if totals is not None:
-        tables.insert(0, ("corridor_peak_totals.csv", totals, False))
+        totals_fname = "corridor_7day_totals.csv" if is_7day else "corridor_peak_totals.csv"
+        tables.insert(0, (totals_fname, totals, False))
     for name, frame, with_index in tables:
         path = out_dir / name
         with path.open("w") as fh:
@@ -231,7 +236,7 @@ def write_outputs(out_dir, ranking, resolution, prov, geo, *, grouped=None,
             frame.to_csv(fh, index=with_index)
         written[name.split(".")[0]] = path
 
-    if write_kml and not geo.empty:
+    if write_kml and not geo.empty and not is_7day:
         path = out_dir / "corridors.kml"
         drawable = geo.dropna(subset=["geometry"]).set_index("Segment ID")
         kml.geometry_to_kml(drawable, path, color_by="corridor", folder_by="corridor",
@@ -274,18 +279,32 @@ def _extract_linestring_coords(geom):
 
 # TTI tier definitions: label, color, line width.
 _TTI_TIERS = [
-    ("🟢 Free Flow (TTI < 1.10)",              1.10, "#4a5568", 1.8),
-    ("🟡 Minor Delay (1.10 ≤ TTI < 1.25)",     1.25, "#d69e2e", 3.0),
-    ("🟠 Moderate Delay (1.25 ≤ TTI < 1.50)",  1.50, "#dd6b20", 4.0),
-    ("🔴 Severe Congestion (TTI ≥ 1.50)",      None, "#e53e3e", 5.2),
+    ("Free Flow (TTI < 1.10)",              1.10, "#4a5568", 1.8),
+    ("Minor Delay (1.10 ≤ TTI < 1.25)",     1.25, "#d69e2e", 3.0),
+    ("Moderate Delay (1.25 ≤ TTI < 1.50)",  1.50, "#dd6b20", 4.0),
+    ("Severe Congestion (TTI ≥ 1.50)",      None, "#e53e3e", 5.2),
 ]
 
+# VHD/mile tier definitions: label, upper bound, color, line width.
+_VHD_TIERS = [
+    ("Low / Free Flow (< 25 VHD/mi)",        25.0,  "#4a5568", 1.8),
+    ("Minor Delay (25–100 VHD/mi)",          100.0, "#d69e2e", 3.0),
+    ("Moderate Delay (100–300 VHD/mi)",      300.0, "#dd6b20", 4.0),
+    ("Severe Congestion (≥ 300 VHD/mi)",     None,  "#e53e3e", 5.2),
+]
 
-def _segment_tti_frame(scr, net_indexed, windows):
-    """Build a GeoDataFrame of per-segment worst-window TTI for map rendering.
+# Segments the AADT join never reached get their own tier rather than being
+# folded into the lowest one — an unvolumed segment is *unknown*, not free-flowing,
+# and a join that silently matched nothing must look wrong on the map at a glance.
+_VHD_NO_DATA_TIER = ("No AADT Data (unvolumed)", "#9f7aea", 1.4)
+
+
+def _segment_tti_frame(scr, net_indexed, windows, aadt=None):
+    """Build a GeoDataFrame of per-segment worst-window metrics for map rendering.
 
     Each segment gets: ``worst_tti``, ``worst_speed``, ``worst_window``,
-    ``ref_speed``, ``worst_delay_rate`` (min/mi), and the network geometry.
+    ``ref_speed``, ``worst_delay_rate`` (min/mi), optional ``worst_vhd_per_mile``,
+    and the network geometry.
     """
     import numpy as np
 
@@ -330,10 +349,104 @@ def _segment_tti_frame(scr, net_indexed, windows):
     df["ref_speed"] = ref_sp
     df["worst_delay_rate"] = (best_delay / seg_miles) if best_delay is not None else 0.0
 
+    if aadt is not None:
+        # A segment the AADT join did not reach stays **NaN**, never 0. A zero here
+        # is indistinguishable from free flow on the map, which is exactly how a
+        # statewide join that matched nothing once rendered as "everything is fine"
+        # (Session 60). This matches screen.rank_corridors, which leaves vhd NaN and
+        # counts the misses in ``n_aadt_missing`` rather than zero-filling them.
+        aadt_vol = aadt["AADT"] if "AADT" in getattr(aadt, "columns", ()) else aadt
+        seg_aadt = pd.Series(df.index.map(aadt_vol), index=df.index, dtype="float64")
+        df["aadt"] = seg_aadt
+        df["worst_vhd_per_mile"] = (df["worst_delay_rate"] / 60.0) * seg_aadt
+        df["worst_vhd"] = ((best_delay / 60.0) * seg_aadt if best_delay is not None
+                           else pd.Series(np.nan, index=df.index))
+    else:
+        df["aadt"] = np.nan
+        df["worst_vhd_per_mile"] = np.nan
+        df["worst_vhd"] = np.nan
+
     import geopandas as gpd
 
     net_sub = net_indexed.loc[net_indexed.index.isin(df.index)].copy()
     return gpd.GeoDataFrame(net_sub.join(df), geometry="geometry", crs=net_sub.crs)
+
+
+def _fmt_or_na(val, fmt=",.0f") -> str:
+    """Format a metric, or ``n/a`` when it is missing — the same convention the
+    ranking tables print, so a map tooltip can never imply a volume it lacks."""
+    if val is None or pd.isna(val):
+        return "n/a"
+    return format(float(val), fmt)
+
+
+def _build_segment_vhd_traces(merged, window_label="Peak"):
+    """Build Plotly Scattermap traces for all segments, tiered by VHD / Mile.
+
+    Segments whose ``worst_vhd_per_mile`` is NaN (no AADT joined) get their own
+    ``No AADT Data`` trace instead of falling into the lowest delay tier.
+    """
+    import plotly.graph_objects as go
+
+    rate = merged["worst_vhd_per_mile"]
+
+    # Unvolumed segments first, then the delay-density tiers over the rest.
+    nd_label, nd_color, nd_width = _VHD_NO_DATA_TIER
+    buckets = [(nd_label, merged[rate.isna()], nd_color, nd_width)]
+    prev_upper = 0.0
+    for label, upper, color, width in _VHD_TIERS:
+        mask = rate.notna() & (rate >= prev_upper)
+        if upper is not None:
+            mask &= rate < upper
+        buckets.append((label, merged[mask], color, width))
+        prev_upper = upper if upper is not None else prev_upper
+
+    traces = []
+    for label, subset, color, width in buckets:
+        all_lats, all_lons, all_texts = [], [], []
+        for sid, row in subset.iterrows():
+            lats, lons = _extract_linestring_coords(row.geometry)
+            if not lats:
+                continue
+            rname = row.get("RoadName", "Segment") or "Segment"
+            rnum = row.get("RoadNumber", "") or ""
+            bearing = row.get("Bearing", "") or ""
+            route_str = f"Route {rnum} ({bearing})" if rnum else bearing
+            miles = row.get("Miles", 0.0)
+            # "n/a", never "0" — a segment with no joined volume has no delay
+            # density, and printing a zero would assert free flow it cannot know.
+            aadt_val = _fmt_or_na(row.get("aadt"))
+            vhd_val = _fmt_or_na(row.get("worst_vhd"))
+            vhd_rate = _fmt_or_na(row.get("worst_vhd_per_mile"))
+            tooltip = (
+                f"<b>{rname}</b> {route_str}<br>"
+                f"<b>Window:</b> {row.get('worst_window', window_label)} | "
+                f"<b>Length:</b> {miles:.2f} mi<br>"
+                f"<b>Delay Density:</b> {vhd_rate} VHD/mi "
+                f"({vhd_val} veh-hrs)<br>"
+                f"<b>AADT:</b> {aadt_val} veh/day<br>"
+                f"<b>TTI:</b> {row['worst_tti']:.2f} | "
+                f"<b>Delay Rate:</b> {row['worst_delay_rate']:.2f} min/mi<br>"
+                f"<b>Speed:</b> {row['worst_speed']:.1f} mph "
+                f"(Ref: {row['ref_speed']:.0f} mph)<br>"
+                f"<span style='font-size:10px;color:#718096'>Segment ID: {sid}</span>"
+            )
+            for lat, lon in zip(lats, lons):
+                if lat is None:
+                    all_lats.append(None); all_lons.append(None); all_texts.append(None)
+                else:
+                    all_lats.append(lat); all_lons.append(lon); all_texts.append(tooltip)
+            all_lats.append(None); all_lons.append(None); all_texts.append(None)
+
+        traces.append(go.Scattermap(
+            lat=all_lats, lon=all_lons, mode="lines",
+            line=dict(color=color, width=width),
+            name=f"{label} ({len(subset):,} segs)",
+            text=all_texts, hoverinfo="text",
+            hoverlabel=dict(bgcolor="rgba(255,255,255,0.95)",
+                            font_size=12, font_color="#1a202c"),
+        ))
+    return traces
 
 
 def _build_segment_traces(merged, window_label="Peak"):
@@ -388,97 +501,239 @@ def _build_segment_traces(merged, window_label="Peak"):
     return traces
 
 
+# Corridor outline styling (underlay casing behind segment TTI lines).
+# Light mode / street map uses a crisp black casing; dark mode switches dynamically to white.
+_CORRIDOR_OUTLINE_LIGHT = "#1a202c"
+_CORRIDOR_OUTLINE_DARK = "#ffffff"
+_CORRIDOR_OUTLINE_WIDTH = 8.5
+
+
+def _bearing_deg(p1: tuple[float, float], p2: tuple[float, float]) -> float:
+    """Bearing from p1 (lat, lon) to p2 (lat, lon) in degrees clockwise from North."""
+    import math
+
+    lat1, lon1 = p1
+    lat2, lon2 = p2
+    d_lat = lat2 - lat1
+    d_lon = (lon2 - lon1) * math.cos(math.radians(lat1))
+    if d_lat == 0 and d_lon == 0:
+        return 0.0
+    return math.degrees(math.atan2(d_lon, d_lat)) % 360.0
+
+
 def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
                             delay_label="Total Peak Delay"):
-    """Build Plotly traces for ranked corridor centerlines and start/end markers."""
+    """Build Plotly traces for ranked corridor centerlines and termini markers.
+
+    Returns ``(line_traces, marker_traces)``. Each corridor group produces:
+    1. A Scattermap line trace on ``legend2`` (defaulting to ``visible='legendonly'``),
+       styled in a crisp casing wider than the segments so it renders as an underlay.
+    2. A Scattermap marker trace with inward-pointing triangles (``>-<``) at each
+       extent terminus, linked to the same ``legendgroup`` with ``showlegend=False``.
+    """
     import plotly.graph_objects as go
 
-    c_lats, c_lons, c_texts = [], [], []
-    s_lats, s_lons, s_texts = [], [], []
-    e_lats, e_lons, e_texts = [], [], []
-
+    # Group accepted catalogue entries by corridor group (or entry id if ungrouped)
+    entries_by_group: dict[str, list] = {}
     for entry in cat_entries:
-        cid = entry.id
-        if cid not in chains or not chains[cid].reached_target:
-            continue
-        ch = chains[cid]
-        gid = entry.corridor
+        if entry.id in chains and chains[entry.id].reached_target:
+            gid = entry.corridor or entry.id
+            entries_by_group.setdefault(gid, []).append(entry)
+
+    def _corridor_sort_key(gid: str):
         ri = corridor_ranks.get(gid, {})
-        rank = ri.get("rank", "—")
-        vhd_rate = ri.get("vhd_per_mile", 0.0)
-        total_vhd = ri.get("vhd", 0.0)
-        tti = ri.get("tti", 0.0)
-        tip = (
-            f"<b>RANK #{rank}: {entry.name}</b><br>"
-            f"<b>Direction:</b> {entry.direction} | "
-            f"<b>Length:</b> {ch.chain_miles:.2f} mi<br>"
-            f"<b>TTI:</b> {tti:.2f} | <b>VHD/mi:</b> {vhd_rate:,.1f}<br>"
-            f"<b>{delay_label}:</b> {total_vhd:,.0f} veh-hrs<br>"
-            f"<i>{entry.description[:120]}...</i>"
-        )
+        rank = ri.get("rank")
+        if pd.notna(rank) and rank != "—":
+            try:
+                return (0, float(rank), gid)
+            except (ValueError, TypeError):
+                pass
+        return (1, 999999, gid)
 
-        coords = []
-        for sid in ch.segment_ids:
-            if int(sid) in net_indexed.index:
-                lats, lons = _extract_linestring_coords(
-                    net_indexed.loc[int(sid)].geometry)
-                if not lats:
-                    continue
-                for lat, lon in zip(lats, lons):
-                    if lat is not None and lon is not None:
-                        coords.append((lat, lon))
-                        c_lats.append(lat); c_lons.append(lon); c_texts.append(tip)
-                c_lats.append(None); c_lons.append(None); c_texts.append(None)
-        if not coords:
-            continue
+    sorted_groups = sorted(entries_by_group.keys(), key=_corridor_sort_key)
 
-        for store_list, label_text, coord in [
-            ((s_lats, s_lons, s_texts), "🟢 START", coords[0]),
-            ((e_lats, e_lons, e_texts), "🔴 END", coords[-1]),
-        ]:
-            lat, lon = coord
-            store_list[0].append(lat)
-            store_list[1].append(lon)
-            store_list[2].append(
-                f"<b>{label_text}: {entry.name}</b><br>"
-                f"<b>Rank:</b> #{rank} ({gid})<br>"
-                f"<b>Direction:</b> {entry.direction} | "
-                f"<b>Extent:</b> {ch.chain_miles:.2f} mi<br>"
-                f"<b>VHD Rate:</b> {vhd_rate:,.1f} vhd/mi<br>"
-                f"<b>Coordinates:</b> ({lat:.4f}, {lon:.4f})"
-            )
-
-    n_entries = len(s_lats)
-    n_groups = len({e.corridor for e in cat_entries
-                    if e.id in chains and chains[e.id].reached_target})
     kw = dict(hoverinfo="text",
               hoverlabel=dict(bgcolor="rgba(255,255,255,0.95)",
                               font_size=12, font_color="#1a202c"))
-    return (
-        go.Scattermap(lat=c_lats, lon=c_lons, mode="lines",
-                      line=dict(color="#805ad5", width=4.5),
-                      name=f"⭐ Ranked Corridors ({n_groups} groups / {n_entries} extents)",
-                      text=c_texts, **kw),
-        go.Scattermap(lat=s_lats, lon=s_lons, mode="markers",
-                      marker=dict(size=10, color="#38a169", opacity=0.95),
-                      name="🟢 Corridor Starts (Origins)", text=s_texts, **kw),
-        go.Scattermap(lat=e_lats, lon=e_lons, mode="markers",
-                      marker=dict(size=10, color="#e53e3e", opacity=0.95),
-                      name="🔴 Corridor Ends (Destinations)", text=e_texts, **kw),
-    )
+
+    line_traces = []
+    marker_traces = []
+
+    for gid in sorted_groups:
+        ri = corridor_ranks.get(gid, {})
+        rank = ri.get("rank", "—")
+        gname = ri.get("group_name", gid)
+        rank_str = f"#{int(rank)}" if (pd.notna(rank) and rank != "—") else "—"
+
+        c_lats, c_lons, c_texts = [], [], []
+        m_lats, m_lons, m_angles, m_texts = [], [], [], []
+
+        for entry in entries_by_group[gid]:
+            ch = chains[entry.id]
+            vhd_rate = ri.get("vhd_per_mile", 0.0)
+            total_vhd = ri.get("vhd", 0.0)
+            tti = ri.get("tti", 0.0)
+            tip = (
+                f"<b>RANK {rank_str}: {entry.name}</b><br>"
+                f"<b>Direction:</b> {entry.direction} | "
+                f"<b>Length:</b> {ch.chain_miles:.2f} mi<br>"
+                f"<b>TTI:</b> {tti:.2f} | <b>VHD/mi:</b> {vhd_rate:,.1f}<br>"
+                f"<b>{delay_label}:</b> {total_vhd:,.0f} veh-hrs<br>"
+                f"<i>{entry.description[:120]}...</i>"
+            )
+
+            coords = []
+            for sid in ch.segment_ids:
+                if int(sid) in net_indexed.index:
+                    lats, lons = _extract_linestring_coords(
+                        net_indexed.loc[int(sid)].geometry)
+                    if not lats:
+                        continue
+                    for lat, lon in zip(lats, lons):
+                        if lat is not None and lon is not None:
+                            coords.append((lat, lon))
+                            c_lats.append(lat); c_lons.append(lon); c_texts.append(tip)
+                    c_lats.append(None); c_lons.append(None); c_texts.append(None)
+            if not coords:
+                continue
+
+            # Inward-pointing triangles at extent limits (>-<)
+            if len(coords) >= 2:
+                # Start terminus: points inward along corridor from coords[0]
+                p0 = coords[0]
+                p_next = next((p for p in coords[1:] if p != p0), coords[1])
+                angle_start = _bearing_deg(p0, p_next)
+
+                m_lats.append(p0[0]); m_lons.append(p0[1])
+                m_angles.append(round(angle_start, 1))
+                m_texts.append(
+                    f"<b>▲ Terminus: {entry.name}</b><br>"
+                    f"<b>Rank:</b> {rank_str} ({gid})<br>"
+                    f"<b>Direction:</b> {entry.direction} | "
+                    f"<b>Extent:</b> {ch.chain_miles:.2f} mi<br>"
+                    f"<b>Coordinates:</b> ({p0[0]:.4f}, {p0[1]:.4f})"
+                )
+
+                # End terminus: points inward along corridor back from coords[-1]
+                pN = coords[-1]
+                p_prev = next((p for p in reversed(coords[:-1]) if p != pN), coords[-2])
+                angle_end = _bearing_deg(pN, p_prev)
+
+                m_lats.append(pN[0]); m_lons.append(pN[1])
+                m_angles.append(round(angle_end, 1))
+                m_texts.append(
+                    f"<b>▲ Terminus: {entry.name}</b><br>"
+                    f"<b>Rank:</b> {rank_str} ({gid})<br>"
+                    f"<b>Direction:</b> {entry.direction} | "
+                    f"<b>Extent:</b> {ch.chain_miles:.2f} mi<br>"
+                    f"<b>Coordinates:</b> ({pN[0]:.4f}, {pN[1]:.4f})"
+                )
+
+        trace_label = f"{rank_str} {gname}" if rank_str != "—" else gname
+        line_traces.append(
+            go.Scattermap(lat=c_lats, lon=c_lons, mode="lines",
+                          line=dict(color=_CORRIDOR_OUTLINE_LIGHT, width=_CORRIDOR_OUTLINE_WIDTH),
+                          name=trace_label,
+                          legendgroup=gid,
+                          legend="legend2",
+                          visible="legendonly",
+                          text=c_texts, **kw)
+        )
+        marker_traces.append(
+            go.Scattermap(lat=m_lats, lon=m_lons, mode="markers",
+                          marker=dict(symbol="triangle", size=13, angle=m_angles,
+                                      color=_CORRIDOR_OUTLINE_LIGHT, allowoverlap=True),
+                          legendgroup=gid,
+                          showlegend=False,
+                          visible="legendonly",
+                          text=m_texts, **kw)
+        )
+
+    return line_traces, marker_traces
 
 
-def _assemble_map(seg_traces, corridor_trace, starts_trace, ends_trace,
-                  title, subtitle, *, center_lat=43.62, center_lon=-116.32, zoom=9.5):
-    """Combine segment and corridor traces into a Plotly Figure."""
+def _assemble_map(seg_traces, corridor_traces, termini_traces=None, ends_trace=None,
+                  title="ITD District Screening", subtitle="", *,
+                  center_lat=43.62, center_lon=-116.32, zoom=9.5,
+                  seg_legend_title="TTI"):
+    """Combine segment and corridor traces into a Plotly Figure.
+
+    Layering order:
+    1. Ranked corridor outlines FIRST (renders under segments as an outline casing)
+    2. Segment TTI lines NEXT (renders on top of corridor outlines, clean segment legend)
+    3. Corridor termini markers LAST (inward-pointing triangles on top of everything)
+    """
     import plotly.graph_objects as go
 
+    c_list = corridor_traces if isinstance(corridor_traces, list) else [corridor_traces]
+    if ends_trace is not None:
+        m_list = [termini_traces, ends_trace]
+    elif termini_traces is not None:
+        m_list = termini_traces if isinstance(termini_traces, list) else [termini_traces]
+    else:
+        m_list = []
+
+    n_corridors = len(c_list)
+    n_markers = len(m_list)
+    n_segs = len(seg_traces)
+
     fig = go.Figure()
+    # 1. Underlay: ranked corridor outlines (indices 0 .. n_corridors - 1)
+    for ct in c_list:
+        fig.add_trace(ct)
+    # 2. Middle: state highway segments tiered by TTI (indices n_corridors .. n_corridors + n_segs - 1)
     for t in seg_traces:
         fig.add_trace(t)
-    fig.add_trace(corridor_trace)
-    fig.add_trace(starts_trace)
-    fig.add_trace(ends_trace)
+    # 3. Overlay: corridor termini inward-pointing triangles (indices n_corridors + n_segs .. end)
+    for mt in m_list:
+        fig.add_trace(mt)
+
+    c_indices = list(range(n_corridors))
+    m_indices = list(range(n_corridors + n_segs, n_corridors + n_segs + n_markers))
+    all_corridor_indices = c_indices + m_indices
+
+    menus = [
+        dict(
+            type="buttons", direction="left", x=0.98, xanchor="right", y=0.97, showactive=True,
+            buttons=[
+                dict(args=[
+                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "marker.color": _CORRIDOR_OUTLINE_LIGHT},
+                        {"map.style": "carto-positron"},
+                        all_corridor_indices
+                     ],
+                     label="Light (Clean)", method="update"),
+                dict(args=[
+                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "marker.color": _CORRIDOR_OUTLINE_LIGHT},
+                        {"map.style": "open-street-map"},
+                        all_corridor_indices
+                     ],
+                     label="Street Map", method="update"),
+                dict(args=[
+                        {"line.color": _CORRIDOR_OUTLINE_DARK, "marker.color": _CORRIDOR_OUTLINE_DARK},
+                        {"map.style": "carto-darkmatter"},
+                        all_corridor_indices
+                     ],
+                     label="Dark (High-Contrast)", method="update"),
+            ],
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="#cbd5e0", font=dict(size=11, color="#2d3748")),
+    ]
+    if all_corridor_indices:
+        menus.append(
+            dict(
+                type="buttons", direction="left", x=0.98, xanchor="right", y=0.91,
+                active=1,  # Default is OFF
+                showactive=True,
+                buttons=[
+                    dict(args=[{"visible": [True] * len(all_corridor_indices)}, all_corridor_indices],
+                         label="All Outlines", method="restyle"),
+                    dict(args=[{"visible": ["legendonly"] * len(all_corridor_indices)}, all_corridor_indices],
+                         label="Hide Outlines", method="restyle"),
+                ],
+                bgcolor="rgba(255,255,255,0.9)",
+                bordercolor="#cbd5e0", font=dict(size=11, color="#2d3748"))
+        )
+
     fig.update_layout(
         title=dict(
             text=(f"<b>{title}</b><br>"
@@ -492,19 +747,19 @@ def _assemble_map(seg_traces, corridor_trace, starts_trace, ends_trace,
         legend=dict(
             x=0.02, y=0.03, bgcolor="rgba(255,255,255,0.92)",
             bordercolor="#cbd5e0", borderwidth=1,
+            title=dict(text=f"<b>Segment Delay ({seg_legend_title})</b>",
+                       font=dict(size=11, color="#1a202c")),
             font=dict(size=11, color="#2d3748"), itemsizing="constant"),
-        updatemenus=[dict(
-            type="buttons", direction="left", x=0.88, y=0.97, showactive=True,
-            buttons=[
-                dict(args=[{"map.style": "carto-positron"}],
-                     label="Light (Clean)", method="relayout"),
-                dict(args=[{"map.style": "open-street-map"}],
-                     label="Street Map", method="relayout"),
-                dict(args=[{"map.style": "carto-darkmatter"}],
-                     label="Dark (High-Contrast)", method="relayout"),
-            ],
-            bgcolor="rgba(255,255,255,0.9)",
-            bordercolor="#cbd5e0", font=dict(size=11, color="#2d3748"))],
+        legend2=dict(
+            x=0.98, xanchor="right", y=0.03, yanchor="bottom",
+            bgcolor="rgba(255,255,255,0.92)",
+            bordercolor="#cbd5e0", borderwidth=1,
+            font=dict(size=10, color="#2d3748"), itemsizing="constant",
+            maxheight=360,
+            title=dict(text="<b>Ranked Corridors (Outlines)</b>",
+                       font=dict(size=11, color="#1a202c")),
+            itemdoubleclick="toggle"),
+        updatemenus=menus,
     )
     return fig
 
@@ -513,33 +768,34 @@ def _map_viewer_html(map_files: list[tuple[str, str]]) -> str:
     """Generate a tabbed viewer HTML page for switching between multiple maps.
 
     Args:
-        map_files: list of ``(label, filename)`` tuples — each ``filename`` is
-            relative to the viewer's directory.
+        map_files: list of (tab_label, filename) tuples.
     """
-    buttons = []
-    for i, (label, _) in enumerate(map_files):
-        active = ' active' if i == 0 else ''
-        buttons.append(f'      <button class="tab-btn{active}" '
-                       f"onclick=\"switchMap({i})\">{label}</button>")
-    button_html = "\n".join(buttons)
-    cases = []
-    for i, (_, fname) in enumerate(map_files):
-        cases.append(f"      if (idx === {i}) frame.src = '{fname}';")
-    case_js = "\n".join(cases)
+    if not map_files:
+        return ""
+
+    button_html = "\n".join([
+        f'      <button class="tab-btn{" active" if i == 0 else ""}" onclick="switchMap({i})">{label}</button>'
+        for i, (label, _) in enumerate(map_files)
+    ])
+    case_js = "\n".join([
+        f'      if (idx === {i}) frame.src = "{fn}";'
+        for i, (_, fn) in enumerate(map_files)
+    ])
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>ITD District Corridor Screening Visualizations</title>
+  <meta charset="utf-8">
+  <title>ITD District Screening GIS Visualizations</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; height: 100vh; display: flex; flex-direction: column; background: #1a202c; color: #fff; }}
-    header {{ background: #2d3748; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #4a5568; }}
-    h1 {{ font-size: 18px; font-weight: 600; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #1a202c; }}
+    header {{ background: #2d3748; color: #fff; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #4a5568; z-index: 10; }}
+    h1 {{ font-size: 16px; font-weight: 600; letter-spacing: 0.5px; color: #edf2f7; }}
     .nav-tabs {{ display: flex; gap: 8px; }}
-    .tab-btn {{ background: #4a5568; color: #e2e8f0; border: none; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }}
-    .tab-btn:hover {{ background: #718096; }}
-    .tab-btn.active {{ background: #3182ce; color: #fff; font-weight: 600; }}
+    .tab-btn {{ background: #4a5568; color: #cbd5e0; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s ease; }}
+    .tab-btn:hover {{ background: #718096; color: #fff; }}
+    .tab-btn.active {{ background: #3182ce; color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }}
     .frame-container {{ flex: 1; position: relative; width: 100%; }}
     iframe {{ width: 100%; height: 100%; border: none; position: absolute; top: 0; left: 0; }}
   </style>
@@ -570,7 +826,8 @@ def _map_viewer_html(map_files: list[tuple[str, str]]) -> str:
 
 def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
                   *, windows, window_label="Peak", title_prefix="ITD District",
-                  delay_label="Total Peak Delay", map_filename="screening_map.html"):
+                  delay_label="Total Peak Delay", map_filename="screening_map.html",
+                  metric="tti", aadt=None):
     """Generate a standalone interactive HTML map of all segments and corridors.
 
     This is **wiring**, not core computation: it reads a segment screen, looks up
@@ -590,6 +847,8 @@ def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
         title_prefix: prefix for the map title.
         delay_label: label for the delay tooltip.
         map_filename: output filename for the map HTML.
+        metric: ``'tti'`` (speed index) or ``'vhd_per_mile'`` (delay density).
+        aadt: optional AADT joined frame or Series for volume weighting.
 
     Returns:
         Path to the written map HTML file.
@@ -598,13 +857,24 @@ def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
     net_indexed = net.set_index("XDSegID")
     n_segs = len(scr)
 
-    merged = _segment_tti_frame(scr, net_indexed, windows)
-    seg_traces = _build_segment_traces(merged, window_label=window_label)
-    c_trace, s_trace, e_trace = _build_corridor_overlay(
+    merged = _segment_tti_frame(scr, net_indexed, windows, aadt=aadt)
+    c_traces, m_traces = _build_corridor_overlay(
         cat_entries, chains, corridor_ranks, net_indexed,
         delay_label=delay_label)
-    n_groups = len({e.corridor for e in cat_entries
-                    if e.id in chains and chains[e.id].reached_target})
+    n_groups = len(c_traces)
+
+    if metric == "vhd_per_mile":
+        seg_traces = _build_segment_vhd_traces(merged, window_label=window_label)
+        map_title = f"{title_prefix} — {window_label} Delay Density (VHD / Mile)"
+        map_subtitle = (f"All {n_segs:,} State Highway Segments colored by VHD/Mile | "
+                        f"{n_groups} Ranked Corridors with Termini (▲)")
+        seg_legend_title = "VHD / Mile"
+    else:
+        seg_traces = _build_segment_traces(merged, window_label=window_label)
+        map_title = f"{title_prefix} — {window_label} Congestion Screening"
+        map_subtitle = (f"All {n_segs:,} State Highway Segments colored by TTI | "
+                        f"{n_groups} Ranked Corridors with Termini (▲)")
+        seg_legend_title = "TTI"
 
     # Derive map center from network extent
     bounds = net_indexed["geometry"].dropna().total_bounds
@@ -612,11 +882,11 @@ def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
     center_lon = (bounds[0] + bounds[2]) / 2
 
     fig = _assemble_map(
-        seg_traces, c_trace, s_trace, e_trace,
-        title=f"{title_prefix} — {window_label} Congestion Screening",
-        subtitle=(f"All {n_segs:,} State Highway Segments colored by TTI | "
-                  f"{n_groups} Ranked Corridors with Start (🟢) and End (🔴) Termini"),
-        center_lat=center_lat, center_lon=center_lon)
+        seg_traces, c_traces, m_traces,
+        title=map_title,
+        subtitle=map_subtitle,
+        center_lat=center_lat, center_lon=center_lon,
+        seg_legend_title=seg_legend_title)
 
     path = out_dir / map_filename
     fig.write_html(str(path), include_plotlyjs="cdn", full_html=True)
@@ -740,6 +1010,8 @@ def run(args) -> dict:
             bin_minutes=args.bin_minutes, tz=args.tz,
             date_start=args.date_start, date_end=args.date_end)
 
+        if not args.catalogue:
+            raise SystemExit("A catalogue JSON must be specified via --catalogue.")
         net, resolution = resolve_corridors(
             args.network, args.catalogue, scr.index, repairs=repairs,
             network_cache=args.network_cache, min_coverage=args.min_coverage)
@@ -751,8 +1023,13 @@ def run(args) -> dict:
                              f"Findings: {resolution.attrs['findings']}")
 
         geo = corridor_geometry(net, resolution, chains)
-        aadt = join_volumes(geo, args.aadt, year=args.aadt_year,
-                            cache_path=args.aadt_cache,
+        # Full network AADT join so both corridor ranking and segment-level delay-density map traces
+        # have complete AADT coverage across the district.
+        net_geo = net.copy()
+        net_geo["Segment ID"] = net_geo["XDSegID"]
+        aadt_cache = args.aadt_cache or (f"geometry_cache/d{args.district}_aadt.parquet" if args.district else None)
+        aadt = join_volumes(net_geo, args.aadt, year=args.aadt_year,
+                            cache_path=aadt_cache,
                             max_distance_m=args.aadt_max_distance_m,
                             bbox_margin=BBOX_MARGIN_DEG)
 
@@ -795,6 +1072,9 @@ def run(args) -> dict:
                 ranking, membership, names=gnames,
                 order=totals[screen.GROUP_COL].tolist())
 
+        win_names = list((windows or screen.PEAK_WINDOWS).keys())
+        is_7day = win_names == ["day_7d"]
+
         prov = provenance(args, area_key, con, scr, resolution, repairs, aadt)
         if grouped is not None:
             prov["reporting_corridors"] = {
@@ -808,7 +1088,13 @@ def run(args) -> dict:
             }
         written = write_outputs(args.out_dir, ranking, resolution, prov, geo,
                                 grouped=grouped, totals=totals, breakout=breakout,
-                                write_kml=not args.no_kml)
+                                write_kml=not args.no_kml, is_7day=is_7day)
+
+        # Save segment screen results for fast statewide vector map aggregation
+        scr_fname = "segment_7day_screen.parquet" if is_7day else "segment_peak_screen.parquet"
+        scr_path = Path(args.out_dir) / scr_fname
+        scr.to_parquet(scr_path)
+        written["segment_screen"] = scr_path
 
         # Interactive HTML maps (--maps). Generated after the CSVs so the run
         # succeeds even if plotly is not installed — the maps are optional.
@@ -818,8 +1104,8 @@ def run(args) -> dict:
                 screen.GROUP_COL).to_dict(orient="index")
 
             # Build a human-readable window label from the windows that were run.
-            win_names = list((windows or screen.PEAK_WINDOWS).keys())
-            if win_names == ["day_7d"]:
+            dist_label = f"District {args.district}" if args.district else "District"
+            if is_7day:
                 window_label = "7-Day All-Day (6 AM – 9 PM)"
                 delay_label = "Total 7-Day Delay"
                 map_fname = "screening_7day_map.html"
@@ -835,10 +1121,40 @@ def run(args) -> dict:
                 args.out_dir, scr, net, cat_entries, chains, corridor_ranks,
                 windows=windows or screen.PEAK_WINDOWS,
                 window_label=window_label,
-                title_prefix="ITD District",
+                title_prefix=f"ITD {dist_label}",
                 delay_label=delay_label,
                 map_filename=map_fname)
             written["map"] = map_path
+
+            if aadt is not None:
+                vhd_fname = ("screening_7day_vhd_map.html" if is_7day
+                             else "screening_vhd_map.html")
+                vhd_path = generate_maps(
+                    args.out_dir, scr, net, cat_entries, chains, corridor_ranks,
+                    windows=windows or screen.PEAK_WINDOWS,
+                    window_label=window_label,
+                    title_prefix=f"ITD {dist_label}",
+                    delay_label=delay_label,
+                    map_filename=vhd_fname,
+                    metric="vhd_per_mile",
+                    aadt=aadt)
+                written["map_vhd"] = vhd_path
+
+            # Generate / update map_viewer.html if multiple maps exist in out_dir
+            candidates = [
+                ("Typical Peak (TTI)", "screening_peak_map.html"),
+                ("Typical Peak (VHD / Mile)", "screening_vhd_map.html"),
+                ("7-Day All-Day (TTI)", "screening_7day_map.html"),
+                ("7-Day All-Day (VHD / Mile)", "screening_7day_vhd_map.html"),
+            ]
+            available_maps = [
+                (lbl, fn) for lbl, fn in candidates
+                if (Path(args.out_dir) / fn).exists()
+            ]
+            if len(available_maps) > 1:
+                viewer_path = Path(args.out_dir) / "map_viewer.html"
+                viewer_path.write_text(_map_viewer_html(available_maps), encoding="utf-8")
+                written["map_viewer"] = viewer_path
 
         return {"ranking": ranking, "grouped": grouped, "totals": totals,
                 "breakout": breakout, "resolution": resolution,
@@ -856,8 +1172,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--db", required=True, help="DuckDB store (store.connect)")
     p.add_argument("--area", default=None, help="area key or name (default: the only one)")
     p.add_argument("--bin-minutes", type=int, default=None)
-    p.add_argument("--catalogue", default="scripts/d3_corridors.json")
-    p.add_argument("--repairs", default="scripts/d3_link_repairs.csv")
+    p.add_argument("--catalogue", default=None,
+                   help="corridor catalogue JSON path (default: None; or auto-discovered if --district passed)")
+    p.add_argument("--repairs", default=None,
+                   help="link repairs CSV path (default: None; or auto-discovered if --district passed)")
+    p.add_argument("--district", type=int, choices=[1, 2, 3, 4, 5, 6], default=None,
+                   help="ITD district number (auto-sets timezone and default catalogue/repair paths)")
     p.add_argument("--no-repairs", action="store_true",
                    help="walk NextXDSegI exactly as published (Item 38 off)")
     p.add_argument("--network", default="USA_Idaho_shapefile.zip")
@@ -898,6 +1218,35 @@ def parse_args(argv=None):
         args.windows = {n: screen.ALL_WINDOWS[n]
                         for n in (w.strip() for w in args.windows.split(","))
                         if n in screen.ALL_WINDOWS} or None
+
+    if args.district is not None:
+        DISTRICT_TZ = {
+            1: "America/Los_Angeles",
+            2: "America/Los_Angeles",
+            3: "America/Boise",
+            4: "America/Boise",
+            5: "America/Boise",
+            6: "America/Boise",
+        }
+        if args.tz == DEFAULT_TZ:
+            args.tz = DISTRICT_TZ.get(args.district, DEFAULT_TZ)
+        if args.catalogue is None:
+            cand_cat = Path(f"scripts/d{args.district}_corridors.json")
+            if cand_cat.exists():
+                args.catalogue = str(cand_cat)
+        if args.repairs is None and not args.no_repairs:
+            cand_rep = Path(f"scripts/d{args.district}_link_repairs.csv")
+            if cand_rep.exists():
+                args.repairs = str(cand_rep)
+    elif args.catalogue is None:
+        # Fallback to D3 catalogue if present and no district specified
+        d3_cat = Path("scripts/d3_corridors.json")
+        if d3_cat.exists():
+            args.catalogue = str(d3_cat)
+        d3_rep = Path("scripts/d3_link_repairs.csv")
+        if d3_rep.exists() and args.repairs is None and not args.no_repairs:
+            args.repairs = str(d3_rep)
+
     return args
 
 

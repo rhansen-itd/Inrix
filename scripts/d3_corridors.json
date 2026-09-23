@@ -1,5 +1,5 @@
 {
-  "_note": "ITD District 3 screening catalogue (refined per ROADMAP Item 44): 18 reporting corridors (36 directional entries) derived from recurring congestion runs (ROADMAP Item 43), checked against road geometry, connectivity, and empirical delay density. Each entry is stated as its meaningful extent endpoints (lat, lon) in WGS84, in TRAVEL ORDER, resolved through corridors.build_chain (topological NextXDSegI walk, k-candidate snapping, endpoint trim, coverage accounting). All 36 entries resolve with reached_target=True against the XD network and carriageway-scoped repairs table scripts/d3_link_repairs.csv. Includes the urban/rural split of SH-44 at Star Rd and SH-45 at Nampa, the official SH-44 Glenwood St alignment to Chinden Blvd, the full ~14-mile Chinden Blvd corridor (SH-16 to I-184), the Broadway Ave corridor (I-84 to Front/Myrtle), SH-55 Karcher Rd, the downtown Nampa couplet (2nd St S / 3rd St S), and the four natural mountain highway sections of SH-55 north of State St.",
+  "_note": "ITD District 3 screening catalogue (refined per ROADMAP Item 44 and Session 59): 26 reporting corridors (52 directional entries) derived from recurring congestion runs, checked against road geometry, connectivity, and empirical delay density. All entries resolve with reached_target=True against the XD network and repairs table. Includes the full spectrum of urban, suburban, rural-commute, and small-town arterials.",
   "corridors": [
     {
       "id": "i84-eb",
@@ -153,7 +153,7 @@
     },
     {
       "id": "us2026-chinden-eb",
-      "name": "US-20/26 (Chinden Blvd) EB: SH-16 to I-184 Connector",
+      "name": "US-20/26 (Chinden Blvd) EB: Star Rd to I-184 Connector",
       "start_latlon": [
         43.6632,
         -116.4961
@@ -168,7 +168,7 @@
     },
     {
       "id": "us2026-chinden-wb",
-      "name": "US-20/26 (Chinden Blvd) WB: I-184 Connector to SH-16",
+      "name": "US-20/26 (Chinden Blvd) WB: I-184 Connector to Star Rd",
       "start_latlon": [
         43.6249,
         -116.2425
@@ -540,6 +540,246 @@
       "description": "Southbound Broadway Ave from the downtown couplet south across the Boise River and past BSU to the I-84 interchange (IC 54). Resolves to 14 segments, 2.90 mi.",
       "corridor": "broadway",
       "direction": "SB"
+    },
+    {
+      "id": "us2026-star-middleton-eb",
+      "name": "US-20/26 EB: Middleton Rd to Star Rd",
+      "start_latlon": [
+        43.6629,
+        -116.6072
+      ],
+      "end_latlon": [
+        43.6632,
+        -116.496
+      ],
+      "description": "Eastbound US-20/26 along Highway 20/26 from Middleton Rd to Star Rd. Two-lane rural uncontrolled highway carrying heavy morning commuter queues into Ada County. Resolves to 11 mainline segments, 6.00 mi.",
+      "corridor": "us2026-star-middleton",
+      "direction": "EB"
+    },
+    {
+      "id": "us2026-star-middleton-wb",
+      "name": "US-20/26 WB: Star Rd to Middleton Rd",
+      "start_latlon": [
+        43.6632,
+        -116.496
+      ],
+      "end_latlon": [
+        43.6629,
+        -116.6072
+      ],
+      "description": "Westbound US-20/26 along Highway 20/26 from Star Rd to Middleton Rd. Evening westbound commute return from Boise/Meridian back to Canyon County. Resolves to 7 mainline segments, 6.00 mi.",
+      "corridor": "us2026-star-middleton",
+      "direction": "WB"
+    },
+    {
+      "id": "us2026-middleton-caldwell-eb",
+      "name": "US-20/26 EB: Caldwell (IC 29) to Middleton Rd",
+      "start_latlon": [
+        43.6626,
+        -116.662
+      ],
+      "end_latlon": [
+        43.6629,
+        -116.6072
+      ],
+      "description": "Eastbound US-20/26 from the I-84 interchange (IC 29) / Franklin Rd in Caldwell to Middleton Rd. Signalized arterial entering Caldwell with modest commute delay. Resolves to 10 mainline segments, 2.99 mi.",
+      "corridor": "us2026-middleton-caldwell",
+      "direction": "EB"
+    },
+    {
+      "id": "us2026-middleton-caldwell-wb",
+      "name": "US-20/26 WB: Middleton Rd to Caldwell (IC 29)",
+      "start_latlon": [
+        43.6629,
+        -116.6072
+      ],
+      "end_latlon": [
+        43.6626,
+        -116.662
+      ],
+      "description": "Westbound US-20/26 from Middleton Rd to I-84 (IC 29) in Caldwell. Resolves to 9 mainline segments, 3.45 mi.",
+      "corridor": "us2026-middleton-caldwell",
+      "direction": "WB"
+    },
+    {
+      "id": "us95-fruitland-payette-nb",
+      "name": "US-95 NB: Fruitland (US-30) to Payette (7th Ave N)",
+      "start_latlon": [
+        44.0255,
+        -116.9234
+      ],
+      "end_latlon": [
+        44.082,
+        -116.9365
+      ],
+      "description": "Northbound US-95 from the US-30 junction in Fruitland along N Whitley Dr and S Main St to 7th Ave N in Payette. Captures small-town arterial signal congestion. Resolves to 11 segments, 4.13 mi.",
+      "corridor": "us95-fruitland-payette",
+      "direction": "NB"
+    },
+    {
+      "id": "us95-fruitland-payette-sb",
+      "name": "US-95 SB: Payette (7th Ave N) to Fruitland (US-30)",
+      "start_latlon": [
+        44.082,
+        -116.9365
+      ],
+      "end_latlon": [
+        44.0255,
+        -116.9234
+      ],
+      "description": "Southbound return of US-95 through Payette and Fruitland to US-30. Resolves to 11 segments, 4.13 mi on 1 link repair.",
+      "corridor": "us95-fruitland-payette",
+      "direction": "SB"
+    },
+    {
+      "id": "sh55-mccall-town-nb",
+      "name": "SH-55 NB: McCall (Deinhard Ln to Payette Lake)",
+      "start_latlon": [
+        44.8927,
+        -116.0975
+      ],
+      "end_latlon": [
+        44.9111,
+        -116.1035
+      ],
+      "description": "Northbound SH-55 through downtown McCall along S 3rd St, N 3rd St, and E Lake St. Captures dense resort/recreational signal queues. Resolves to 3 segments, 1.69 mi.",
+      "corridor": "sh55-mccall-town",
+      "direction": "NB"
+    },
+    {
+      "id": "sh55-mccall-town-sb",
+      "name": "SH-55 SB: McCall (Payette Lake to Deinhard Ln)",
+      "start_latlon": [
+        44.9104,
+        -116.1035
+      ],
+      "end_latlon": [
+        44.8848,
+        -116.098
+      ],
+      "description": "Southbound SH-55 through downtown McCall from E Lake St south along N/S 3rd St to Deinhard Ln. Resolves to 3 segments, 2.26 mi.",
+      "corridor": "sh55-mccall-town",
+      "direction": "SB"
+    },
+    {
+      "id": "sh55-karcher-farmway-eb",
+      "name": "SH-55 (Karcher Rd) EB: Farmway Rd to I-84 (IC 33)",
+      "start_latlon": [
+        43.6046,
+        -116.6929
+      ],
+      "end_latlon": [
+        43.6054,
+        -116.603
+      ],
+      "description": "Extended eastbound SH-55 along W Karcher Rd from Farmway Rd past Lake Ave to I-84 (IC 33) in Nampa. Evaluates the full commuter approach footprint feeding the freeway. Resolves to 9 segments, 4.50 mi.",
+      "corridor": "sh55-karcher-farmway",
+      "direction": "EB"
+    },
+    {
+      "id": "sh55-karcher-farmway-wb",
+      "name": "SH-55 (Karcher Rd) WB: I-84 (IC 33) to Farmway Rd",
+      "start_latlon": [
+        43.6054,
+        -116.603
+      ],
+      "end_latlon": [
+        43.6046,
+        -116.6929
+      ],
+      "description": "Extended westbound return on W Karcher Rd from I-84 out to Farmway Rd. Resolves to 9 segments, 4.50 mi.",
+      "corridor": "sh55-karcher-farmway",
+      "direction": "WB"
+    },
+    {
+      "id": "i84-full-valley-eb",
+      "name": "I-84 EB: Caldwell (Exit 27) to East Boise (Exit 59)",
+      "start_latlon": [
+        43.6766,
+        -116.6868
+      ],
+      "end_latlon": [
+        43.5162,
+        -116.1476
+      ],
+      "description": "Eastbound I-84 across the full Treasure Valley metropolitan commute shed, from Caldwell (Centennial Way, Exit 27) past Nampa, Meridian, and Boise to Eisenman Rd (Exit 59). Resolves to 62 mainline segments, 32.43 mi.",
+      "corridor": "i84-full-valley",
+      "direction": "EB"
+    },
+    {
+      "id": "i84-full-valley-wb",
+      "name": "I-84 WB: East Boise (Exit 59) to Caldwell (Exit 27)",
+      "start_latlon": [
+        43.5114,
+        -116.145
+      ],
+      "end_latlon": [
+        43.6768,
+        -116.6865
+      ],
+      "description": "Westbound return of I-84 across the full Treasure Valley from Exit 59 to Exit 27 in Caldwell. Resolves to 63 mainline segments, 33.02 mi.",
+      "corridor": "i84-full-valley",
+      "direction": "WB"
+    },
+    {
+      "id": "garrity-eb",
+      "name": "Garrity Blvd EB: 11th Ave N to I-84 (IC 38)",
+      "start_latlon": [
+        43.5867,
+        -116.5468
+      ],
+      "end_latlon": [
+        43.6001,
+        -116.5136
+      ],
+      "description": "Eastbound Garrity Blvd (I-84 Business / SH-55) in Nampa from 11th Ave N to the I-84 interchange at IC 38. Key northeast Nampa commercial arterial. Resolves to 13 segments, 2.66 mi.",
+      "corridor": "garrity",
+      "direction": "EB"
+    },
+    {
+      "id": "garrity-wb",
+      "name": "Garrity Blvd WB: I-84 (IC 38) to 11th Ave N",
+      "start_latlon": [
+        43.6001,
+        -116.5136
+      ],
+      "end_latlon": [
+        43.5867,
+        -116.5468
+      ],
+      "description": "Westbound Garrity Blvd from I-84 into central Nampa at 11th Ave N. Resolves to 9 segments, 2.06 mi.",
+      "corridor": "garrity",
+      "direction": "WB"
+    },
+    {
+      "id": "caldwell-blvd-eb",
+      "name": "Caldwell Blvd EB: Karcher Rd (IC 33) to downtown Nampa",
+      "start_latlon": [
+        43.6054,
+        -116.603
+      ],
+      "end_latlon": [
+        43.5875,
+        -116.5768
+      ],
+      "description": "Eastbound Caldwell Blvd (I-84 Business) between W Karcher Rd (IC 33) and 11th Ave N / 2nd St S in downtown Nampa. Dense commercial retail corridor with significant PM peak queuing. Resolves to 5 segments, 2.03 mi.",
+      "corridor": "caldwell-blvd",
+      "direction": "EB"
+    },
+    {
+      "id": "caldwell-blvd-wb",
+      "name": "Caldwell Blvd WB: downtown Nampa to Karcher Rd (IC 33)",
+      "start_latlon": [
+        43.5875,
+        -116.5768
+      ],
+      "end_latlon": [
+        43.6054,
+        -116.603
+      ],
+      "description": "Westbound return on Caldwell Blvd from downtown Nampa to Karcher Rd. Resolves to 4 segments, 1.86 mi.",
+      "corridor": "caldwell-blvd",
+      "direction": "WB"
     }
   ],
   "reporting_corridors": [
@@ -571,7 +811,7 @@
     },
     {
       "id": "us2026-chinden",
-      "name": "US-20/26 (Chinden Blvd): SH-16 to I-184 Connector",
+      "name": "US-20/26 (Chinden Blvd): Star Rd to I-184 Connector",
       "description": "The northern parallel to State St, both directions - the alternative route the valley's west-side commute splits onto. Stitched across Eagle Rd where congestion is congruent (TTI 1.25-1.27) to form a unified ~14-mile east-west arterial parallel to I-84."
     },
     {
@@ -634,6 +874,46 @@
       "id": "broadway",
       "name": "Broadway Ave: I-84 (IC 54) to Myrtle/Front couplet",
       "description": "The 3.3-mile south Boise arterial connecting I-84 (IC 54) through the university district to the downtown Myrtle/Front couplet."
+    },
+    {
+      "id": "us2026-star-middleton",
+      "name": "US-20/26: Star Rd to Middleton Rd",
+      "description": "The two-lane rural/exurban section of US-20/26 between Star Rd and Middleton Rd, carrying heavy commuter platoons into Ada County."
+    },
+    {
+      "id": "us2026-middleton-caldwell",
+      "name": "US-20/26: Middleton Rd to Caldwell (IC 29)",
+      "description": "The western section of US-20/26 from Middleton Rd to I-84 at IC 29 in Caldwell."
+    },
+    {
+      "id": "us95-fruitland-payette",
+      "name": "US-95: Fruitland to Payette",
+      "description": "The 4.1-mile small-town urban/commercial arterial section of US-95 connecting Fruitland (US-30) north through Payette to 7th Ave N."
+    },
+    {
+      "id": "sh55-mccall-town",
+      "name": "SH-55: McCall Town Center",
+      "description": "The 1.98-mile in-town signalized arterial section of SH-55 through downtown McCall along 3rd St and E Lake St."
+    },
+    {
+      "id": "sh55-karcher-farmway",
+      "name": "SH-55 (Karcher Rd): Farmway Rd to I-84 (IC 33)",
+      "description": "The extended 4.5-mile commercial arterial on W Karcher Rd from Farmway Rd east to I-84 (IC 33)."
+    },
+    {
+      "id": "i84-full-valley",
+      "name": "I-84: Caldwell (Exit 27) to East Boise (Exit 59)",
+      "description": "The full Treasure Valley freeway corridor across 32 miles from Caldwell through Nampa and Boise to Eisenman Rd."
+    },
+    {
+      "id": "garrity",
+      "name": "Garrity Blvd: 11th Ave N to I-84 (IC 38)",
+      "description": "The 2.3-mile commercial arterial on Garrity Blvd (I-84 Business) in northeast Nampa."
+    },
+    {
+      "id": "caldwell-blvd",
+      "name": "Caldwell Blvd: Karcher Rd (IC 33) to downtown Nampa",
+      "description": "The 2.0-mile commercial strip on Caldwell Blvd (I-84 Business) between Karcher Rd and downtown Nampa."
     }
   ]
 }

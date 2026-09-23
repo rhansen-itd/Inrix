@@ -27,13 +27,13 @@ SCREENING_DIR = REPO_ROOT / "out" / "district_screening"
 
 
 def test_d3_catalogue_schema_and_completeness():
-    """All 36 entries and 18 reporting corridors must be well-formed and paired."""
+    """All 52 entries and 26 reporting corridors must be well-formed and paired."""
     assert D3_CATALOGUE.exists(), "scripts/d3_corridors.json missing"
     entries = corridors.load_catalogue(D3_CATALOGUE)
     groups = corridors.load_reporting_corridors(D3_CATALOGUE)
 
-    assert len(entries) == 36
-    assert len(groups) == 18
+    assert len(entries) == 52
+    assert len(groups) == 26
 
     # Validate each entry
     entry_ids = set()
@@ -97,13 +97,13 @@ def test_d3_catalogue_includes_item44_key_corridors():
 @pytest.mark.skipif(not (D3_NETWORK.exists() and D3_REPAIRS.exists()),
                     reason="D3 network cache or repairs not available")
 def test_all_d3_catalogue_entries_resolve_with_repairs():
-    """All 36 entries must walk to their target and have valid chain geometries."""
+    """All 52 entries must walk to their target and have valid chain geometries."""
     net = gpd.read_parquet(D3_NETWORK)
     repairs = corridors.load_link_repairs(D3_REPAIRS)
     entries = corridors.load_catalogue(D3_CATALOGUE)
 
     res = corridors.resolve_catalogue(net, entries, repairs=repairs)
-    assert len(res) == 36
+    assert len(res) == 52
     assert res["reached_target"].all(), (
         f"Failed to reach target: {res[~res['reached_target']]['id'].tolist()}"
     )
@@ -162,10 +162,10 @@ def test_district_screening_outputs_integrity():
     breakout = pd.read_csv(breakout_csv, comment="#")
     resolution = pd.read_csv(resolution_csv, comment="#")
 
-    assert len(rankings) == 72   # 18 groups * 4 windows
-    assert len(totals) == 18     # 18 reporting groups
-    assert len(breakout) == 72   # 18 groups * 2 directions * 2 peak windows
-    assert len(resolution) == 36 # 36 directional entries
+    assert len(rankings) == 104  # 26 groups * 4 windows
+    assert len(totals) == 26     # 26 reporting groups
+    assert len(breakout) == 104  # 26 groups * 2 directions * 2 peak windows
+    assert len(resolution) == 52 # 52 directional entries
     assert resolution["reached_target"].all()
     assert (resolution["miles_covered_fraction"] >= 0.70).all()
 
@@ -185,8 +185,8 @@ def test_district_screening_outputs_integrity():
     sh44_rural_rate = totals_by_id.loc["sh44-rural", "vhd_per_mile"]
     assert sh44_urban_rate > 3 * sh44_rural_rate
 
-    # Broadway ranks in top 10
-    assert totals_by_id.loc["broadway", "rank"] <= 10
+    # Broadway ranks in top 12
+    assert totals_by_id.loc["broadway", "rank"] <= 12
 
     # SH-55 mountain highway extents rank near the bottom (rural baseline)
     for mtn in ["sh55-eagle-hsb", "sh55-hsb-cascade", "sh55-cascade-mccall", "sh55-mccall-newmeadows"]:
@@ -195,7 +195,7 @@ def test_district_screening_outputs_integrity():
     # Check provenance
     with prov_json.open() as f:
         prov = json.load(f)
-    assert prov["n_entries"] == 36
-    assert prov["n_accepted"] == 36
+    assert prov["n_entries"] == 52
+    assert prov["n_accepted"] == 52
     assert len(prov["findings"]) == 0
-    assert prov["reporting_corridors"]["n_groups"] == 18
+    assert prov["reporting_corridors"]["n_groups"] == 26

@@ -310,6 +310,28 @@ def test_maps_flag_is_parsed():
     assert rds.parse_args(["--db", "x", "--maps"]).maps
 
 
+def test_maps_flag_generates_interactive_map_with_corridor_underlay(district):
+    """``--maps`` produces an HTML map where ranked corridors plot as dark casings
+    under segments (default OFF), selectable on legend2, with triangle termini."""
+    out = rds.run(_args(district, maps=True))
+    assert "map" in out["written"]
+    map_path = out["written"]["map"]
+    assert map_path.exists()
+    content = map_path.read_text()
+
+    assert "legend2" in content
+    assert rds._CORRIDOR_OUTLINE_LIGHT in content
+    assert rds._CORRIDOR_OUTLINE_DARK in content
+    assert "triangle" in content
+    assert "Terminus" in content
+    assert "All Outlines" in content
+    assert "Hide Outlines" in content
+    assert "Ranked Corridors (Outlines)" in content
+    assert "Free Flow" in content
+    assert "🟢" not in content  # No GOYR emoji dots in legend
+    assert "legendonly" in content  # Corridors default to OFF
+
+
 def test_day_7d_window_screens_and_ranks(district):
     """The ``day_7d`` window produces a valid ranking. It sees every observation
     in the 6am-9pm span across all days, not just the weekday commute peaks."""
@@ -345,3 +367,100 @@ def test_missing_repair_table_is_refused_not_ignored(tmp_path):
         rds.load_repairs(tmp_path / "nope.csv", True)
     assert rds.load_repairs(tmp_path / "nope.csv", False) is None
 
+
+
+# ---------------------------------------------------------------------------
+# VHD/mile map traces: an unjoined AADT must never read as free flow (Session 60)
+# ---------------------------------------------------------------------------
+
+def _vhd_frame(rates):
+    """A minimal ``_segment_tti_frame``-shaped frame for the trace builder."""
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    n = len(rates)
+    rows = []
+    for i, rate in enumerate(rates):
+        rows.append({
+            "RoadName": f"Road {i}", "RoadNumber": "55", "Bearing": "N",
+            "Miles": 1.0, "aadt": (None if pd.isna(rate) else 10000.0),
+            "worst_vhd": rate, "worst_vhd_per_mile": rate,
+            "worst_tti": 1.2, "worst_delay_rate": 0.5,
+            "worst_speed": 40.0, "ref_speed": 50.0, "worst_window": "am",
+            "geometry": LineString([(LON, LAT0 + i * DLAT),
+                                    (LON, LAT0 + (i + 1) * DLAT)]),
+        })
+    return gpd.GeoDataFrame(rows, index=[1000 + i for i in range(n)], crs="EPSG:4326")
+
+
+def _trace_counts(traces):
+    """Map each trace's tier label to the segment count its legend name carries."""
+    import re
+    out = {}
+    for t in traces:
+        m = re.match(r"^(.*) \(([\d,]+) segs\)$", t.name)
+        out[m.group(1)] = int(m.group(2).replace(",", ""))
+    return out
+
+
+def test_segments_without_aadt_get_their_own_tier_not_free_flow():
+    """A segment the AADT join never reached is *unknown*, not free-flowing.
+
+    Folding NaN into the "< 25 VHD/mi" tier is what let a statewide join that
+    matched nothing render as 17,016 free-flowing segments.
+    """
+    frame = _vhd_frame([float("nan"), float("nan"), 10.0, 150.0, 400.0])
+    counts = _trace_counts(rds._build_segment_vhd_traces(frame))
+
+    assert counts["No AADT Data (unvolumed)"] == 2
+    assert counts["Low / Free Flow (< 25 VHD/mi)"] == 1
+    assert counts["Moderate Delay (100–300 VHD/mi)"] == 1
+    assert counts["Severe Congestion (≥ 300 VHD/mi)"] == 1
+    # Every segment lands in exactly one tier.
+    assert sum(counts.values()) == 5
+
+
+def test_vhd_tiers_partition_on_their_boundaries():
+    """Tier edges are half-open [lower, upper), so a boundary value sits high."""
+    frame = _vhd_frame([24.99, 25.0, 99.99, 100.0, 299.99, 300.0])
+    counts = _trace_counts(rds._build_segment_vhd_traces(frame))
+
+    assert counts["Low / Free Flow (< 25 VHD/mi)"] == 1
+    assert counts["Minor Delay (25–100 VHD/mi)"] == 2
+    assert counts["Moderate Delay (100–300 VHD/mi)"] == 2
+    assert counts["Severe Congestion (≥ 300 VHD/mi)"] == 1
+    assert counts["No AADT Data (unvolumed)"] == 0
+
+
+def test_unmatched_aadt_stays_nan_through_the_segment_frame(district):
+    """``_segment_tti_frame`` must not zero-fill an AADT it could not join.
+
+    Zero and free-flow are indistinguishable downstream; NaN is not.
+    """
+    out = rds.run(_args(district))
+    scr, net = out["screen"], out["net"]
+
+    # AADT for the first segment only; the rest of the district is unjoined.
+    partial = pd.DataFrame({"AADT": [12000.0]}, index=pd.Index([SEGS[0]], name="Segment ID"))
+    merged = rds._segment_tti_frame(scr, net.set_index("XDSegID"),
+                                    windows=rds.screen.PEAK_WINDOWS, aadt=partial)
+
+    assert merged.loc[SEGS[0], "aadt"] == 12000.0
+    missing = merged.drop(index=SEGS[0])
+    assert missing["aadt"].isna().all()
+    assert missing["worst_vhd_per_mile"].isna().all()
+    assert missing["worst_vhd"].isna().all()
+
+
+def test_no_aadt_at_all_yields_all_nan_not_all_zero():
+    """With ``aadt=None`` the density is unknown, so the whole map is one grey tier."""
+    frame = _vhd_frame([float("nan")] * 4)
+    counts = _trace_counts(rds._build_segment_vhd_traces(frame))
+    assert counts["No AADT Data (unvolumed)"] == 4
+    assert counts["Low / Free Flow (< 25 VHD/mi)"] == 0
+
+
+def test_missing_metrics_render_as_na_not_zero():
+    assert rds._fmt_or_na(None) == "n/a"
+    assert rds._fmt_or_na(float("nan")) == "n/a"
+    assert rds._fmt_or_na(1234.4) == "1,234"

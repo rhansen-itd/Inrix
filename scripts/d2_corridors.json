@@ -1,0 +1,219 @@
+{
+  "_note": "ITD District 2 screening catalogue derived from candidate triage and couplet synthesis.",
+  "corridors": [
+    {
+      "id": "us95-moscow-nb",
+      "name": "US-95 NB: South Moscow (UI) to North Moscow (SH-8)",
+      "start_latlon": [
+        46.72196,
+        -117.0014
+      ],
+      "end_latlon": [
+        46.74467,
+        -117.00155
+      ],
+      "description": "US-95 northbound through Moscow past University of Idaho to north commercial district.",
+      "corridor": "us95-moscow",
+      "direction": "NB"
+    },
+    {
+      "id": "us95-moscow-sb",
+      "name": "US-95 SB: North Moscow to South Moscow (Jackson St)",
+      "start_latlon": [
+        46.7437,
+        -117.00154
+      ],
+      "end_latlon": [
+        46.72615,
+        -117.00008
+      ],
+      "description": "US-95 southbound through Moscow along Jackson St.",
+      "corridor": "us95-moscow",
+      "direction": "SB"
+    },
+    {
+      "id": "moscow-couplet-nb",
+      "name": "Moscow Couplet NB: Washington St",
+      "start_latlon": [
+        46.72615,
+        -117.00008
+      ],
+      "end_latlon": [
+        46.74467,
+        -117.00155
+      ],
+      "description": "Northbound leg of Moscow couplet on Washington St.",
+      "corridor": "moscow-couplet",
+      "direction": "NB"
+    },
+    {
+      "id": "moscow-couplet-sb",
+      "name": "Moscow Couplet SB: Jackson St",
+      "start_latlon": [
+        46.7437,
+        -117.00154
+      ],
+      "end_latlon": [
+        46.72615,
+        -117.00008
+      ],
+      "description": "Southbound leg of Moscow couplet on Jackson St.",
+      "corridor": "moscow-couplet",
+      "direction": "SB"
+    },
+    {
+      "id": "us12-lewiston-eb",
+      "name": "US-12 EB: WA State Line to Clearwater River Bridge",
+      "start_latlon": [
+        46.42064,
+        -117.03239
+      ],
+      "end_latlon": [
+        46.43268,
+        -116.97923
+      ],
+      "description": "US-12 eastbound through Lewiston along Snake River to Clearwater Memorial Bridge.",
+      "corridor": "us12-lewiston",
+      "direction": "EB"
+    },
+    {
+      "id": "us12-lewiston-wb",
+      "name": "US-12 WB: Clearwater River Bridge to WA State Line",
+      "start_latlon": [
+        46.4336,
+        -116.97585
+      ],
+      "end_latlon": [
+        46.42064,
+        -117.03239
+      ],
+      "description": "US-12 westbound through Lewiston to WA State Line.",
+      "corridor": "us12-lewiston",
+      "direction": "WB"
+    },
+    {
+      "id": "lewiston-couplet-eb",
+      "name": "Lewiston Couplet EB: Main St",
+      "start_latlon": [
+        46.4216,
+        -117.02944
+      ],
+      "end_latlon": [
+        46.41728,
+        -117.00672
+      ],
+      "description": "Eastbound leg of Lewiston couplet on Main St.",
+      "corridor": "lewiston-couplet",
+      "direction": "EB"
+    },
+    {
+      "id": "lewiston-couplet-wb",
+      "name": "Lewiston Couplet WB: D St",
+      "start_latlon": [
+        46.41728,
+        -117.00672
+      ],
+      "end_latlon": [
+        46.42194,
+        -117.02938
+      ],
+      "description": "Westbound leg of Lewiston couplet on D St.",
+      "corridor": "lewiston-couplet",
+      "direction": "WB"
+    },
+    {
+      "id": "sh7-orofino-sb",
+      "name": "SH-7 SB: Gilbert Grade south to Orofino",
+      "start_latlon": [
+        46.46904,
+        -116.25044
+      ],
+      "end_latlon": [
+        46.44533,
+        -116.2314
+      ],
+      "description": "SH-7 southbound descending Gilbert Grade into Orofino.",
+      "corridor": "sh7-orofino",
+      "direction": "SB"
+    },
+    {
+      "id": "sh7-orofino-nb",
+      "name": "SH-7 NB: Orofino north up Gilbert Grade",
+      "start_latlon": [
+        46.44533,
+        -116.2314
+      ],
+      "end_latlon": [
+        46.46904,
+        -116.25044
+      ],
+      "description": "SH-7 northbound ascending Gilbert Grade from Orofino.",
+      "corridor": "sh7-orofino",
+      "direction": "NB"
+    },
+    {
+      "id": "us95-lewhill-nb",
+      "name": "US-95 NB: Lewiston Hill Grade",
+      "start_latlon": [
+        46.4359,
+        -116.98897
+      ],
+      "end_latlon": [
+        46.49468,
+        -117.00553
+      ],
+      "description": "US-95 northbound ascending Lewiston Hill from Clearwater River junction.",
+      "corridor": "us95-lewiston-hill",
+      "direction": "NB"
+    },
+    {
+      "id": "us95-lewhill-sb",
+      "name": "US-95 SB: Lewiston Hill Descent",
+      "start_latlon": [
+        46.4949,
+        -117.00597
+      ],
+      "end_latlon": [
+        46.43497,
+        -116.99099
+      ],
+      "description": "US-95 southbound descending Lewiston Hill into Lewiston valley.",
+      "corridor": "us95-lewiston-hill",
+      "direction": "SB"
+    }
+  ],
+  "reporting_corridors": [
+    {
+      "id": "us95-moscow",
+      "name": "US-95: Moscow Urban Arterial",
+      "description": "The 1.8-mile commercial and university arterial through Moscow."
+    },
+    {
+      "id": "moscow-couplet",
+      "name": "Moscow Couplet: Washington St NB / Jackson St SB (US-95)",
+      "description": "Downtown Moscow one-way arterial couplet.",
+      "one_way_couplet": true
+    },
+    {
+      "id": "us12-lewiston",
+      "name": "US-12: Lewiston Snake River Arterial",
+      "description": "The 3.2-mile urban commercial and port corridor in Lewiston."
+    },
+    {
+      "id": "lewiston-couplet",
+      "name": "Lewiston Couplet: Main St EB / D St WB (US-12)",
+      "description": "Downtown Lewiston one-way couplet on Main St and D St.",
+      "one_way_couplet": true
+    },
+    {
+      "id": "sh7-orofino",
+      "name": "SH-7: Gilbert Grade (Orofino)",
+      "description": "The 3.2-mile steep grade and commuter approach on SH-7."
+    },
+    {
+      "id": "us95-lewiston-hill",
+      "name": "US-95: Lewiston Hill Facility",
+      "description": "The 5.5-mile grade section of US-95 serving as regional baseline."
+    }
+  ]
+}

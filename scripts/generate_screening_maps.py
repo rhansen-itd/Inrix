@@ -9,11 +9,16 @@ Produces:
 1. out/district_screening/d3_typical_peak_map.html:
    All segments colored by worst peak TTI (AM/PM weekdays), with ranked corridors
    overlaid and their start/end termini delineated.
-2. out/district_screening/d3_7day_all_day_map.html:
+2. out/district_screening/d3_vhd_per_mile_map.html:
+   All segments colored by peak delay density (VHD / Mile), volume-weighted to
+   directly reflect corridor screening rankings.
+3. out/district_screening/d3_7day_all_day_map.html:
    All segments colored by 7-day all-day TTI (6 AM - 9 PM, 7 days/week), with
    ranked corridors and start/end termini.
-3. out/district_screening/map_viewer.html:
-   A clean, self-contained tabbed browser interface to toggle between both maps.
+4. out/district_screening/d3_7day_vhd_per_mile_map.html:
+   All segments colored by 7-day all-day delay density (VHD / Mile).
+5. out/district_screening/map_viewer.html:
+   A clean, self-contained tabbed browser interface to toggle between all four maps.
 """
 from __future__ import annotations
 
@@ -22,12 +27,10 @@ import time
 from pathlib import Path
 
 import geopandas as gpd
-import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from inrix_tools import aadt as aadt_mod                              # noqa: E402
-from inrix_tools import corridors, geometry, screen, store             # noqa: E402
+from inrix_tools import corridors, screen, store             # noqa: E402
 
 # Re-use the map generation functions from the pipeline script.
 from run_district_screening import (                                   # noqa: E402
@@ -66,14 +69,23 @@ def main():
     accepted = {cid: chains[cid] for cid in res.loc[res["accepted"], "id"]}
     membership = res.loc[res["accepted"], ["id", "corridor", "direction"]]
 
-    # AADT join (shared by both maps)
+    # Full network AADT join for segment-level VHD/mile visualization.
+    # This runs FIRST: both joins share one layer cache, and load_aadt returns a
+    # cache hit *ignoring bbox*. Priming it from the corridor-only bounds would
+    # leave the full-network join reading an under-covered layer.
+    net_geo = net.copy()
+    net_geo["Segment ID"] = net_geo["XDSegID"]
+    aadt_all = join_volumes(net_geo, AADT_ZIP, year=2024, cache_path="geometry_cache/d3_aadt.parquet",
+                            max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG)
+
+    # AADT for the corridor members (shared by ranking and map traces)
     geo = corridor_geometry(net, res, chains)
-    aadt = join_volumes(geo, AADT_ZIP, year=2024, cache_path=None,
+    aadt = join_volumes(geo, AADT_ZIP, year=2024, cache_path="geometry_cache/d3_aadt.parquet",
                         max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG)
 
     map_files = []
 
-    # --- Map 1: Typical Weekday Peak (AM / PM) ---
+    # --- Map 1: Typical Weekday Peak (AM / PM) - TTI ---
     print("Screening segments for Typical Weekday Peak (AM / PM)...")
     peak_windows = screen.PEAK_WINDOWS
     scr_peak = screen.segment_screen(con, area_key, windows=peak_windows)
@@ -84,18 +96,33 @@ def main():
         couplets=couplets)
     peak_ranks = totals_peak.set_index("corridor_group").to_dict(orient="index")
 
-    print("Building Typical Peak Map...")
+    print("Building Typical Peak Map (TTI)...")
     peak_path = generate_maps(
         OUT_DIR, scr_peak, net, cat_entries, chains, peak_ranks,
         windows=peak_windows,
         window_label="Typical Weekday Peak (AM / PM)",
         title_prefix="ITD District 3",
         delay_label="Total Peak Delay",
-        map_filename="d3_typical_peak_map.html")
+        map_filename="d3_typical_peak_map.html",
+        metric="tti")
     print(f"Written: {peak_path}")
-    map_files.append(("Typical Weekday Peak (AM / PM)", peak_path.name))
+    map_files.append(("Typical Peak (TTI)", peak_path.name))
 
-    # --- Map 2: 7-Day All-Day (6 AM - 9 PM, all 7 days) ---
+    # --- Map 2: Typical Weekday Peak (AM / PM) - VHD / Mile ---
+    print("Building Typical Peak Delay Density Map (VHD / Mile)...")
+    vhd_path = generate_maps(
+        OUT_DIR, scr_peak, net, cat_entries, chains, peak_ranks,
+        windows=peak_windows,
+        window_label="Typical Weekday Peak (AM / PM)",
+        title_prefix="ITD District 3",
+        delay_label="Total Peak Delay",
+        map_filename="d3_vhd_per_mile_map.html",
+        metric="vhd_per_mile",
+        aadt=aadt_all)
+    print(f"Written: {vhd_path}")
+    map_files.append(("Typical Peak (VHD / Mile)", vhd_path.name))
+
+    # --- Map 3: 7-Day All-Day (6 AM - 9 PM, all 7 days) - TTI ---
     print("Screening segments for 7-Day All-Day (6:00 AM - 9:00 PM, 7 days)...")
     day7_windows = {"day_7d": screen.ALL_DAY_7D_WINDOW}
     scr_7d = screen.segment_screen(con, area_key, windows=day7_windows)
@@ -106,16 +133,40 @@ def main():
         couplets=couplets)
     day7_ranks = totals_7d.set_index("corridor_group").to_dict(orient="index")
 
-    print("Building 7-Day All-Day Map...")
+    # Write 7-day corridor tables for analysis
+    totals_7d_path = OUT_DIR / "corridor_7day_totals.csv"
+    totals_7d.to_csv(totals_7d_path, index=False)
+    print(f"Written: {totals_7d_path}")
+
+    rankings_7d_path = OUT_DIR / "corridor_7day_rankings.csv"
+    ranking_7d.to_csv(rankings_7d_path, index=False)
+    print(f"Written: {rankings_7d_path}")
+
+    print("Building 7-Day All-Day Map (TTI)...")
     day7_path = generate_maps(
         OUT_DIR, scr_7d, net, cat_entries, chains, day7_ranks,
         windows=day7_windows,
         window_label="7-Day All-Day (6 AM – 9 PM)",
         title_prefix="ITD District 3",
         delay_label="Total 7-Day Delay",
-        map_filename="d3_7day_all_day_map.html")
+        map_filename="d3_7day_all_day_map.html",
+        metric="tti")
     print(f"Written: {day7_path}")
-    map_files.append(("7-Day All-Day (6:00 AM – 9:00 PM)", day7_path.name))
+    map_files.append(("7-Day All-Day (TTI)", day7_path.name))
+
+    # --- Map 4: 7-Day All-Day (6 AM - 9 PM, all 7 days) - VHD / Mile ---
+    print("Building 7-Day All-Day Delay Density Map (VHD / Mile)...")
+    day7_vhd_path = generate_maps(
+        OUT_DIR, scr_7d, net, cat_entries, chains, day7_ranks,
+        windows=day7_windows,
+        window_label="7-Day All-Day (6 AM – 9 PM)",
+        title_prefix="ITD District 3",
+        delay_label="Total 7-Day Delay",
+        map_filename="d3_7day_vhd_per_mile_map.html",
+        metric="vhd_per_mile",
+        aadt=aadt_all)
+    print(f"Written: {day7_vhd_path}")
+    map_files.append(("7-Day All-Day (VHD / Mile)", day7_vhd_path.name))
 
     con.close()
 

@@ -1,0 +1,182 @@
+{
+  "_note": "ITD District 6 screening catalogue derived from candidate triage and couplet synthesis.",
+  "corridors": [
+    {
+      "id": "us20-if-rexburg-nb",
+      "name": "US-20 NB: Idaho Falls (I-15) to Rexburg (Univ Blvd)",
+      "start_latlon": [
+        43.50694,
+        -112.04966
+      ],
+      "end_latlon": [
+        43.8222,
+        -111.81102
+      ],
+      "description": "US-20 northbound commuter expressway from Idaho Falls past Rigby into Rexburg.",
+      "corridor": "us20-if-rexburg",
+      "direction": "NB"
+    },
+    {
+      "id": "us20-if-rexburg-sb",
+      "name": "US-20 SB: Rexburg (Univ Blvd) to Idaho Falls (I-15)",
+      "start_latlon": [
+        43.82104,
+        -111.81141
+      ],
+      "end_latlon": [
+        43.50704,
+        -112.04967
+      ],
+      "description": "US-20 southbound commuter expressway from Rexburg to Idaho Falls.",
+      "corridor": "us20-if-rexburg",
+      "direction": "SB"
+    },
+    {
+      "id": "us20-if-urban-nb",
+      "name": "US-20 NB: Idaho Falls Urban Spine",
+      "start_latlon": [
+        43.50406,
+        -112.05829
+      ],
+      "end_latlon": [
+        43.5182,
+        -112.03709
+      ],
+      "description": "US-20 northbound urban bypass in Idaho Falls connecting to I-15.",
+      "corridor": "us20-if-urban",
+      "direction": "NB"
+    },
+    {
+      "id": "us20-if-urban-sb",
+      "name": "US-20 SB: Idaho Falls Urban Spine",
+      "start_latlon": [
+        43.51827,
+        -112.03735
+      ],
+      "end_latlon": [
+        43.5045,
+        -112.05509
+      ],
+      "description": "US-20 southbound urban bypass in Idaho Falls.",
+      "corridor": "us20-if-urban",
+      "direction": "SB"
+    },
+    {
+      "id": "i15-if-nb",
+      "name": "I-15 NB: Idaho Falls (Sunnyside to US-20)",
+      "start_latlon": [
+        43.46778,
+        -112.08446
+      ],
+      "end_latlon": [
+        43.53544,
+        -112.06672
+      ],
+      "description": "Northbound I-15 through Idaho Falls from Sunnyside Rd (IC 116) to US-20 (IC 119).",
+      "corridor": "i15-idaho-falls",
+      "direction": "NB"
+    },
+    {
+      "id": "i15-if-sb",
+      "name": "I-15 SB: Idaho Falls (US-20 to Sunnyside)",
+      "start_latlon": [
+        43.53554,
+        -112.06716
+      ],
+      "end_latlon": [
+        43.46778,
+        -112.08446
+      ],
+      "description": "Southbound I-15 through Idaho Falls.",
+      "corridor": "i15-idaho-falls",
+      "direction": "SB"
+    },
+    {
+      "id": "sh33-rexburg-eb",
+      "name": "SH-33 EB: Main St Rexburg",
+      "start_latlon": [
+        43.82607,
+        -111.802
+      ],
+      "end_latlon": [
+        43.82606,
+        -111.77805
+      ],
+      "description": "Eastbound SH-33 on Main St through central Rexburg.",
+      "corridor": "sh33-rexburg",
+      "direction": "EB"
+    },
+    {
+      "id": "sh33-rexburg-wb",
+      "name": "SH-33 WB: Main St Rexburg",
+      "start_latlon": [
+        43.82608,
+        -111.78957
+      ],
+      "end_latlon": [
+        43.82455,
+        -111.8488
+      ],
+      "description": "Westbound SH-33 on Main St through central Rexburg.",
+      "corridor": "sh33-rexburg",
+      "direction": "WB"
+    },
+    {
+      "id": "sh33-teton-nb",
+      "name": "SH-33 NB: Victor to Driggs",
+      "start_latlon": [
+        43.59432,
+        -111.10758
+      ],
+      "end_latlon": [
+        43.725,
+        -111.11
+      ],
+      "description": "SH-33 northbound in Teton Valley from Victor to Driggs.",
+      "corridor": "sh33-teton-valley",
+      "direction": "NB"
+    },
+    {
+      "id": "sh33-teton-sb",
+      "name": "SH-33 SB: Driggs to Victor",
+      "start_latlon": [
+        43.725,
+        -111.11
+      ],
+      "end_latlon": [
+        43.59432,
+        -111.10758
+      ],
+      "description": "SH-33 southbound in Teton Valley from Driggs to Victor.",
+      "corridor": "sh33-teton-valley",
+      "direction": "SB"
+    }
+  ],
+  "reporting_corridors": [
+    {
+      "id": "us20-if-rexburg",
+      "name": "US-20: Idaho Falls to Rexburg Commuter Expressway",
+      "description": "The 25.5-mile high-volume divided commuter facility connecting Idaho Falls, Rigby, and Rexburg."
+    },
+    {
+      "id": "us20-if-urban",
+      "name": "US-20: Idaho Falls Urban Bypass",
+      "description": "The 3.8-mile urban connector facility in Idaho Falls."
+    },
+    {
+      "id": "i15-idaho-falls",
+      "name": "I-15: Idaho Falls Urban Freeway (IC 116 to IC 119)",
+      "description": "The 4.5-mile interstate mainline serving Idaho Falls."
+    },
+    {
+      "id": "sh33-rexburg",
+      "name": "SH-33: Rexburg Main St Arterial",
+      "description": "The 1.5-mile commercial arterial serving BYU-Idaho and Rexburg."
+    },
+    {
+      "id": "sh33-teton-valley",
+      "name": "SH-33: Teton Valley (Victor to Driggs)",
+      "description": "The 8.5-mile recreation and commuter arterial in Teton County."
+    }
+  ]
+}
