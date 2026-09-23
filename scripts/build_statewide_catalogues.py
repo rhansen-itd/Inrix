@@ -17,7 +17,7 @@ failed verification is a broken catalogue that looks like a good one.
 
 Usage:
     python scripts/build_statewide_catalogues.py
-    python scripts/build_statewide_catalogues.py --districts 1 2 --window am
+    python scripts/build_statewide_catalogues.py --districts 1 2 --refresh-baseline
     python scripts/build_statewide_catalogues.py --dry-run
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from inrix_tools import aadt as aadt_mod          # noqa: E402
 from inrix_tools import corridors, couplets, extents  # noqa: E402
-from inrix_tools import routes                        # noqa: E402
+from inrix_tools import routes, screen, store  # noqa: E402
 
 MEMBERSHIP = "out/highways/route_membership/d{district}_route_membership.csv"
 
@@ -70,12 +70,54 @@ def load_district(district: int, *, aadt_source: str | None,
     return net, repairs
 
 
-def load_screen(district: int, screening_dir: Path) -> pd.DataFrame | None:
-    """The district's per-segment peak screening frame, if it has been run."""
-    path = screening_dir / f"d{district}" / "segment_peak_screen.parquet"
+URBAN_CONTEXT = "out/highways/route_membership/d{district}_urban_context.csv"
+
+
+def join_urban_context(net: gpd.GeoDataFrame, district: int) -> gpd.GeoDataFrame:
+    """``net`` with Item 52's urban context (area, share inside, signed edge distance)
+    joined — the guide Tier 2 and Tier 3 read, never a gate."""
+    path = Path(URBAN_CONTEXT.format(district=district))
     if not path.exists():
-        return None
-    return pd.read_parquet(path)
+        raise SystemExit(f"{path} missing — run scripts/build_route_membership.py first")
+    ctx = pd.read_csv(path, dtype={"urban_uace": str}).set_index("XDSegID")
+    net = net.drop(columns=[c for c in ctx.columns if c in net.columns])
+    ids = net["XDSegID"].astype("int64")
+    for col in ctx.columns:
+        net[col] = ids.map(ctx[col]).to_numpy()
+    return net
+
+
+DISTRICT_TZ = {1: "America/Los_Angeles", 2: "America/Los_Angeles", 3: "America/Boise",
+               4: "America/Boise", 5: "America/Boise", 6: "America/Boise"}
+BASELINE_FILE = "segment_baseline_screen.parquet"
+
+
+def load_baseline(district: int, screening_dir: Path, *, refresh: bool = False,
+                  cvalue_threshold: float = 80) -> pd.DataFrame:
+    """The district's baseline screen (ROADMAP Item 50): the AM/PM peaks, the night,
+    weekday travel-time percentiles and the real-time share, one row per segment.
+
+    Computed from the district store on first use and cached next to the peak screen;
+    ``refresh`` recomputes it (after an ingest)."""
+    path = screening_dir / f"d{district}" / BASELINE_FILE
+    if path.exists() and not refresh:
+        return pd.read_parquet(path)
+    con = store.connect(f"d{district}_store.duckdb")
+    con.execute("SET enable_progress_bar = false")
+    try:
+        areas = store.list_areas(con)
+        if len(areas) != 1:
+            raise SystemExit(f"d{district}_store.duckdb holds {len(areas)} areas; expected 1")
+        scr = screen.segment_screen(
+            con, str(areas.iloc[0]["area_key"]), windows=screen.BASELINE_WINDOWS,
+            cvalue_threshold=cvalue_threshold, tz=DISTRICT_TZ[district],
+            quantiles=extents.BASELINE_QUANTILES)
+    finally:
+        con.close()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    scr.to_parquet(path)
+    print(f"  Baseline screen -> {path} ({len(scr)} segments)")
+    return scr
 
 
 def couplet_block(net: gpd.GeoDataFrame, district: int,
@@ -135,7 +177,7 @@ def main() -> int:
     parser.add_argument("--out-dir", default="scripts",
                         help="where the dN_corridors.json files are written")
     parser.add_argument("--screening-dir", default="out/statewide_screening",
-                        help="per-district screening outputs (segment_peak_screen.parquet)")
+                        help="per-district screening outputs (the baseline screen is cached here)")
     parser.add_argument("--report-dir", default="out/statewide_screening",
                         help="where the couplet validation table is written")
     parser.add_argument("--aadt", default=aadt_mod.DEFAULT_SOURCE,
@@ -143,10 +185,8 @@ def main() -> int:
     parser.add_argument("--aadt-year", type=int, default=aadt_mod.DEFAULT_YEAR)
     parser.add_argument("--shs", default="SHS_Primary.zip",
                         help="classifies AADT records (Item 52); '' = descriptions only")
-    parser.add_argument("--window", default="am,pm",
-                        help="peak window(s) the cores are read from; several are "
-                             "combined as the worst TTI per segment")
-    parser.add_argument("--min-core-miles", type=float, default=extents.MIN_CORE_MILES)
+    parser.add_argument("--refresh-baseline", action="store_true",
+                        help="recompute the baseline screen from the store (after an ingest)")
     parser.add_argument("--max-facilities", type=int, default=None,
                         help="keep only the N facilities with the largest core delay")
     parser.add_argument("--no-couplets", action="store_true")
@@ -164,23 +204,27 @@ def main() -> int:
                                      shs=(args.shs if args.shs and Path(args.shs).exists()
                                           else None),
                                      aadt_year=args.aadt_year)
-        screen = load_screen(d, Path(args.screening_dir))
-        if screen is None:
-            print(f"  No screening frame for District {d} — extents need one; skipping.")
-            all_ok = False
-            continue
-        observed = {int(s) for s in screen.index}
+        baseline = load_baseline(d, Path(args.screening_dir),
+                                 refresh=args.refresh_baseline)
+        net = join_urban_context(net, d)
+        observed = {int(s) for s in baseline.index[baseline["n_obs"] > 0]}
 
+        audit: list[dict] = []
         cat = extents.generate_catalogue(
-            net, screen_data=screen, window=args.window,
-            min_core_miles=args.min_core_miles,
+            net, baseline,
             max_facilities=args.max_facilities,
             observed=observed,
+            audit=audit,
             note=(f"ITD District {d} screening catalogue, generated by "
-                  f"inrix_tools.extents.generate_catalogue and "
-                  f"inrix_tools.couplets.detect_couplets (ROADMAP Item 46). "
-                  f"Hand-built predecessor in legacy/handbuilt_catalogues/."),
+                  f"inrix_tools.extents.generate_catalogue (cores on recurring peak "
+                  f"congestion against each segment's own baseline, ROADMAP Item 50) "
+                  f"and inrix_tools.couplets.detect_couplets. Item 46/49 predecessor in "
+                  f"legacy/item46_catalogues/."),
         )
+        audit_path = Path(args.screening_dir) / f"d{d}" / "core_audit.csv"
+        if not args.dry_run:
+            pd.DataFrame(audit).to_csv(audit_path, index=False)
+            print(f"  Core audit -> {audit_path}")
         gen = cat["_generated"]
         print(f"  {gen['n_chains']} mainline chains -> {gen['n_facilities']} facilities "
               f"-> {len(cat['corridors'])} directional entries, "

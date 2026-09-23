@@ -30,6 +30,7 @@ Pure core: no hardcoded paths, no CLI, no DuckDB queries.
 """
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -70,6 +71,12 @@ class SplitKind(str, Enum):
     JUNCTION = "junction"
     AADT_STEP = "aadt_step"
     CONGESTION_DROP = "congestion_drop"
+    # Item 50: where a congestion-grown extent stopped. These are not detected
+    # ahead of time like the four above; the extent builder records them.
+    CONGESTION_END = "congestion_end"
+    DILUTION = "dilution"
+    URBAN_BOUNDARY = "urban_boundary"
+    CONTEXT_LIMIT = "context_limit"
 
 
 class ExtentTier(str, Enum):
@@ -515,6 +522,10 @@ _SPLIT_PHRASE = {
     SplitKind.JUNCTION: "a highway junction",
     SplitKind.AADT_STEP: "an AADT step-change",
     SplitKind.CONGESTION_DROP: "a congestion discontinuity",
+    SplitKind.CONGESTION_END: "the end of the congestion",
+    SplitKind.DILUTION: "the dilution limit",
+    SplitKind.URBAN_BOUNDARY: "the urban-area boundary",
+    SplitKind.CONTEXT_LIMIT: "the context-length limit",
 }
 
 
@@ -543,6 +554,9 @@ def describe_split(split: SplitPoint | None, fallback: str = "the chain end") ->
         detail = f"FRC {d.get('frc_before')} -> {d.get('frc_after')}"
     elif split.kind is SplitKind.CONGESTION_DROP:
         detail = (f"{d.get('transition', '')}, TTI {d.get('tti_before')} -> {d.get('tti_after')}")
+    elif split.kind in (SplitKind.CONGESTION_END, SplitKind.DILUTION,
+                        SplitKind.URBAN_BOUNDARY, SplitKind.CONTEXT_LIMIT):
+        detail = str(d.get("detail", ""))
     else:
         detail = ""
     return f"{phrase} ({detail})" if detail else phrase
@@ -858,6 +872,9 @@ ROUTE_LABEL_RE = re.compile(r"^(I|US|ID|SH|SR)-(\d+)", re.IGNORECASE)
 
 MIN_CHAIN_MILES = 1.0
 """A chain shorter than this is a stub, not a mainline, and is not analysed."""
+
+BASELINE_QUANTILES = (0.10, 0.15)
+"""Weekday travel-time percentiles the baseline screen carries (Item 50)."""
 
 MIN_CORE_MILES = 0.75
 """A congested core shorter than this is a signal queue (Item 43's ~3-mile rule
@@ -1367,6 +1384,7 @@ def extent_catalogue_entries(
     *,
     facility_id: str,
     facility_name: str,
+    group_meta: dict | None = None,
 ) -> tuple[list[dict], dict]:
     """Emit the catalogue entries and reporting group for one tier of one facility.
 
@@ -1374,6 +1392,13 @@ def extent_catalogue_entries(
     ``parse_reporting_corridors`` shape. Underscore-prefixed keys carry the
     provenance the parser ignores but the tier comparison reads back
     (``_tier``, ``_facility``, ``_split_rationale``, ``_segment_ids``).
+
+    Each direction's entry states **its own** boundaries (Item 50): the two
+    directions of a facility are cored and grown separately, so they can end at
+    different places. ``counterpart_alt`` is ``None`` when the opposing direction
+    has no congestion of its own; the group then carries one entry.
+    ``group_meta`` is merged into the group (the core's metrics, ``_ranked``, the
+    companion note).
     """
     net = _ensure_indexed(network)
     tier = alt.tier
@@ -1386,19 +1411,21 @@ def extent_catalogue_entries(
                      if start_name and end_name and start_name != end_name
                      else f"{alt.miles:.2f} mi")
 
-    up, down = alt.bounding_splits
-    rationale = (
-        f"Tier {TIER_NUMBER[tier]} ({label}) of {facility_name}. "
-        f"{alt.split_rationale}. "
-        f"Upstream boundary: {describe_split(up, 'the start of the mainline chain')}; "
-        f"downstream boundary: {describe_split(down, 'the end of the mainline chain')}. "
-        f"Generated from the XD topology by inrix_tools.extents (ROADMAP Item 46)."
-    )
+    def _rationale(member: ExtentAlternative, direction: str) -> str:
+        up, down = member.bounding_splits
+        return (
+            f"Tier {TIER_NUMBER[tier]} ({label}) of {facility_name}, {direction}. "
+            f"{member.split_rationale}. "
+            f"Upstream boundary: {describe_split(up, 'the start of the mainline chain')}; "
+            f"downstream boundary: {describe_split(down, 'the end of the mainline chain')}. "
+            f"Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50)."
+        )
 
+    lead_rationale = _rationale(alt, chain.direction)
     group = {
         "id": group_id,
         "name": f"{facility_name} — Tier {TIER_NUMBER[tier]} {label} ({extent_phrase})",
-        "description": rationale,
+        "description": lead_rationale,
         "_tier": tier.value,
         "_tier_number": TIER_NUMBER[tier],
         "_tier_label": f"Tier {TIER_NUMBER[tier]} {label} ({extent_phrase})",
@@ -1406,7 +1433,10 @@ def extent_catalogue_entries(
         "_facility_name": facility_name,
         "_miles": alt.miles,
         "_n_segments": len(alt.segment_ids),
+        "_ranked": tier is ExtentTier.CORE,
     }
+    if group_meta:
+        group.update(group_meta)
 
     entries: list[dict] = []
     for member_alt, member_chain in ((alt, chain), (counterpart_alt, counterpart)):
@@ -1426,7 +1456,7 @@ def extent_catalogue_entries(
                              round(member_alt.start_latlon[1], 5)],
             "end_latlon": [round(member_alt.end_latlon[0], 5),
                            round(member_alt.end_latlon[1], 5)],
-            "description": rationale,
+            "description": _rationale(member_alt, direction),
             "corridor": group_id,
             "direction": direction,
             "_tier": tier.value,
@@ -1438,84 +1468,629 @@ def extent_catalogue_entries(
     return entries, group
 
 
-def _delay_proxy(segment_ids: Sequence[int], net_idx: pd.DataFrame,
-                 tti: pd.DataFrame, window: str) -> float:
-    """Rough vehicle-hours of delay over an extent, for *ordering facilities only*.
+# ─── Cores from recurring congestion (ROADMAP Item 50) ───────────────
+#
+# Item 46 cored a facility where peak TTI against INRIX's ``Ref Speed`` was >= 1.20
+# on >= 0.75 mi of segments. The owner's Session 65 review found what that admits:
+# grades and canyons that are as slow at 2 a.m. as at 5 p.m. (Gilbert Grade), roads
+# with 180 vehicles a day and a third of their data imputed (Lowell), a single
+# 0.84-mi rural segment standing as a whole core (Bonners Ferry), hard cliffs (SH-8
+# at 1.199), extents mirrored onto a free-flowing direction, and Tier 3 extents that
+# ran the whole 180-mile chain. The replacement:
+#
+# * **Each segment is measured against its own baseline** — its overnight travel
+#   time, or a low weekday percentile where the night has too little data — not
+#   against INRIX's reference speed. A grade is slow at night too; its ratio is ~1.
+# * **A core is scored, not gated per segment.** Congestion weight rises smoothly
+#   from 1.05 to 1.20, a segment's length counts only up to 0.5 mi, and the core
+#   must carry real delay (vehicle-hours per mile from the AADT 2025 join) on data
+#   that is mostly real-time probe data.
+# * **Each direction answers for itself**, and Tiers 2 and 3 stop where the
+#   congestion does; urban-area boundaries guide where to look, never cut.
 
-    ``miles x (TTI - 1) x AADT`` when a volume is joined, ``miles x (TTI - 1)``
-    without one. It is deliberately not reported anywhere: the real VHD comes
-    from `screen.rank_corridors` once the catalogue is screened. This only
-    decides which facilities are worth cataloguing at all.
+BASELINE_MIN_OBS = 100
+"""Gated observations a baseline window needs before it is trusted (~25 hours of
+15-minute bins over the export). Below it the next baseline is tried; with none, the
+segment's congestion is **unknown** — never zero."""
+
+BASELINE_FALLBACK_COL = "weekday_tt_p15"
+"""The fallback baseline: the 15th percentile of the segment's gated weekday travel
+times (``screen.BASELINE_WINDOWS`` with ``quantiles=BASELINE_QUANTILES``)."""
+
+PEAK_WINDOWS = ("am", "pm")
+"""The windows a core is read from; each segment is judged at its worse one."""
+
+RATIO_ONSET = 1.05
+"""Peak/baseline ratio at which a segment starts to carry congestion weight. Session
+65's geometric roads sit at 1.00–1.04."""
+
+RATIO_FULL = 1.20
+"""Peak/baseline ratio at which the weight reaches 1. Real hotspots are 1.2–1.5."""
+
+CORE_SEED_RATIO = 1.10
+"""A core starts and ends on a segment at least this congested. Between them it
+bridges up to :data:`CORE_GAP_SEGMENTS` less congested segments — so a 1.099
+neighbour inside a queue is bridged, not an edge the core falls off."""
+
+CORE_GAP_SEGMENTS = 2
+CORE_GAP_MILES = 0.5
+"""A bridged gap is at most this many segments **and** this many miles."""
+
+SEGMENT_MILES_CAP = 0.5
+"""A segment's length counts toward a core's effective miles only up to this, so one
+long rural segment cannot be a core by itself."""
+
+MIN_EFFECTIVE_CORE_MILES = 0.6
+"""Floor on ``sum(min(miles, SEGMENT_MILES_CAP) x weight)`` over the core."""
+
+MIN_CORE_VHD_PER_MILE = 60.0
+"""Floor on the core's vehicle-hours of delay per mile (AADT 2025 x peak delay
+against the segment's own baseline). Calibrated on Session 65's list (Session 69):
+the keep list is 130–650; the rural geometric cores are under 3; Bonners Ferry, on
+AADT 2025 volumes and read as the concurrent US-2 chain, is 45. The qualifying cores
+fall into a gap between 55 and 65, and the floor sits in it — with Bonners Ferry
+below it are Blackfoot, Montpelier, Sandpoint's US-2 and Rathdrum's SH-53."""
+
+MIN_CORE_VHD = 25.0
+"""Floor on the core's total vehicle-hours of delay."""
+
+MIN_REALTIME_SHARE = 0.90
+"""Floor on the core's mile-weighted ``Pct Score30`` share in its peak window. Every
+keep-list core is >= 0.98; Lowell is 0.00, Benewah 0.03, the Idaho County core
+0.14–0.27, Bonners Ferry 0.81–0.88."""
+
+SPILL_RETENTION = 0.5
+"""Tier 2 grows past the core while the grown extent keeps at least this share of
+the core's VHD per mile — the owner's "doesn't significantly dilute the primary
+congestion" (2026-09-23)."""
+
+URBAN_SHARE_INSIDE = 0.5
+"""A segment with at least this share of its length inside an urban area is inside."""
+
+CONTEXT_PAD_MILES = 3.0
+"""Tier 3 (context) reaches at most this far past Tier 2 on each side."""
+
+FAIL_EFFECTIVE_MILES = "effective_miles"
+FAIL_VHD_PER_MILE = "vhd_per_mile"
+FAIL_VHD = "vhd"
+FAIL_REALTIME = "realtime_share"
+FAIL_UNOBSERVED = "unobserved"
+
+CONGESTION_COLUMNS = ("miles", "aadt", "peak_window", "peak_tt", "baseline_tt",
+                      "baseline_source", "ratio", "weight", "delay_min", "vhd",
+                      "realtime_share", "ref_tti", "urban_share", "urban_area")
+
+
+def segment_congestion(
+    baseline: pd.DataFrame,
+    network: gpd.GeoDataFrame | pd.DataFrame,
+    *,
+    peak_windows: Sequence[str] = PEAK_WINDOWS,
+    min_baseline_obs: int = BASELINE_MIN_OBS,
+    fallback_col: str = BASELINE_FALLBACK_COL,
+) -> pd.DataFrame:
+    """Each segment's peak congestion **against its own baseline**, one row per segment.
+
+    Args:
+        baseline: a ``screen.segment_screen`` over ``screen.BASELINE_WINDOWS`` with
+            ``quantiles=BASELINE_QUANTILES`` — per window ``<w>_travel_time``,
+            ``<w>_n_obs``, ``<w>_realtime_share``, plus ``night_*`` and the
+            ``weekday_tt_p15`` fallback.
+        network: the XD network, with ``Miles`` and (ideally) ``AADT`` and the
+            ``itd_layers.urban_context`` columns joined.
+
+    Returns:
+        A frame indexed by ``Segment ID`` over the network's segments, with
+
+        - ``peak_window`` / ``peak_tt`` — the worse of ``peak_windows`` and its mean
+          travel time (min);
+        - ``baseline_tt`` / ``baseline_source`` — the overnight mean when the night
+          has ``min_baseline_obs`` gated rows, else ``fallback_col`` when the weekday
+          has them, else NaN / ``"none"``;
+        - ``ratio`` = peak / baseline, ``weight`` = its smooth ramp from
+          :data:`RATIO_ONSET` to :data:`RATIO_FULL` (0 where the ratio is unknown);
+        - ``delay_min`` = peak − baseline (floored at 0), ``vhd`` = delay × AADT / 60
+          (NaN without a volume);
+        - ``realtime_share`` in the peak window; ``ref_tti`` = peak against INRIX's
+          reference speed, for comparison with Item 46;
+        - ``miles``, ``aadt``, ``urban_share``, ``urban_area`` from the network.
     """
-    col = f"{window}_mean_tti"
-    if tti.empty or col not in tti.columns:
-        return 0.0
-    total = 0.0
-    for sid in segment_ids:
-        if sid not in net_idx.index or sid not in tti.index:
-            continue
-        row = net_idx.loc[sid]
-        if isinstance(row, pd.DataFrame):
-            row = row.iloc[0]
-        miles = row.get("Miles", 0.0)
-        val = tti.loc[sid, col]
-        if isinstance(val, pd.Series):
-            val = val.iloc[0]
-        if pd.isna(miles) or pd.isna(val):
-            continue
-        excess = max(float(val) - 1.0, 0.0)
-        aadt = row.get("AADT")
-        weight = float(aadt) if pd.notna(aadt) else 1.0
-        total += float(miles) * excess * weight
-    return total
+    net = _ensure_indexed(network)
+    scr = baseline
+    if "Segment ID" in scr.columns and scr.index.name != "Segment ID":
+        scr = scr.set_index("Segment ID")
+    scr = scr.reindex(net.index)
+
+    out = pd.DataFrame(index=net.index)
+    out.index.name = "Segment ID"
+    out["miles"] = pd.to_numeric(net.get("Miles"), errors="coerce")
+    out["aadt"] = (pd.to_numeric(net["AADT"], errors="coerce") if "AADT" in net.columns
+                   else float("nan"))
+
+    tt_cols = [f"{w}_travel_time" for w in peak_windows if f"{w}_travel_time" in scr.columns]
+    if not tt_cols:
+        raise KeyError(f"The baseline screen carries none of {list(peak_windows)}.")
+    tts = scr[tt_cols].astype("float64")
+    has_peak = tts.notna().any(axis=1)
+    out["peak_window"] = tts.fillna(-1.0).idxmax(axis=1).str.replace(
+        "_travel_time", "", regex=False).where(has_peak)
+    out["peak_tt"] = tts.max(axis=1)
+
+    def _n(col):
+        return pd.to_numeric(scr[col], errors="coerce").fillna(0) if col in scr.columns \
+            else pd.Series(0, index=scr.index)
+
+    night_ok = (_n("night_n_obs") >= min_baseline_obs) & scr.get(
+        "night_travel_time", pd.Series(float("nan"), index=scr.index)).notna()
+    fb = scr.get(fallback_col, pd.Series(float("nan"), index=scr.index))
+    fb_ok = ~night_ok & (_n("weekday_n_obs") >= min_baseline_obs) & fb.notna()
+    base = pd.Series(float("nan"), index=scr.index)
+    if "night_travel_time" in scr.columns:
+        base = base.where(~night_ok, scr["night_travel_time"])
+    base = base.where(~fb_ok, fb)
+    out["baseline_tt"] = base.where(base > 0)
+    out["baseline_source"] = np.where(night_ok, "night",
+                                      np.where(fb_ok, fallback_col, "none"))
+
+    out["ratio"] = out["peak_tt"] / out["baseline_tt"]
+    ramp = (out["ratio"] - RATIO_ONSET) / (RATIO_FULL - RATIO_ONSET)
+    out["weight"] = ramp.clip(lower=0.0, upper=1.0).fillna(0.0)
+    out["delay_min"] = (out["peak_tt"] - out["baseline_tt"]).clip(lower=0.0)
+    out["vhd"] = (out["delay_min"] / 60.0 * out["aadt"]).where(out["aadt"] > 0)
+
+    rt = pd.Series(float("nan"), index=scr.index)
+    for w in peak_windows:
+        col = f"{w}_realtime_share"
+        if col in scr.columns:
+            rt = rt.where(out["peak_window"] != w, scr[col])
+    out["realtime_share"] = rt
+
+    ref = pd.to_numeric(scr.get("ref_speed"), errors="coerce") \
+        if "ref_speed" in scr.columns else pd.Series(float("nan"), index=scr.index)
+    ref_tt = (out["miles"] / ref * 60.0).where(ref > 0)
+    out["ref_tti"] = out["peak_tt"] / ref_tt
+
+    out["urban_share"] = (pd.to_numeric(net["urban_share"], errors="coerce")
+                          if "urban_share" in net.columns else float("nan"))
+    out["urban_area"] = net["urban_area"] if "urban_area" in net.columns else None
+    return out[list(CONGESTION_COLUMNS)]
+
+
+@dataclass(frozen=True)
+class CoreCandidate:
+    """One run of congested segments on one chain, scored (Item 50)."""
+    start: int
+    """Index of the run's first segment in the chain."""
+    stop: int
+    """One past the run's last segment."""
+    segment_ids: tuple[int, ...]
+    miles: float
+    effective_miles: float
+    """``sum(min(miles, SEGMENT_MILES_CAP) x weight)``."""
+    vhd: float
+    vhd_per_mile: float
+    """Per mile of segments whose congestion is known."""
+    delay_per_mile: float
+    """Minutes of delay per mile, against the baseline (no volume)."""
+    realtime_share: float
+    peak_ratio: float
+    """Summed peak travel time over summed baseline travel time."""
+    ref_tti: float
+    """The same run against INRIX's reference speed (Item 46's measure)."""
+    unknown_miles: float
+    """Miles whose baseline or peak is missing — bridged, never counted as free flow."""
+    n_aadt_missing: int
+    baseline_sources: tuple[str, ...]
+    fails: tuple[str, ...]
+
+    @property
+    def qualifies(self) -> bool:
+        return not self.fails
+
+    def metrics(self) -> dict:
+        """The scoring numbers, rounded, for catalogue provenance and audit tables."""
+        return {
+            "miles": round(self.miles, 3),
+            "effective_miles": round(self.effective_miles, 3),
+            "vhd": round(self.vhd, 1),
+            "vhd_per_mile": round(self.vhd_per_mile, 1),
+            "delay_per_mile": round(self.delay_per_mile, 3),
+            "realtime_share": round(self.realtime_share, 3),
+            "peak_ratio": round(self.peak_ratio, 3),
+            "ref_tti": round(self.ref_tti, 3),
+            "unknown_miles": round(self.unknown_miles, 3),
+            "n_aadt_missing": self.n_aadt_missing,
+            "baseline_sources": list(self.baseline_sources),
+            "fails": list(self.fails),
+        }
+
+
+def _run_metrics(seg: pd.DataFrame, ids: Sequence[int]) -> dict:
+    """Length/delay/data totals over ``ids`` (rows of :func:`segment_congestion`)."""
+    sub = seg.reindex(list(ids))
+    miles = sub["miles"].fillna(0.0)
+    known = sub["baseline_tt"].notna() & sub["peak_tt"].notna()
+    known_miles = float(miles[known].sum())
+    vhd = float(sub["vhd"].fillna(0.0).sum())
+    delay = float(sub["delay_min"].where(known).fillna(0.0).sum())
+    rt = sub["realtime_share"]
+    rt_w = miles[rt.notna()]
+    peak_known = sub["peak_tt"][known].sum()
+    base_known = sub["baseline_tt"][known].sum()
+    ref_tt = (sub["peak_tt"] / sub["ref_tti"])[known & sub["ref_tti"].notna()]
+    return {
+        "miles": float(miles.sum()),
+        "known_miles": known_miles,
+        "unknown_miles": float(miles[~known].sum()),
+        "effective_miles": float((miles.clip(upper=SEGMENT_MILES_CAP) * sub["weight"]).sum()),
+        "vhd": vhd,
+        "vhd_per_mile": vhd / known_miles if known_miles > 0 else 0.0,
+        "delay_per_mile": delay / known_miles if known_miles > 0 else 0.0,
+        "realtime_share": (float((rt[rt.notna()] * rt_w).sum() / rt_w.sum())
+                           if rt_w.sum() > 0 else float("nan")),
+        "peak_ratio": float(peak_known / base_known) if base_known > 0 else float("nan"),
+        "ref_tti": (float(sub["peak_tt"][ref_tt.index].sum() / ref_tt.sum())
+                    if ref_tt.sum() > 0 else float("nan")),
+        "n_aadt_missing": int((known & ~(sub["aadt"] > 0)).sum()),
+        "baseline_sources": tuple(sorted(set(sub["baseline_source"].dropna()))),
+    }
+
+
+def core_fails(m: dict) -> tuple[str, ...]:
+    """Which floors a run's metrics (:func:`_run_metrics`) miss."""
+    fails = []
+    if m["effective_miles"] < MIN_EFFECTIVE_CORE_MILES:
+        fails.append(FAIL_EFFECTIVE_MILES)
+    if m["vhd_per_mile"] < MIN_CORE_VHD_PER_MILE:
+        fails.append(FAIL_VHD_PER_MILE)
+    if m["vhd"] < MIN_CORE_VHD:
+        fails.append(FAIL_VHD)
+    if not (m["realtime_share"] >= MIN_REALTIME_SHARE):     # NaN fails too
+        fails.append(FAIL_REALTIME)
+    return tuple(fails)
+
+
+def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame) -> list[CoreCandidate]:
+    """Every congested run on a chain, scored — qualifying or not.
+
+    A run starts and ends on a segment at :data:`CORE_SEED_RATIO` or worse and bridges
+    up to :data:`CORE_GAP_SEGMENTS` / :data:`CORE_GAP_MILES` of anything between —
+    less congested segments *and* segments whose congestion is unknown. Each run is
+    scored on its effective miles, its delay and its data (:func:`core_fails`).
+
+    Returns candidates strongest first (total VHD, then effective miles).
+    """
+    ids = [int(s) for s in chain_segments]
+    ratio = seg["ratio"].reindex(ids)
+    miles = seg["miles"].reindex(ids).fillna(0.0)
+    seeds = [i for i, r in enumerate(ratio) if pd.notna(r) and r >= CORE_SEED_RATIO]
+    runs: list[tuple[int, int]] = []
+    for i in seeds:
+        if runs:
+            lo, hi = runs[-1]
+            gap = range(hi, i)
+            if len(gap) <= CORE_GAP_SEGMENTS and float(miles.iloc[list(gap)].sum()) <= CORE_GAP_MILES:
+                runs[-1] = (lo, i + 1)
+                continue
+        runs.append((i, i + 1))
+
+    out = []
+    for lo, hi in runs:
+        run_ids = ids[lo:hi]
+        m = _run_metrics(seg, run_ids)
+        out.append(CoreCandidate(
+            start=lo, stop=hi, segment_ids=tuple(run_ids), miles=m["miles"],
+            effective_miles=m["effective_miles"], vhd=m["vhd"],
+            vhd_per_mile=m["vhd_per_mile"], delay_per_mile=m["delay_per_mile"],
+            realtime_share=m["realtime_share"], peak_ratio=m["peak_ratio"],
+            ref_tti=m["ref_tti"], unknown_miles=m["unknown_miles"],
+            n_aadt_missing=m["n_aadt_missing"],
+            baseline_sources=m["baseline_sources"], fails=core_fails(m),
+        ))
+    out.sort(key=lambda c: (-c.vhd, -c.effective_miles))
+    return out
+
+
+def _stop(kind: SplitKind, ids: Sequence[int], index: int, detail: str) -> SplitPoint:
+    """A boundary the extent builder hit, in the shape ``describe_split`` reads."""
+    index = max(0, min(index, len(ids) - 1))
+    return SplitPoint(segment_index=index, segment_id=int(ids[index]), kind=kind,
+                      score=1.0, details={"detail": detail})
+
+
+_HARD_SPLITS = (SplitKind.JUNCTION, SplitKind.URBAN_RURAL, SplitKind.AADT_STEP)
+
+
+def _core_is_urban(seg: pd.DataFrame, ids: Sequence[int]) -> bool:
+    sub = seg.reindex(list(ids))
+    w = sub["miles"].fillna(0.0)
+    share = sub["urban_share"]
+    if share.isna().all() or w.sum() <= 0:
+        return False
+    return float((share.fillna(0.0) * w).sum() / w.sum()) >= URBAN_SHARE_INSIDE
+
+
+def grow_congested_extent(
+    chain_segments: Sequence[int],
+    seg: pd.DataFrame,
+    core: CoreCandidate,
+    split_points: Sequence[SplitPoint] = (),
+) -> tuple[int, int, SplitPoint | None, SplitPoint | None]:
+    """Tier 2: grow outward from a core while the congestion continues.
+
+    Each side grows one segment at a time and stops at the first of:
+
+    - a junction, FRC or AADT split (the old Tier 2 bound, now only the outer limit);
+    - the end of the congestion — more than :data:`CORE_GAP_SEGMENTS` /
+      :data:`CORE_GAP_MILES` of segments under :data:`RATIO_ONSET` (unknown
+      segments are bridged like them, never read as free flow);
+    - **dilution** — adding the segment would drop the grown extent's VHD per mile
+      under :data:`SPILL_RETENTION` of the core's;
+    - **the urban-area boundary, but only as a guide**: past it (for a core inside
+      an urban area) no gap is bridged, so the extent continues only through
+      segments that are themselves congested and pass the dilution test. Congestion
+      that spills past the city line is kept; free flow beyond it is not.
+
+    Returns ``(start, stop, upstream_boundary, downstream_boundary)``: chain indices
+    of the grown extent (``stop`` exclusive) and why each side ended.
+    """
+    ids = [int(s) for s in chain_segments]
+    n = len(ids)
+    ratio = seg["ratio"].reindex(ids)
+    miles = seg["miles"].reindex(ids).fillna(0.0)
+    urban = seg["urban_share"].reindex(ids)
+    core_urban = _core_is_urban(seg, core.segment_ids)
+    area = ""
+    if core_urban:
+        names = seg["urban_area"].reindex(list(core.segment_ids)).dropna()
+        area = str(names.mode().iloc[0]) if len(names) else ""
+    core_rate = core.vhd_per_mile
+    lo, hi = core.start, core.stop
+
+    hard_up = [s for s in split_points if s.kind in _HARD_SPLITS and s.segment_index <= lo]
+    hard_down = [s for s in split_points if s.kind in _HARD_SPLITS and s.segment_index >= hi]
+    limit_lo = max((s.segment_index for s in hard_up), default=0)
+    limit_hi = min((s.segment_index for s in hard_down), default=n)
+    split_lo = max(hard_up, key=lambda s: s.segment_index) if hard_up else None
+    split_hi = min(hard_down, key=lambda s: s.segment_index) if hard_down else None
+
+    def _grow(step: int) -> tuple[int, SplitPoint | None]:
+        nonlocal lo, hi
+        pending: list[int] = []
+        i = lo - 1 if step < 0 else hi
+        while True:
+            if (step < 0 and i < limit_lo) or (step > 0 and i >= limit_hi):
+                split = split_lo if step < 0 else split_hi
+                return (lo if step < 0 else hi), split
+            r = ratio.iloc[i]
+            outside = (core_urban and pd.notna(urban.iloc[i])
+                       and urban.iloc[i] < URBAN_SHARE_INSIDE)
+            congested = pd.notna(r) and r >= RATIO_ONSET
+            if not congested:
+                if outside:
+                    return (lo if step < 0 else hi), _stop(
+                        SplitKind.URBAN_BOUNDARY, ids, i,
+                        f"leaving {area or 'the urban area'}; ratio "
+                        f"{'unknown' if pd.isna(r) else f'{r:.2f}'} beyond it")
+                pending.append(i)
+                if len(pending) > CORE_GAP_SEGMENTS or \
+                        float(miles.iloc[pending].sum()) > CORE_GAP_MILES:
+                    return (lo if step < 0 else hi), _stop(
+                        SplitKind.CONGESTION_END, ids, pending[0],
+                        f"peak/baseline under {RATIO_ONSET} for "
+                        f"{float(miles.iloc[pending].sum()):.2f} mi")
+                i += step
+                continue
+            new_lo, new_hi = (i, hi) if step < 0 else (lo, i + 1)
+            m = _run_metrics(seg, ids[new_lo:new_hi])
+            if m["vhd_per_mile"] < SPILL_RETENTION * core_rate:
+                return (lo if step < 0 else hi), _stop(
+                    SplitKind.DILUTION, ids, i,
+                    f"extending would fall to {m['vhd_per_mile']:.0f} VHD/mi, under "
+                    f"{SPILL_RETENTION:.0%} of the core's {core_rate:.0f}")
+            lo, hi = new_lo, new_hi
+            pending = []
+            i += step
+
+    _, up = _grow(-1)
+    _, down = _grow(+1)
+    return lo, hi, up, down
+
+
+def context_extent(
+    chain_segments: Sequence[int],
+    seg: pd.DataFrame,
+    start: int,
+    stop: int,
+    split_points: Sequence[SplitPoint] = (),
+    *,
+    urban: bool = False,
+    pad_miles: float = CONTEXT_PAD_MILES,
+) -> tuple[int, int, SplitPoint | None, SplitPoint | None]:
+    """Tier 3: context around a Tier 2 extent, never the whole chain.
+
+    Each side reaches to the nearest junction/FRC/AADT split, and no further than
+    ``pad_miles``; for an urban core it also stops at the urban-area boundary, the
+    natural edge of a town's corridor. Tier 3 is **reported, never ranked**.
+    """
+    ids = [int(s) for s in chain_segments]
+    n = len(ids)
+    miles = seg["miles"].reindex(ids).fillna(0.0)
+    share = seg["urban_share"].reindex(ids)
+
+    def _reach(step: int) -> tuple[int, SplitPoint | None]:
+        edge = start if step < 0 else stop
+        hard = [s for s in split_points if s.kind in _HARD_SPLITS
+                and ((step < 0 and s.segment_index <= start)
+                     or (step > 0 and s.segment_index >= stop))]
+        split = (max(hard, key=lambda s: s.segment_index) if step < 0
+                 else min(hard, key=lambda s: s.segment_index)) if hard else None
+        limit = split.segment_index if split is not None else (0 if step < 0 else n)
+        covered = 0.0
+        i = edge - 1 if step < 0 else edge
+        while (step < 0 and i >= limit) or (step > 0 and i < limit):
+            if urban and pd.notna(share.iloc[i]) and share.iloc[i] < URBAN_SHARE_INSIDE:
+                return (i + 1 if step < 0 else i), _stop(
+                    SplitKind.URBAN_BOUNDARY, ids, i, "the edge of the urban area")
+            covered += float(miles.iloc[i])
+            if covered > pad_miles:
+                return (i + 1 if step < 0 else i), _stop(
+                    SplitKind.CONTEXT_LIMIT, ids, i, f"{pad_miles:g} mi past Tier 2")
+            i += step
+        return limit, split
+
+    lo, up = _reach(-1)
+    hi, down = _reach(+1)
+    return min(lo, start), max(hi, stop), up, down
+
+
+def _alternative(tier: ExtentTier, ids: Sequence[int], net_idx, lo: int, hi: int,
+                 rationale: str, up: SplitPoint | None,
+                 down: SplitPoint | None) -> ExtentAlternative:
+    segs = tuple(int(s) for s in ids[lo:hi])
+    miles = 0.0
+    for s in segs:
+        if s in net_idx.index:
+            v = net_idx.loc[s, "Miles"]
+            if isinstance(v, pd.Series):
+                v = v.iloc[0]
+            if pd.notna(v):
+                miles += float(v)
+    return ExtentAlternative(
+        tier=tier, segment_ids=segs, miles=round(miles, 3),
+        start_latlon=_get_coords(net_idx, segs[0], end=False),
+        end_latlon=_get_coords(net_idx, segs[-1], end=True),
+        split_rationale=rationale, bounding_splits=(up, down),
+    )
+
+
+@dataclass
+class DirectionAnalysis:
+    """One chain (one direction) cored and tiered on its own data (Item 50)."""
+    chain: MainlineChain
+    candidates: list[CoreCandidate]
+    core: CoreCandidate | None = None
+    tiers: dict[ExtentTier, ExtentAlternative] = field(default_factory=dict)
+
+    @property
+    def qualifying(self) -> list[CoreCandidate]:
+        return [c for c in self.candidates if c.qualifies]
+
+
+def _tiers_for(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
+               splits: Sequence[SplitPoint], net_idx) -> dict[ExtentTier, ExtentAlternative]:
+    ids = list(chain.segment_ids)
+    core_alt = _alternative(
+        ExtentTier.CORE, ids, net_idx, core.start, core.stop,
+        (f"Recurrent congestion core ({core.miles:.2f} mi): peak/baseline "
+         f"{core.peak_ratio:.2f}, {core.vhd_per_mile:.0f} VHD/mi, "
+         f"{core.realtime_share:.0%} real-time data"),
+        _stop(SplitKind.CONGESTION_END, ids, max(core.start - 1, 0),
+              f"no segment at peak/baseline >= {CORE_SEED_RATIO} upstream")
+        if core.start > 0 else None,
+        _stop(SplitKind.CONGESTION_END, ids, core.stop,
+              f"no segment at peak/baseline >= {CORE_SEED_RATIO} downstream")
+        if core.stop < len(ids) else None,
+    )
+    lo, hi, up, down = grow_congested_extent(ids, seg, core, splits)
+    m = _run_metrics(seg, ids[lo:hi])
+    commuter = _alternative(
+        ExtentTier.COMMUTER, ids, net_idx, lo, hi,
+        (f"Congested extent grown from the core ({m['miles']:.2f} mi, "
+         f"{m['vhd_per_mile']:.0f} VHD/mi, "
+         f"{m['vhd_per_mile'] / core.vhd_per_mile:.0%} of the core's)"
+         if core.vhd_per_mile > 0 else f"Congested extent ({m['miles']:.2f} mi)"),
+        up, down)
+    c_lo, c_hi, c_up, c_down = context_extent(
+        ids, seg, lo, hi, splits, urban=_core_is_urban(seg, core.segment_ids))
+    cm = _run_metrics(seg, ids[c_lo:c_hi])
+    context = _alternative(
+        ExtentTier.REGIONAL, ids, net_idx, c_lo, c_hi,
+        f"Context around the congested extent ({cm['miles']:.2f} mi; reported, not ranked)",
+        c_up, c_down)
+    return {ExtentTier.CORE: core_alt, ExtentTier.COMMUTER: commuter,
+            ExtentTier.REGIONAL: context}
+
+
+def _core_county(net_idx, core: CoreCandidate | None) -> str:
+    """The county most of a core's miles lie in, or ``""``."""
+    if core is None or "County" not in net_idx.columns:
+        return ""
+    sub = net_idx.reindex([s for s in core.segment_ids if s in net_idx.index])
+    if sub.empty:
+        return ""
+    miles = pd.to_numeric(sub["Miles"], errors="coerce").fillna(0.0)
+    by = miles.groupby(sub["County"].astype(str).str.strip()).sum()
+    by = by[by.index.str.len() > 0]
+    return str(by.idxmax()) if len(by) else ""
+
+
+def _core_town(seg: pd.DataFrame, core: CoreCandidate | None) -> str:
+    """The urban area a core mostly lies in (``"Hailey"``), or ``""``."""
+    if core is None:
+        return ""
+    sub = seg.reindex(list(core.segment_ids))
+    inside = sub[sub["urban_share"].fillna(0.0) >= URBAN_SHARE_INSIDE]
+    if inside.empty or inside["urban_area"].dropna().empty:
+        return ""
+    return str(inside["urban_area"].dropna().mode().iloc[0]).split(",")[0].strip()
+
+
+def _index_span(target: Sequence[int], alt: ExtentAlternative, network,
+                metric_crs) -> tuple[int, int] | None:
+    """The ``[lo, hi)`` indices on ``target`` that ``alt``'s footprint mirrors onto."""
+    mirrored = mirror_extent(alt, target, network, metric_crs=metric_crs)
+    if mirrored is None or not mirrored.segment_ids:
+        return None
+    pos = {s: i for i, s in enumerate(target)}
+    idx = [pos[s] for s in mirrored.segment_ids if s in pos]
+    return (min(idx), max(idx) + 1) if idx else None
 
 
 def generate_catalogue(
     network: gpd.GeoDataFrame,
+    baseline: pd.DataFrame,
     *,
-    screen_data: pd.DataFrame | None = None,
-    recurrence: pd.DataFrame | None = None,
-    window: str = "pm",
+    peak_windows: Sequence[str] = PEAK_WINDOWS,
     tiers: Sequence[ExtentTier] = DEFAULT_TIERS,
     min_chain_miles: float = MIN_CHAIN_MILES,
-    min_core_miles: float = MIN_CORE_MILES,
-    core_gap_tolerance: int = 2,
     max_facilities: int | None = None,
     observed: set[int] | None = None,
     note: str = "",
+    audit: list | None = None,
 ) -> dict:
-    """Build a whole corridor catalogue from a district network, generatively.
+    """Build a whole corridor catalogue from a district network (Items 46, 50).
 
-    This is the function ROADMAP Item 46 exists to provide: the replacement for a
-    hand-written list of lat/lon hints. It walks the network's numbered mainlines
-    (:func:`enumerate_mainline_chains`), pairs the carriageways
-    (:func:`pair_chains`), analyses each pair's leading direction
-    (:func:`analyse_chain`), mirrors the resulting extents onto the opposing
-    direction (:func:`mirror_extent`), and emits the Tier 1/2/3 alternatives as
-    catalogue entries whose ``description`` states the split that ended them.
+    Walks the numbered mainlines (:func:`enumerate_mainline_chains`), pairs the
+    carriageways (:func:`pair_chains`), and cores **each direction on its own data**
+    (:func:`segment_congestion`, :func:`find_cores`). A facility is catalogued when
+    either direction has a qualifying core; the stronger one leads.
+
+    **The opposing direction answers for itself.** It is catalogued only where it
+    has a qualifying core of its own overlapping the lead core's footprint, and then
+    with its own boundaries. Otherwise it is **dropped**, and the group's
+    ``_companion`` note says why (its own peak/baseline over the mirrored span) — a
+    free-flowing direction summed into a reporting corridor only dilutes it.
+
+    Tier 1 is the core (ranked); Tier 2 grows it while the congestion continues
+    (:func:`grow_congested_extent`); Tier 3 is capped context
+    (:func:`context_extent`). Tiers 2 and 3 carry ``_ranked: false``. Where two
+    tiers cut the same segments in every direction, the **narrower** survives.
 
     Args:
-        network: the district's XD network, **with link repairs already applied**
-            and ideally with ``AADT`` / ``aadt_desc`` joined (``aadt.join_aadt``)
-            — the AADT step criterion and the endpoint naming both read them.
-        screen_data: a `screen.segment_screen` frame; converted to TTI by
-            :func:`tti_frame`. Either this or ``recurrence`` is required for a
-            Tier 1 core to be found empirically.
-        recurrence: a `screen.segment_recurrence` frame, used in preference to
-            ``screen_data`` when both are given.
-        window: the peak window the cores are read from.
-        tiers: which tiers to emit. Dropping ``REGIONAL`` gives a catalogue of
-            bottlenecks only.
-        min_core_miles: the floor under a Tier 1 core (below it, a signal queue).
-        max_facilities: keep only the N facilities with the largest core delay
-            proxy. ``None`` keeps every facility that has a qualifying core.
-        observed: segment ids present in the export. A facility whose core is not
-            observed cannot be screened, so it is not catalogued.
-        note: text for the catalogue's ``_note`` provenance key.
+        network: the district's XD network, **with link repairs applied**, and
+            ``AADT`` (``aadt.join_aadt``, AADT 2025) and the
+            ``itd_layers.urban_context`` columns joined.
+        baseline: the baseline screen (see :func:`segment_congestion`).
+        max_facilities: keep only the N facilities with the most core delay.
+        observed: segment ids in the export; a core with none is not catalogued.
+        audit: when given, one row per analysed direction is appended — every chain's
+            strongest candidate with its metrics and the floors it failed — so the
+            decisions can be checked segment by segment.
 
     Returns:
-        ``{"_note": ..., "corridors": [...], "reporting_corridors": [...]}`` —
-        ready for ``corridors.parse_catalogue`` and ``resolve_catalogue``.
+        ``{"_note", "_generated", "corridors", "reporting_corridors"}``, ready for
+        ``corridors.parse_catalogue`` and ``resolve_catalogue``.
     """
     net_idx = _ensure_indexed(network)
     try:
@@ -1523,64 +2098,105 @@ def generate_catalogue(
     except Exception:
         metric_crs = "EPSG:3857"
 
-    label, source_windows = resolve_window(window)
-    if recurrence is not None and not recurrence.empty:
-        tti = recurrence
-    else:
-        tti = tti_frame(screen_data if screen_data is not None else pd.DataFrame(),
-                        source_windows)
-    if tti is None:
-        tti = pd.DataFrame()
-    if not tti.empty and len(source_windows) > 1:
-        tti = worst_window_tti(tti, source_windows, label)
-    window = label
-
+    seg = segment_congestion(baseline, network, peak_windows=peak_windows)
     chains = enumerate_mainline_chains(network, min_miles=min_chain_miles)
     pairs = pair_chains(chains, network, metric_crs=metric_crs)
-    # Once, not once per chain: this is a property of the network (Item 47).
     junctions = incoming_route_map(network)
 
-    def _analyse(chain: MainlineChain) -> dict | None:
-        analysis = analyse_chain(
-            list(chain.segment_ids), network,
-            route_number=chain.route_number, bearing=chain.bearing,
-            recurrence=tti if not tti.empty else None,
-            window=window,
-            min_core_miles=min_core_miles,
-            core_gap_tolerance=core_gap_tolerance,
-            incoming_routes=junctions,
-        )
-        # A core found by the *fallback* (no congestion data at all) is a guess, not
-        # a measurement; the whole point of Item 43/45 is not to catalogue those.
-        empirical = [c for c in analysis.tiers.get(ExtentTier.CORE, [])
-                     if "bottleneck core" in c.split_rationale
-                     or "congestion run" in c.split_rationale]
-        if not empirical:
-            return None
-        core = empirical[0]
-        if observed is not None and not any(s in observed for s in core.segment_ids):
-            return None
-        return {"chain": chain, "analysis": analysis, "core": core,
-                "score": _delay_proxy(core.segment_ids, net_idx, tti, window)}
+    def _analyse(chain: MainlineChain) -> DirectionAnalysis:
+        cands = find_cores(chain.segment_ids, seg)
+        if observed is not None:
+            cands = [c if any(s in observed for s in c.segment_ids)
+                     else dataclasses.replace(c, fails=c.fails + (FAIL_UNOBSERVED,))
+                     for c in cands]
+        return DirectionAnalysis(chain=chain, candidates=cands)
+
+    def _audit(a: DirectionAnalysis, role: str, facility: str = "") -> None:
+        if audit is None:
+            return
+        best = a.core or (a.candidates[0] if a.candidates else None)
+        row = {"route": a.chain.route_label, "road_name": a.chain.road_name,
+               "direction": a.chain.direction,
+               "county": a.chain.counties[0] if a.chain.counties else "",
+               "chain_first_segment": a.chain.segment_ids[0],
+               "chain_miles": a.chain.miles, "role": role, "facility": facility,
+               "n_candidates": len(a.candidates), "n_qualifying": len(a.qualifying)}
+        if best is not None:
+            row.update({f"core_{k}": (";".join(v) if isinstance(v, list) else v)
+                        for k, v in best.metrics().items()})
+            row["core_first_segment"] = best.segment_ids[0]
+            row["core_last_segment"] = best.segment_ids[-1]
+        audit.append(row)
+
+    def _overlaps(spans: list[tuple[int, int]], lo: int, hi: int) -> bool:
+        return any(lo < s_hi and hi > s_lo for s_lo, s_hi in spans)
 
     facilities: list[dict] = []
     for chain, counterpart in pairs:
-        # Both directions are analysed and the **stronger core leads**. Leading with
-        # whichever chain the enumeration happened to list first loses real
-        # bottlenecks: I-90 through Coeur d'Alene has no PM core eastbound and four
-        # congested segments westbound, and EB is 0.01 mi the longer chain.
-        candidates = [c for c in (_analyse(chain),
-                                  _analyse(counterpart) if counterpart is not None else None)
-                      if c is not None]
-        if not candidates:
-            continue
-        lead = max(candidates, key=lambda c: c["score"])
-        other = chain if lead["chain"] is counterpart else counterpart
-        lead["counterpart"] = other
-        facilities.append(lead)
+        dirs = [_analyse(chain)] + ([_analyse(counterpart)] if counterpart is not None else [])
+        # Every qualifying core on the pair is its own facility — SH-75 carries
+        # Ketchum and Hailey, US-95 carries Coeur d'Alene and Moscow — strongest
+        # first. A core inside ground already claimed (by a stronger core's Tier 2,
+        # or by the opposing direction's mirror of it) belongs to that facility.
+        claimed: dict[int, list[tuple[int, int]]] = {id(d): [] for d in dirs}
+        pool = sorted(((d, c) for d in dirs for c in d.qualifying), key=lambda dc: -dc[1].vhd)
+        n_fac = 0
+        for d, core in pool:
+            if _overlaps(claimed[id(d)], core.start, core.stop):
+                _audit(DirectionAnalysis(d.chain, d.candidates, core), "absorbed")
+                continue
+            splits = detect_split_points(list(d.chain.segment_ids), network,
+                                         incoming_routes=junctions)
+            lead = DirectionAnalysis(d.chain, d.candidates, core)
+            lead.tiers = _tiers_for(d.chain, core, seg, splits, net_idx)
+            t2 = lead.tiers[ExtentTier.COMMUTER]
+            pos = {s: i for i, s in enumerate(d.chain.segment_ids)}
+            claimed[id(d)].append((pos[t2.segment_ids[0]], pos[t2.segment_ids[-1]] + 1))
+
+            other = next((o for o in dirs if o is not d), None)
+            companion, note = None, ""
+            if other is not None:
+                span = _index_span(list(other.chain.segment_ids), t2, network, metric_crs)
+                match = None
+                if span is not None:
+                    match = next((c for c in other.qualifying
+                                  if c.start < span[1] and c.stop > span[0]
+                                  and not _overlaps(claimed[id(other)], c.start, c.stop)),
+                                 None)
+                if match is not None:
+                    companion = DirectionAnalysis(other.chain, other.candidates, match)
+                    companion.tiers = _tiers_for(
+                        other.chain, match, seg,
+                        detect_split_points(list(other.chain.segment_ids), network,
+                                            incoming_routes=junctions), net_idx)
+                    c2 = companion.tiers[ExtentTier.COMMUTER]
+                    opos = {s: i for i, s in enumerate(other.chain.segment_ids)}
+                    claimed[id(other)].append((opos[c2.segment_ids[0]],
+                                               opos[c2.segment_ids[-1]] + 1))
+                else:
+                    own = (_run_metrics(seg, other.chain.segment_ids[span[0]:span[1]])
+                           if span is not None else None)
+                    note = (
+                        f"{other.chain.direction} not catalogued: no qualifying core of "
+                        f"its own opposite the {d.chain.direction} one"
+                        + (f" (peak/baseline {own['peak_ratio']:.2f}, "
+                           f"{own['vhd_per_mile']:.0f} VHD/mi over the mirrored span)"
+                           if own is not None and pd.notna(own["peak_ratio"]) else "")
+                    )
+                if span is not None:
+                    claimed[id(other)].append(span)
+            facilities.append({"lead": lead, "other": companion,
+                               "other_chain": other.chain if other is not None else None,
+                               "note": note, "score": core.vhd})
+            n_fac += 1
+        if not n_fac:
+            for d in dirs:
+                _audit(d, "rejected")
 
     facilities.sort(key=lambda f: -f["score"])
     if max_facilities is not None:
+        for f in facilities[max_facilities:]:
+            _audit(f["lead"], "capped")
         facilities = facilities[:max_facilities]
 
     entries: list[dict] = []
@@ -1588,52 +2204,67 @@ def generate_catalogue(
     used_ids: set[str] = set()
 
     for fac in facilities:
-        chain: MainlineChain = fac["chain"]
-        counterpart: MainlineChain | None = fac["counterpart"]
-        county = (chain.counties[0] if chain.counties else "").strip()
+        lead: DirectionAnalysis = fac["lead"]
+        other: DirectionAnalysis | None = fac["other"]
+        chain = lead.chain
+        # The county the **core** lies in, not where the chain starts: US-95 walks
+        # from Kootenai County into Bonner, and a Sandpoint core is Bonner's.
+        county = _core_county(net_idx, lead.core) or \
+            (chain.counties[0] if chain.counties else "").strip()
         label = facility_label(chain)
         base = _slug(f"{label}-{county or 'idaho'}")
-        facility_id, n = base, 1
-        while facility_id in used_ids:
-            n += 1
-            facility_id = f"{base}-{n}"
-        used_ids.add(facility_id)
         facility_name = f"{label}: {county} County" if county else label
-        if n > 1:
-            # One route can run through one county as several separate chains (US-95
-            # crosses Latah twice). The ids already differ; the *name* has to as
-            # well, or the tier comparison collapses two facilities into one row.
-            facility_name = f"{facility_name} ({n})"
+        facility_id, n = base, 1
+        if facility_id in used_ids:
+            # One route runs through one county as several facilities: separate
+            # chains (US-95 crosses Latah twice) or separate cores on one chain
+            # (SH-75's Ketchum and Hailey). Name the second by the town its core is
+            # in when the urban context says, else number it — the *name* has to
+            # differ as well as the id, or the tier comparison collapses them.
+            town = _core_town(seg, lead.core)
+            if town and _slug(f"{base}-{town}") not in used_ids:
+                facility_id = _slug(f"{base}-{town}")
+                facility_name = f"{facility_name} ({town})"
+            else:
+                while facility_id in used_ids:
+                    n += 1
+                    facility_id = f"{base}-{n}"
+                facility_name = f"{facility_name} ({n})"
+        used_ids.add(facility_id)
+        _audit(lead, "lead", facility_id)
+        if other is not None:
+            _audit(other, "companion", facility_id)
+        elif fac["other_chain"] is not None:
+            audit_row = {"route": fac["other_chain"].route_label, "direction":
+                         fac["other_chain"].direction, "role": "dropped_companion",
+                         "facility": facility_id, "note": fac["note"]}
+            if audit is not None:
+                audit.append(audit_row)
 
-        # Two tiers that cut the same segments are one extent under two names, and
-        # the dilution comparison would report a 100% retention that means nothing.
-        # Where they coincide the **widest** tier is the one that survives: a
-        # commuter extent that reaches both ends of the chain *is* the regional
-        # baseline, and calling it "Tier 2" would understate what was measured.
-        chosen: dict[ExtentTier, ExtentAlternative] = {}
+        members = [lead] + ([other] if other is not None else [])
+        # A wider tier that cuts exactly the narrower tier's segments, in every
+        # catalogued direction, is the same extent twice; the narrower (ranked) one
+        # survives.
+        keep: list[ExtentTier] = []
         for tier in tiers:
-            alts = fac["analysis"].tiers.get(tier, [])
-            if alts:
-                chosen[tier] = fac["core"] if tier is ExtentTier.CORE else alts[0]
-        keep: dict[ExtentTier, ExtentAlternative] = {}
-        seen_extents: set[tuple[int, ...]] = set()
-        for tier in reversed(list(tiers)):
-            alt = chosen.get(tier)
-            if alt is None or alt.segment_ids in seen_extents:
+            prev = keep[-1] if keep else None
+            if prev is not None and all(
+                    m.tiers[tier].segment_ids == m.tiers[prev].segment_ids for m in members):
                 continue
-            seen_extents.add(alt.segment_ids)
-            keep[tier] = alt
+            keep.append(tier)
 
-        for tier in tiers:
-            alt = keep.get(tier)
-            if alt is None:
-                continue
-            mirrored = (mirror_extent(alt, counterpart.segment_ids, network,
-                                      metric_crs=metric_crs)
-                        if counterpart is not None else None)
+        meta = {
+            "_core": lead.core.metrics(),
+            "_directions": [m.chain.direction for m in members],
+        }
+        if fac["note"]:
+            meta["_companion"] = fac["note"]
+        for tier in keep:
+            other_alt = other.tiers[tier] if other is not None else None
             tier_entries, group = extent_catalogue_entries(
-                alt, chain, mirrored, counterpart, network,
-                facility_id=facility_id, facility_name=facility_name,
+                lead.tiers[tier], chain, other_alt,
+                other.chain if other_alt is not None else None, network,
+                facility_id=facility_id, facility_name=facility_name, group_meta=meta,
             )
             if not tier_entries:
                 continue
@@ -1642,17 +2273,31 @@ def generate_catalogue(
 
     return {
         "_note": note or (
-            "Generated by inrix_tools.extents.generate_catalogue (ROADMAP Item 46) — "
-            "mainline chains walked from the XD topology, extents cut at detected "
-            "split points. Do not hand-edit; re-run the builder."
+            "Generated by inrix_tools.extents.generate_catalogue (ROADMAP Items 46, 50) "
+            "— mainline chains walked from the XD topology, cores scored on recurring "
+            "peak congestion against each segment's own baseline. Do not hand-edit; "
+            "re-run the builder."
         ),
         "_generated": {
-            "window": window,
-            "source_windows": list(source_windows),
+            "peak_windows": list(peak_windows),
             "n_chains": len(chains),
             "n_facilities": len(facilities),
-            "min_core_miles": min_core_miles,
             "tiers": [t.value for t in tiers],
+            "ranked_tier": ExtentTier.CORE.value,
+            "thresholds": {
+                "baseline": f"night mean with >= {BASELINE_MIN_OBS} gated obs, else "
+                            f"{BASELINE_FALLBACK_COL}",
+                "ratio_onset": RATIO_ONSET, "ratio_full": RATIO_FULL,
+                "core_seed_ratio": CORE_SEED_RATIO,
+                "core_gap": [CORE_GAP_SEGMENTS, CORE_GAP_MILES],
+                "segment_miles_cap": SEGMENT_MILES_CAP,
+                "min_effective_core_miles": MIN_EFFECTIVE_CORE_MILES,
+                "min_core_vhd_per_mile": MIN_CORE_VHD_PER_MILE,
+                "min_core_vhd": MIN_CORE_VHD,
+                "min_realtime_share": MIN_REALTIME_SHARE,
+                "spill_retention": SPILL_RETENTION,
+                "context_pad_miles": CONTEXT_PAD_MILES,
+            },
         },
         "corridors": entries,
         "reporting_corridors": groups,

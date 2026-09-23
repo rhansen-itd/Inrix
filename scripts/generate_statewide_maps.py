@@ -20,6 +20,7 @@ are skipped rather than drawn with zeroed volumes.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -87,6 +88,12 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
         repairs_path = Path(f"scripts/d{d}_link_repairs.csv")
         if cat_path.exists():
             entries = corridors.load_catalogue(cat_path)
+            # Tier 2 / Tier 3 extents are context, not ranked corridors (ROADMAP
+            # Item 50); outlining them on the ranked map would show them as unranked
+            # peers with no delay. They are in statewide_*_context_extents.csv.
+            context = {g["id"] for g in json.loads(cat_path.read_text()).get(
+                "reporting_corridors", []) if g.get("_ranked") is False}
+            entries = [e for e in entries if (e.corridor or e.id) not in context]
             all_cat_entries.extend(entries)
             repairs = corridors.load_link_repairs(repairs_path) if repairs_path.exists() else None
             res = corridors.resolve_catalogue(net_d, entries, repairs=repairs)

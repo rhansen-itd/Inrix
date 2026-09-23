@@ -2458,7 +2458,7 @@ membership, settle District 3, and re-run the statewide screening."
 
 ---
 
-## 50 — Corridor cores from recurring congestion, not TTI against INRIX's ref speed
+## 50 — Corridor cores from recurring congestion, not TTI against INRIX's ref speed ✅ (Session 69)
 
 **Target: one session. Depends on Item 52** (AADT 2025 volumes and the per-segment urban
 context). Best done after Item 49, so the regenerated catalogues include the new
@@ -2497,7 +2497,7 @@ road is equally slow off-peak. Session 65 measured the result on the store data
 
 Scope:
 
-- [ ] **A congestion test against the road's own baseline.** Compare peak travel time
+- [x] **A congestion test against the road's own baseline.** Compare peak travel time
       with the same segment's off-peak baseline (overnight, or a low percentile of
       weekday travel time), not only against INRIX's `Ref Speed`. The peak/night
       ratios are already in hand from Session 65's diagnostics:
@@ -2507,21 +2507,26 @@ Scope:
 
       Decide how to handle a segment with too little overnight data; don't treat the
       gap as zero.
-- [ ] **Delay and data-quality floors.** A core needs a minimum VHD/mi or total VHD
+      *Done: `extents.segment_congestion` on the new baseline screen (`screen.BASELINE_WINDOWS`, `quantiles=`). Night mean with ≥ 100 gated rows, else weekday p15, else **unknown** (bridged, never zero delay).*
+- [x] **Delay and data-quality floors.** A core needs a minimum VHD/mi or total VHD
       from the AADT join, and a minimum real-time share (`Pct Score30`) or kept
       fraction. Calibrate both on the Session 65 list, **using AADT 2025 volumes**
       (Item 52), and record the values in DATA_FORMAT.
-- [ ] **No cliffs.** Replace the per-segment 1.20 / 0.75-mi gates with a length- and
+      *Done: ≥ 60 VHD/mi, ≥ 25 VHD (AADT 2025), ≥ 90% `Pct Score30` real-time at peak. Recorded in DATA_FORMAT. Bonners Ferry (45) and five small-town cores fall under 60; the owner should confirm them (DESIGN_HISTORY Session 69).*
+- [x] **No cliffs.** Replace the per-segment 1.20 / 0.75-mi gates with a length- and
       delay-weighted score, so one long rural segment can't be a core by itself and
       1.199 doesn't fall off an edge. Record where SH-8 through Moscow lands.
-- [ ] **Each direction answers for itself.** Trim a mirrored extent to where that
+      *Done: a smooth weight from 1.05 to 1.20, seeds at ≥ 1.10 with 2-segment/0.5-mi bridges, and ≥ 0.6 effective miles with each segment capped at 0.5 mi. SH-8 through Moscow is now a 1.79-mi core, Warbonnet Dr to Jackson St (rank 30).*
+- [x] **Each direction answers for itself.** Trim a mirrored extent to where that
       direction's own data supports it. A direction with no core of its own is either
       reported as the lead direction's companion, clearly labelled, or dropped;
       decide which.
-- [ ] **Tier 2 and Tier 3 stop at the congestion.** End Tier 2 at the congestion
+      *Done, **dropped** with the reason in `_companion`: the opposite direction is catalogued only with its own qualifying core, at its own bounds. I-90 EB is dropped (1.01, 16 VHD/mi).*
+- [x] **Tier 2 and Tier 3 stop at the congestion.** End Tier 2 at the congestion
       discontinuity, not just the next junction. Rank Tier 1 cores; report Tiers 2
       and 3 as context, not as peer rows.
-- [ ] **Urban areas guide the extent; they don't cut it** (owner, 2026-09-23). Use
+      *Done: Tier 2 grows until the congestion ends or dilutes (50%); Tier 3 is ≤ 3 mi of context. Only Tier 1 ranks; Tiers 2 and 3 go to `statewide_*_context_extents.csv`. The ranking went from 115 rows to 64.*
+- [x] **Urban areas guide the extent; they don't cut it** (owner, 2026-09-23). Use
       Item 52's urban context as the first place to look for the rural/urban
       transition where an extent should end. **The boundary is not a hard cutoff.**
       Keep congestion that runs past the boundary when it is significant, meaning
@@ -2532,7 +2537,8 @@ Scope:
       Gilbert Grade, Lowell, Idaho County, Benewah and Bonners Ferry must fail the
       congestion, delay or data-quality tests on their own. Show where Galena,
       McCammon–Lava, and SH-45 beyond 12th Ave in Nampa land.
-- [ ] **Acceptance: the owner's list, checked segment by segment.**
+      *Done: the retention fraction is 0.5; past the boundary nothing uncongested is bridged. The rural false cores fail on data or delay. Galena and McCammon–Lava are out; SH-45 (D3 dry run) cores 12th Ave S to Meadowbrook Dr.*
+- [x] **Acceptance: the owner's list, checked segment by segment.**
       - Drop: SH-7 Gilbert Grade, US-12 near Lowell, the US-95 Idaho County core,
         SH-3 Benewah, and Bonners Ferry.
       - Keep: I-90 westbound IC 12–11, the US-95 Coeur d'Alene core, SH-75 Hailey,
@@ -2540,12 +2546,14 @@ Scope:
       - Galena and McCammon–Lava stay out of the ranked set.
       - Settle the I-90 westbound winter/summer ratio of 0.43: is it summer-only,
         and possibly construction?
-- [ ] pytest on synthetic chains: a geometric grade, a one-segment core, a mirrored
+      *Done: see the Session 69 table. All five drops fail, all five keeps rank. Also fixed: several cores per chain (SH-75 Hailey had been lost behind Ketchum). I-90 WB is summer-only: a step change on 22–23 June 2026 with nights unaffected, most likely a work zone; confirm with ITD D1.*
+- [x] pytest on synthetic chains: a geometric grade, a one-segment core, a mirrored
       free-flow direction, and a 1.199 neighbour. Regenerate D1/D2/D4–D6, re-run the
       screening and maps, and record in DATA_FORMAT and DESIGN_HISTORY how the
       rankings move.
+      *Done: `test_extents.py` (Item 50 classes), `test_screen.py` +2, `test_aggregate_statewide_rankings.py`; 760 passed. D1/D2/D4–D6 regenerated and re-screened; maps and aggregation re-run.*
 
-*Suggested prompt:* "Do Item 50 of ROADMAP.md — base corridor cores on recurring peak
+*Suggested prompt (done):* "Do Item 50 of ROADMAP.md — base corridor cores on recurring peak
 congestion against each road's own baseline, with delay and data-quality floors."
 
 ## 51 — Chains across route-numbering changes, and couplets that are real

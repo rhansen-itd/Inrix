@@ -163,6 +163,22 @@ ALL_WINDOWS: dict[str, PeakWindow] = {
     "day_7d": ALL_DAY_7D_WINDOW,
 }
 
+# The windows a corridor core is judged on (ROADMAP Item 50): the two commute peaks,
+# the overnight baseline, and every weekday hour, whose low percentile is the fallback
+# baseline where the night has too little data (``segment_screen(quantiles=...)``).
+WEEKDAY_ALL_WINDOW = PeakWindow("weekday", "12:00AM-12:00AM", WEEKDAYS)
+BASELINE_WINDOWS: dict[str, PeakWindow] = {
+    "am": PEAK_WINDOWS["am"],
+    "pm": PEAK_WINDOWS["pm"],
+    "night": PEAK_WINDOWS["night"],
+    "weekday": WEEKDAY_ALL_WINDOW,
+}
+
+REALTIME_COL = "Pct Score30"
+"""Share (0–100) of an interval built from real-time probe data at INRIX's highest
+confidence tier. ``segment_screen`` reports its mean, **ungated**, as
+``realtime_share`` (0–1): the CValue gate already removes the rows it would describe."""
+
 
 def resolve_windows(windows) -> dict[str, PeakWindow]:
     """Normalize a ``windows`` argument to an ordered ``{name: PeakWindow}`` dict.
@@ -224,7 +240,8 @@ def _validated_tz(tz) -> str:
 def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
                    cvalue_threshold: int | float | None = DEFAULT_CVALUE_THRESHOLD, *,
                    bin_minutes: int | None = None, tz=DEFAULT_TZ,
-                   date_start=None, date_end=None) -> pd.DataFrame:
+                   date_start=None, date_end=None,
+                   quantiles: Sequence[float] = ()) -> pd.DataFrame:
     """Reduce a stored area to **one row per segment**, per named window, in DuckDB.
 
     The screening primitive: it answers "what does this segment look like in the AM
@@ -248,6 +265,8 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
             wrong hour.
         date_start / date_end: optional inclusive local calendar-date bounds, pushed
             into the scan exactly as :func:`store.load_export` pushes them.
+        quantiles: travel-time quantiles (0–1) to add per window, over the gated
+            rows: ``0.15`` adds ``<name>_tt_p15``. Empty by default (Item 50).
 
     Returns:
         A DataFrame indexed by ``Segment ID`` with
@@ -256,7 +275,11 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
           after and before the CValue gate, and the surviving share;
         - ``ref_speed`` — mean ``Ref Speed(...)`` (INRIX's free-flow reference);
         - per window ``<name>_travel_time``, ``<name>_speed``, ``<name>_n_obs``,
-          ``<name>_n_obs_ungated``, ``<name>_kept_fraction``.
+          ``<name>_n_obs_ungated``, ``<name>_kept_fraction``, and ``<name>_tt_pNN``
+          per requested quantile;
+        - when the export carries ``Pct Score30``: ``realtime_share`` and
+          ``<name>_realtime_share``, its mean over **all** rows as a 0–1 share
+          (ungated — the gate removes exactly the rows this measures).
 
         ``attrs`` records ``area_key``, ``bin_minutes``, ``tz``, ``cvalue_threshold``,
         ``windows`` (each window's full spec), ``units`` and the date bounds — the
@@ -287,6 +310,11 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
     def q(col):                      # a quoted column, or SQL NULL when absent
         return f'"{col}"' if col else "NULL"
 
+    qs = [float(x) for x in quantiles]
+    if any(not 0.0 < x < 1.0 for x in qs):
+        raise ValueError(f"quantiles must lie strictly between 0 and 1: {qs}")
+    has_rt = REALTIME_COL in cols
+
     where = [f'"{_store.BIN_COL}" = ?']
     params: list = [bin_minutes]
     lo, hi = _store._date_bounds_utc(date_start, date_end, zone)
@@ -305,6 +333,7 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
         f'  {q(m["speed"])} AS speed',
         f'  {q(m["travel_time"])} AS tt',
         f'  {q(m["ref_speed"])} AS ref',
+        f'  {q(REALTIME_COL if has_rt else None)} AS rt',
         f"""  "{DATETIME_COL}" AT TIME ZONE '{zone}' AS local_dt""",
         f"  ({gate}) AS kept",
     ]
@@ -314,6 +343,8 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
         "  count(*) FILTER (WHERE kept) AS n_obs",
         "  avg(ref) FILTER (WHERE kept) AS ref_speed",
     ]
+    if has_rt:
+        agg.append("  avg(rt) / 100.0 AS realtime_share")
     for name, w in wins.items():
         pred = w.sql_predicate()
         agg += [
@@ -322,10 +353,14 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
             f'  avg(tt) FILTER (WHERE kept AND {pred}) AS "{name}_travel_time"',
             f'  avg(speed) FILTER (WHERE kept AND {pred}) AS "{name}_speed"',
         ]
+        agg += [f'  quantile_cont(tt, {x}) FILTER (WHERE kept AND {pred}) '
+                f'AS "{name}_{_quantile_name(x)}"' for x in qs]
+        if has_rt:
+            agg.append(f'  avg(rt) FILTER (WHERE {pred}) / 100.0 AS "{name}_realtime_share"')
     sql = (
         "WITH src AS (\nSELECT\n" + ",\n".join(select_parts) +
         f'\nFROM "{obs}" WHERE {" AND ".join(where)}\n), tagged AS (\n'
-        "SELECT sid, speed, tt, ref, kept,\n"
+        "SELECT sid, speed, tt, ref, rt, kept,\n"
         "  date_part('hour', local_dt) * 3600 + date_part('minute', local_dt) * 60"
         " + date_part('second', local_dt) AS tod,\n"
         "  isodow(local_dt) AS dow\n"
@@ -345,9 +380,14 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
             out[f"{name}_n_obs"], out[f"{name}_n_obs_ungated"])
 
     order = ["n_obs", "n_obs_ungated", "kept_fraction", "ref_speed"]
+    if has_rt:
+        order.append("realtime_share")
     for name in wins:
         order += [f"{name}_travel_time", f"{name}_speed", f"{name}_n_obs",
                   f"{name}_n_obs_ungated", f"{name}_kept_fraction"]
+        order += [f"{name}_{_quantile_name(x)}" for x in qs]
+        if has_rt:
+            order.append(f"{name}_realtime_share")
     out = out[order]
     out.attrs = {
         "area_key": area_key,
@@ -359,9 +399,16 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
                   "travel_time": row.get("units_travel_time")},
         "date_start": date_start,
         "date_end": date_end,
+        "quantiles": qs,
         "metric_columns": {k: v for k, v in m.items()},
     }
     return out
+
+
+def _quantile_name(q: float) -> str:
+    """``0.15`` -> ``"tt_p15"``; ``0.025`` -> ``"tt_p2.5"``."""
+    pct = round(100.0 * float(q), 6)
+    return f"tt_p{int(pct):02d}" if pct == int(pct) else f"tt_p{pct:g}"
 
 
 def _share(kept: pd.Series, total: pd.Series) -> pd.Series:

@@ -1733,6 +1733,97 @@ then Nampa (81 mi).
 **Context, never a gate** (owner, 2026-09-23). The boundaries show where to look for
 a rural/urban transition when an extent ends (Item 50), not where it must stop.
 
+## Corridor cores from recurring congestion (`extents.py`, Item 50)
+
+Until Item 50, a corridor core was peak TTI ≥ 1.20 against INRIX's `Ref Speed` over
+≥ 0.75 mi of segments. That test let through grades that are just as slow at 2 a.m.,
+roads with 180 AADT and mostly imputed data, and single long rural segments. The
+generator now judges each segment against **its own baseline**, and scores a core on
+delay and data quality.
+
+**The baseline screen.** `screen.segment_screen(windows=screen.BASELINE_WINDOWS,
+quantiles=extents.BASELINE_QUANTILES)` covers `am`, `pm`, `night` (22:00–05:00, every
+day) and `weekday` (all hours, Mon–Fri). It carries the per-window `tt_p10`/`tt_p15`
+quantiles of gated travel time. `build_statewide_catalogues.py` caches it as
+`out/statewide_screening/d<N>/segment_baseline_screen.parquet`; `--refresh-baseline`
+rebuilds it after an ingest. Each district takes about 15 s in DuckDB.
+
+**`Pct Score30` is the real-time share.** It is 0–100 per row. The screen reports its
+**ungated** mean as `realtime_share` (0–1), overall and per window. It tracks the
+CValue gate closely: on D1, rows that pass `CValue > 80` average 91.7 and rows that
+fail it average 1.2. A segment's peak-window share is therefore the plain-language
+version of "how much of this is real data".
+
+**Baseline per segment** (`extents.segment_congestion`):
+1. the night mean, when the night has ≥ 100 gated observations;
+2. otherwise the weekday 15th percentile (`weekday_tt_p15`), when the weekday has
+   ≥ 100;
+3. otherwise the baseline is **unknown**. The ratio and delay are NaN. Inside a run
+   the segment is bridged like a gap, but its miles are left out of the per-mile
+   rates. It is never counted as free flow with zero delay.
+
+Nearly every urban segment gets the night baseline. The fallback is mostly used on
+rural roads whose overnight data is imputed (Galena, Lowell).
+
+**Per-segment measures.** `ratio` = worst peak window ÷ baseline. `weight` = a smooth
+ramp from 0 at 1.05 to 1 at 1.20. `delay_min` = peak − baseline (floored at 0).
+`vhd` = delay × AADT 2025 / 60, on the same relative-weight basis as
+`aadt.vehicle_hours_of_delay`. Session 65's peak/night ratios hold on these data:
+real hotspots run 1.2–2.4 per segment, geometric roads 0.95–1.05.
+
+**Core floors.** Calibrated on the Session 65 list (Session 69). All of them are in
+`catalogue["_generated"]["thresholds"]`:
+
+| constant | value | why |
+|---|---|---|
+| `CORE_SEED_RATIO` | 1.10 | a core starts and ends on a segment at least this congested |
+| `CORE_GAP_SEGMENTS` / `_MILES` | 2 / 0.5 mi | a core bridges up to this much in between (so SH-8's 1.199 is inside it) |
+| `SEGMENT_MILES_CAP` | 0.5 mi | a segment counts toward effective miles only up to this |
+| `MIN_EFFECTIVE_CORE_MILES` | 0.6 | Σ min(miles, cap) × weight; one long segment can't pass alone |
+| `MIN_CORE_VHD_PER_MILE` | 60 | keep list 126–540; Bonners Ferry 45; rural geometric < 5; the qualifying cores have a gap between 55 and 65 |
+| `MIN_CORE_VHD` | 25 | total vehicle-hours |
+| `MIN_REALTIME_SHARE` | 0.90 | mile-weighted, peak window. Keep list ≥ 0.98; Lowell 0.01, Benewah 0.02–0.03, Idaho County 0.16, Gilbert Grade 0.02–0.04, Galena 0.01 |
+| `SPILL_RETENTION` | 0.5 | Tier 2 grows while the grown extent keeps ≥ 50% of the core's VHD/mi |
+| `CONTEXT_PAD_MILES` | 3 mi | Tier 3 goes at most this far past Tier 2 |
+
+**Tiers.**
+- **Tier 1** is the core, and the only tier that ranks.
+- **Tier 2** grows the core outward. It stops at the first of: a junction/FRC/AADT
+  split, more than 2 segments (0.5 mi) under 1.05, or dilution. Past an urban-area
+  boundary it bridges no gaps: it continues only through segments that are themselves
+  congested and don't dilute the core.
+- **Tier 3** is context: out to the next split, the urban edge (for an urban core),
+  or 3 mi, whichever comes first. The longest Tier 3 is now about 10 mi (it used to be
+  180).
+- Tiers 2 and 3 carry `_ranked: false`. `aggregate_statewide_rankings.py` writes them
+  to `statewide_*_context_extents.csv`, each with its facility's core rank.
+
+**Each direction answers for itself.** The opposing carriageway is catalogued only
+where it has a qualifying core of its own that overlaps the lead's Tier 2 footprint,
+and then with its own boundaries. Otherwise it is dropped, and the group's
+`_companion` says why. For example: "EB not catalogued: … (peak/baseline 1.01,
+16 VHD/mi over the mirrored span)".
+
+**Every qualifying core on a chain is its own facility.** Before this, only the
+longest core on a chain was catalogued. That lost Hailey behind Ketchum on SH-75. A
+second facility is named after the town its core lies in (`SH-75: Blaine County
+(Hailey)`).
+
+**Audit.** `out/statewide_screening/d<N>/core_audit.csv` has one row per analysed
+direction: its best candidate, the candidate's metrics, and the floors it failed.
+
+**I-90 westbound in Coeur d'Alene is a summer-2026 event.** The winter/summer ratio
+of 0.43 is real. Look at weekday 16:00–18:30 travel time over the five core segments
+(4th St IC 13 to Northwest Blvd IC 11):
+- 1 January to 16 June it is 1.62–1.76 min, the same as the night's 1.7.
+- It rises on Mon 22 June (3.1) and stays at 5–8 min from Tue 23 June through
+  August. Weekends and middays rise with it; nights don't.
+
+A permanent step on one day, affecting daytime and weekends but not nights, looks
+like a daytime work zone rather than recurring commute congestion. **Confirm the
+project with ITD District 1.** The core ranks on it because the export window
+includes the summer. Until then it is not evidence of a recurring bottleneck.
+
 ## Direction convention & directional map display (Item 20)
 
 Segment direction comes from `metadata.Direction` (`N/S/E/W`, sometimes `NB` /

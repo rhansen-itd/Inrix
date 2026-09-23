@@ -732,3 +732,26 @@ def test_breakout_follows_the_ranked_order_it_is_given():
     both = pd.concat([r, extra], ignore_index=True)
     b = screen.corridor_breakout(both, member, order=["zed", "toy"])
     assert list(dict.fromkeys(b.index.get_level_values(0))) == ["zed", "toy"]
+
+
+def test_baseline_screen_carries_quantiles_and_the_realtime_share(area):
+    """Item 50: the weekday travel-time percentile the fallback baseline reads, and
+    the ``Pct Score30`` share, per window."""
+    import numpy as np
+
+    con, key = area
+    scr = screen.segment_screen(con, key, windows=screen.BASELINE_WINDOWS,
+                                cvalue_threshold=None, quantiles=(0.15,))
+    day = [_travel_time(step / 4.0) for step in range(96)]
+    assert scr["weekday_tt_p15"].to_numpy() == pytest.approx(np.quantile(day, 0.15))
+    assert scr["night_tt_p15"].eq(TT_NIGHT).all()
+    # The fixture writes Pct Score30 = 100 on every row.
+    assert scr["realtime_share"].eq(1.0).all()
+    assert scr["pm_realtime_share"].eq(1.0).all()
+    assert scr.attrs["quantiles"] == [0.15]
+
+
+def test_quantiles_outside_zero_one_are_rejected(area):
+    con, key = area
+    with pytest.raises(ValueError):
+        screen.segment_screen(con, key, quantiles=(15,))

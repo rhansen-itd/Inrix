@@ -7,9 +7,13 @@ Reads the per-district peak and 7-day screening outputs from:
 
 Produces:
 1. out/statewide_screening/statewide_peak_corridor_rankings.csv
-   - Statewide ranking of all monitored corridors by Peak Delay Density (VHD / Mile).
+   - Statewide ranking of the **ranked** corridors by Peak Delay Density (VHD / Mile):
+     Tier 1 cores, couplets, and District 3's curated entries. Tier 2 and Tier 3
+     extents are context, not peers (ROADMAP Item 50), and go to
+   ``statewide_peak_context_extents.csv`` with their facility's core rank.
 2. out/statewide_screening/statewide_7day_corridor_rankings.csv
-   - Statewide ranking of all monitored corridors by 7-Day All-Day Delay Density (VHD / Mile).
+   - The same for the 7-day all-day window (context in
+     ``statewide_7day_context_extents.csv``).
 3. out/statewide_screening/statewide_couplet_rankings.csv
    - Synthesis and comparison of all one-way couplet facilities statewide.
 4. out/statewide_screening/statewide_extent_tiers_comparison.csv
@@ -64,6 +68,58 @@ def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE) -> list
                           for g in tier_groups],
             })
     return groups
+
+
+def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE) -> dict:
+    """``(district, corridor_group) -> (tier_number, ranked, facility)`` from the
+    generated catalogues. A group with no tier metadata (a couplet, District 3's
+    curated entries) is absent and ranks as before."""
+    out = {}
+    for d in districts:
+        path = Path(pattern.format(district=d))
+        if not path.exists():
+            continue
+        cat = json.loads(path.read_text())
+        for grp in cat.get("reporting_corridors", []):
+            if "_tier_number" not in grp:
+                continue
+            ranked = grp.get("_ranked", grp["_tier_number"] == 1)
+            out[(d, grp["id"])] = (grp["_tier_number"], bool(ranked), grp.get("_facility"))
+    return out
+
+
+def split_ranked(combined: pd.DataFrame, group_tiers: dict,
+                 rank_col: str = "vhd_per_mile") -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split a combined table into the **ranked** rows and the **context** rows.
+
+    Before Item 50 every tier ranked as a peer, so a facility could appear three
+    times and a 98-mile Tier 3 sat between two real bottlenecks. The ranked table
+    carries the Tier 1 cores (and the untiered groups); the context table carries
+    Tiers 2 and 3, each with the statewide rank of its facility's core.
+    """
+    if combined.empty:
+        return combined, combined
+    keys = list(zip(combined["district"], combined["corridor_group"]))
+    meta = [group_tiers.get(k) for k in keys]
+    combined = combined.copy()
+    combined["tier"] = [m[0] if m else pd.NA for m in meta]
+    combined["facility"] = [m[2] if m else pd.NA for m in meta]
+    is_ranked = pd.Series([m is None or m[1] for m in meta], index=combined.index)
+
+    ranked = combined[is_ranked].drop(columns=["statewide_rank"], errors="ignore")
+    ranked = ranked.sort_values(by=rank_col, ascending=False,
+                                na_position="last").reset_index(drop=True)
+    ranked.insert(0, "statewide_rank", ranked.index + 1)
+
+    context = combined[~is_ranked].drop(columns=["statewide_rank"], errors="ignore")
+    core_rank = {(r.district, r.facility): r.statewide_rank
+                 for r in ranked.itertuples() if pd.notna(r.facility)}
+    context.insert(0, "core_statewide_rank",
+                   [core_rank.get((d, f)) for d, f in zip(context["district"],
+                                                            context["facility"])])
+    context = context.sort_values(["core_statewide_rank", "tier"],
+                                  na_position="last").reset_index(drop=True)
+    return ranked, context
 
 
 def load_district_table(csv_path: Path, district: int) -> pd.DataFrame | None:
@@ -269,24 +325,28 @@ def main():
     args = parser.parse_args()
 
     base_dir = Path(args.dir)
+    group_tiers = load_group_tiers(args.districts, args.catalogue)
 
-    print("Aggregating statewide peak rankings...")
-    peak_rankings = aggregate_rankings(
-        base_dir, "corridor_peak_totals.csv", args.districts, rank_col="vhd_per_mile"
-    )
-    if not peak_rankings.empty:
-        p_path = base_dir / "statewide_peak_corridor_rankings.csv"
-        peak_rankings.to_csv(p_path, index=False)
-        print(f"  -> Written {p_path} ({len(peak_rankings)} corridors)")
+    def _write(label: str, filename: str, stem: str) -> pd.DataFrame:
+        """Aggregate, split ranked/context, write both; return the **full** table
+        (the tier comparison reads every tier)."""
+        print(f"Aggregating statewide {label} rankings...")
+        full = aggregate_rankings(base_dir, filename, args.districts, rank_col="vhd_per_mile")
+        if full.empty:
+            return full
+        ranked, context = split_ranked(full, group_tiers)
+        r_path = base_dir / f"statewide_{stem}_corridor_rankings.csv"
+        ranked.to_csv(r_path, index=False)
+        print(f"  -> Written {r_path} ({len(ranked)} ranked corridors)")
+        c_path = base_dir / f"statewide_{stem}_context_extents.csv"
+        context.to_csv(c_path, index=False)
+        print(f"  -> Written {c_path} ({len(context)} Tier 2/3 context extents)")
+        return full.merge(ranked[["district", "corridor_group", "statewide_rank"]],
+                          on=["district", "corridor_group"], how="left",
+                          suffixes=("_all", ""))
 
-    print("Aggregating statewide 7-day all-day rankings...")
-    day7_rankings = aggregate_rankings(
-        base_dir, "corridor_7day_totals.csv", args.districts, rank_col="vhd_per_mile"
-    )
-    if not day7_rankings.empty:
-        d7_path = base_dir / "statewide_7day_corridor_rankings.csv"
-        day7_rankings.to_csv(d7_path, index=False)
-        print(f"  -> Written {d7_path} ({len(day7_rankings)} corridors)")
+    peak_rankings = _write("peak", "corridor_peak_totals.csv", "peak")
+    day7_rankings = _write("7-day all-day", "corridor_7day_totals.csv", "7day")
 
     if not peak_rankings.empty:
         print("Generating statewide couplet synthesis...")
@@ -313,7 +373,10 @@ def main():
             print(f"  -> Written {t_path} ({len(tiers)} facility tiers)")
 
         print("Generating district summary roll-up...")
-        dist_summary = build_district_summary(peak_rankings, day7_rankings, args.districts)
+        dist_summary = build_district_summary(
+            peak_rankings[peak_rankings["statewide_rank"].notna()],
+            day7_rankings[day7_rankings["statewide_rank"].notna()]
+            if not day7_rankings.empty else day7_rankings, args.districts)
         if not dist_summary.empty:
             ds_path = base_dir / "statewide_district_summary.csv"
             dist_summary.to_csv(ds_path, index=False)

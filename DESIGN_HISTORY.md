@@ -5547,3 +5547,145 @@ records; INRIX `RoadNumber` in the join). The run ranks 120 → 115 reporting co
   entries/groups and 20 → 19 repaired links (the old SB Payette entry used one).
 
 Full suite **735 passed, 2 skipped**.
+
+## Session 69 — Item 50: corridor cores from recurring congestion, not TTI against INRIX's ref speed (2026-09-23)
+
+The owner's Session 65 review found that a core (peak TTI ≥ 1.20 against `Ref Speed`
+over ≥ 0.75 mi) admitted grades, low-volume and low-data roads, single long segments
+and hard cliffs. It also mirrored extents onto free-flowing directions and let Tier 3
+run whole chains. This session replaces that test in `extents.generate_catalogue`.
+The Item 46 generator and the Item 49 catalogues it produced are kept in
+`legacy/item46_catalogues/`.
+
+### 1. The baseline screen
+
+- `screen.segment_screen` gained `quantiles=` (per-window travel-time quantiles over
+  gated rows) and, where the export has `Pct Score30`, an ungated `realtime_share`
+  overall and per window.
+- `screen.BASELINE_WINDOWS` = am, pm, night, weekday.
+- `build_statewide_catalogues.py` builds this screen from each district store and
+  caches it (`segment_baseline_screen.parquet`, about 15 s per district). The
+  builder no longer reads the peak screen.
+
+### 2. Design decisions
+
+- **The baseline is the segment's own night.** The night mean is used when it has
+  ≥ 100 gated rows; otherwise the weekday 15th percentile; otherwise the baseline is
+  **unknown**. An unknown segment is bridged inside a run but left out of per-mile
+  rates, never read as zero delay (the ROADMAP asked for this).
+- **No per-segment cliff.** Congestion weight ramps smoothly from a ratio of 1.05 to
+  1.20. A core starts and ends on a segment at ≥ 1.10 and bridges ≤ 2 segments /
+  0.5 mi. It qualifies on aggregate floors:
+  - effective miles ≥ 0.6, where each segment counts at most 0.5 mi, so one segment
+    cannot pass alone;
+  - ≥ 60 VHD/mi and ≥ 25 VHD (AADT 2025);
+  - ≥ 90% real-time data in the peak window.
+
+  Thresholds and calibration are in DATA_FORMAT ("Corridor cores from recurring
+  congestion").
+- **The delay floor went from 25 to 60 during calibration.** At 25, Bonners Ferry
+  came back. On AADT 2025 (6,800–13,000 vs the old join's 3,600), read as the
+  concurrent US-2 chain, it is 3 Main St segments at 45 VHD/mi. The qualifying cores
+  have a gap between 55 and 65. With Bonners Ferry, these also fall below 60:
+  - Blackfoot US-91 (44);
+  - Montpelier US-30 (50);
+  - Sandpoint US-2 WB (54);
+  - Ammon US-26 (55);
+  - Rathdrum's second SH-53 core (36).
+
+  **The owner should confirm these five.**
+- **Each direction answers for itself.** It is decided per direction, **dropped with
+  a stated reason, not labelled as a companion** (the ROADMAP left the choice open).
+  A companion with no congestion adds miles and no delay to the reporting total, so
+  labelling it would still dilute the rank. The reason is in the group's
+  `_companion`.
+- **Several cores per chain.** Previously only the longest core on a chain was
+  catalogued, which lost SH-75 Hailey behind Ketchum. Every qualifying core not
+  already inside a stronger one's Tier 2 is now its own facility, named after its
+  town when the id collides. Facilities are also named by the county the core lies
+  in, not the county where the chain starts (a Sandpoint core had read "Kootenai
+  County").
+- **Tiers.**
+  - Tier 2 grows from the core. It stops at a junction/FRC/AADT split, at more than
+    0.5 mi under 1.05, or when it would drop below 50% of the core's VHD/mi.
+    **Urban boundaries guide it:** past the boundary nothing uncongested is
+    bridged, but congested spill that doesn't dilute the core is kept. Rural is
+    never a reason to drop a core.
+  - Tier 3 is context: to the next split, the urban edge, or 3 mi. Tiers 2 and 3
+    are `_ranked: false`.
+  - Where tiers coincide, the **narrower** survives (it used to be the wider), so
+    the ranked core is never renamed away.
+- **Rankings.** `aggregate_statewide_rankings.py` ranks Tier 1 plus the untiered
+  groups (couplets, D3). Tiers 2 and 3 go to `statewide_*_context_extents.csv` with
+  their core's rank. The statewide map overlay draws only the ranked groups. The
+  district summary counts only ranked rows.
+- **Audit.** `out/statewide_screening/d<N>/core_audit.csv` records each direction's
+  best candidate and the floors it failed.
+
+### 3. Acceptance, checked segment by segment
+
+| Owner's list | Result |
+|---|---|
+| Drop SH-7 Gilbert Grade | Fails. 1.1–1.4 VHD/mi, 2–4% real-time. Its peak/baseline is 1.16–1.22, so it fails on delay and data, not on the ratio. |
+| Drop US-12 near Lowell | Fails. ~2 VHD/mi, 1% real-time, fallback baseline. |
+| Drop the US-95 Idaho County core | Fails. Hazard Creek is 14 VHD/mi, 16% real-time. |
+| Drop SH-3 Benewah | Fails. 2–4 VHD/mi, 2–3% real-time. |
+| Drop Bonners Ferry | Fails. US-95 chain: 1 segment, 84% real-time. US-2 chain: 45 VHD/mi < 60. |
+| Keep I-90 WB IC 12–11 | Core 4th St IC 13 to NW Blvd IC 11, 1.72 mi, peak/night 1.77, 541 VHD/mi. Rank 3. EB dropped: 1.01, 16 VHD/mi. |
+| Keep the US-95 Coeur d'Alene core | Upriver Dr to Miles Ave, both directions, 1.41. Rank 9. |
+| Keep SH-75 Hailey | Its own facility: Gannett-Picabo Rd to Myrtle St, 7.1–7.6 mi, 1.31–1.34. Rank 25. Ketchum (Elkhorn to Warm Springs) is rank 8. |
+| Keep the Rexburg Main St hotspot | SH-33 Madison, 12th W St to 2nd W St, both directions, 1.29 (rank 14); N 2nd St, 1.42 (rank 16). EB now opens at 12th W St at 1.23, not on the 0.92 segment. |
+| Keep Twin Falls US-93 | Golf Course Rd to Blue Lakes, 5.0 mi (rank 10), and 2600 E Rd to Washington St (rank 19). |
+| Galena out | Candidates are 2–3 VHD/mi at 1% real-time; SH-75's Tier 3 is ≤ 10 mi (was 98.5). |
+| McCammon–Lava out | No candidate on that stretch at all. US-30's Tier 3 is gone from the ranking (was 83 mi). |
+| SH-8 through Moscow | Now a core: Warbonnet Dr to Jackson St (US-95), 1.79 mi, both directions, peak/night 1.26. Rank 30. The 1.199 segment sits inside the core. |
+| SH-45 beyond 12th Ave, Nampa | D3's catalogue is curated and was not regenerated. A dry run of the generator on D3 cores SH-45 from 2nd St S @ 12th Ave S to Meadowbrook Dr (2.78 mi, both directions, 180 VHD/mi, 1.24); context ends at Lake Shore Dr, short of Locust Ln. |
+
+**I-90 WB winter/summer 0.43: summer only, most likely construction.** Weekday PM
+travel time on the core stays at the night level (1.62–1.76 min) from January to 16
+June. It steps up on 22–23 June to 5–8 min and stays there through August, weekends
+and middays included; nights don't move. The changepoint adapter found nothing on
+the daily series, so the date was read from the daily means. **Confirm the work zone
+with ITD D1.** The core is kept per the owner, but its rank reflects summer 2026.
+
+### 4. What moved
+
+- The statewide peak ranking went from 115 rows to 64. Every Tier 2/3 row left it:
+  44 went to the context file, and the old whole-chain Tier 3s were retired.
+- Dropped cores: US-95 Boundary, US-95 Idaho, US-12 Idaho, SH-3 Benewah, SH-75
+  Custer, US-93 Lemhi (72% real-time), SH-6 Latah, SH-34 Franklin, SH-48, SH-54,
+  SH-200, SH-46 Gooding, US-2 Bonner, US-26 Bonneville, US-30 Bear Lake, I-15
+  Bannock (Inkom), US-20 Farnsworth Way.
+- New cores:
+  - SH-8 Moscow;
+  - SH-75 Hailey;
+  - US-91 Chubbuck–Pocatello;
+  - SH-33 Victor (`sh-33-teton-2`);
+  - SH-41 Rathdrum, and a second SH-41 core (`sh-41-kootenai-2`);
+  - SH-53 Rathdrum;
+  - US-95 Sandpoint SB;
+  - I-15 Blackfoot Bridge St;
+  - US-20 Idaho Falls WB.
+- Renamed, not new, because the id now follows the core's county or town:
+  - `sh-33-jefferson` → `sh-33-madison`;
+  - `us-95-latah-2` → `us-95-latah-moscow`;
+  - the second US-93 and US-30 Twin Falls cores → `*-twin-falls-twin-falls`.
+- Per-corridor old/new ranks: `out/statewide_screening/item49_…` for the old,
+  `item50_peak_ranking_changes.csv` for the new; the pre-Item-50 tables are in
+  `out/statewide_screening/pre_item50/`.
+
+### 5. Tests
+
+- `test_extents.py`, the new Item 50 classes:
+  - segment congestion: night vs fallback baseline, unknown not zero, no cliff;
+  - `find_cores`: geometric grade, one long segment, the 1.199 neighbour, gaps,
+    low real-time, low volume, an unknown segment inside a run;
+  - Tier 2 growth: congestion end, urban spill kept, no bridging past the boundary,
+    dilution, rural not a reason to drop;
+  - Tier 3 cap and the urban edge;
+  - `generate_catalogue`: free-flow direction dropped, congested opposite direction
+    with its own extent, only Tier 1 ranked, two cores become two facilities, the
+    audit.
+- `test_screen.py` +2 (quantiles and real-time share; quantile validation).
+- New `test_aggregate_statewide_rankings.py` (the ranked/context split).
+- Full suite: 760 passed, 2 skipped.
