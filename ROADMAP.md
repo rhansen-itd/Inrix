@@ -2222,7 +2222,7 @@ Scope:
 *Suggested prompt (done):* "Do Item 48 of ROADMAP.md — select route segments by ITD AADT-layer
 route membership with an override file, and fix the Lewiston US-12 couplet."
 
-## 52 — ITD reference layers: the state highway system, AADT 2025, and urban areas
+## 52 — ITD reference layers: the state highway system, AADT 2025, and urban areas ✅ (Session 67)
 
 **Target: one session. Depends on Item 48. Do it before the rest of Item 49**, which
 rebuilds the catalogues. Items 50 and 51 build on it. Scoped 2026-09-23 when the owner
@@ -2264,33 +2264,101 @@ against the state highway lines, needing ≥80% of its length within 12 m:
 
 Scope:
 
-- [ ] **Loaders in the pure core** for the highway system and the urban areas (in
+- [x] **Loaders in the pure core** for the highway system and the urban areas (in
       `routes.py` and a small new module, or one `itd_layers.py`). Handle the one
       `MultiLineString` and the dropped M values. Decide which `RouteTypeC` /
       `RoadType` codes are mainline, and what `Travelway` `D` means; record both in
       DATA_FORMAT.
-- [ ] **Route identity from the highway system.** `routes.route_membership` takes the
+      *New `itd_layers.py`: `load_shs` and `load_urban_areas`. The `MultiLineString` is
+      exploded (1,180 parts), and Z/M are dropped. `RoadType` 4 = roadway (the only
+      mainline evidence), 5 = ramp, 6 = short rest-area/interchange pieces.
+      `RouteTypeC` 1 = mainline, 2 = spur, 3 = business loop, 4 = connector. Spurs and
+      connectors are their route. Business loops are state highway in their parent route,
+      labelled `business` (owner correction, Session 67). `Travelway` `D` is a divided
+      road's second carriageway (`01010DIN084` runs all of I-84).*
+- [x] **Route identity from the highway system.** `routes.route_membership` takes the
       SHS mainline as the identity source, and the AADT layer only as a fallback. The
       INRIX `RoadList` concurrency logic stays, because SHS names one route per road.
       Resolve the `unconfirmed` verdicts and explain the 53-mi buffer misses. Retire
       the Reisenauer override: keep the file, and note there that the source now agrees.
-- [ ] **Volumes from AADT 2025.** Change `aadt.DEFAULT_YEAR` and the scripts' `--aadt`
+      *`route_membership(geo, aadt, overrides, shs=)`. The SHS decides every D1–D6
+      non-ramp segment but 2, and a new `source` column records who decided.
+      - Three rule fixes came from the data:
+        - direction is compared at every sample, not at one contact point (winding
+          ID-162 and SH-52 had first come out "off the system");
+        - a business line *on* a segment outranks a mainline *near* it, so Farnsworth
+          Way is labelled `business`;
+        - a road lying on neither of a route's two drawn carriageways is a parallel
+          road (Silver Valley Rd beside I-90).
+      - The `unconfirmed` verdicts are resolved: 124.5 mi on the system (mostly
+        interstate `D` carriageways and the new US-95), 33.9 mi off, 11.6 mi business
+        loop (which stays in its route). The 53 mi are 138 segments confirmed only by the 40 m test: alignment
+        offsets (W Chinden Blvd; US-93 near Twin Falls drawn as one line).
+      - The Reisenauer row is a comment in `route_overrides.csv`.
+      - **Business loops stay in their parent route**, labelled `business`, plus any
+        route INRIX's `RoadList` names. A first pass took them out, on the strength
+        of "D1 I-90 (business loops out)" in Item 49's text. The owner never said
+        that; they corrected it. The only loop excluded is Caldwell's Cleveland Blvd /
+        Blaine St, which is no longer state highway, so the SHS has no line on it.*
+- [x] **Volumes from AADT 2025.** Change `aadt.DEFAULT_YEAR` and the scripts' `--aadt`
       defaults to `AADT_2025.zip`, and check that the geometry cache keys on the new
       source. Report how segment AADT and D3 peak VHD shift from 2024 to 2025. Item
       34's divided-highway problem is unchanged, but note whether the `Travelway` `D`
       lines give that join a carriageway to match.
-- [ ] **Urban context per segment**: the urban area it lies in (`UACE`, name) and its
+      *`DEFAULT_YEAR = 2025` and `DEFAULT_SOURCE = "AADT_2025.zip"`, used by every
+      script and the GUI. It did **not** key on the source; the cache sidecar now
+      records the source's name and size, and a mismatch rebuilds. **Record kinds now
+      come from the SHS where it is unambiguous** (roadway → mainline, ramp → ramp,
+      matched by `RouteID`). ITD's descriptions had made I-184's mainline a
+      connector, so both carriageways took 5,000–10,000 instead of ~68,000. They also
+      made the Broadway interchange ramps "mainline" (US-20 on Broadway took 9,500
+      instead of 29,500). Owner-flagged, Session 67.
+      - With the SHS classification, inventory VMT is +2.9% (districts +1.6% to
+        +3.5%) and D3 peak VHD is +2.6%.
+      - With correct volumes I-184 is D3's #3–4 (≈4,800 VHD); it was #6 in both years
+        before.
+      - Two doubtful SHS readings are listed in DATA_FORMAT: I-84 W Declo–Cotterell
+        6,000, and Weiser's W 7th St 150.
+      - AADT 2025 has almost no `D`-carriageway records, so the join still has one
+        centreline. The SHS `D` lines are a geometry a future join could map the
+        counts onto.*
+- [x] **Urban context per segment**: the urban area it lies in (`UACE`, name) and its
       distance to the boundary. This is a context column, **never a gate**. The owner's
       rule (2026-09-23): the boundaries show where to look for a rural/urban transition,
       and they are not cutoffs (see Item 50).
-- [ ] Rebuild membership for D1–D6 and regenerate the D1/D2/D4/D5/D6 inventories. Report
+      *`itd_layers.urban_context`: the area it lies in (or the nearest one), whether
+      it is inside, its share inside, and a signed distance to the boundary. Written
+      to `out/highways/route_membership/d<N>_urban_context.csv`. 848 of 9,725 route
+      miles are inside an urban area.*
+- [x] Rebuild membership for D1–D6 and regenerate the D1/D2/D4/D5/D6 inventories. Report
       the per-road changes against Item 48's in miles, and confirm the add-list diff is
       empty. Compute and report D3 as Item 48 did, for Item 49's decision.
-- [ ] pytest: an SHS record wins over an AADT-layer route; a `Travelway` `D` carriageway
+      *124.0 mi changed membership. 43.3 mi lost a route: 36.4 dropped off the
+      system, 4.8 Sun Valley Rd reversed, and short stubs. 81.0 mi gained one: 75.1 of
+      it is business-loop concurrency, 1.3 was added. By road:
+      `out/highways/route_membership/item52_changes_vs_item48.csv`.
+      - The masters barely move: D1 2215→2214, D2 2106→2102, D4 3013→2999, D5
+        2590→2582, D6 3447→3446. The pre-Item-52 copies are in
+        `out/highways/pre_item52/`.
+      - **The add-list is not empty: 36 segments, 1.95 mi**
+        (`out/export_reconciliation/item52_d<N>/segments_to_add.txt`). 19 are
+        unnumbered pieces lying on business loops (Markwell Ave, River St, E Seltice
+        Way, Pocatello Ave); 17 are SHS connector pieces or 12–47 m slivers. All are
+        short. The catalogue builder uses only observed segments.
+      - D3 is reported in `d3_curated_vs_shs.csv`. 89.4 mi in the curated list have
+        no SHS route, of which 65.8 mi is Banks-Lowman Hwy, kept in the export on
+        purpose (owner). 1.3 mi of SHS route are missing from the list.*
+- [x] pytest: an SHS record wins over an AADT-layer route; a `Travelway` `D` carriageway
       is on the system; an urban tag at a boundary; the synthetic Reisenauer case without
       its override. DATA_FORMAT: a section per layer. DESIGN_HISTORY.
+      *`test_routes.py` +13: every requested case, plus a business loop in its
+      parent route, a former loop off the SHS, a spur and a connector, ramps, the AADT
+      fallback, a winding road, and a frontage road between carriageways. New
+      `test_itd_layers.py` (8, including SHS record kinds and the I-184 join).
+      `test_aadt.py` +2 (the source key, the defaults). DATA_FORMAT: the SHS,
+      urban-area and AADT 2025 sections.*
 
-*Suggested prompt:* "Do Item 52 of ROADMAP.md — load ITD's State Highway System, AADT 2025
+*Suggested prompt (done):* "Do Item 52 of ROADMAP.md — load ITD's State Highway System, AADT 2025
 and urban-area layers, and take route identity from the highway system."
 
 ## 49 — Ingest the Item 48 add-list and re-run the statewide screening
@@ -2320,10 +2388,21 @@ twice.
       Blaine St, which Item 42 kept out, plus Payette's S Main St / 7th Ave N and
       Nampa's Northside Blvd. Decide whether the curated D3 lists take it. *Evidence
       from Item 52's scratch check: Cleveland Blvd, Blaine St, Northside Blvd and Payette
-      7th Ave / S 7th St are all off the state highway system.*
+      7th Ave / S 7th St are all off the state highway system.* *Item 52's full D3 report (`out/highways/route_membership/d3_curated_vs_shs.csv`):
+      178 curated segments / 89.4 mi have no SHS route.
+      - 65.8 mi is **Banks-Lowman Hwy**, kept in the export on purpose (owner): it
+        stays in the data and is filtered out of the ranking by membership.
+      - The rest is the roads above plus Elmore's Old Highway 30 and short stubs.
+      - Business loops (Garrity Blvd, Caldwell Blvd, and Mountain Home's I-84
+        Business) are state highway and stay in.
+      - 16 segments / 1.3 mi of SHS route are not in the curated list.*
 - [ ] Re-run the district and statewide screening on the corrected catalogues. Record
-      how the ranking moves, especially D2 US-12 (bypass instead of downtown), D1 I-90
-      (business loops out), and D4 SH-77. This is the baseline Items 50 and 51 are
+      how the ranking moves, especially:
+      - D2 US-12 (bypass instead of downtown);
+      - D1 I-90 (Coeur d'Alene's Northwest Blvd / Sherman Ave are off the SHS; the
+        Silver Valley and Post Falls business loops stay, labelled `business`);
+      - D4 SH-77;
+      - D3 I-184, whose volumes Item 52 corrected. This is the baseline Items 50 and 51 are
       measured against.
 - [ ] DESIGN_HISTORY with the before/after ranking.
 

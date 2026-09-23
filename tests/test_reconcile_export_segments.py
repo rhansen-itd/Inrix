@@ -106,7 +106,10 @@ def _args(district, **over):
             "--highways-dir", str(district["highways"]),
             "--network", str(district["network"]),
             "--network-cache", str(district["network"]),
-            "--out-dir", str(district["out"])]
+            "--out-dir", str(district["out"]),
+            # The fixture layer holds 2024 records; the default year is 2025 since
+            # Item 52.
+            "--aadt-year", "2024"]
     for k, v in over.items():
         flag = "--" + k.replace("_", "-")
         argv += [flag] if v is True else [flag, str(v)]

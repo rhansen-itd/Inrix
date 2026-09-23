@@ -34,6 +34,7 @@ from inrix_tools import corridors, screen  # noqa: E402
 from scripts.run_district_screening import (  # noqa: E402
     BBOX_MARGIN_DEG,
     join_volumes,
+    shs_source,
     _build_corridor_overlay,
     _build_segment_vhd_traces,
     _build_segment_traces,
@@ -78,7 +79,7 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
             joined = join_volumes(
                 net_geo, aadt_source, year=aadt_year,
                 cache_path=f"geometry_cache/d{d}_aadt.parquet",
-                max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG)
+                max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG, shs=shs_source())
             if joined is not None:
                 aadt_parts.append(joined)
 
@@ -315,7 +316,7 @@ def main():
     parser.add_argument("--dir", default="out/statewide_screening",
                         help="Base output directory")
     parser.add_argument("--districts", nargs="*", type=int, default=[1, 2, 3, 4, 5, 6])
-    parser.add_argument("--aadt", default="Cumulative_AADT.zip",
+    parser.add_argument("--aadt", default=aadt_mod.DEFAULT_SOURCE,
                         help="AADT source for the per-segment volume join; "
                              "omitted skips the two VHD/mile maps")
     parser.add_argument("--aadt-year", type=int, default=aadt_mod.DEFAULT_YEAR)

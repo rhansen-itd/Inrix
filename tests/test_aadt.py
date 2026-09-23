@@ -850,6 +850,41 @@ def test_a_cache_without_a_sidecar_is_judged_on_its_own_extent(layer_shp, tmp_pa
     assert unrestricted.attrs["aadt_layer"]["cache"].startswith("rebuilt")
 
 
+def test_the_cache_keys_on_its_source_download(layer_shp, tmp_path):
+    """Item 52: ``Cumulative_AADT.zip`` and ``AADT_2025.zip`` are two downloads of one
+    layer. A cache built from one must not answer for the other, even for the same
+    year and extent."""
+    import json
+
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    meta = aadt.read_cache_meta(cache)
+    assert meta["source"] == {"name": "aadt_fixture.shp",
+                              "bytes": layer_shp.stat().st_size}
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=WEST,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+
+    other_dir = tmp_path / "newer"
+    other_dir.mkdir()
+    other = _write_layer_shapefile(other_dir / "aadt_2025.shp")
+    rebuilt = aadt.load_aadt(other, year=2024, bbox=WEST, cache_path=cache)
+    state = rebuilt.attrs["aadt_layer"]["cache"]
+    assert state.startswith("rebuilt") and "aadt_fixture.shp" in state
+    assert aadt.read_cache_meta(cache)["source"]["name"] == "aadt_2025.shp"
+
+    # A sidecar from before Item 52 records no source, so it cannot prove a match.
+    meta = aadt.read_cache_meta(cache)
+    meta.pop("source")
+    aadt.cache_meta_path(cache).write_text(json.dumps(meta))
+    again = aadt.load_aadt(other, year=2024, bbox=WEST, cache_path=cache)
+    assert "records no source" in again.attrs["aadt_layer"]["cache"]
+
+
+def test_default_year_and_source_are_the_2025_download():
+    assert aadt.DEFAULT_YEAR == 2025
+    assert aadt.DEFAULT_SOURCE == "AADT_2025.zip"
+
+
 def test_a_cache_missing_a_requested_column_rebuilds(layer_shp, tmp_path):
     cache = tmp_path / "layer.parquet"
     aadt.load_aadt(layer_shp, year=2024, bbox=WIDE,

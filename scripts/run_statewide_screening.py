@@ -107,8 +107,8 @@ def main():
     parser.add_argument("--out-dir", default="out/statewide_screening")
     parser.add_argument("--windows", default="both",
                         help="'both' runs both am,pm and day_7d; or specify e.g. 'am,pm' or 'day_7d'")
-    parser.add_argument("--aadt", default="Cumulative_AADT.zip")
-    parser.add_argument("--aadt-year", type=int, default=2024)
+    parser.add_argument("--aadt", default="AADT_2025.zip")
+    parser.add_argument("--aadt-year", type=int, default=2025)
     parser.add_argument("--maps", action="store_true")
     args, extra = parser.parse_known_args()
 

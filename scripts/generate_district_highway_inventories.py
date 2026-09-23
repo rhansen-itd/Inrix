@@ -8,11 +8,11 @@ Creates RITIS/INRIX-paste-ready text files for all six ITD districts:
 - Detailed summary JSON catalogues and CSV tables.
 
 Matches ITD's official administrative districts (all 44 counties mapped 1-to-1).
-Route membership is **ITD's AADT layer's**, not INRIX ``RoadNumber`` (ROADMAP Item 48):
+Route membership is **ITD's**, not INRIX ``RoadNumber`` (ROADMAP Item 48) — from the
+State Highway System since Item 52, with the AADT layer as the fallback:
 a route's segments are those ``inrix_tools.routes.route_membership`` puts on it, read
 from ``out/highways/route_membership/d<N>_route_membership.csv`` — build those first
-with ``scripts/build_route_membership.py``. INRIX's number is the fallback only where
-no ITD record decides.
+with ``scripts/build_route_membership.py``.
 """
 from __future__ import annotations
 
@@ -588,7 +588,10 @@ def main() -> None:
         on_route = {rn: set(routes.route_segments(member, rn)) for rn in all_hw_rn}
         resolved = member["route_number"].reindex(dist_df["XDSegID_int"])
         resolved.index = dist_df.index
-        dropped = set(member.index[member["verdict"].isin((routes.INRIX_ONLY, routes.OVERRIDE))
+        # Anything membership decided is no route — dropped, off the system, or a
+        # business loop with no route of its own — is never re-added by name (Item 52:
+        # an ``ID-54``-named piece the SHS puts off the system stays off).
+        dropped = set(member.index[(member["verdict"] != routes.RAMP)
                                    & (member["routes"] == "")])
 
         for hw_code, meta in hws.items():

@@ -54,7 +54,7 @@ DEFAULT_DISTRICTS = [1, 2, 4, 5, 6]
 
 
 def load_district(district: int, *, aadt_source: str | None,
-                  aadt_year: int) -> tuple[gpd.GeoDataFrame, pd.DataFrame]:
+                  aadt_year: int, shs=None) -> tuple[gpd.GeoDataFrame, pd.DataFrame]:
     """The district's repaired, AADT-joined network and its link repair table."""
     net = gpd.read_parquet(f"geometry_cache/d{district}_network.geoparquet")
     repairs = corridors.load_link_repairs(f"scripts/d{district}_link_repairs.csv")
@@ -63,7 +63,8 @@ def load_district(district: int, *, aadt_source: str | None,
 
     if aadt_source:
         layer = aadt_mod.load_aadt(aadt_source, year=aadt_year,
-                                   cache_path=f"geometry_cache/d{district}_aadt.parquet")
+                                   cache_path=f"geometry_cache/d{district}_aadt.parquet",
+                                   shs=shs)
         indexed = net if net.index.name == "XDSegID" else net.set_index("XDSegID", drop=False)
         net = aadt_mod.join_aadt(indexed, layer)
     return net, repairs
@@ -137,9 +138,11 @@ def main() -> int:
                         help="per-district screening outputs (segment_peak_screen.parquet)")
     parser.add_argument("--report-dir", default="out/statewide_screening",
                         help="where the couplet validation table is written")
-    parser.add_argument("--aadt", default="Cumulative_AADT.zip",
+    parser.add_argument("--aadt", default=aadt_mod.DEFAULT_SOURCE,
                         help="ITD cumulative AADT source; '' to skip the volume join")
     parser.add_argument("--aadt-year", type=int, default=aadt_mod.DEFAULT_YEAR)
+    parser.add_argument("--shs", default="SHS_Primary.zip",
+                        help="classifies AADT records (Item 52); '' = descriptions only")
     parser.add_argument("--window", default="am,pm",
                         help="peak window(s) the cores are read from; several are "
                              "combined as the worst TTI per segment")
@@ -158,6 +161,8 @@ def main() -> int:
     for d in args.districts:
         print(f"\n{'=' * 70}\n  DISTRICT {d}\n{'=' * 70}")
         net, repairs = load_district(d, aadt_source=args.aadt or None,
+                                     shs=(args.shs if args.shs and Path(args.shs).exists()
+                                          else None),
                                      aadt_year=args.aadt_year)
         screen = load_screen(d, Path(args.screening_dir))
         if screen is None:

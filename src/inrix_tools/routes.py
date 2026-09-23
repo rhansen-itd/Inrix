@@ -1,4 +1,4 @@
-"""State-route membership from ITD's AADT layer, not INRIX ``RoadNumber``.  (ROADMAP Item 48)
+"""State-route membership from ITD's layers, not INRIX ``RoadNumber``.  (ROADMAP Items 48, 52)
 
 Which XD segments *are* US-12? Until Item 48 the answer was INRIX's ``RoadNumber``,
 and it is wrong in both directions:
@@ -28,7 +28,8 @@ with three limits this module is built around:
    road went to the county; INRIX is right there. An owner-reviewed override table
    (:func:`load_route_overrides`) beats the layer, and a segment INRIX numbers that no
    ITD record confirms either way is **kept and flagged**, never dropped — that is
-   what new construction looks like.
+   what new construction looks like. (Since Item 52 the State Highway System settles
+   Reisenauer Rd and the new alignment, and the override row is retired.)
 
 The evidence is also asymmetric on purpose. Taking a route *away* needs a local record
 on the segment **and** no numbered record anywhere near it (``NEAR_DISTANCE_M``): a
@@ -36,8 +37,29 @@ divided highway's one centreline lies 22–30 m off each carriageway, and a fron
 road record can sit nearer the carriageway than that. Giving a route to an unnumbered
 segment needs a numbered mainline record on it that no local record matches as well.
 
-Pure: no file paths, no plotting. :func:`route_membership` takes the geometry frame and
-the AADT layer and returns one row per segment; :func:`apply_route_membership` writes
+**Item 52: the State Highway System decides first.** ITD's ``SHS_Primary`` layer
+(:func:`inrix_tools.itd_layers.load_shs`) carries only state highway, is current (a
+``FromDate`` of 2026-07-28 at the latest), and has a line for each carriageway of a
+divided road. Given it, :func:`route_membership` reads identity from it
+(:func:`_shs_verdict`):
+
+* a route runs on a segment when a **member** SHS roadway line (``RouteTypeC``
+  mainline / spur / connector) of that route is *near* it — the same 40 m / 50% test;
+* a numbered segment with **no** SHS line near it is off the system (``inrix_only``);
+  the layer is complete, so absence is the evidence the AADT layer needed a local
+  record for. That settles Reisenauer Rd without its override, and the ``unconfirmed``
+  verdicts of Item 48;
+* a segment on an SHS **business loop** (``RouteTypeC`` 3) is state highway and belongs
+  to its parent route (I-90 BL is in the I-90 inventory, as it always was), labelled
+  ``business`` so an analysis can tell loop from mainline. It keeps any other route
+  INRIX's ``RoadList`` gives it (Caldwell Blvd stays SH-55 too). A street that stopped
+  being a business loop (Caldwell's Cleveland Blvd / Blaine St) has no SHS line and is
+  dropped like any other off-system road;
+* the AADT layer decides only where the SHS cannot: a numbered segment with an SHS
+  line of another route *near* but not *on* it (a frontage road beside the highway).
+
+Pure: no file paths, no plotting. :func:`route_membership` takes the geometry frame, the
+SHS layer and/or the AADT layer, and returns one row per segment; :func:`apply_route_membership` writes
 the resolved route onto a network so the chain and couplet code downstream
 (:mod:`extents`, :mod:`couplets`), which read ``RoadNumber``, need no change.
 """
@@ -65,6 +87,11 @@ NEAR_DISTANCE_M = 40.0
 reach a divided highway's centreline (22–30 m) from either carriageway."""
 NEAR_MIN_COVERAGE = 0.5
 BEARING_TOL_DEG = 45.0
+CARRIAGEWAY_MIN_COVERAGE = 0.25
+"""Where the SHS draws both carriageways of a route (Item 52), a segment *of* that route
+has at least this share of its length within ``ON_COVER_TOL_M`` of one of them. The
+real carriageways measured run 0.45–1.0; Silver Valley Rd, a frontage road between
+I-90's lines, runs 0.0."""
 
 # Verdicts
 AGREE = "agree"              # ITD confirms INRIX's own number
@@ -74,13 +101,18 @@ INRIX_ONLY = "inrix_only"    # INRIX numbers it; ITD carries it as a local road 
 ITD_ONLY = "itd_only"        # ITD route; INRIX has no number -> added
 UNCONFIRMED = "unconfirmed"  # INRIX numbers it; no ITD record decides -> kept, flagged
 OFF_SYSTEM = "off_system"    # neither source numbers it
-BUSINESS = "business"        # ITD's band is a business loop of another route -> INRIX kept
+BUSINESS = "business"        # on a business loop: its parent route (+ INRIX's), labelled
 RAMP = "ramp"                # ramps keep INRIX's reading; the join handles their volume
 OVERRIDE = "override"        # an owner-reviewed override row decided
 
 VERDICTS = (AGREE, CONCURRENT, BUSINESS, RENUMBERED, INRIX_ONLY, ITD_ONLY, UNCONFIRMED,
             OFF_SYSTEM, RAMP, OVERRIDE)
 """Every verdict :func:`route_membership` can return."""
+
+SOURCE_SHS = "shs"          # the State Highway System decided (Item 52)
+SOURCE_AADT = "aadt"        # the AADT layer decided (Item 48; the fallback since Item 52)
+SOURCE_OVERRIDE = "override"
+SOURCE_NONE = "none"        # a ramp, or no layer had anything to say
 
 CHANGED = (RENUMBERED, INRIX_ONLY, ITD_ONLY, OVERRIDE)
 """Verdicts where the resolved route differs from, or may differ from, INRIX's."""
@@ -239,51 +271,306 @@ def _evidence(seg, lines, tree, bands, ambiguous, rec_kind, route_ids, descs):
     return pack(best["num"]), pack(best["loc"]), pack(best["amb"]), near
 
 
+def _aligned_fraction(seg, line, tol: float, n: int = 11) -> float:
+    """Share of ``seg`` running within ``tol`` of ``line`` **and in its direction**,
+    sampled at ``n`` points.
+
+    The bearing is compared at every sample, not once at the single nearest point:
+    on a winding grade (ID-162 above Kamiah) the SHS line and the segment touch at
+    one point where their local tangents differ by 54°, though the line runs beside
+    the whole segment, and a one-point gate rejected it. A cross street still fails,
+    because only the samples at the crossing are within ``tol`` of it."""
+    if n < 2 or seg.length == 0:
+        return 0.0
+    step = seg.length / (n - 1)
+    hits = 0
+    for k in range(n):
+        p = seg.interpolate(k * step)
+        if line.distance(p) > tol:
+            continue
+        if aadt_mod._bearing_diff(aadt_mod._local_bearing(seg, p),
+                                  aadt_mod._local_bearing(line, p)) <= BEARING_TOL_DEG:
+            hits += 1
+    return hits / n
+
+
+def _shs_evidence(seg, lines, tree, bands, route_types, carriageways):
+    """The SHS roadway lines on and near one (metric) segment geometry.
+
+    Returns ``(member_on, business_on, near_member, near_business, near_any,
+    beside)``: the best *member* (mainline / spur / connector) and *business-loop*
+    line **on** the segment as ``(dist, coverage, i)`` or ``None``; the route bands of
+    member and business lines **near** it; whether *any* roadway line is near it at
+    all — the SHS carries nothing but state highway, so ``near_any`` false means the
+    segment is off the system; and ``beside``, the member bands drawn as **both**
+    carriageways (``Travelway`` A and D) near the segment with neither within
+    :data:`ON_COVER_TOL_M` of it. A carriageway of such a route lies on its own line;
+    a road that lies on neither is a parallel road (Silver Valley Rd beside I-90).
+    Coverage is :func:`_aligned_fraction` (distance *and* direction per sample)."""
+    best = {"member": None, "business": None}
+    near_member, near_business, near_any = set(), set(), False
+    ways: dict[int, set] = {}
+    close: set[int] = set()
+    for i in tree.query(seg.buffer(NEAR_DISTANCE_M)):
+        i = int(i)
+        line = lines[i]
+        d = seg.distance(line)
+        if d > NEAR_DISTANCE_M:
+            continue
+        slot = "business" if route_types[i] == "business" else "member"
+        if _aligned_fraction(seg, line, NEAR_DISTANCE_M) >= NEAR_MIN_COVERAGE:
+            near_any = True
+            if bands[i] is not None:
+                (near_business if slot == "business" else near_member).add(int(bands[i]))
+                if slot == "member":
+                    ways.setdefault(int(bands[i]), set()).add(carriageways[i])
+        cover = (_aligned_fraction(seg, line, ON_COVER_TOL_M)
+                 if d <= ON_COVER_TOL_M else 0.0)
+        if slot == "member" and bands[i] is not None and cover >= CARRIAGEWAY_MIN_COVERAGE:
+            close.add(int(bands[i]))
+        if d > ON_DISTANCE_M:
+            continue
+        if cover < ON_MIN_COVERAGE:
+            continue
+        key = (round(d, 1), -cover, str(i), d, cover, i)
+        if best[slot] is None or key < best[slot]:
+            best[slot] = key
+    pack = (lambda k: None if k is None else (k[3], k[4], k[5]))
+    beside = {b for b, w in ways.items() if {"A", "D"} <= w and b not in close}
+    return (pack(best["member"]), pack(best["business"]), near_member, near_business,
+            near_any, beside)
+
+
+class _Layer:
+    """One reference layer prepared for evidence queries in a metric CRS."""
+
+    def __init__(self, frame, metric):
+        from shapely import STRtree
+
+        self.frame = frame
+        self.lines = list(frame.to_crs(metric).geometry.values) if len(frame) else []
+        self.tree = STRtree(self.lines) if self.lines else None
+        n = len(frame)
+        col = (lambda c: frame[c].to_numpy() if c in frame.columns else [None] * n)
+        self.route_ids = col("RouteID")
+        self.descs = col("Descriptio")
+
+
+def _record(layer, ev, desc=None):
+    if ev is None:
+        return {"itd_route_id": None, "itd_desc": None,
+                "itd_dist_m": float("nan"), "itd_coverage": float("nan")}
+    d, cover, i = ev
+    return {"itd_route_id": layer.route_ids[i],
+            "itd_desc": desc(i) if desc is not None else layer.descs[i],
+            "itd_dist_m": round(float(d), 2), "itd_coverage": round(float(cover), 2)}
+
+
+def _aadt_verdict(seg, *, rn, own, business, layer, bands, classes, ambiguous, rec_kind):
+    """Item 48's verdict for one non-ramp segment from the AADT layer (``seg`` metric,
+    or ``None`` when it has no geometry). Returns the verdict fields as a dict."""
+    on_num = on_loc = on_amb = None
+    near: set[int] = set()
+    if layer.tree is not None and seg is not None:
+        on_num, on_loc, on_amb, near = _evidence(
+            seg, layer.lines, layer.tree, bands, ambiguous, rec_kind, layer.route_ids,
+            layer.descs)
+    itd = None if on_num is None else int(bands[on_num[2]])
+    # An interstate band is never *given* to a segment INRIX does not number as
+    # that interstate: INRIX numbers interstate mainline reliably, and what lies on
+    # an ``IN`` band otherwise is a business loop (Caldwell Blvd, Burley's Overland
+    # Ave — ITD bands both ``IN084``) or a frontage road beside the centreline.
+    # Likewise a band the RoadList names only as a business route (``US-93-BR``).
+    foreign = on_num is not None and (
+        (classes[on_num[2]] == "IN" and itd not in own) or itd in business)
+    used = on_num
+    if rn is not None:
+        confirmed = near & own
+        if confirmed:
+            verdict = AGREE if rn in near else CONCURRENT
+            routes, number = {rn} | confirmed, rn
+            itd = rn if rn in near else min(confirmed)
+            reason = (f"ITD route {itd} runs here" if verdict == AGREE else
+                      f"ITD records route {itd}, which RoadList also carries "
+                      f"(a shared road)")
+        elif on_num is not None and foreign:
+            verdict, routes, number = BUSINESS, {rn}, rn
+            reason = (f"ITD's record is a business loop or interstate band of route "
+                      f"{itd} ({layer.route_ids[on_num[2]]}); INRIX's {rn} kept")
+        elif on_num is not None:
+            verdict, routes, number = RENUMBERED, {itd}, itd
+            reason = f"INRIX says {rn}; ITD's record on the segment is route {itd}"
+        elif on_loc is not None and on_amb is None and not near:
+            verdict, routes, number = INRIX_ONLY, set(), None
+            used = on_loc
+            reason = (f"INRIX says {rn}; ITD carries this as a local road and no "
+                      f"numbered record lies within {NEAR_DISTANCE_M:g} m")
+        else:
+            verdict, routes, number = UNCONFIRMED, {rn}, rn
+            used = on_amb or on_loc
+            reason = ("no ITD record decides it — kept as INRIX numbers it"
+                      + (f" (numbered records nearby: {sorted(near)})" if near else ""))
+    else:
+        local_as_good = (on_loc is not None and on_num is not None
+                         and on_loc[0] <= on_num[0] + 2.0)
+        if on_num is not None and not local_as_good and not foreign:
+            verdict, routes, number = ITD_ONLY, {itd}, itd
+            reason = f"ITD route {itd} runs here; INRIX gives no route number"
+        else:
+            verdict, routes, number = OFF_SYSTEM, set(), None
+            used = on_loc
+            reason = ("an ITD route and a local record both fit — left off"
+                      if local_as_good else
+                      f"beside ITD's route {itd} band ({layer.route_ids[on_num[2]]}), "
+                      f"which is never given to an unnumbered segment"
+                      if on_num is not None else "no route by either source")
+    out = {"itd_route": itd, "near": near, "verdict": verdict, "routes": routes,
+           "number": number, "reason": reason, "source": SOURCE_AADT}
+    out.update(_record(layer, used))
+    return out
+
+
+def _shs_verdict(seg, *, rn, own, business, layer, bands, classes, route_types,
+                 carriageways):
+    """The State Highway System's verdict for one non-ramp segment (Item 52).
+
+    Returns the verdict fields as a dict, or ``None`` where the SHS cannot decide —
+    a numbered segment with only *another* route's line near it, never on it — and
+    the AADT layer is asked instead."""
+    member_on = bus_on = None
+    near_member: set[int] = set()
+    near_bus: set[int] = set()
+    near_any = False
+    beside: set[int] = set()
+    if layer.tree is not None and seg is not None:
+        member_on, bus_on, near_member, near_bus, near_any, beside = _shs_evidence(
+            seg, layer.lines, layer.tree, bands, route_types, carriageways)
+    desc = (lambda i: f"SHS {route_types[i]}, travelway {carriageways[i]}")
+    itd = None if member_on is None else int(bands[member_on[2]])
+    foreign = member_on is not None and (
+        (classes[member_on[2]] == "IN" and itd not in own) or itd in business)
+    used = member_on
+    if rn is not None:
+        # Evidence *on* the segment outranks evidence *near* it: a business line lying
+        # on Rigby's Farnsworth Way beats US-20's carriageway 21 m away.
+        confirmed = (near_member - beside) & own if (member_on is not None
+                                                     or bus_on is None) else set()
+        if confirmed:
+            verdict = AGREE if rn in confirmed else CONCURRENT
+            routes, number = {rn} | confirmed, rn
+            itd = rn if rn in confirmed else min(confirmed)
+            reason = (f"on the State Highway System as route {itd}" if verdict == AGREE
+                      else f"the SHS records route {itd}, which RoadList also carries "
+                           f"(a shared road)")
+        elif near_bus or bus_on is not None:
+            parents = near_bus | ({int(bands[bus_on[2]])} if bus_on is not None else set())
+            routes, number = own | parents, rn
+            verdict, used = BUSINESS, bus_on or member_on
+            itd = min(parents)
+            others = sorted(own - parents)
+            reason = (f"on the SHS business loop of route {itd} (state highway, in route "
+                      f"{itd}'s inventory)" + (f"; RoadList's {others} kept" if others
+                                               else ""))
+        elif member_on is not None and foreign:
+            verdict, routes, number = BUSINESS, {rn}, rn
+            reason = (f"the SHS line is interstate band {itd} or a route RoadList names "
+                      f"only as a business route ({layer.route_ids[member_on[2]]}); "
+                      f"INRIX's {rn} kept")
+        elif member_on is not None:
+            verdict, routes, number = RENUMBERED, {itd}, itd
+            reason = f"INRIX says {rn}; the SHS line on the segment is route {itd}"
+        elif beside & own:
+            itd = min(beside & own)
+            verdict, routes, number = INRIX_ONLY, set(), None
+            reason = (f"INRIX says {rn}; the SHS draws both carriageways of route {itd} "
+                      f"beside it and it lies on neither — a parallel road")
+        elif not near_any:
+            verdict, routes, number = INRIX_ONLY, set(), None
+            reason = (f"INRIX says {rn}; no State Highway System line within "
+                      f"{NEAR_DISTANCE_M:g} m — not a state route")
+        else:
+            return None
+    else:
+        if member_on is not None and not foreign:
+            verdict, routes, number = ITD_ONLY, {itd}, itd
+            reason = f"on the State Highway System as route {itd}; INRIX gives no number"
+        elif bus_on is not None:
+            itd = int(bands[bus_on[2]])
+            verdict, routes, number, used = BUSINESS, {itd}, itd, bus_on
+            reason = (f"on the SHS business loop of route {itd} (state highway); INRIX "
+                      f"gives no number")
+        else:
+            verdict, routes, number = OFF_SYSTEM, set(), None
+            reason = (f"beside SHS interstate band {itd} ({layer.route_ids[member_on[2]]}), "
+                      f"which is never given to an unnumbered segment"
+                      if member_on is not None else "not on the State Highway System")
+    out = {"itd_route": itd, "near": near_member | near_bus, "verdict": verdict,
+           "routes": routes, "number": number, "reason": reason, "source": SOURCE_SHS}
+    out.update(_record(layer, used, desc))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Membership
 # ---------------------------------------------------------------------------
-def route_membership(geo, aadt, overrides=None) -> pd.DataFrame:
-    """Each segment's state route by ITD's layer, INRIX's reading, and the verdict.
+def route_membership(geo, aadt=None, overrides=None, shs=None) -> pd.DataFrame:
+    """Each segment's state route by ITD's layers, INRIX's reading, and the verdict.
 
     Args:
         geo: GeoDataFrame indexed by ``Segment ID`` (EPSG:4326) carrying
             ``RoadNumber`` / ``RoadList`` / ``RoadName`` / ``FRC`` and, when present,
             ``County`` (for overrides) and ``SlipRoad`` (``"1"`` = ramp) — e.g.
             :func:`inrix_tools.geometry.segment_geometry` plus those columns.
-        aadt: the layer from :func:`aadt.load_aadt`.
+        aadt: the layer from :func:`aadt.load_aadt`. With ``shs`` it is only the
+            fallback (see the module docstring); without it, it decides (Item 48).
         overrides: optional :func:`load_route_overrides` table.
+        shs: the State Highway System from :func:`itd_layers.load_shs` (Item 52).
 
     Returns:
         A DataFrame indexed like ``geo`` with ``RoadName``, ``County``,
         ``inrix_route`` / ``itd_route`` (Int64), ``itd_route_id`` / ``itd_desc`` /
-        ``itd_dist_m`` / ``itd_coverage`` (the record that decided, numbered or local),
+        ``itd_dist_m`` / ``itd_coverage`` (the line or record that decided),
         ``near_routes`` (``"93/20"``), ``verdict`` (one of :data:`VERDICTS`),
-        ``routes`` — every route the segment belongs to, ``/``-joined (``""`` = none),
-        ``route_number`` — the one route to walk chains by (a ``RoadNumber``-style
-        string, ``None`` = unnumbered) — and ``reason``, in words.
+        ``source`` — which layer decided (``shs`` / ``aadt`` / ``override`` /
+        ``none``), ``routes`` — every route the segment belongs to, ``/``-joined
+        (``""`` = none), ``route_number`` — the one route to walk chains by (a
+        ``RoadNumber``-style string, ``None`` = unnumbered) — and ``reason``, in words.
         ``attrs['route_membership']`` records the thresholds and verdict counts.
     """
-    from shapely import STRtree
-
+    if aadt is None and shs is None:
+        raise ValueError("route_membership needs the SHS layer, the AADT layer, or both")
     idx = geo.index
     cols = {c: (geo[c] if c in geo.columns else pd.Series([None] * len(geo), index=idx))
             for c in ("RoadNumber", "RoadList", "RoadName", "County", "SlipRoad")}
     kinds = aadt_mod._segment_kinds(geo)
 
-    if aadt_mod.RECORD_KIND_COL not in aadt.columns:
-        aadt = aadt_mod.classify_aadt_records(aadt)
     valid = geo.geometry.notna() & ~geo.geometry.is_empty
     metric = geo[valid].estimate_utm_crs() if valid.any() else None
     seg_m = geo.geometry[valid].to_crs(metric) if metric is not None else None
-    if metric is not None and len(aadt):
-        lines = list(aadt.to_crs(metric).geometry.values)
-        tree = STRtree(lines)
-    else:
-        lines, tree = [], None
-    bands, classes, ambiguous = _record_bands(aadt) if len(aadt) else ([], [], [])
-    rec_kind = aadt[aadt_mod.RECORD_KIND_COL].to_numpy() if len(aadt) else []
-    route_ids = aadt["RouteID"].to_numpy() if "RouteID" in aadt.columns else [None] * len(aadt)
-    descs = aadt["Descriptio"].to_numpy() if "Descriptio" in aadt.columns else [None] * len(aadt)
+
+    a_layer = a_args = None
+    if aadt is not None:
+        if aadt_mod.RECORD_KIND_COL not in aadt.columns:
+            aadt = aadt_mod.classify_aadt_records(aadt)
+        a_layer = _Layer(aadt if metric is not None else aadt.iloc[:0], metric)
+        bands, classes, ambiguous = _record_bands(aadt) if len(aadt) else ([], [], [])
+        rec_kind = aadt[aadt_mod.RECORD_KIND_COL].to_numpy() if len(aadt) else []
+        a_args = {"layer": a_layer, "bands": bands, "classes": classes,
+                  "ambiguous": ambiguous, "rec_kind": rec_kind}
+    s_args = None
+    if shs is not None:
+        from . import itd_layers
+
+        roadway = shs[shs[itd_layers.SHS_ROAD_KIND_COL] == "roadway"].reset_index(drop=True)
+        s_layer = _Layer(roadway if metric is not None else roadway.iloc[:0], metric)
+        s_args = {
+            "layer": s_layer,
+            "bands": [None if pd.isna(v) else int(v)
+                      for v in roadway[itd_layers.SHS_ROUTE_NUMBER_COL]],
+            "classes": roadway[itd_layers.SHS_ROUTE_CLASS_COL].to_numpy(),
+            "route_types": roadway[itd_layers.SHS_ROUTE_TYPE_COL].to_numpy(),
+            "carriageways": roadway[itd_layers.SHS_CARRIAGEWAY_COL].to_numpy(),
+        }
 
     rows = []
     for sid in idx:
@@ -293,88 +580,45 @@ def route_membership(geo, aadt, overrides=None) -> pd.DataFrame:
         own = listed | ({rn} if rn is not None else set())
         is_ramp = (str(cols["SlipRoad"].loc[sid]).strip() == "1"
                    or kinds.get(sid) == aadt_mod.RAMP)
-        on_num = on_loc = on_amb = None
-        near: set[int] = set()
-        if tree is not None and valid.loc[sid] and not is_ramp:
-            on_num, on_loc, on_amb, near = _evidence(
-                seg_m.loc[sid], lines, tree, bands, ambiguous, rec_kind, route_ids, descs)
+        seg = seg_m.loc[sid] if (seg_m is not None and valid.loc[sid]) else None
+        common = {"rn": rn, "own": own, "business": business}
 
-        def rec(ev):
-            if ev is None:
-                return {"itd_route_id": None, "itd_desc": None,
-                        "itd_dist_m": float("nan"), "itd_coverage": float("nan")}
-            d, cover, i = ev
-            return {"itd_route_id": route_ids[i], "itd_desc": descs[i],
-                    "itd_dist_m": round(float(d), 2), "itd_coverage": round(float(cover), 2)}
-
-        itd = None if on_num is None else int(bands[on_num[2]])
-        # An interstate band is never *given* to a segment INRIX does not number as
-        # that interstate: INRIX numbers interstate mainline reliably, and what lies on
-        # an ``IN`` band otherwise is a business loop (Caldwell Blvd, Burley's Overland
-        # Ave — ITD bands both ``IN084``) or a frontage road beside the centreline.
-        # Likewise a band the RoadList names only as a business route (``US-93-BR``).
-        foreign = on_num is not None and (
-            (classes[on_num[2]] == "IN" and itd not in own) or itd in business)
-        used = on_num
         if is_ramp:
-            verdict, routes, number = RAMP, ({rn} if rn else set()), rn
-            reason = "a ramp: INRIX's reading kept"
-        elif rn is not None:
-            confirmed = near & own
-            if confirmed:
-                verdict = AGREE if rn in near else CONCURRENT
-                routes, number = {rn} | confirmed, rn
-                itd = rn if rn in near else min(confirmed)
-                reason = (f"ITD route {itd} runs here" if verdict == AGREE else
-                          f"ITD records route {itd}, which RoadList also carries "
-                          f"(a shared road)")
-            elif on_num is not None and foreign:
-                verdict, routes, number = BUSINESS, {rn}, rn
-                reason = (f"ITD's record is a business loop or interstate band of route "
-                          f"{itd} ({route_ids[on_num[2]]}); INRIX's {rn} kept")
-            elif on_num is not None:
-                verdict, routes, number = RENUMBERED, {itd}, itd
-                reason = f"INRIX says {rn}; ITD's record on the segment is route {itd}"
-            elif on_loc is not None and on_amb is None and not near:
-                verdict, routes, number = INRIX_ONLY, set(), None
-                used = on_loc
-                reason = (f"INRIX says {rn}; ITD carries this as a local road and no "
-                          f"numbered record lies within {NEAR_DISTANCE_M:g} m")
-            else:
-                verdict, routes, number = UNCONFIRMED, {rn}, rn
-                used = on_amb or on_loc
-                reason = ("no ITD record decides it — kept as INRIX numbers it"
-                          + (f" (numbered records nearby: {sorted(near)})" if near else ""))
+            v = {"itd_route": None, "near": set(), "verdict": RAMP,
+                 "routes": ({rn} if rn else set()), "number": rn,
+                 "reason": "a ramp: INRIX's reading kept", "source": SOURCE_NONE}
+            v.update(_record(None, None))
         else:
-            local_as_good = (on_loc is not None and on_num is not None
-                             and on_loc[0] <= on_num[0] + 2.0)
-            if on_num is not None and not local_as_good and not foreign:
-                verdict, routes, number = ITD_ONLY, {itd}, itd
-                reason = f"ITD route {itd} runs here; INRIX gives no route number"
-            else:
-                verdict, routes, number = OFF_SYSTEM, set(), None
-                used = on_loc
-                reason = ("an ITD route and a local record both fit — left off"
-                          if local_as_good else
-                          f"beside ITD's route {itd} band ({route_ids[on_num[2]]}), which is "
-                          f"never given to an unnumbered segment" if on_num is not None
-                          else "no route by either source")
+            v = _shs_verdict(seg, **common, **s_args) if s_args is not None else None
+            if v is None and a_args is not None:
+                v = _aadt_verdict(seg, **common, **a_args)
+                if s_args is not None:
+                    v["reason"] = ("the SHS has only another route's line near it; "
+                                   "AADT layer: " + v["reason"])
+            elif v is None:
+                v = {"itd_route": None, "near": set(), "verdict": UNCONFIRMED,
+                     "routes": {rn}, "number": rn, "source": SOURCE_NONE,
+                     "reason": "the SHS has only another route's line near it — "
+                               "kept as INRIX numbers it"}
+                v.update(_record(None, None))
 
         ov = _override_for(overrides, cols["County"].loc[sid], cols["RoadName"].loc[sid], rn)
         if ov is not None:
             r = int(ov["route"]) if ov["route"] else None
-            verdict, routes, number = OVERRIDE, ({r} if r else set()), r
-            reason = f"override: {ov['note']}"
+            v.update(verdict=OVERRIDE, routes=({r} if r else set()), number=r,
+                     reason=f"override: {ov['note']}", source=SOURCE_OVERRIDE)
 
         row = {"RoadName": cols["RoadName"].loc[sid], "County": cols["County"].loc[sid],
-               "inrix_route": rn, "itd_route": itd}
-        row.update(rec(used))
+               "inrix_route": rn, "itd_route": v["itd_route"]}
+        row.update({k: v[k] for k in ("itd_route_id", "itd_desc", "itd_dist_m",
+                                      "itd_coverage")})
         row.update({
-            "near_routes": "/".join(str(r) for r in sorted(near)),
-            "verdict": verdict,
-            "routes": "/".join(str(r) for r in sorted(routes)),
-            "route_number": None if number is None else str(number),
-            "reason": reason,
+            "near_routes": "/".join(str(r) for r in sorted(v["near"])),
+            "verdict": v["verdict"],
+            "source": v["source"],
+            "routes": "/".join(str(r) for r in sorted(v["routes"])),
+            "route_number": None if v["number"] is None else str(v["number"]),
+            "reason": v["reason"],
         })
         rows.append(row)
 
@@ -382,11 +626,15 @@ def route_membership(geo, aadt, overrides=None) -> pd.DataFrame:
     for col in ("inrix_route", "itd_route"):
         out[col] = pd.array(out[col], dtype="Int64")
     out.attrs["route_membership"] = {
+        "identity": "shs" if shs is not None else "aadt",
+        "fallback": "aadt" if (shs is not None and aadt is not None) else None,
         "on_distance_m": ON_DISTANCE_M, "on_cover_tol_m": ON_COVER_TOL_M,
         "on_min_coverage": ON_MIN_COVERAGE, "near_distance_m": NEAR_DISTANCE_M,
         "near_min_coverage": NEAR_MIN_COVERAGE, "bearing_tol_deg": BEARING_TOL_DEG,
+        "carriageway_min_coverage": CARRIAGEWAY_MIN_COVERAGE,
         "n_overrides": 0 if overrides is None else len(overrides),
         "verdicts": out["verdict"].value_counts().to_dict(),
+        "sources": out["source"].value_counts().to_dict(),
     }
     return out
 

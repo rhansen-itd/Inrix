@@ -51,7 +51,12 @@ _KEEP_COLS = [
     "AADT", "PassengerA", "Commercial", "Descriptio", "Descript_1",
 ]
 
-DEFAULT_YEAR = 2024        # the layer is cumulative across years; use the latest.
+DEFAULT_YEAR = 2025        # the layer is cumulative across years; use the latest.
+DEFAULT_SOURCE = "AADT_2025.zip"
+"""The owner's 2025 download (Item 52): the same fields as ``Cumulative_AADT.zip``
+(1999–2024) but only ``Year == 2025``, and carrying US-95's new alignment south of
+Moscow. Scripts default ``--aadt`` to it; pass ``Cumulative_AADT.zip`` with an older
+``--aadt-year`` to reproduce pre-2025 volumes."""
 AADT_COL = "AADT"
 AADT_SOURCE_COL = "aadt_source"      # matched / matched_ramp / nearest / missing
 AADT_DIST_COL = "aadt_dist_m"        # match distance in metres
@@ -339,10 +344,29 @@ def read_cache_meta(cache_path) -> dict | None:
     return meta if isinstance(meta, dict) else None
 
 
-def _write_cache_meta(cache_path, *, year, bbox, columns, n_rows) -> None:
+def source_key(source) -> dict | None:
+    """What a layer cache was built *from*: the source file's name and size.
+
+    Item 52 made this part of the cache's coverage. ``Cumulative_AADT.zip`` and
+    ``AADT_2025.zip`` are different downloads of the same layer, and a cache keyed only
+    on ``year``/``bbox`` would serve one for the other. Name + size (not mtime, which
+    a copy changes) is enough to tell two downloads apart. ``None`` for a source that
+    is not a single path (a caller's in-memory frame, a list)."""
+    if source is None or isinstance(source, (list, tuple)):
+        return None
+    try:
+        p = Path(source)
+    except TypeError:
+        return None
+    size = p.stat().st_size if p.is_file() else None
+    return {"name": p.name, "bytes": size}
+
+
+def _write_cache_meta(cache_path, *, year, bbox, columns, n_rows, source=None) -> None:
     import json
 
     cache_meta_path(cache_path).write_text(json.dumps({
+        "source": source,
         "year": year,
         "bbox": list(bbox) if bbox is not None else None,
         "columns": list(columns),
@@ -365,7 +389,7 @@ def _bbox_union(a, b):
     return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
 
 
-def _cache_shortfall(cached, meta, *, year, bbox, columns) -> str | None:
+def _cache_shortfall(cached, meta, *, year, bbox, columns, source=None) -> str | None:
     """``None`` when the cache covers the request, else why it does not.
 
     With a sidecar this is an exact test against the *requested* extent. Without
@@ -378,6 +402,18 @@ def _cache_shortfall(cached, meta, *, year, bbox, columns) -> str | None:
     missing = [c for c in columns if c not in cached.columns]
     if missing:
         return f"cache is missing column(s) {missing}"
+
+    # Which download the cache came from (Item 52). A sidecar records it; one written
+    # before Item 52 has no ``source`` and was built from whatever was the default
+    # then, so it cannot prove it matches. With no sidecar at all, the ``Year`` check
+    # below is what separates the downloads (each holds different years), as Item 47
+    # judged such a cache on its own data.
+    if source is not None and meta is not None:
+        held = meta.get("source")
+        if held is None:
+            return "cache records no source, so it may be another download"
+        if held != source:
+            return f"cache was built from {held['name']}, request is {source['name']}"
 
     if meta is not None and "year" in meta:
         if meta["year"] != year:
@@ -410,14 +446,38 @@ def _cache_shortfall(cached, meta, *, year, bbox, columns) -> str | None:
 
 
 def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=None,
-              classify=True):
+              classify=True, shs=None):
     """Load (a subset of) the ITD cumulative AADT layer as a GeoDataFrame in WGS84.
+
+    ``shs`` (Item 52): ITD's State Highway System — a :func:`itd_layers.load_shs`
+    frame or a path to it. When given, a record whose ``RouteID`` the SHS draws only
+    as roadway is ``mainline`` and one it draws only as ramp is ``ramp``, whatever its
+    description says (:func:`itd_layers.classify_records_with_shs`). The descriptions
+    name a record's *end points*, so I-184's mainline (``JCT I-84 FLYING WYE IC`` →
+    ``I-84 EB ON RAMP``, 68,000) read as a connector and the Broadway ramps
+    (``02080AUS020``, described ``MCBRIDE RD`` in 2025) read as mainline, and the
+    join gave both carriageways of I-184 a connector's 5,000 and Broadway Ave a ramp's
+    9,500. Applied after the cache, so the cache itself is SHS-independent.
+    """
+    layer = _load_aadt_layer(source, year=year, bbox=bbox, columns=columns,
+                             cache_path=cache_path, classify=classify)
+    if shs is not None and classify:
+        from . import itd_layers
+        attrs = dict(layer.attrs)
+        layer = itd_layers.classify_records_with_shs(layer, shs)
+        layer.attrs.update(attrs)
+    return layer
+
+
+def _load_aadt_layer(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=None,
+                     classify=True):
+    """:func:`load_aadt` without the SHS reclassification.
 
     Args:
         source: the AADT ``.zip`` (e.g. ``Cumulative_AADT.zip``), a directory
             containing it, a ``.shp`` path, or a ``.parquet``/``.geoparquet``
             holding an already-read layer (filtered in memory).
-        year: keep only rows for this ``Year`` (default ``2024`` — the layer is
+        year: keep only rows for this ``Year`` (default ``2025`` — the layer is
             cumulative across years, so an unfiltered read double-counts every
             road; see DATA_FORMAT.md). ``None`` keeps all years.
         bbox: ``(minx, miny, maxx, maxy)`` in **WGS84** to restrict the read
@@ -427,7 +487,8 @@ def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=Non
         columns: attribute columns to keep (default :data:`_KEEP_COLS`).
         cache_path: optional GeoParquet cache. It is used only when it **covers the
             request** — same ``year``, all the requested ``columns``, and a
-            ``bbox`` inside the one it was built for, as recorded in the
+            ``bbox`` inside the one it was built for, and the same source file
+            (:func:`source_key`, Item 52), as recorded in the
             ``.meta.json`` sidecar beside it (:func:`read_cache_meta`). A request
             it cannot serve rebuilds it for the **union** of the two extents, so
             the cache widens rather than thrashing between callers. Before Item 47
@@ -451,12 +512,13 @@ def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=Non
     cols = list(columns) if columns is not None else _KEEP_COLS
     read_bbox_wgs84 = _clean_bbox(bbox)
     cache_state = "no_cache"
+    src_key = None if _is_geoparquet(source) else source_key(source)
 
     if cache_path is not None and Path(cache_path).exists():
         cached = gpd.read_parquet(cache_path)
         meta = read_cache_meta(cache_path)
         shortfall = _cache_shortfall(cached, meta, year=year, bbox=read_bbox_wgs84,
-                                     columns=cols)
+                                     columns=cols, source=src_key)
         if shortfall is None:
             # A cache written before Item 34 has no ``record_kind``; classify on the
             # way out so an old cache can't silently reinstate nearest-wins.
@@ -472,7 +534,7 @@ def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=Non
         # made Session 60 reorder generate_screening_maps.py by hand.
         if meta is not None and "bbox" in meta:
             previous = tuple(meta["bbox"]) if meta["bbox"] is not None else None
-            if meta.get("year") == year:
+            if meta.get("year") == year and meta.get("source") == src_key:
                 read_bbox_wgs84 = _bbox_union(previous, read_bbox_wgs84)
         cache_state = f"rebuilt ({shortfall})"
 
@@ -520,7 +582,7 @@ def load_aadt(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_path=Non
         Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
         gdf.to_parquet(cache_path)
         _write_cache_meta(cache_path, year=year, bbox=read_bbox_wgs84,
-                          columns=cols, n_rows=len(gdf))
+                          columns=cols, n_rows=len(gdf), source=src_key)
         if cache_state == "no_cache":
             cache_state = "written"
     gdf.attrs["aadt_layer"] = {

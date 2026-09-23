@@ -30,7 +30,7 @@ import geopandas as gpd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from inrix_tools import corridors, screen, store             # noqa: E402
+from inrix_tools import aadt as aadt_mod, corridors, screen, store  # noqa: E402
 
 # Re-use the map generation functions from the pipeline script.
 from run_district_screening import (                                   # noqa: E402
@@ -38,6 +38,7 @@ from run_district_screening import (                                   # noqa: E
     corridor_geometry,
     generate_maps,
     join_volumes,
+    shs_source,
     BBOX_MARGIN_DEG,
 )
 
@@ -46,7 +47,7 @@ DB_PATH = "d3_store.duckdb"
 NET_CACHE = "geometry_cache/d3_network.geoparquet"
 CAT_PATH = "scripts/d3_corridors.json"
 REPAIRS_PATH = "scripts/d3_link_repairs.csv"
-AADT_ZIP = "Cumulative_AADT.zip"
+AADT_ZIP = aadt_mod.DEFAULT_SOURCE
 PEAK_TOTALS_CSV = OUT_DIR / "corridor_peak_totals.csv"
 
 
@@ -79,12 +80,14 @@ def main():
     # order is correct; this one is kept because it builds the wider layer once.
     net_geo = net.copy()
     net_geo["Segment ID"] = net_geo["XDSegID"]
-    aadt_all = join_volumes(net_geo, AADT_ZIP, year=2024, cache_path="geometry_cache/d3_aadt.parquet",
+    aadt_all = join_volumes(net_geo, AADT_ZIP, year=aadt_mod.DEFAULT_YEAR, shs=shs_source(),
+                            cache_path="geometry_cache/d3_aadt.parquet",
                             max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG)
 
     # AADT for the corridor members (shared by ranking and map traces)
     geo = corridor_geometry(net, res, chains)
-    aadt = join_volumes(geo, AADT_ZIP, year=2024, cache_path="geometry_cache/d3_aadt.parquet",
+    aadt = join_volumes(geo, AADT_ZIP, year=aadt_mod.DEFAULT_YEAR, shs=shs_source(),
+                        cache_path="geometry_cache/d3_aadt.parquet",
                         max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG)
 
     map_files = []

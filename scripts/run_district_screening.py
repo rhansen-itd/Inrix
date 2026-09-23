@@ -149,14 +149,26 @@ def corridor_geometry(net, resolution, chains):
     return gpd.GeoDataFrame(merged, geometry="geometry", crs=geo.crs)
 
 
-def join_volumes(geo, aadt_source, *, year, cache_path, max_distance_m, bbox_margin):
-    """Mainline-preferred AADT for the corridor members (Item 34)."""
+DEFAULT_SHS = "SHS_Primary.zip"
+
+
+def shs_source(path=DEFAULT_SHS):
+    """The State Highway System path when it is present, else ``None`` (the volume
+    join then classifies records by their descriptions alone, as before Item 52)."""
+    return path if path and Path(path).exists() else None
+
+
+def join_volumes(geo, aadt_source, *, year, cache_path, max_distance_m, bbox_margin,
+                 shs=None):
+    """Mainline-preferred AADT for the corridor members (Item 34); record kinds from the
+    State Highway System where it is unambiguous (Item 52)."""
     if aadt_source is None:
         return None
     bounds = geo["geometry"].dropna().total_bounds
     bbox = (bounds[0] - bbox_margin, bounds[1] - bbox_margin,
             bounds[2] + bbox_margin, bounds[3] + bbox_margin)
-    layer = aadt_mod.load_aadt(aadt_source, year=year, bbox=bbox, cache_path=cache_path)
+    layer = aadt_mod.load_aadt(aadt_source, year=year, bbox=bbox, cache_path=cache_path,
+                               shs=shs)
     unique = geo.drop_duplicates(subset="Segment ID").set_index("Segment ID")
     return aadt_mod.join_aadt(unique, layer, max_distance_m=max_distance_m)
 
@@ -1031,7 +1043,7 @@ def run(args) -> dict:
         aadt = join_volumes(net_geo, args.aadt, year=args.aadt_year,
                             cache_path=aadt_cache,
                             max_distance_m=args.aadt_max_distance_m,
-                            bbox_margin=BBOX_MARGIN_DEG)
+                            bbox_margin=BBOX_MARGIN_DEG, shs=shs_source(args.shs))
 
         # Keyed on the catalogue **id**, not the name: ids are short and unique,
         # where two names can share their first 20 characters ("SH-44 (State St)
@@ -1185,6 +1197,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--aadt", default=None, help="AADT source; omitted leaves vhd NaN")
     p.add_argument("--aadt-cache", default=None)
     p.add_argument("--aadt-year", type=int, default=aadt_mod.DEFAULT_YEAR)
+    p.add_argument("--shs", default=DEFAULT_SHS,
+                   help="ITD State Highway System, used to classify AADT records "
+                        "(Item 52); '' falls back to the descriptions")
     p.add_argument("--aadt-max-distance-m", type=float, default=60.0)
     p.add_argument("--cvalue-threshold", type=float, default=DEFAULT_CVALUE,
                    help="keep CValue > threshold; 'none' disables the gate")
