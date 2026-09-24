@@ -6109,3 +6109,25 @@ re-run and is on the old basis.
   duplicate, the ×2, the two-way-street gate, the fallback and idempotence, basis off
   and ramps, VHD parity). `test_corridors.py`: the VSL test rewritten, plus junction
   tie, no false tie, and `couplet_segments`.
+
+## Session 73 — Map legends move into a sidebar (2026-09-24)
+
+The corridor legend floated over the lower right of the map. Its labels run up to
+~130 characters, so it grew wide and hid a large part of the map. Owner asked for a
+sidebar, or for the two legends to be stacked.
+
+- Plotly legends can't have a fixed width or a horizontal scrollbar. Instead, the
+  figure now reserves a fixed **330 px right margin** (`_LEGEND_SIDEBAR_PX`), and
+  both legends sit in it: the corridor legend at the top, scrolling, up to 72% of
+  the figure height (`_CORRIDOR_LEGEND_MAXHEIGHT`), and the segment legend at the
+  bottom. No legend covers the map now.
+- Corridor labels wrap to 48 characters with `<br>` (`_wrap_legend_label`), with an
+  indent on continuation lines. Hover text is unaffected (`hoverinfo="text"`).
+- One helper, `_legend_sidebar_layout`, in `run_district_screening.py` is shared by
+  the district map and `generate_statewide_maps.py`, which had duplicated the
+  legend block.
+- Checked with headless-Chromium screenshots at 1600×900 and 1280×600.
+  Tests: two new tests in `test_run_district_screening.py`.
+- The **Street Map** (`open-street-map`) theme button is removed from both map
+  generators. OSM's tile servers were returning "blocked: usage policy" tiles, and
+  Light (carto-positron) plus Dark (carto-darkmatter) cover what we need.

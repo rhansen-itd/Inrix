@@ -328,6 +328,7 @@ def test_maps_flag_generates_interactive_map_with_corridor_underlay(district):
     assert "Terminus" in content
     assert "All Outlines" in content
     assert "Hide Outlines" in content
+    assert "open-street-map" not in content  # OSM tiles are usage-policy blocked
     assert "Ranked Corridors (Outlines)" in content
     assert "Free Flow" in content
     assert "🟢" not in content  # No GOYR emoji dots in legend
@@ -520,3 +521,23 @@ def test_the_aadt_join_reads_itd_route_membership(tmp_path, monkeypatch):
     assert rds.parse_args(["--db", "x", "--district", "2", "--membership", ""]
                           ).membership == ""
     assert rds.parse_args(["--db", "x", "--district", "4"]).membership is None
+
+
+def test_legend_sidebar_stacks_both_legends_off_the_map():
+    """Both legends sit in a fixed-width right margin (not over the map): the
+    corridor list on top, scrolling, and the segment legend under it."""
+    lay = rds._legend_sidebar_layout("TTI Tier")
+    assert lay["margin"]["r"] == rds._LEGEND_SIDEBAR_PX
+    for key in ("legend", "legend2"):
+        assert lay[key]["x"] >= 1.0 and lay[key]["xanchor"] == "left"
+    assert lay["legend2"]["yanchor"] == "top" and lay["legend"]["yanchor"] == "bottom"
+    assert 0 < lay["legend2"]["maxheight"] <= 1
+
+
+def test_long_corridor_labels_wrap_to_the_sidebar_width():
+    label = ("#50 I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello — Tier 1 "
+             "Congested Core (End 1-Way E Of Us-91 to Beg 1-Way W Of Ramps)")
+    lines = rds._wrap_legend_label(label).split("<br>")
+    assert len(lines) > 1
+    assert all(len(ln) <= rds._LEGEND_WRAP_CHARS for ln in lines)
+    assert rds._wrap_legend_label("#1 I-84") == "#1 I-84"

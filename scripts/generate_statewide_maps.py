@@ -39,6 +39,7 @@ from scripts.run_district_screening import (  # noqa: E402
     _build_corridor_overlay,
     _build_segment_vhd_traces,
     _build_segment_traces,
+    _legend_sidebar_layout,
     _map_viewer_html,
     _segment_tti_frame,
     _CORRIDOR_OUTLINE_LIGHT,
@@ -229,15 +230,6 @@ def generate_statewide_map(
                 ),
                 dict(
                     args=[
-                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "fillcolor": _CORRIDOR_OUTLINE_LIGHT},
-                        {"map.style": "open-street-map"},
-                        all_corridor_indices,
-                    ],
-                    label="Street Map",
-                    method="update",
-                ),
-                dict(
-                    args=[
                         {"line.color": _CORRIDOR_OUTLINE_DARK, "fillcolor": _CORRIDOR_OUTLINE_DARK},
                         {"map.style": "carto-darkmatter"},
                         all_corridor_indices,
@@ -291,31 +283,7 @@ def generate_statewide_map(
             ),
         ),
         map=dict(style="carto-positron", center=dict(lat=center_lat, lon=center_lon), zoom=zoom),
-        margin=dict(l=0, r=0, t=75, b=0),
-        legend=dict(
-            x=0.02,
-            y=0.03,
-            bgcolor="rgba(255,255,255,0.92)",
-            bordercolor="#cbd5e0",
-            borderwidth=1,
-            title=dict(text=f"<b>Segment Delay ({seg_legend_title})</b>", font=dict(size=11, color="#1a202c")),
-            font=dict(size=11, color="#2d3748"),
-            itemsizing="constant",
-        ),
-        legend2=dict(
-            x=0.98,
-            xanchor="right",
-            y=0.03,
-            yanchor="bottom",
-            bgcolor="rgba(255,255,255,0.92)",
-            bordercolor="#cbd5e0",
-            borderwidth=1,
-            font=dict(size=10, color="#2d3748"),
-            itemsizing="constant",
-            maxheight=360,
-            title=dict(text="<b>Ranked Corridors (Outlines)</b>", font=dict(size=11, color="#1a202c")),
-            itemdoubleclick="toggle",
-        ),
+        **_legend_sidebar_layout(seg_legend_title),
         updatemenus=menus,
     )
 

@@ -544,6 +544,44 @@ _CORRIDOR_OUTLINE_LIGHT = "#1a202c"
 _CORRIDOR_OUTLINE_DARK = "#ffffff"
 _CORRIDOR_OUTLINE_WIDTH = 8.5
 
+# Legend sidebar: both legends stack in a fixed-width right margin instead of
+# floating over the map. Corridor labels (up to ~130 chars) wrap to fit it.
+_LEGEND_SIDEBAR_PX = 330
+_LEGEND_WRAP_CHARS = 48
+_CORRIDOR_LEGEND_MAXHEIGHT = 0.72   # ratio of the figure height; scrolls beyond
+
+
+def _wrap_legend_label(label: str, width: int = _LEGEND_WRAP_CHARS) -> str:
+    """Wrap a long legend label onto ``<br>``-joined lines of at most ``width`` chars."""
+    import textwrap
+
+    return "<br>".join(textwrap.wrap(label, width=width, subsequent_indent="   ")) or label
+
+
+def _legend_sidebar_layout(seg_legend_title: str) -> dict:
+    """Layout kwargs placing the corridor legend (top) and segment legend
+    (bottom) in a fixed-width sidebar to the right of the map."""
+    common = dict(
+        x=1.0, xanchor="left", xref="paper",
+        bgcolor="rgba(255,255,255,0.92)", bordercolor="#cbd5e0", borderwidth=1,
+        itemsizing="constant",
+    )
+    return dict(
+        margin=dict(l=0, r=_LEGEND_SIDEBAR_PX, t=75, b=0),
+        legend=dict(
+            **common, y=0.0, yanchor="bottom",
+            title=dict(text=f"<b>Segment Delay ({seg_legend_title})</b>",
+                       font=dict(size=11, color="#1a202c")),
+            font=dict(size=11, color="#2d3748")),
+        legend2=dict(
+            **common, y=1.0, yanchor="top",
+            font=dict(size=10, color="#2d3748"),
+            maxheight=_CORRIDOR_LEGEND_MAXHEIGHT,
+            title=dict(text="<b>Ranked Corridors (Outlines)</b>",
+                       font=dict(size=11, color="#1a202c")),
+            itemdoubleclick="toggle"),
+    )
+
 
 def _bearing_deg(p1: tuple[float, float], p2: tuple[float, float]) -> float:
     """Bearing from p1 (lat, lon) to p2 (lat, lon) in degrees clockwise from North."""
@@ -765,7 +803,7 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
         line_traces.append(
             go.Scattermap(lat=c_lats, lon=c_lons, mode="lines",
                           line=dict(color=_CORRIDOR_OUTLINE_LIGHT, width=_CORRIDOR_OUTLINE_WIDTH),
-                          name=trace_label,
+                          name=_wrap_legend_label(trace_label),
                           legendgroup=gid,
                           legend="legend2",
                           visible="legendonly",
@@ -842,12 +880,6 @@ def _assemble_map(seg_traces, corridor_traces, termini_traces=None, ends_trace=N
                      ],
                      label="Light (Clean)", method="update"),
                 dict(args=[
-                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "fillcolor": _CORRIDOR_OUTLINE_LIGHT},
-                        {"map.style": "open-street-map"},
-                        all_corridor_indices
-                     ],
-                     label="Street Map", method="update"),
-                dict(args=[
                         {"line.color": _CORRIDOR_OUTLINE_DARK, "fillcolor": _CORRIDOR_OUTLINE_DARK},
                         {"map.style": "carto-darkmatter"},
                         all_corridor_indices
@@ -882,22 +914,7 @@ def _assemble_map(seg_traces, corridor_traces, termini_traces=None, ends_trace=N
                               "Roboto, sans-serif"), size=18, color="#1a202c")),
         map=dict(style="carto-positron",
                  center=dict(lat=center_lat, lon=center_lon), zoom=zoom),
-        margin=dict(l=0, r=0, t=75, b=0),
-        legend=dict(
-            x=0.02, y=0.03, bgcolor="rgba(255,255,255,0.92)",
-            bordercolor="#cbd5e0", borderwidth=1,
-            title=dict(text=f"<b>Segment Delay ({seg_legend_title})</b>",
-                       font=dict(size=11, color="#1a202c")),
-            font=dict(size=11, color="#2d3748"), itemsizing="constant"),
-        legend2=dict(
-            x=0.98, xanchor="right", y=0.03, yanchor="bottom",
-            bgcolor="rgba(255,255,255,0.92)",
-            bordercolor="#cbd5e0", borderwidth=1,
-            font=dict(size=10, color="#2d3748"), itemsizing="constant",
-            maxheight=360,
-            title=dict(text="<b>Ranked Corridors (Outlines)</b>",
-                       font=dict(size=11, color="#1a202c")),
-            itemdoubleclick="toggle"),
+        **_legend_sidebar_layout(seg_legend_title),
         updatemenus=menus,
     )
     return fig
