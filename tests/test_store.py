@@ -120,6 +120,95 @@ def test_metadata_roundtrip_equals_file_loader(con, zip_a):
     pd.testing.assert_frame_equal(loaded, direct)
 
 
+def _supplemental_zip(tmp_path):
+    """A later, separately-requested export of segments that belong to an existing
+    area — INRIX names the report whatever it was asked for, so its corridor label is
+    its own (the seven SH-19 segments backfilled into D3 came back as ``"Cent"``)."""
+    rows = [_row(t, 1009, 30, 0.5, 95, corridor="Cent") for t in T5]
+    return _make_zip(tmp_path, "Cent", rows, [1009])
+
+
+@pytest.mark.parametrize("ingest", ["streaming", "pandas"])
+def test_corridor_name_files_a_supplemental_export_into_the_existing_area(
+        con, zip_a, tmp_path, ingest):
+    """The backfill of ROADMAP Item 42. Without the relabel the supplement is an
+    **area of its own** that no district run would ever look at; with it the rows
+    become the area's own, label and all."""
+    area = store.ingest_export(con, zip_a)["area_key"]
+    supp = _supplemental_zip(tmp_path)
+
+    unlabelled = store.ingest_export_streaming(con, supp)
+    assert unlabelled["area_key"] != area              # its own area, as it stands
+    store.remove_area(con, unlabelled["area_key"])
+
+    call = (store.ingest_export_streaming if ingest == "streaming"
+            else store.ingest_export)
+    out = call(con, supp, corridor_name="9th")
+    assert out["area_key"] == area and out["area_name"] == "9th"
+    assert 1009 in store.area_segments(con, area)
+    assert store.load_metadata(con, area).index.tolist() == [1001, 1002, 1009]
+
+    # the stored rows carry the label they were filed under, so re-deriving the
+    # identity from them lands on the same area
+    stored = con.execute(
+        f'SELECT DISTINCT "{store.CORRIDOR_COL}" FROM "obs_{area}"').fetchall()
+    assert [r[0] for r in stored] == ["9th"]
+    # ...and the relabel is on the record
+    log = con.execute(f'SELECT source FROM "{store.INGESTS_TABLE}" '
+                      f"WHERE source LIKE '%Cent%'").fetchone()[0]
+    assert "'Cent' -> '9th'" in log
+
+
+def test_corridor_name_refuses_an_export_with_no_corridor_column(con, tmp_path):
+    """It relabels; it does not invent a label for an export that carries none."""
+    zpath = tmp_path / "NoCorr_5_min_part_1.zip"
+    hdr = _DATA_HDR.replace(",Corridor/Region Name", "")
+    rows = ["".join(_row(t, 1001, 30, 0.5, 95).rsplit(",9th", 1)) for t in T5]
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr("NoCorr/data.csv", hdr + "".join(rows))
+        zf.writestr("NoCorr/metadata.csv", _meta([1001]))
+    for call in (store.ingest_export_streaming, store.ingest_export):
+        with pytest.raises(ValueError, match="no 'Corridor/Region Name'"):
+            call(con, zpath, corridor_name="9th")
+
+
+@pytest.mark.parametrize("ingest", ["streaming", "pandas"])
+def test_segment_ids_filters_ingested_observations_and_metadata(con, tmp_path, ingest):
+    """Loading backfill exports grouped by timezone (e.g. Pacific for D1+D2, Mountain for D4+D5+D6)
+    requires filtering to only the district's appropriate links."""
+    rows = []
+    for t in T5:
+        rows.append(_row(t, 2001, 30, 0.5, 95, corridor="Multi"))
+        rows.append(_row(t, 2002, 35, 0.4, 90, corridor="Multi"))
+    zpath = _make_zip(tmp_path, "Multi", rows, [2001, 2002])
+
+    call = (store.ingest_export_streaming if ingest == "streaming"
+            else store.ingest_export)
+    out = call(con, zpath, corridor_name="D_Target", segment_ids=[2002])
+
+    assert 2002 in store.area_segments(con, out["area_key"])
+    assert 2001 not in store.area_segments(con, out["area_key"])
+    meta = store.load_metadata(con, out["area_key"])
+    assert 2002 in meta.index
+    assert 2001 not in meta.index
+
+
+def test_area_segments_reads_the_observations_not_the_metadata(con, zip_a):
+    """What the export *contains* is what was observed. A district export is split
+    into parts by segment and each part's ``metadata.csv`` lists only its own, while
+    ``ingest_export_streaming`` reads metadata from ``source`` alone — so the store
+    under-reports its segment set through ``load_metadata``: Item 42 found
+    ``d3_store.duckdb`` answering 1,947 against 3,905 observed."""
+    info = store.ingest_export(con, zip_a)
+    key = info["area_key"]
+    observed = store.area_segments(con, key)
+    assert observed == sorted(store.load_metadata(con, key).index)
+    con.execute(f'DELETE FROM "meta_{key}" WHERE "{SEGMENT_COL}" = {observed[0]}')
+    assert len(store.load_metadata(con, key)) == len(observed) - 1
+    assert store.area_segments(con, key) == observed           # unchanged
+    assert store.area_segments(con, "no_such_area") == []
+
+
 def test_list_areas_reports_the_ingest(con, zip_a):
     assert len(store.list_areas(con)) == 0
     info = store.ingest_export(con, zip_a)
@@ -599,3 +688,58 @@ def test_streaming_ingest_rejects_an_empty_export(tmp_path):
             store.ingest_export_streaming(con, zpath)
     finally:
         con.close()
+
+
+# ---------------------------------------------------------------------------
+# Multi-part ingest is one call, and says so  (Item 39)
+# ---------------------------------------------------------------------------
+def _part_zip(path, rows, *, corridor="Toy Rd", start="2026-01-01T00:00:00-07:00"):
+    """A minimal INRIX-shaped export part."""
+    import zipfile
+
+    ts = pd.date_range(start, periods=rows, freq="15min")
+    data = pd.DataFrame({
+        "Segment ID": [1000 + (i % 2) for i in range(rows)],
+        "Date Time": [t.isoformat() for t in ts],
+        "Speed(miles/hour)": [55.0] * rows,
+        "Travel Time(Minutes)": [1.0] * rows,
+        "CValue": [90] * rows,
+    })
+    meta = pd.DataFrame({"Segment ID": [1000, 1001], "Road": [corridor] * 2,
+                         "Direction": ["N", "S"], "Miles": [1.0, 1.0],
+                         "Combined": [f"{corridor} N", f"{corridor} S"]})
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("data.csv", data.to_csv(index=False))
+        z.writestr("metadata.csv", meta.to_csv(index=False))
+
+
+@pytest.mark.parametrize("ingest", ["streaming", "pandas"])
+def test_any_part_ingests_every_sibling_part_and_the_summary_says_so(tmp_path, ingest):
+    """A ``..._part_N.zip`` path means the WHOLE export, so ``n_rows_added`` is the
+    total over every part — the reading that made 91,054,384 look like one part's
+    row count on the 2026 D3 ingest. ``n_parts`` / ``parts`` are what make it
+    unambiguous, and the provenance row names the members rather than the argument.
+    """
+    rows = [4, 6, 2]
+    for i, n in enumerate(rows, start=1):
+        _part_zip(tmp_path / f"Toy_2026_15_min_part_{i}.zip", n,
+                  start=f"2026-01-0{i}T00:00:00-07:00")
+    con = store.connect(tmp_path / "s.duckdb")
+    fn = store.ingest_export_streaming if ingest == "streaming" else store.ingest_export
+    # Handed part 1 — but part 1 is not what gets ingested.
+    out = fn(con, tmp_path / "Toy_2026_15_min_part_1.zip")
+    assert out["n_rows_added"] == sum(rows) == 12
+    assert out["n_parts"] == 3
+    assert [Path(p).name for p in out["parts"]] == [
+        f"Toy_2026_15_min_part_{i}.zip" for i in (1, 2, 3)]
+
+    # ...and a second call on another part re-discovers the same three and adds
+    # nothing, which is what the keep-first merge means.
+    again = fn(con, tmp_path / "Toy_2026_15_min_part_2.zip")
+    assert again["n_rows_added"] == 0 and again["n_parts"] == 3
+
+    log = con.execute(f'SELECT source, n_rows_added FROM "{store.INGESTS_TABLE}"').df()
+    assert len(log) == 2
+    assert " + " in log.loc[0, "source"]          # the resolved members, not the argument
+    assert "part_1.zip" in log.loc[0, "source"] and "part_3.zip" in log.loc[0, "source"]
+    con.close()

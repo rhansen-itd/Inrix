@@ -133,7 +133,7 @@ def test_layout_reflow_charts_share_right_column_with_map(geo_two):
 def test_direction_options_from_geo(geo_two):
     """_direction_options lists only the compass groups present in the export, in
     +/- order with a signed label."""
-    from inrix_tools import geometry, speed
+    from inrix_tools import geometry
     g = geometry.attach_directions(geo_two, {101: "N", 202: "S"})
     ds = gapp.Dataset(df=pd.DataFrame(), metadata=pd.DataFrame(), geo=g,
                       metric_cols={}, tz="America/Denver", span=(None, None))
@@ -987,7 +987,6 @@ def test_weighted_speed_frame_differs_and_tt_stays_a_sum():
     """The weighted-speed aggregate reflects the high-volume slow segment; the
     corridor travel-time sum is untouched by AADT (stays the pure sum, Item 12)."""
     from inrix_tools import speed
-    from inrix_tools.io import CORRIDOR_COL
     ds = _aadt_scope_ds()
     wcol = gapp._wspeed_col(ds)
     wframe = gapp._analysis_frame(ds, wcol, gapp.SCOPE_NETWORK, None)

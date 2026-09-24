@@ -335,6 +335,195 @@ def test_line_bearing_and_diff():
 
 
 # ---------------------------------------------------------------------------
+# Route class: a record's own route, and the tie-break  (Item 42)
+# ---------------------------------------------------------------------------
+def test_record_route_number_reads_the_band_then_the_description():
+    """A route the record names *for itself*: the ``RouteID`` band first, then the
+    two description forms ITD uses — a trailing parenthetical and a description that
+    is nothing but a route."""
+    assert aadt.record_route_number("02150ASH069", "MERIDIAN RD") == 69
+    # 330 D3 rows carry state highway on an OH band and say so only here:
+    assert aadt.record_route_number("04523AOH000", "KARCHER RD (SH-55)") == 55
+    assert aadt.record_route_number("07880AOH000", "E 7TH ST (US-95)") == 95
+    assert aadt.record_route_number("00378AOH000", "SH-52") == 52
+    assert aadt.record_route_number("00163AOH000", "MILL CREEK RD") is None
+    assert aadt.record_route_number("00163AOH000", None) is None
+
+
+def test_record_route_number_ignores_a_route_named_mid_description():
+    """A route named anywhere but those two places is a cross-street, a junction or a
+    *business* route — reading it would hand a city street the interstate's identity.
+    ``FRANKLIN RD US-20 IC#29`` is I-84's own mainline record at the US-20
+    interchange, and ``CALDWELL BLVD(I-84 BUS)`` is I-84 Business, not I-84."""
+    assert aadt.record_route_number("00163AOH000", "FRANKLIN RD US-20 IC#29") is None
+    assert aadt.record_route_number("00163AOH000", "IDAHO AVE @ US-95 CONN") is None
+    assert aadt.record_route_number("00163AOH000", "CALDWELL BLVD(I-84 BUS)") is None
+    assert aadt.record_route_number("00163AOH000", "CLEVELAND BLVD (I-84 B)") is None
+
+
+def _two_records_on_the_segment(**kwargs):
+    """Two records lying *on* the same segment, equal in every ranked term — same
+    kind, same 0.0 m distance, same full coverage. One names a route, one does not."""
+    return gpd.GeoDataFrame(
+        {"AADT": [4700.0, 1400.0],
+         "RouteID": ["04523AOH000", "04680AOH000"],
+         "Descriptio": ["KARCHER RD (SH-55)", "LAKE LOWELL AVE"],
+         "Commercial": [300, 50],
+         "geometry": [LineString([(-116.20, 43.610), (-116.20, 43.620)]),
+                      LineString([(-116.20, 43.610), (-116.20, 43.620)])]},
+        crs="EPSG:4326", **kwargs)
+
+
+def test_a_named_route_breaks_a_tie_an_unnumbered_record_cannot():
+    """The last decision in the key: with route, facility, distance and coverage all
+    equal, the record that names a route wins."""
+    seg = _carriageway(road_number=None, road_name="W Karcher Rd", frc=3)
+    j = aadt.join_aadt(seg, _two_records_on_the_segment())
+    assert j.loc[1001, "AADT"] == 4700.0
+    assert j.loc[1001, aadt.AADT_ROUTE_NUM_COL] == 55
+    assert "named route" in j.attrs["aadt_join"]["preference"]
+
+
+def test_the_match_does_not_depend_on_the_layers_row_order():
+    """What the tie-break actually fixes. The final comparison used to be the
+    record's **position in the layer**, so two records on the same ground were
+    separated by load order and the answer changed with the candidate set — measured
+    on D3, shuffling the AADT layer moved 9 of the 3,905 export segments."""
+    layer = _two_records_on_the_segment()
+    seg = _carriageway(road_number=None, road_name="W Karcher Rd", frc=3)
+    forwards = aadt.join_aadt(seg, layer)
+    backwards = aadt.join_aadt(seg, layer.iloc[::-1].reset_index(drop=True))
+    assert forwards.loc[1001, "AADT"] == backwards.loc[1001, "AADT"]
+    assert forwards.loc[1001, "RouteID"] == backwards.loc[1001, "RouteID"]
+
+
+def test_the_route_class_preference_never_promotes_a_worse_match():
+    """It is a tie-break and nothing more. Ranking a numbered record ahead of
+    distance or coverage was measured on D3 and is wrong — a city street at an
+    interchange sits metres from the interstate's own record, and W Emerald St would
+    take ``COLE RD IC #1B``'s 82,000 over N Cole Rd's 12,500."""
+    layer = gpd.GeoDataFrame(
+        {"AADT": [82000.0, 12500.0],
+         "RouteID": ["01010AIN084", "06352AOH000"],
+         "Descriptio": ["COLE RD IC #1B", "N COLE RD"],
+         "Commercial": [9000, 700],
+         "geometry": [
+             # the interstate record, 9 m off and running past the whole segment
+             LineString([(-116.19989, 43.610), (-116.19989, 43.620)]),
+             # the street's own record, on it
+             LineString([(-116.20, 43.610), (-116.20, 43.620)])]},
+        crs="EPSG:4326")
+    seg = _carriageway(road_number=None, road_name="W Emerald St", frc=4)
+    assert aadt.join_aadt(seg, layer).loc[1001, "AADT"] == 12500.0      # not 82,000
+
+    # and coverage still outranks it: the numbered record clipping one end loses to
+    # the unnumbered one that runs the length of the segment.
+    clipped = layer.copy()
+    clipped.loc[0, "geometry"] = LineString([(-116.20, 43.610), (-116.20, 43.6115)])
+    assert aadt.join_aadt(seg, clipped).loc[1001, "AADT"] == 12500.0
+
+
+def test_join_reports_coverage_and_the_records_route():
+    j = aadt.join_aadt(_carriageway(), _divided_highway_layer())
+    assert j.loc[1001, aadt.AADT_COVER_COL] == pytest.approx(1.0)
+    assert j.loc[1001, aadt.AADT_ROUTE_NUM_COL] == 84
+    # the diagnostic row (no gate-passing match) reports them too, with no volume
+    far = aadt.join_aadt(_seg_geo(), _aadt_layer(), max_distance_m=1.0)
+    assert far.loc[1001, "aadt_source"] == "nearest"
+    assert pd.isna(far.loc[1001, "AADT"])
+    assert 0.0 <= far.loc[1001, aadt.AADT_COVER_COL] <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# On-system classification  (Item 42)
+# ---------------------------------------------------------------------------
+def _on_system_geo(road_name, road_number=None, frc=4):
+    return _carriageway(road_number=road_number, road_name=road_name, frc=frc)
+
+
+def _sh55_record(offset=0.0, end_lat=43.620, desc="KARCHER RD (SH-55)"):
+    """SH-55's record, carried on an ``OH`` band as ITD actually writes it."""
+    x = -116.20 + offset
+    return gpd.GeoDataFrame(
+        {"AADT": [4700.0], "RouteID": ["04523AOH000"], "Descriptio": [desc],
+         "Commercial": [300],
+         "geometry": [LineString([(x, 43.610), (x, end_lat)])]},
+        crs="EPSG:4326")
+
+
+def test_on_system_accepts_the_route_when_the_name_agrees():
+    j = aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record())
+    c = aadt.classify_on_system(j)
+    assert bool(c.loc[1001, aadt.ON_SYSTEM_COL])
+    assert c.loc[1001, aadt.ON_SYSTEM_REASON_COL] == "route 55"
+    assert c.attrs["on_system"]["min_coverage"] == aadt.DEFAULT_ON_SYSTEM_COVERAGE
+
+
+def test_on_system_rejects_the_road_that_merely_runs_beside_the_route():
+    """The failure that made the earlier candidate list untrustworthy: 24 stubs of
+    E Island Woods Dr took ``EAGLE RD (SH-55)``. Coverage cannot catch it — a short
+    stub beside a long record covers 1.00 — so identity has to."""
+    j = aadt.join_aadt(_on_system_geo("E Island Woods Dr"),
+                       _sh55_record(desc="EAGLE RD (SH-55)"))
+    c = aadt.classify_on_system(j)
+    assert not bool(c.loc[1001, aadt.ON_SYSTEM_COL])
+    assert c.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL].startswith("a neighbouring road")
+    assert c.attrs["on_system"]["n_rejected"] == 1
+    # the segment naming the route itself is the other way to pass identity
+    named = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("E Island Woods Dr", road_number="55"),
+                       _sh55_record(desc="EAGLE RD (SH-55)")))
+    assert bool(named.loc[1001, aadt.ON_SYSTEM_COL])
+    # ...and the test can be switched off, which is what it means to be a policy
+    off = aadt.classify_on_system(j, require_identity=False)
+    assert bool(off.loc[1001, aadt.ON_SYSTEM_COL])
+
+
+def test_on_system_rejects_far_clipping_unnumbered_and_ramp_records():
+    far = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record(offset=-0.0006)))
+    assert not bool(far.loc[1001, aadt.ON_SYSTEM_COL])
+    assert far.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == "the record is too far away"
+    assert "m away" in far.loc[1001, aadt.ON_SYSTEM_REASON_COL]
+
+    clipped = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record(end_lat=43.6115)))
+    assert not bool(clipped.loc[1001, aadt.ON_SYSTEM_COL])
+    assert clipped.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == "the record clips the segment"
+    assert "% of the segment" in clipped.loc[1001, aadt.ON_SYSTEM_REASON_COL]
+
+    unnumbered = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record(desc="KARCHER RD")))
+    assert not bool(unnumbered.loc[1001, aadt.ON_SYSTEM_COL])
+    assert unnumbered.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == \
+        "the matched record names no route"
+
+    ramp = aadt.classify_on_system(
+        aadt.join_aadt(_on_system_geo("Eagle Rd off-ramp", frc=6), _divided_highway_layer()))
+    assert not bool(ramp.loc[1001, aadt.ON_SYSTEM_COL])
+    assert ramp.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == \
+        "the matched record is a ramp or connector"
+
+
+def test_on_system_empty_frame_and_missing_match():
+    empty = aadt.classify_on_system(aadt.join_aadt(_seg_geo().iloc[:0], _sh55_record()))
+    assert len(empty) == 0 and aadt.ON_SYSTEM_COL in empty.columns
+    nomatch = aadt.classify_on_system(          # the record is ~800 m west
+        aadt.join_aadt(_on_system_geo("W Karcher Rd"), _sh55_record(offset=-0.01)))
+    assert nomatch.loc[1001, aadt.ON_SYSTEM_CATEGORY_COL] == "no AADT record matched"
+
+
+def test_street_name_tokens_drop_directionals_types_and_the_route():
+    assert aadt.street_name_tokens("KARCHER RD (SH-55)") == {"KARCHER"}
+    assert aadt.street_name_tokens("E Amity Rd") == {"AMITY"}
+    assert aadt.street_names_agree("E Amity Rd", "W AMITY RD")
+    assert not aadt.street_names_agree("E Amity Rd", "MERIDIAN RD (SH-69)")
+    # only the record's own street counts, not the place it runs to
+    assert aadt.street_name_tokens("IDAHO AVE @ US-95 CONN") == {"IDAHO"}
+    assert not aadt.street_names_agree(None, "KARCHER RD")      # unnamed proves nothing
+
+
+# ---------------------------------------------------------------------------
 # Weighting math
 # ---------------------------------------------------------------------------
 def test_aadt_weighted_mean_speed():
@@ -518,3 +707,230 @@ def test_real_myrtle_bbox_join():
     assert j.loc[j["aadt_source"] == "matched", "AADT"].notna().all()
     assert j.loc[j["aadt_source"] != "matched", "AADT"].isna().all()
     assert (j.loc[j["aadt_source"] == "matched", "aadt_dist_m"] < 35).all()
+
+
+# ---------------------------------------------------------------------------
+# Layer cache keying (ROADMAP Item 47)
+# ---------------------------------------------------------------------------
+def _write_layer_shapefile(path):
+    """A four-record AADT layer spread over ~0.4°, written where pyogrio can read it.
+
+    Two records sit in a tight western cluster and two well to the east, so a cache
+    built for the cluster provably cannot answer a question about the whole extent.
+    """
+    rows = []
+    for i, (lon, year) in enumerate([(-116.24, 2024), (-116.23, 2024),
+                                     (-115.90, 2024), (-115.88, 2024)]):
+        rows.append({
+            "Year": year,
+            "RouteID": f"0{i}001AUS095",
+            "Route": None,
+            "Segment": f"S{i}",
+            "FromMeasur": 0.0,
+            "ToMeasure": 1.0,
+            "AADT": 10000 + i,
+            "PassengerA": 9000,
+            "Commercial": 1000,
+            "Descriptio": f"RECORD {i}",
+            "Descript_1": "NONE",
+            "geometry": LineString([(lon, 43.60), (lon, 43.62)]),
+        })
+    # One 2023 record in the western cluster, so a year filter has something to drop.
+    rows.append({**rows[0], "Year": 2023, "AADT": 999, "RouteID": "09001AUS095",
+                 "Segment": "S9", "Descriptio": "OLD RECORD"})
+    gpd.GeoDataFrame(rows, crs="EPSG:4326").to_file(path, engine="pyogrio")
+    return path
+
+
+@pytest.fixture
+def layer_shp(tmp_path):
+    return _write_layer_shapefile(tmp_path / "aadt_fixture.shp")
+
+
+WEST = (-116.25, 43.59, -116.22, 43.63)     # the two western records
+WIDE = (-116.30, 43.55, -115.85, 43.65)     # all four
+
+
+def test_cache_records_what_it_covers(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    layer = aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    assert len(layer) == 2
+    assert layer.attrs["aadt_layer"]["cache"] == "written"
+
+    meta = aadt.read_cache_meta(cache)
+    assert meta["year"] == 2024
+    assert tuple(meta["bbox"]) == WEST
+    assert meta["n_rows"] == 2
+
+
+def test_a_contained_request_is_a_cache_hit(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    layer = aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    assert layer.attrs["aadt_layer"]["cache"] == "hit"
+
+
+def test_a_wider_request_is_not_served_by_a_narrow_cache(layer_shp, tmp_path):
+    """The Item 47 defect: whichever caller wrote the cache first decided the extent
+    every later caller got, and the later caller had no way to tell."""
+    cache = tmp_path / "layer.parquet"
+    narrow = aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    assert len(narrow) == 2
+
+    wide = aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    assert wide.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    assert len(wide) == 4, "a rebuild must answer the wider question, not the cached one"
+
+
+def test_a_rebuild_widens_the_cache_rather_than_narrowing_it(layer_shp, tmp_path):
+    """Two callers with different bounds must not thrash the cache between them —
+    what made Session 60 reorder generate_screening_maps.py by hand."""
+    cache = tmp_path / "layer.parquet"
+    east = (-115.95, 43.55, -115.85, 43.65)
+    aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    aadt.load_aadt(layer_shp, year=2024, bbox=east, cache_path=cache)
+
+    # The cache now spans both requests, so each is a hit from here on.
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=WEST,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=east,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+
+
+def test_an_unrestricted_cache_serves_any_bbox(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    full = aadt.load_aadt(layer_shp, year=2024, cache_path=cache)
+    assert len(full) == 4
+    assert aadt.read_cache_meta(cache)["bbox"] is None
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=WEST,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+
+
+def test_a_bbox_restricted_cache_does_not_answer_an_unrestricted_read(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    full = aadt.load_aadt(layer_shp, year=2024, cache_path=cache)
+    assert full.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    assert len(full) == 4
+
+
+def test_a_different_year_rebuilds(layer_shp, tmp_path):
+    """Year is a filter, not an extent: the rebuild replaces rather than widens."""
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WEST, cache_path=cache)
+    old = aadt.load_aadt(layer_shp, year=2023, bbox=WEST, cache_path=cache)
+    assert old.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    assert (old["Year"] == 2023).all() and len(old) == 1
+
+
+def test_a_cache_without_a_sidecar_is_judged_on_its_own_extent(layer_shp, tmp_path):
+    """A cache written before Item 47 records nothing, so the extent of the data it
+    holds stands in for the extent it was asked for.
+
+    That is conservative in the safe direction. The features in a bbox-filtered read
+    never reach past the bbox, so a request the *data* covers was certainly covered
+    by the request that built it; one the data does not cover may only mean the layer
+    has nothing out there, and rebuilding then is wasted work rather than a wrong
+    answer.
+    """
+    cache = tmp_path / "legacy.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    aadt.cache_meta_path(cache).unlink()
+
+    inside = (-116.10, 43.605, -116.00, 43.615)      # inside the cached data's reach
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=inside,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+    # Past the data's reach it cannot prove coverage, so it rebuilds rather than guess.
+    beyond = aadt.load_aadt(layer_shp, year=2024, bbox=(-117.0, 43.0, -115.0, 44.0),
+                            cache_path=cache)
+    assert beyond.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    # ...and it cannot prove it holds the whole layer either.
+    aadt.cache_meta_path(cache).unlink()
+    unrestricted = aadt.load_aadt(layer_shp, year=2024, cache_path=cache)
+    assert unrestricted.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+
+
+def test_the_cache_keys_on_its_source_download(layer_shp, tmp_path):
+    """Item 52: ``Cumulative_AADT.zip`` and ``AADT_2025.zip`` are two downloads of one
+    layer. A cache built from one must not answer for the other, even for the same
+    year and extent."""
+    import json
+
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    meta = aadt.read_cache_meta(cache)
+    assert meta["source"] == {"name": "aadt_fixture.shp",
+                              "bytes": layer_shp.stat().st_size}
+    assert aadt.load_aadt(layer_shp, year=2024, bbox=WEST,
+                          cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+
+    other_dir = tmp_path / "newer"
+    other_dir.mkdir()
+    other = _write_layer_shapefile(other_dir / "aadt_2025.shp")
+    rebuilt = aadt.load_aadt(other, year=2024, bbox=WEST, cache_path=cache)
+    state = rebuilt.attrs["aadt_layer"]["cache"]
+    assert state.startswith("rebuilt") and "aadt_fixture.shp" in state
+    assert aadt.read_cache_meta(cache)["source"]["name"] == "aadt_2025.shp"
+
+    # A sidecar from before Item 52 records no source, so it cannot prove a match.
+    meta = aadt.read_cache_meta(cache)
+    meta.pop("source")
+    aadt.cache_meta_path(cache).write_text(json.dumps(meta))
+    again = aadt.load_aadt(other, year=2024, bbox=WEST, cache_path=cache)
+    assert "records no source" in again.attrs["aadt_layer"]["cache"]
+
+
+def test_default_year_and_source_are_the_2025_download():
+    assert aadt.DEFAULT_YEAR == 2025
+    assert aadt.DEFAULT_SOURCE == "AADT_2025.zip"
+
+
+def test_a_cache_missing_a_requested_column_rebuilds(layer_shp, tmp_path):
+    cache = tmp_path / "layer.parquet"
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE,
+                   columns=["Year", "RouteID", "AADT"], cache_path=cache)
+    full = aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    assert full.attrs["aadt_layer"]["cache"].startswith("rebuilt")
+    assert "Descriptio" in full.columns
+
+
+def test_shortfall_reasons_name_what_is_wrong():
+    """The reason travels with the rebuild so a surprising re-read explains itself."""
+    cached = gpd.GeoDataFrame(
+        {"Year": [2024, 2024], "AADT": [1, 2]},
+        geometry=[LineString([(-116.30, 43.55), (-116.30, 43.65)]),
+                  LineString([(-116.20, 43.55), (-116.20, 43.65)])], crs="EPSG:4326")
+
+    assert aadt._cache_shortfall(cached, None, year=2024, bbox=WEST,
+                                 columns=["Year", "AADT"]) is None
+    assert "missing column" in aadt._cache_shortfall(
+        cached, None, year=2024, bbox=WEST, columns=["Year", "Descriptio"])
+    assert "year" in aadt._cache_shortfall(
+        cached, {"year": 2023, "bbox": None}, year=2024, bbox=None, columns=["Year"])
+    assert "request needs" in aadt._cache_shortfall(
+        cached, {"year": 2024, "bbox": list(WEST)}, year=2024, bbox=WIDE, columns=["Year"])
+
+
+def test_a_geoparquet_source_is_read_directly(layer_shp, tmp_path):
+    """A saved layer is a source in its own right — and a cache that has stopped
+    covering the request is re-read as one, which before Item 47 never happened
+    because the cache short-circuited before the source was touched."""
+    saved = tmp_path / "saved_layer.geoparquet"
+    aadt.load_aadt(layer_shp, year=2024).to_parquet(saved)
+
+    layer = aadt.load_aadt(saved, year=2024, bbox=WEST)
+    assert len(layer) == 2 and layer.crs.to_epsg() == 4326
+    assert (layer["Year"] == 2024).all()
+
+    older = aadt.load_aadt(saved, year=2023)
+    assert len(older) == 0, "the year filter applies to a parquet source too"
+
+
+def test_a_degenerate_bbox_reads_as_no_restriction(layer_shp, tmp_path):
+    """``geo.total_bounds`` on an empty frame is ``(nan, nan, nan, nan)``; a caller
+    that derives its bbox that way means 'everything', not a box shapely will refuse."""
+    cache = tmp_path / "layer.parquet"
+    nan_bbox = (float("nan"),) * 4
+    layer = aadt.load_aadt(layer_shp, year=2024, bbox=nan_bbox, cache_path=cache)
+    assert len(layer) == 4
+    assert aadt.read_cache_meta(cache)["bbox"] is None

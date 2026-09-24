@@ -194,3 +194,15 @@ def test_cache_roundtrip(tmp_path):
     assert cache.exists()
     b = geometry.load_xd_network("does_not_matter.zip", cache_path=cache)  # read cache
     assert len(a) == len(b) == len(ids)
+
+
+def test_bearing_scales_longitude_by_the_cosine_of_latitude():
+    """Item 51: Pocatello's 4th/5th Ave run NNW (~320 deg). In raw lon/lat degrees the
+    bearing read ~311 deg, which rounds to W; a compass bearing is N."""
+    from shapely.geometry import LineString
+
+    from inrix_tools.geometry import _bearing_deg
+    b = _bearing_deg(LineString([(-112.40914, 42.83871), (-112.45045, 42.8752)]))
+    assert 315.0 < b < 325.0
+    # A metric geometry is left alone.
+    assert _bearing_deg(LineString([(500000.0, 4700000.0), (500000.0, 4700100.0)])) == 0.0

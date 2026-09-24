@@ -80,6 +80,7 @@ class ChainResult:
     stop_reason: str          # "target" | "dead_end" | "off_network" | "cycle" | "max_steps"
     target_segment: int       # the segment the end point snapped to
     crs: str                  # the projected CRS the snap was measured in
+    repaired_links: tuple[tuple[int, int], ...] = ()   # links this chain owes to a patch
 
     @property
     def start_segment(self) -> int:
@@ -92,6 +93,13 @@ class ChainResult:
     @property
     def n_segments(self) -> int:
         return len(self.segment_ids)
+
+    @property
+    def n_repaired_links(self) -> int:
+        """How many of this chain's links came from a repair table rather than from
+        ``NextXDSegI`` as published (Item 38). A chain that rests on a repair has to
+        say so wherever it is reported — that is the whole price of repairing."""
+        return len(self.repaired_links)
 
     @property
     def length_ratio(self) -> float:
@@ -144,6 +152,8 @@ class ChainResult:
             "end_segment": self.end_segment,
             "target_segment": self.target_segment,
             "crs": self.crs,
+            "n_repaired_links": self.n_repaired_links,
+            "repaired_links": self.repaired_links,
         }
 
 
@@ -267,6 +277,325 @@ def walk_chain(network, start_segment: int, target_segment: int,
 
 
 # ---------------------------------------------------------------------------
+# Topology repair  (Item 38)
+# ---------------------------------------------------------------------------
+#
+# ``NextXDSegI`` is incomplete, and on the D3 subset badly so: 8,499 of 16,105
+# segments (52.8%) carry a null link, and a further handful carry a link that
+# points off the carriageway entirely. Item 36 recorded the resulting broken
+# corridors as findings rather than bridging them, which was right — what it
+# refused was a *geographic sort*, inventing an order the network does not
+# assert, and that is what put the Garrity Blvd frontage road in series with
+# I-84.
+#
+# Repairing a link is a different act from inventing an order, and the difference
+# is what these functions are built to keep:
+#
+# - the two geometries must physically **touch** (end point to start point,
+#   within ``radius_m``),
+# - the continuation must stay inside the segment's own **``XDGroup``** — XD's
+#   carriageway key, which ramps, opposing directions and parallel facilities do
+#   not share,
+# - the junction must not double back (``max_bearing_delta_deg``, measured on the
+#   *local* geometry at the junction rather than the segment chord),
+# - both sides must carry the **same cardinal ``Bearing``** — a repair may not
+#   change the carriageway's stated direction of travel, and may not run through a
+#   rotary (``Bearing`` ``O``), where there is no direction to preserve,
+# - **exactly one** candidate must qualify; two candidates is an ambiguity, and an
+#   ambiguity stays a break,
+# - and a link that leaves the *subset* is not touched at all: that is the edge of
+#   the extract, not a defect, and ``walk_chain`` already calls it ``off_network``,
+# - and every repair is returned **as data**, so a chain that leaned on one says
+#   so (:attr:`ChainResult.repaired_links`) and a human can review the table.
+#
+# ``XDGroup`` rather than ``RoadNumber`` + bearing is the load-bearing choice, and
+# it was measured, not assumed: at the Flying Y the I-184 EB mainline's end point
+# is **8.1 m** from the 1-lane on-ramp named ``1A`` and **4.7 m** from the true
+# mainline continuation. Road number and bearing agree with both, distance prefers
+# the ramp, and a walk repaired that way runs I-184 EB into a 196-segment,
+# 110.6-mile chain (DESIGN_HISTORY Session 46).
+GROUP_COL = "XDGroup"                 # XD's carriageway key — the repair scope
+NEXT_COL = "NextXDSegI"
+REPAIR_COLUMNS = ("segment", "old_next", "new_next", "kind", "gap_m",
+                  "bearing_delta_deg", "xdgroup", "road_name", "lanes")
+FILL = "fill"           # the link was null; the network asserted nothing
+OVERRIDE = "override"   # the link pointed out of its own XDGroup
+DEFAULT_REPAIR_RADIUS_M = 25.0
+DEFAULT_MAX_BEARING_DELTA_DEG = 90.0
+_BEARING_PROBE_M = 30.0   # how much of each end to measure the junction bearing over
+
+
+def _endpoints(geom):
+    """``(start, end)`` points of a line geometry, MultiLineString-safe."""
+    return geom.interpolate(0.0, normalized=True), geom.interpolate(1.0, normalized=True)
+
+
+def _terminal_bearing(geom, *, at_end: bool, probe: float) -> float | None:
+    """Compass-ish bearing (degrees, CRS axes) over the last/first ``probe`` units
+    of ``geom``.
+
+    The *local* bearing at the junction, not the chord: a segment that curves
+    through 90 degrees has a chord bearing that describes neither of its ends, and
+    a U-turn pair at a cul-de-sac is only visible from the ends.
+    """
+    import math
+
+    length = float(geom.length)
+    if length <= 0:
+        return None
+    span = min(probe, length)
+    if at_end:
+        p1, p2 = geom.interpolate(length - span), geom.interpolate(length)
+    else:
+        p1, p2 = geom.interpolate(0.0), geom.interpolate(span)
+    dx, dy = p2.x - p1.x, p2.y - p1.y
+    if dx == 0 and dy == 0:
+        return None
+    return math.degrees(math.atan2(dx, dy)) % 360.0
+
+
+def _bearing_delta(a: float | None, b: float | None) -> float:
+    """Absolute turn between two bearings, 0-180 (NaN when either is unknown)."""
+    if a is None or b is None:
+        return float("nan")
+    return abs((a - b + 180.0) % 360.0 - 180.0)
+
+
+def repair_links(source, *, radius_m: float = DEFAULT_REPAIR_RADIUS_M,
+                 max_bearing_delta_deg: float = DEFAULT_MAX_BEARING_DELTA_DEG,
+                 require_same_bearing: bool = True, kinds=(FILL, OVERRIDE),
+                 projected_crs=None, **load_kwargs) -> pd.DataFrame:
+    """Derive the ``NextXDSegI`` repairs this network supports — **as a table**.
+
+    Two classes, and they carry different weight. A :data:`FILL` adds a link where
+    XD asserts nothing (``NextXDSegI`` is null). An :data:`OVERRIDE` *replaces* a
+    link XD does assert, and only where that link leaves the segment's own
+    ``XDGroup`` while a same-group continuation exists — the I-184 mainline pointed
+    at an off-ramp, the SH-44 mainline pointed at a parallel 1-lane street of the
+    same name. Overrides are rare (99 on D3 against 6,119 fills) and are the class
+    a reviewer should read, which is why this returns a table rather than patching
+    in place.
+
+    Args:
+        source: an XD network GeoDataFrame or a shapefile/GeoParquet path.
+        radius_m: how close a candidate's start point must be to this segment's
+            end point, in **metres** whatever the CRS's own units.
+        max_bearing_delta_deg: reject a junction that turns more than this, on the
+            local geometry at the junction. The default of 90 is not decorative: at
+            0.0 m separation the D3 subset carries **anti-parallel** pairs (two
+            segments of one cul-de-sac group whose ends coincide) that would
+            otherwise repair into a 2-cycle.
+        require_same_bearing: both sides must carry the same cardinal ``Bearing``
+            (``geometry.direction_group``). This is the guard the angle test cannot
+            supply, and D3 has the case that proves it: at the south end of Eagle Rd
+            a **rotary** group (``Bearing`` ``O``, six segments of 8-20 m each) joins
+            the southbound and northbound carriageways, and no single junction in it
+            turns more than 60 degrees. Repaired through, ``sh55-eagle-nb`` walks
+            *south* down Eagle Rd, round the rotary, and back *north* over the same
+            ground — 39 segments and 10.75 mi where the corridor is 16 and 6.64.
+        kinds: which classes to derive. ``(FILL,)`` alone is the conservative
+            setting — it never contradicts the network, only completes it.
+        projected_crs: CRS for the metric work; default is the network's UTM zone.
+
+    Returns:
+        A frame of :data:`REPAIR_COLUMNS`, one row per repair, sorted by segment.
+        ``attrs`` carries the rule parameters, the counts per kind, and — the part
+        that matters for reading it honestly — ``ambiguous_fill`` /
+        ``ambiguous_override``, the breaks that had **more than one** qualifying
+        continuation and were therefore left alone.
+    """
+    import geopandas as gpd
+
+    kinds = tuple(kinds)
+    unknown = set(kinds) - {FILL, OVERRIDE}
+    if unknown:
+        raise ValueError(f"Unknown repair kind(s) {sorted(unknown)}; expected {FILL!r}/{OVERRIDE!r}.")
+
+    network = _as_network(source, **load_kwargs)
+    for col in (GROUP_COL, NEXT_COL, "XDSegID"):
+        if col not in network.columns:
+            raise ValueError(f"Network is missing {col!r} — topology repair needs it.")
+    if require_same_bearing and "Bearing" not in network.columns:
+        raise ValueError("Network is missing 'Bearing' — pass require_same_bearing=False "
+                         "to repair without the direction guard.")
+    proj = project_network(network, projected_crs)
+    m_per_unit = _metres_per_unit(proj.crs)
+    radius = float(radius_m) / m_per_unit
+    probe = _BEARING_PROBE_M / m_per_unit
+
+    proj = proj.reset_index(drop=True)
+    geoms = list(proj.geometry)
+    ids = [int(s) for s in proj["XDSegID"]]
+    ends = [_endpoints(g)[1] for g in geoms]
+    starts_pt = [_endpoints(g)[0] for g in geoms]
+    out_brg = [_terminal_bearing(g, at_end=True, probe=probe) for g in geoms]
+    in_brg = [_terminal_bearing(g, at_end=False, probe=probe) for g in geoms]
+    group = {i: (None if pd.isna(g) else g) for i, g in zip(ids, proj[GROUP_COL])}
+    nxt = {i: (None if pd.isna(n) else int(n)) for i, n in zip(ids, proj[NEXT_COL])}
+    road = dict(zip(ids, proj.get("RoadName", pd.Series([None] * len(ids)))))
+    lanes = dict(zip(ids, proj.get("Lanes", pd.Series([None] * len(ids)))))
+    if require_same_bearing:
+        from .geometry import direction_group
+        cardinal = {i: direction_group(b) for i, b in zip(ids, proj["Bearing"])}
+    else:
+        cardinal = {}
+
+    start_index = gpd.GeoSeries(starts_pt, crs=proj.crs).sindex
+    rows, ambiguous, off_subset = [], {FILL: 0, OVERRIDE: 0}, 0
+    for k, sid in enumerate(ids):
+        g = group[sid]
+        if g is None:
+            continue                      # no carriageway key, no scope to repair in
+        old = nxt[sid]
+        if old is None:
+            kind = FILL
+        elif old not in group:
+            # The link leaves this *subset*, which is not a defect in the network —
+            # it is the edge of the extract. Repairing it would substitute a
+            # different road for one that is simply absent here; ``walk_chain``
+            # reports it as ``off_network``, which is the honest answer.
+            off_subset += 1
+            continue
+        elif group[old] != g:
+            kind = OVERRIDE
+        else:
+            continue                      # the link stays in the carriageway: leave it
+        if kind not in kinds:
+            continue
+        if require_same_bearing and cardinal.get(sid) is None:
+            continue                      # rotary/unknown direction: nothing to preserve
+        end_pt = ends[k]
+        qualified = []
+        for j in start_index.query(end_pt.buffer(radius)):
+            cid = ids[j]
+            if cid == sid or group[cid] != g:
+                continue
+            if require_same_bearing and cardinal.get(cid) != cardinal.get(sid):
+                continue
+            gap = float(end_pt.distance(starts_pt[j]))
+            if gap > radius:
+                continue
+            delta = _bearing_delta(out_brg[k], in_brg[j])
+            if not pd.isna(delta) and delta > float(max_bearing_delta_deg):
+                continue
+            qualified.append((cid, gap * m_per_unit, delta))
+        if len(qualified) != 1:
+            if qualified:
+                ambiguous[kind] += 1
+            continue
+        cid, gap_m, delta = qualified[0]
+        rows.append({
+            "segment": sid, "old_next": old, "new_next": cid, "kind": kind,
+            "gap_m": gap_m, "bearing_delta_deg": delta, "xdgroup": g,
+            "road_name": road.get(sid), "lanes": lanes.get(sid),
+        })
+
+    patch = pd.DataFrame(rows, columns=list(REPAIR_COLUMNS))
+    if not patch.empty:
+        patch = patch.sort_values("segment", ignore_index=True)
+        patch["segment"] = patch["segment"].astype("int64")
+        patch["new_next"] = patch["new_next"].astype("int64")
+        patch["old_next"] = patch["old_next"].astype("Int64")
+    patch.attrs = {
+        "radius_m": float(radius_m),
+        "max_bearing_delta_deg": float(max_bearing_delta_deg),
+        "require_same_bearing": bool(require_same_bearing),
+        "bearing_probe_m": _BEARING_PROBE_M,
+        "kinds": kinds,
+        "n_segments": len(ids),
+        "n_null_next": int(sum(1 for v in nxt.values() if v is None)),
+        f"n_{FILL}": int((patch["kind"] == FILL).sum()) if not patch.empty else 0,
+        f"n_{OVERRIDE}": int((patch["kind"] == OVERRIDE).sum()) if not patch.empty else 0,
+        "ambiguous_fill": ambiguous[FILL],
+        "ambiguous_override": ambiguous[OVERRIDE],
+        "skipped_off_subset": off_subset,
+        "crs": str(proj.crs),
+    }
+    return patch
+
+
+def _repair_map(repairs) -> dict[int, int]:
+    """``{segment -> new_next}`` from a patch frame, a mapping, or ``None``."""
+    if repairs is None:
+        return {}
+    if isinstance(repairs, pd.DataFrame):
+        if repairs.empty:
+            return {}
+        missing = {"segment", "new_next"} - set(repairs.columns)
+        if missing:
+            raise ValueError(f"Repair table is missing {sorted(missing)}.")
+        return {int(s): int(n) for s, n in zip(repairs["segment"], repairs["new_next"])}
+    return {int(s): int(n) for s, n in dict(repairs).items()}
+
+
+def apply_link_repairs(network, repairs):
+    """Return ``network`` with the patch's ``NextXDSegI`` values substituted in.
+
+    Idempotent, and silent about repairs for segments this subset does not carry —
+    a patch derived district-wide is meant to be reusable against any subset of it.
+    """
+    mapping = _repair_map(repairs)
+    if not mapping:
+        return network
+    current = {int(s): n for s, n in zip(network["XDSegID"], network[NEXT_COL])
+               if int(s) in mapping}
+    if current and all(not pd.isna(n) and int(n) == mapping[s] for s, n in current.items()):
+        return network                    # already applied — don't copy the network again
+    out = network.copy()
+    out[NEXT_COL] = [
+        mapping.get(int(s), n) for s, n in zip(out["XDSegID"], out[NEXT_COL])
+    ]
+    return out
+
+
+def load_link_repairs(path) -> pd.DataFrame:
+    """Read a committed repair table (``.csv`` or ``.json``) written by
+    :func:`repair_links`. The rule that generated it lives in the file's own
+    ``_note`` / header, so a screening run can state what it walked on."""
+    import json
+    from pathlib import Path
+
+    path = Path(path)
+    if path.suffix.lower() == ".json":
+        data = json.loads(path.read_text())
+        if isinstance(data, dict):
+            attrs = {k.lstrip("_"): v for k, v in data.items() if k.startswith("_")}
+            data = data.get("repairs", [])
+        else:
+            attrs = {}
+        patch = pd.DataFrame(data, columns=list(REPAIR_COLUMNS))
+    else:
+        # A ``# key: value`` header block carries the rule the table was derived
+        # under, so a run can state what it walked on.
+        attrs = {}
+        with path.open() as fh:
+            for line in fh:
+                if not line.startswith("#"):
+                    break
+                key, sep, val = line[1:].strip().partition(":")
+                if sep:
+                    attrs[key.strip()] = val.strip()
+        patch = pd.read_csv(path, comment="#")
+    for col in ("segment", "new_next"):
+        patch[col] = patch[col].astype("int64")
+    patch["old_next"] = patch["old_next"].astype("Int64")
+    patch.attrs = {**attrs, "source": str(path)}
+    return patch
+
+
+def _repairs_used(segment_ids, repairs) -> tuple[tuple[int, int], ...]:
+    """Which repaired links a finished chain actually traversed."""
+    mapping = _repair_map(repairs)
+    if not mapping:
+        return ()
+    return tuple(
+        (int(a), int(b))
+        for a, b in zip(segment_ids, segment_ids[1:])
+        if mapping.get(int(a)) == int(b)
+    )
+
+
+# ---------------------------------------------------------------------------
 # Chain assembly
 # ---------------------------------------------------------------------------
 def _segment_miles(proj_net_indexed, sid: int) -> float:
@@ -281,7 +610,8 @@ def _segment_miles(proj_net_indexed, sid: int) -> float:
 
 def build_chain(source, start_latlon, end_latlon, *, projected_crs=None,
                 k_candidates: int = 8, max_snap_feet: float | None = 500.0,
-                max_steps: int = 500, candidates=None, **load_kwargs) -> ChainResult:
+                max_steps: int = 500, candidates=None, repairs=None,
+                **load_kwargs) -> ChainResult:
     """Assemble the XD chain between two query points.
 
     Snaps both endpoints in a projected CRS, walks ``NextXDSegI`` from start to
@@ -320,12 +650,16 @@ def build_chain(source, start_latlon, end_latlon, *, projected_crs=None,
             chain silently disappearing. ``None`` disables the guard.
         candidates: restrict the snap to these ``Segment ID`` values (e.g. one
             direction, or an export's segments).
+        repairs: an optional ``NextXDSegI`` patch table (:func:`repair_links` or
+            :func:`load_link_repairs`) to walk on. **Opt-in, and never silent**:
+            the links the chain actually owes to it come back on
+            :attr:`ChainResult.repaired_links`.
 
     Returns:
         :class:`ChainResult`. Nothing raises on a chain that fails to connect —
         inspect ``reached_target`` / ``stop_reason``.
     """
-    network = _as_network(source, **load_kwargs)
+    network = apply_link_repairs(_as_network(source, **load_kwargs), repairs)
     proj = project_network(network, projected_crs)
     crs_str = str(proj.crs)
 
@@ -344,7 +678,12 @@ def build_chain(source, start_latlon, end_latlon, *, projected_crs=None,
         for e_id, e_ft, e_frac in ends:
             chain, reason = walk_chain(proj, s_id, e_id, max_steps=max_steps)
             reached = reason == "target"
-            key = (not reached, s_ft + e_ft)
+            # Ties on snap distance (a point exactly at a junction) go to the start
+            # segment the point *begins* and the end segment it *finishes*: a start at
+            # the far end of the upstream segment adds that segment with ~0 of it in
+            # the extent. Myrtle St EB began on I-184 once Item 51's route junctions
+            # let the Connector walk onto it.
+            key = (not reached, round(s_ft + e_ft, 1), s_frac + (1.0 - e_frac))
             if best is None or key < best[0]:
                 best = (key, (s_id, s_ft, s_frac), (e_id, e_ft, e_frac), chain, reason)
     _, (s_id, s_ft, s_frac), (e_id, e_ft, e_frac), chain, reason = best
@@ -390,11 +729,12 @@ def build_chain(source, start_latlon, end_latlon, *, projected_crs=None,
         stop_reason=reason,
         target_segment=int(e_id),
         crs=crs_str,
+        repaired_links=_repairs_used(chain, repairs),
     )
 
 
 def chain_between_segments(source, start_segment: int, end_segment: int, *,
-                           projected_crs=None, max_steps: int = 500,
+                           projected_crs=None, max_steps: int = 500, repairs=None,
                            **load_kwargs) -> ChainResult:
     """Assemble a chain between two **named terminal segments** instead of two
     query points.  (Item 30)
@@ -414,7 +754,7 @@ def chain_between_segments(source, start_segment: int, end_segment: int, *,
       to measure a snap against, and a fabricated 0.0 would read as a perfect
       match.
     """
-    network = _as_network(source, **load_kwargs)
+    network = apply_link_repairs(_as_network(source, **load_kwargs), repairs)
     ids, reason = walk_chain(network, start_segment, end_segment, max_steps=max_steps)
     if not ids:
         raise ValueError(
@@ -437,6 +777,7 @@ def chain_between_segments(source, start_segment: int, end_segment: int, *,
         stop_reason=reason,
         target_segment=int(end_segment),
         crs=str(proj.crs),
+        repaired_links=_repairs_used(ids, repairs),
     )
 
 
@@ -766,8 +1107,21 @@ def chain_description(chain: ChainResult, network, fields=_DESCRIBE_FIELDS) -> d
 # parallels. Here an entry that will not walk is **recorded with its stop_reason**;
 # there is no fallback to fall into.
 CATALOGUE_COLLECTION = "corridors"      # the key holding the entry list in the JSON
+REPORTING_COLLECTION = "reporting_corridors"   # the key holding the group list (Item 40)
 _ENTRY_FIELDS = ("id", "name", "start_latlon", "end_latlon", "description")
+_ENTRY_OPTIONAL = ("corridor", "direction",    # the reporting group this entry is one direction of
+                   "links")                    # entry-scoped NextXDSegI patch (Item 51)
+_GROUP_FIELDS = ("id", "name", "description")
+_GROUP_OPTIONAL = ("one_way_couplet",)   # the two directions are different streets
 DEFAULT_MIN_COVERAGE = 0.95             # accepted entries must observe >95% of their miles
+
+# A catalogue entry is one **direction** of one extent, because that is the unit the
+# network and the AADT join both work in. A *reporting* corridor is the road: both
+# directions of it, named the way a district talks about it ("I-84, Nampa to Boise"),
+# which is the unit a ranking is read in. The two are deliberately separate — an
+# entry carries ``corridor`` (which reporting corridor it belongs to) and
+# ``direction``, and :func:`screen.rank_corridor_groups` does the combining, so the
+# directional detail is never lost behind the grouped number.
 
 
 @dataclass(frozen=True)
@@ -786,6 +1140,34 @@ class CorridorEntry:
     start_latlon: tuple[float, float]
     end_latlon: tuple[float, float]
     description: str
+    corridor: str | None = None      # the reporting corridor this is one direction of
+    direction: str | None = None     # "EB"/"WB"/"NB"/"SB" — the direction it is
+    links: tuple[tuple[int, int], ...] = ()
+    """``(segment, next)`` links this entry walks that ``NextXDSegI`` does not assert —
+    where its route turns off INRIX's link, or only the route number changes along the
+    street (Item 51). Applied to this entry's walk alone, never to the network: at
+    Idaho Falls' Sunnyside Rd the US-26 chain follows the street onto US-91 while the
+    I-15 BL approach keeps the link, and one patch cannot serve both."""
+
+
+@dataclass(frozen=True)
+class ReportingCorridor:
+    """One **reporting** corridor: the road both directions of it make up.
+
+    A ranking is read per road, not per carriageway, but every number is computed
+    per carriageway — so this carries only the identity, and the combining rules
+    live in :func:`screen.rank_corridor_groups` where the metrics are.
+    """
+
+    id: str
+    name: str
+    description: str
+    one_way_couplet: bool = False
+    """The two directions run on **different streets** rather than two carriageways
+    of one road (District 3 has exactly one: Myrtle St EB / Front St WB). It changes
+    no arithmetic — every per-mile rate divides by the miles a round trip covers
+    either way — but it changes how ``directional_miles`` reads: distinct centre-line
+    pavement here, the same ground driven twice everywhere else."""
 
 
 def _latlon(value, *, entry_id: str, field: str) -> tuple[float, float]:
@@ -841,12 +1223,30 @@ def parse_catalogue(data) -> tuple[CorridorEntry, ...]:
         missing = [f for f in _ENTRY_FIELDS if f not in row]
         if missing:
             raise ValueError(f"Catalogue entry {entry_id!r} is missing {missing}.")
-        unknown = [k for k in row if k not in _ENTRY_FIELDS and not str(k).startswith("_")]
+        allowed = _ENTRY_FIELDS + _ENTRY_OPTIONAL
+        unknown = [k for k in row if k not in allowed and not str(k).startswith("_")]
         if unknown:
             raise ValueError(f"Catalogue entry {entry_id!r} has unknown field(s) {unknown}.")
         for field in ("name", "description"):
             if not str(row[field] or "").strip():
                 raise ValueError(f"Catalogue entry {entry_id!r} has an empty {field!r}.")
+        # ``corridor`` and ``direction`` travel together: a group with no direction
+        # cannot be broken out, and a direction with no group has nothing to join.
+        group = str(row.get("corridor", "") or "").strip() or None
+        direction = str(row.get("direction", "") or "").strip().upper() or None
+        if (group is None) != (direction is None):
+            raise ValueError(
+                f"Catalogue entry {entry_id!r} carries "
+                f"{'corridor' if group else 'direction'} without the other; a reporting "
+                "corridor needs both, so the directions can be told apart inside it.")
+        links: list[tuple[int, int]] = []
+        for pair in row.get("links") or ():
+            try:
+                a, b = (int(v) for v in pair)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Catalogue entry {entry_id!r}: each link must be a "
+                                 f"[segment, next] pair, got {pair!r}") from exc
+            links.append((a, b))
         out.append(
             CorridorEntry(
                 id=entry_id,
@@ -856,8 +1256,88 @@ def parse_catalogue(data) -> tuple[CorridorEntry, ...]:
                 end_latlon=_latlon(row["end_latlon"], entry_id=entry_id,
                                    field="end_latlon"),
                 description=str(row["description"]).strip(),
+                corridor=group,
+                direction=direction,
+                links=tuple(links),
             )
         )
+    entries = tuple(out)
+    _check_group_directions(entries)
+    return entries
+
+
+def _check_group_directions(entries) -> None:
+    """Two entries of one reporting corridor may not claim the same direction —
+    that is a copy-paste in the catalogue, and it would double-count one carriageway
+    into the grouped total while dropping the other."""
+    seen: dict[tuple[str, str], str] = {}
+    for e in entries:
+        if e.corridor is None:
+            continue
+        key = (e.corridor, e.direction)
+        if key in seen:
+            raise ValueError(
+                f"Catalogue entries {seen[key]!r} and {e.id!r} are both "
+                f"{e.direction} of reporting corridor {e.corridor!r}.")
+        seen[key] = e.id
+
+
+def parse_reporting_corridors(data) -> tuple[ReportingCorridor, ...]:
+    """Validate the ``reporting_corridors`` block — the roads the entries group into.
+
+    Absent, this returns ``()`` and the catalogue is simply ungrouped. Present, it
+    must be **consistent with the entries**: every group an entry names must be
+    declared here, and every declared group must have at least one entry. A group
+    declared but unused is a corridor silently missing from the report.
+    """
+    entries = ()
+    if isinstance(data, Mapping):
+        rows = data.get(REPORTING_COLLECTION)
+        if rows is None:
+            return ()
+        if CATALOGUE_COLLECTION in data:
+            entries = parse_catalogue(data)
+    else:
+        rows = data
+    if not isinstance(rows, (list, tuple)):
+        raise ValueError(f"{REPORTING_COLLECTION!r} must hold a list of corridor groups.")
+
+    out, seen = [], set()
+    for i, row in enumerate(rows):
+        if not isinstance(row, Mapping):
+            raise ValueError(f"Reporting corridor #{i + 1} is not an object: {row!r}")
+        gid = str(row.get("id", "") or "").strip()
+        if not gid:
+            raise ValueError(f"Reporting corridor #{i + 1} has no 'id'.")
+        if gid in seen:
+            raise ValueError(f"Duplicate reporting corridor id {gid!r}.")
+        seen.add(gid)
+        missing = [f for f in _GROUP_FIELDS if f not in row]
+        if missing:
+            raise ValueError(f"Reporting corridor {gid!r} is missing {missing}.")
+        allowed = _GROUP_FIELDS + _GROUP_OPTIONAL
+        unknown = [k for k in row if k not in allowed and not str(k).startswith("_")]
+        if unknown:
+            raise ValueError(f"Reporting corridor {gid!r} has unknown field(s) {unknown}.")
+        for field in ("name", "description"):
+            if not str(row[field] or "").strip():
+                raise ValueError(f"Reporting corridor {gid!r} has an empty {field!r}.")
+        out.append(ReportingCorridor(id=gid, name=str(row["name"]).strip(),
+                                     description=str(row["description"]).strip(),
+                                     one_way_couplet=bool(row.get("one_way_couplet", False))))
+
+    if entries:
+        used = {e.corridor for e in entries if e.corridor is not None}
+        undeclared = sorted(used - seen)
+        if undeclared:
+            raise ValueError(
+                f"Catalogue entries name reporting corridor(s) {undeclared} that "
+                f"{REPORTING_COLLECTION!r} does not declare.")
+        unused = sorted(seen - used)
+        if unused:
+            raise ValueError(
+                f"Reporting corridor(s) {unused} are declared but no entry belongs to "
+                "them — a corridor declared and unused is one missing from the report.")
     return tuple(out)
 
 
@@ -874,12 +1354,22 @@ def load_catalogue(path) -> tuple[CorridorEntry, ...]:
         return parse_catalogue(json.load(fh))
 
 
+def load_reporting_corridors(path) -> tuple[ReportingCorridor, ...]:
+    """Read the ``reporting_corridors`` block of a catalogue file, validated against
+    its entries (:func:`parse_reporting_corridors`). ``()`` when the file declares
+    none — an ungrouped catalogue ranks per direction, as before Item 40."""
+    import json
+
+    with open(path, "r", encoding="utf-8") as fh:
+        return parse_reporting_corridors(json.load(fh))
+
+
 # Resolution-table columns, in order.
 CATALOGUE_COLUMNS = (
     "id", "name", "accepted", "reached_target", "stop_reason", "n_segments",
     "chain_miles", "requested_miles", "trim_start_miles", "trim_end_miles",
     "snap_start_feet", "snap_end_feet", "start_segment", "end_segment",
-    "target_segment",
+    "target_segment", "n_repaired_links", "corridor", "direction",
 )
 COVERAGE_COLUMNS = ("n_obs", "n_missing", "observed_miles", "missing_miles",
                     "miles_covered_fraction")
@@ -887,7 +1377,7 @@ COVERAGE_COLUMNS = ("n_obs", "n_missing", "observed_miles", "missing_miles",
 
 def resolve_catalogue(source, catalogue, *, observed=None, value: str | None = None,
                       min_coverage: float = DEFAULT_MIN_COVERAGE, projected_crs=None,
-                      **build_kwargs) -> pd.DataFrame:
+                      repairs=None, **build_kwargs) -> pd.DataFrame:
     """Resolve every catalogue entry through :func:`build_chain` and account for it.
 
     Args:
@@ -904,6 +1394,10 @@ def resolve_catalogue(source, catalogue, *, observed=None, value: str | None = N
         value: value column for the coverage count, as in :func:`chain_coverage`.
         min_coverage: the ``miles_covered_fraction`` an entry must **exceed** to be
             accepted (default 0.95).
+        repairs: an optional ``NextXDSegI`` patch table (Item 38) applied **once**
+            to the projected network here and carried into every entry's row as
+            ``n_repaired_links``. ``attrs['repairs']`` records whether one was used
+            and how large it was.
         projected_crs / build_kwargs: passed through to :func:`build_chain`
             (``k_candidates``, ``max_snap_feet``, ``max_steps``, ``candidates`` …).
 
@@ -927,11 +1421,26 @@ def resolve_catalogue(source, catalogue, *, observed=None, value: str | None = N
         else parse_catalogue(catalogue)
     network = _as_network(source)
     proj = project_network(network, projected_crs)
+    # Applied once here rather than per entry; ``repairs`` still goes down to
+    # ``build_chain`` because that is what attributes the links each chain used.
+    proj = apply_link_repairs(proj, repairs)
 
     rows, chains = [], {}
     for entry in entries:
-        chain = build_chain(proj, entry.start_latlon, entry.end_latlon,
-                            projected_crs=proj.crs, **build_kwargs)
+        net_e, rep_e = proj, repairs
+        if entry.links:
+            # The entry's own links (Item 51) patch this walk only; they are reported
+            # with the table's repairs in ``n_repaired_links``.
+            own = pd.DataFrame({"segment": [a for a, _ in entry.links],
+                                "new_next": [b for _, b in entry.links]})
+            base = (pd.DataFrame(columns=["segment", "new_next"]) if repairs is None
+                    else pd.DataFrame(list(_repair_map(repairs).items()),
+                                      columns=["segment", "new_next"]))
+            rep_e = pd.concat([base[~base["segment"].isin(own["segment"])], own],
+                              ignore_index=True)
+            net_e = apply_link_repairs(proj, own)
+        chain = build_chain(net_e, entry.start_latlon, entry.end_latlon,
+                            projected_crs=proj.crs, repairs=rep_e, **build_kwargs)
         chains[entry.id] = chain
         summary = chain.summary()
         row = {
@@ -950,6 +1459,9 @@ def resolve_catalogue(source, catalogue, *, observed=None, value: str | None = N
             "start_segment": chain.start_segment,
             "end_segment": chain.end_segment,
             "target_segment": chain.target_segment,
+            "n_repaired_links": chain.n_repaired_links,
+            "corridor": entry.corridor,
+            "direction": entry.direction,
         }
         if observed is not None:
             cov = chain_coverage(chain, observed, value=value)
@@ -975,6 +1487,8 @@ def resolve_catalogue(source, catalogue, *, observed=None, value: str | None = N
         "n_accepted": int(out["accepted"].sum()) if len(out) else 0,
         "min_coverage": float(min_coverage),
         "coverage_evaluated": observed is not None,
+        "repairs_applied": repairs is not None,
+        "n_repairs": len(_repair_map(repairs)),
         "crs": str(proj.crs),
     }
     return out

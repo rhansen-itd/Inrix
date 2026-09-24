@@ -260,13 +260,19 @@ def attach_directions(geo, directions):
 
 def _bearing_deg(geom) -> float | None:
     """Compass bearing (degrees, 0=N, 90=E) of a linestring's start->end vector,
-    or ``None`` for a degenerate/empty geometry."""
+    or ``None`` for a degenerate/empty geometry.
+
+    For lon/lat coordinates the east-west step is scaled by ``cos(latitude)``: a degree
+    of longitude in Idaho is ~0.73 of a degree of latitude, and reading the raw degrees
+    turned Pocatello's NNW 4th/5th Ave couplet (320 deg) into "W" (Item 51)."""
     if geom is None or getattr(geom, "is_empty", True):
         return None
     xs, ys = geom.xy
     dx, dy = xs[-1] - xs[0], ys[-1] - ys[0]
     if dx == 0 and dy == 0:
         return None
+    if abs(ys[0]) <= 90.0 and abs(ys[-1]) <= 90.0 and abs(xs[0]) <= 180.0:
+        dx *= math.cos(math.radians((ys[0] + ys[-1]) / 2.0))
     return math.degrees(math.atan2(dx, dy)) % 360.0
 
 
@@ -318,7 +324,6 @@ def offset_overlapping_segments(geo, offset_m: float = 6.0, tol_m: float = 20.0,
 
     out = geo.copy()
     geoms = list(out["geometry"])
-    ids = list(out.index)
     bearings = [_bearing_deg(g) for g in geoms]
 
     # Mean latitude for the metre<->degree conversion (small study area).

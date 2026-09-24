@@ -55,7 +55,7 @@ DEFAULT_SHAPEFILE = str(_REPO / "USA_Idaho_shapefile.zip")
 # AADT volume layer (Item 18): defaults to the in-repo ITD layer when present, so
 # the volume-weighting features (vehicle-hours map colouring, corridor weighted
 # speed) are on out of the box; blank the field to turn them off.
-_AADT_ZIP = _REPO / "Cumulative_AADT.zip"
+_AADT_ZIP = _REPO / aadt.DEFAULT_SOURCE
 DEFAULT_AADT = str(_AADT_ZIP) if _AADT_ZIP.exists() else ""
 DEFAULT_TZ = io.DEFAULT_TZ
 DEFAULT_CVALUE = io.DEFAULT_CVALUE_THRESHOLD
@@ -357,7 +357,7 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     registry (DB) — so the "Restrict dates" picker can widen again.
 
     ``aadt_path`` (optional, Item 18) points at the ITD AADT layer
-    (``Cumulative_AADT.zip``); on the file path ``aadt.load_aadt`` reads the 2024
+    (``AADT_2025.zip``); on the file path ``aadt.load_aadt`` reads the 2025
     rows within the export's geometry bounds and ``aadt.join_aadt`` spatially
     attaches a volume per ``Segment ID`` (flagged ``matched`` / ``nearest`` /
     ``missing``). On the DB path the join is read from the cache instead. The
@@ -906,13 +906,13 @@ def _controls() -> dbc.Card:
                              dbc.Input(id="cvalue", type="number", value=DEFAULT_CVALUE,
                                        size="sm")], width=5),
                 ], className="mt-2"),
-                # AADT volume layer (Item 18): points at the ITD Cumulative_AADT.zip;
+                # AADT volume layer (Item 18): points at the ITD AADT layer (AADT_2025.zip);
                 # defaults to the in-repo copy. Applied at Load — enables the
                 # vehicle-hours map colouring and the corridor AADT-weighted-speed
                 # toggle. Blank it to turn the volume features off.
                 dbc.Label("AADT layer (optional)", className="mt-2"),
                 dbc.Input(id="aadt-path", value=DEFAULT_AADT, size="sm", debounce=True,
-                          placeholder="path to Cumulative_AADT.zip"),
+                          placeholder="path to AADT_2025.zip"),
                 dbc.Button("Load export", id="load", color="secondary", size="sm",
                            className="mt-2 w-100"),
                 # Database intake (Items 21/23): "Ingest to DB" merges the current

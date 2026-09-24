@@ -1,0 +1,184 @@
+{
+  "_note": "ITD District 5 screening catalogue derived from candidate triage and couplet synthesis.",
+  "corridors": [
+    {
+      "id": "us91-pocatello-nb",
+      "name": "US-91 NB: Pocatello to Chubbuck (Yellowstone Ave)",
+      "start_latlon": [
+        42.89141,
+        -112.4514
+      ],
+      "end_latlon": [
+        42.92773,
+        -112.46644
+      ],
+      "description": "US-91 northbound on Yellowstone Ave through Pocatello commercial district into Chubbuck.",
+      "corridor": "us91-pocatello",
+      "direction": "NB"
+    },
+    {
+      "id": "us91-pocatello-sb",
+      "name": "US-91 SB: Chubbuck to Pocatello (Yellowstone Ave)",
+      "start_latlon": [
+        42.92773,
+        -112.46644
+      ],
+      "end_latlon": [
+        42.89141,
+        -112.4514
+      ],
+      "description": "US-91 southbound on Yellowstone Ave.",
+      "corridor": "us91-pocatello",
+      "direction": "SB"
+    },
+    {
+      "id": "pocatello-couplet-nb",
+      "name": "Pocatello Couplet NB: 4th Ave",
+      "start_latlon": [
+        42.89141,
+        -112.4514
+      ],
+      "end_latlon": [
+        42.89902,
+        -112.45137
+      ],
+      "description": "Northbound leg of Pocatello couplet along 4th Ave.",
+      "corridor": "pocatello-couplet",
+      "direction": "NB"
+    },
+    {
+      "id": "pocatello-couplet-sb",
+      "name": "Pocatello Couplet SB: 5th Ave",
+      "start_latlon": [
+        42.8752,
+        -112.45056
+      ],
+      "end_latlon": [
+        42.85763,
+        -112.43496
+      ],
+      "description": "Southbound leg of Pocatello couplet along 5th Ave.",
+      "corridor": "pocatello-couplet",
+      "direction": "SB"
+    },
+    {
+      "id": "blackfoot-couplet-wb",
+      "name": "Blackfoot Couplet WB: W Bridge St",
+      "start_latlon": [
+        43.18933,
+        -112.34606
+      ],
+      "end_latlon": [
+        43.1977,
+        -112.36143
+      ],
+      "description": "Westbound leg of Blackfoot couplet on W Bridge St.",
+      "corridor": "blackfoot-couplet",
+      "direction": "WB"
+    },
+    {
+      "id": "blackfoot-couplet-eb",
+      "name": "Blackfoot Couplet EB: W Judicial St",
+      "start_latlon": [
+        43.19598,
+        -112.35954
+      ],
+      "end_latlon": [
+        43.18866,
+        -112.34682
+      ],
+      "description": "Eastbound leg of Blackfoot couplet on W Judicial St.",
+      "corridor": "blackfoot-couplet",
+      "direction": "EB"
+    },
+    {
+      "id": "i15-pocatello-nb",
+      "name": "I-15 NB: South Pocatello (IC 67) to Chubbuck (IC 72)",
+      "start_latlon": [
+        42.83389,
+        -112.40819
+      ],
+      "end_latlon": [
+        42.92002,
+        -112.44089
+      ],
+      "description": "Northbound I-15 through Pocatello to the I-86 Flying Y interchange.",
+      "corridor": "i15-pocatello",
+      "direction": "NB"
+    },
+    {
+      "id": "i15-pocatello-sb",
+      "name": "I-15 SB: Chubbuck (IC 72) to South Pocatello (IC 67)",
+      "start_latlon": [
+        42.91832,
+        -112.44136
+      ],
+      "end_latlon": [
+        42.83507,
+        -112.40921
+      ],
+      "description": "Southbound I-15 through Pocatello.",
+      "corridor": "i15-pocatello",
+      "direction": "SB"
+    },
+    {
+      "id": "us30-mccammon-eb",
+      "name": "US-30 EB: McCammon to Lava Hot Springs",
+      "start_latlon": [
+        42.65424,
+        -112.18618
+      ],
+      "end_latlon": [
+        42.62048,
+        -112.00128
+      ],
+      "description": "US-30 eastbound freight corridor from I-15 junction toward Lava Hot Springs.",
+      "corridor": "us30-mccammon",
+      "direction": "EB"
+    },
+    {
+      "id": "us30-mccammon-wb",
+      "name": "US-30 WB: Lava Hot Springs to McCammon",
+      "start_latlon": [
+        42.62047,
+        -112.0013
+      ],
+      "end_latlon": [
+        42.65426,
+        -112.1862
+      ],
+      "description": "US-30 westbound freight corridor toward I-15.",
+      "corridor": "us30-mccammon",
+      "direction": "WB"
+    }
+  ],
+  "reporting_corridors": [
+    {
+      "id": "us91-pocatello",
+      "name": "US-91: Yellowstone Ave (Pocatello to Chubbuck)",
+      "description": "The 4.2-mile primary commercial arterial in the Pocatello-Chubbuck urban area."
+    },
+    {
+      "id": "pocatello-couplet",
+      "name": "Pocatello Couplet: 4th Ave NB / 5th Ave SB (US-91/I-15B)",
+      "description": "Downtown Pocatello one-way urban couplet.",
+      "one_way_couplet": true
+    },
+    {
+      "id": "blackfoot-couplet",
+      "name": "Blackfoot Couplet: W Bridge St WB / W Judicial St EB (I-15B)",
+      "description": "Downtown Blackfoot one-way arterial couplet.",
+      "one_way_couplet": true
+    },
+    {
+      "id": "i15-pocatello",
+      "name": "I-15: Pocatello Urban Freeway (IC 67 to IC 72)",
+      "description": "The 5.6-mile interstate corridor serving Pocatello and Chubbuck."
+    },
+    {
+      "id": "us30-mccammon",
+      "name": "US-30: McCammon to Lava Hot Springs",
+      "description": "The 9.5-mile regional freight corridor in Bannock County."
+    }
+  ]
+}

@@ -140,6 +140,105 @@ sheets whose endpoints are place names rather than coordinates (see
 bbox then derived from the coordinate routes. Output lands under `out/`, which is
 gitignored — regenerate it rather than committing it.
 
+## Rank a district's corridors (district-wide screening)
+
+Which corridors in a district are worst — the prior question to analysing a corridor
+you have already named. It runs off the DuckDB store, so the export must be ingested
+first (the explorer's "Ingest export" control, or `store.ingest_export_streaming`):
+
+```bash
+python scripts/run_district_screening.py \
+    --db d3_store.duckdb \
+    --catalogue scripts/d3_corridors.json \
+    --repairs scripts/d3_link_repairs.csv \
+    --network USA_Idaho_shapefile.zip \
+    --network-cache geometry_cache/d3_network.geoparquet \
+    --aadt Cumulative_AADT.zip \
+    --out-dir out/district_screening
+```
+
+Wiring only: `screen.segment_screen` reduces the store to one row per segment per
+named peak window, `corridors.resolve_catalogue` walks each corridor's extent,
+`aadt.join_aadt` supplies the mainline-preferred volume weights, and
+`screen.rank_corridors` produces the ranking. It writes `corridor_rankings.csv`,
+`corridor_resolution.csv`, a per-corridor `corridors.kml` and a
+`screening_provenance.json` — and the CSVs carry that provenance in a `#` header, so
+a ranking read off disk still states the area, dates, CValue gate, windows, catalogue
+and repair table it was computed under.
+
+It writes **two rankings**. A catalogue entry is one *direction* of one extent,
+because that is the unit the network walk and the AADT join work in; a **reporting
+corridor** is the road — both directions of it — which is the unit a district reads a
+ranking in. `reporting_corridor_rankings.csv` is the headline view (District 3's 20
+entries group into 10 roads), `corridor_rankings.csv` keeps the per-direction detail,
+and the printed summary shows both. Nothing is averaged across directions and the two
+carriageways' miles are never summed — they run over the same ground. Note also that
+a grouped row sums its directions *at the same clock time*, so a commute corridor
+whose directions peak in different windows carries a second number,
+`vhd_directional_peaks`, that takes each direction at its own peak (see
+[DATA_FORMAT.md](DATA_FORMAT.md)).
+
+The headline table is `corridor_peak_totals.csv`: one row per reporting corridor,
+**totalled over every peak window and both directions**, ranked on **vehicle-hours of
+delay per mile** — volume-weighted, but length does not decide the order (`--rank-by`
+changes it; every metric's rank travels in the frame either way, and without an AADT
+join the run falls back to the unweighted rate and says so). `corridor_breakout.csv` is the same cells
+unaggregated — a `(corridor, direction, window)` MultiIndex — and the printed summary
+interleaves them, each corridor's total followed by every one of its direction × peak
+rows.
+
+Two behaviours worth knowing. **A corridor that does not resolve is not ranked** — it
+is listed separately with its `stop_reason` and coverage rather than carried in with
+blank metrics. And `--repairs` is the Item 38 topology patch table: without it seven
+of the twenty District 3 corridors do not walk (I-184 not at all), so an absent table
+stops the run rather than silently ranking thirteen. `--no-repairs` walks
+`NextXDSegI` exactly as published, deliberately.
+
+Note that one call ingests a **whole** export: handing `ingest_export_streaming` any
+`..._part_N.zip` reads every sibling part, and its `n_rows_added` is the total across
+all of them (`n_parts` / `parts` say which). Output lands under `out/`, which is
+gitignored — regenerate it rather than committing it.
+
+## Generate a district's catalogue instead of drawing it
+
+The corridor catalogue a screening run reads is itself derived from the network for
+Districts 1, 2, 4, 5 and 6 (District 3's is the Item 44 empirical rebuild):
+
+```bash
+# 1. screen once, so the extent pass has TTI to read (any catalogue will do)
+python scripts/run_statewide_screening.py --mode full --districts 1 2 4 5 6
+
+# 2. generate the catalogues from the network + that screening
+python scripts/build_statewide_catalogues.py          # --dry-run to verify only
+
+# 3. re-screen on the generated catalogues
+python scripts/run_statewide_screening.py --mode full --districts 1 2 4 5 6
+```
+
+`extents.enumerate_mainline_chains` walks each numbered route into directional
+chains, `extents.analyse_chain` cuts them at detected split points (urban/rural FRC
+transitions, highway junctions, AADT step-changes, congestion discontinuities), and
+each facility is emitted at up to three scales — **Tier 1 Congested Core**, **Tier 2
+Commuter Corridor**, **Tier 3 Regional Baseline** — so the ranking can show how much
+of a bottleneck's delay density a longer extent dilutes away. Every entry's
+`description` states the split that ended it. `couplets.detect_couplets` finds the
+one-way couplets topologically and pairs them under one reporting corridor.
+
+Two rules worth knowing. **A catalogue is written only when every entry resolves**
+through `corridors.resolve_catalogue`; a failed verification leaves the file as it
+was rather than shipping a broken catalogue that looks like a good one. And **only a
+measured bottleneck is catalogued**: a facility whose peak TTI never reaches 1.20
+over a core of at least 0.75 miles is not a corridor, which is why the generated
+District 4/5/6 catalogues drop I-84 at Twin Falls (peak TTI 1.05), I-15 at Pocatello
+(1.02) and I-15 at Idaho Falls (1.08) that the hand-built ones carried. The
+predecessor catalogues are kept in `legacy/handbuilt_catalogues/` for diffing.
+
+`scripts/aggregate_statewide_rankings.py` reads the tiers back out of the generated
+catalogues for `statewide_extent_tiers_comparison.csv`, and
+`out/statewide_screening/couplet_registry_validation.csv` scores the detector against
+`couplets.KNOWN_COUPLETS` — it reports rather than asserts, because several registry
+entries name a leg the XD network carries no route number for.
+
 ## Documents
 
 - [ROADMAP.md](ROADMAP.md) — planned work as named, numbered, session-sized

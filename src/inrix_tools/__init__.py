@@ -20,6 +20,10 @@ Modules are scaffolded as stubs until built per ROADMAP.md:
     aadt        — AADT volume layer + volume weighting (Item 18)
     store       — DuckDB-backed storage & ingest of exports + GIS join (Item 21)
     screen      — district-wide corridor screening + ranking (Item 35)
+    couplets    — statewide one-way couplet detection & pairing (Item 45)
+    extents     — corridor split criteria & multi-scale tiers (Item 45)
+    routes      — state-route membership from ITD's layers (Items 48, 52)
+    itd_layers  — ITD State Highway System + Census urban areas (Item 52)
 """
 
 __version__ = "0.1.0"

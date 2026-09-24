@@ -498,7 +498,6 @@ def finding_paragraphs(summary: pd.DataFrame, flags: dict[str, RouteFlags],
                    if float(summary.loc[summary[ROUTE_COL] == r, "delay_r2"].iloc[0] or 0) > R2_FLOOR]
     ic = _ranges(summary, conditioned, "delay_intercept")
     ic_med = _median(summary, arterials, "delay_intercept")
-    dr_med = _median(summary, arterials, "delay_ratio")
     sr_med = _median(summary, arterials, "sd_ratio")
     gap = _ranges(summary, arterials, "free_flow_gap")
     rural_bias = _ranges(summary, rurals, "bias")

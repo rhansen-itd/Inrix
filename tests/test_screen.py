@@ -178,6 +178,28 @@ def test_resolve_windows_accepts_names_and_objects():
         screen.resolve_windows([screen.PEAK_WINDOWS["am"], screen.PEAK_WINDOWS["am"]])
 
 
+def test_resolve_windows_knows_the_7day_preset():
+    """The ``day_7d`` window is a first-class preset in ``ALL_WINDOWS``, resolvable
+    by string name — ``--windows day_7d`` works without constructing a PeakWindow."""
+    resolved = screen.resolve_windows(["day_7d"])
+    assert list(resolved) == ["day_7d"]
+    w = resolved["day_7d"]
+    assert w.peak is True
+    assert w.dows is None        # all 7 days (no day-of-week gate)
+    assert w is screen.ALL_DAY_7D_WINDOW
+    # It also resolves when mixed with commute windows.
+    mixed = screen.resolve_windows(["am", "day_7d"])
+    assert list(mixed) == ["am", "day_7d"]
+
+
+def test_all_windows_is_a_superset_of_peak_windows():
+    """``ALL_WINDOWS`` contains every ``PEAK_WINDOWS`` entry plus the day_7d."""
+    for name, window in screen.PEAK_WINDOWS.items():
+        assert screen.ALL_WINDOWS[name] is window
+    assert "day_7d" in screen.ALL_WINDOWS
+    assert screen.ALL_WINDOWS["day_7d"] is screen.ALL_DAY_7D_WINDOW
+
+
 # ---------------------------------------------------------------------------
 # segment_screen: the SQL path *is* the pandas path
 # ---------------------------------------------------------------------------
@@ -425,3 +447,321 @@ def test_real_export_screen_matches_the_pandas_filters(tmp_path):
         assert scr.attrs["cvalue_threshold"] == 80
     finally:
         con.close()
+
+
+# ---------------------------------------------------------------------------
+# rank_corridor_groups — both directions of one road  (Item 40)
+# ---------------------------------------------------------------------------
+def _directional_ranking():
+    """A hand-built two-direction ranking, so the combining rules are checked against
+    arithmetic rather than against another function's output.
+
+    EB peaks in the AM, WB in the PM — the commute shape that makes the one-window
+    total and the daily burden different numbers.
+    """
+    rows = []
+    for corridor, direction, win, tt, ff, delay, vhd, mi in [
+        ("toy-eb", "EB", "am", 20.0, 10.0, 10.0, 1000.0, 5.0),
+        ("toy-eb", "EB", "pm", 11.0, 10.0, 1.0, 100.0, 5.0),
+        ("toy-wb", "WB", "am", 12.0, 10.0, 2.0, 200.0, 3.0),
+        ("toy-wb", "WB", "pm", 30.0, 10.0, 20.0, 2000.0, 3.0),
+    ]:
+        rows.append({
+            "corridor": corridor, "window": win, "is_peak": True,
+            "worst_peak": "am" if corridor == "toy-eb" else "pm",
+            "n_segments": 4, "n_observed": 4, "miles": mi, "missing_miles": 0.0,
+            "miles_covered_fraction": 1.0, "n_obs": 100, "min_kept_fraction": 0.9,
+            "travel_time_min": tt, "free_flow_min": ff, "delay_min": delay,
+            "tti": tt / ff, "delay_per_mile": delay / mi, "vhd": vhd,
+            "vhd_per_mile": vhd / mi, "n_ramp_weighted": 1, "n_aadt_missing": 0,
+        })
+    out = pd.DataFrame(rows)
+    out.attrs = {"delay_floor": "segment", "tz": "America/Denver"}
+    return out
+
+
+MEMBERSHIP = pd.DataFrame({
+    "corridor": ["toy-eb", "toy-wb"],
+    "corridor_group": ["toy", "toy"],
+    "direction": ["EB", "WB"],
+})
+
+
+def test_group_sums_what_is_additive_and_recomputes_what_is_not():
+    g = screen.rank_corridor_groups(_directional_ranking(), MEMBERSHIP,
+                                    names={"toy": "Toy Rd"})
+    pm = g[g["window"] == "pm"].iloc[0]
+    assert pm["group_name"] == "Toy Rd" and pm["n_entries"] == 2
+    # additive
+    assert pm["vhd"] == pytest.approx(2100.0)          # 100 + 2000
+    assert pm["delay_min"] == pytest.approx(21.0)
+    assert pm["n_segments"] == 8 and pm["n_obs"] == 200
+    # NOT additive: the two carriageways run over the same ground.
+    assert pm["miles"] == pytest.approx(4.0)           # mean(5, 3), the road's length
+    assert pm["directional_miles"] == pytest.approx(8.0)
+    # NOT averageable: recomputed from the summed components. (With equal free-flow
+    # the ratio of sums and the mean of ratios coincide, so the test that separates
+    # them is the lopsided one below — this only pins the recomputation itself.)
+    assert pm["tti"] == pytest.approx(41.0 / 20.0)     # (11+30)/(10+10)
+    assert pm["delay_per_mile"] == pytest.approx(21.0 / 8.0)
+    assert pm["vhd_per_mile"] == pytest.approx(2100.0 / 8.0)
+
+
+def test_group_never_averages_a_ratio_when_the_directions_differ_in_length():
+    """The failure mode the recomputation exists to stop: a short direction pulling
+    as hard as a long one. With equal free-flow times the two formulas coincide, so
+    here WB's free-flow is tripled — mean of the ratios 2.05, ratio of the sums
+    2.525, and only one of them is the road's travel-time index."""
+    r = _directional_ranking()
+    r.loc[(r["corridor"] == "toy-wb") & (r["window"] == "pm"),
+          ["travel_time_min", "free_flow_min"]] = [90.0, 30.0]
+    g = screen.rank_corridor_groups(r, MEMBERSHIP)
+    pm = g[g["window"] == "pm"].iloc[0]
+    mean_of_ratios = (11.0 / 10.0 + 90.0 / 30.0) / 2          # 2.05
+    ratio_of_sums = (11.0 + 90.0) / (10.0 + 30.0)             # 2.525
+    assert pm["tti"] == pytest.approx(ratio_of_sums)
+    assert pm["tti"] != pytest.approx(mean_of_ratios)
+
+
+def test_group_names_the_peak_direction_and_keeps_the_spread():
+    g = screen.rank_corridor_groups(_directional_ranking(), MEMBERSHIP)
+    pm = g[g["window"] == "pm"].iloc[0]
+    assert pm["peak_direction"] == "WB" and pm["peak_entry"] == "toy-wb"
+    assert pm["tti_min"] == pytest.approx(1.1) and pm["tti_max"] == pytest.approx(3.0)
+    assert pm["delay_min_max"] == pytest.approx(20.0)
+    assert set(pm["directions"]) == {"EB", "WB"}
+    am = g[g["window"] == "am"].iloc[0]
+    assert am["peak_direction"] == "EB"                 # the other way round in the AM
+
+
+def test_group_worst_peak_is_the_group_s_own_worst_not_either_direction_s():
+    """EB's worst peak is AM and WB's is PM; the *road's* is whichever window carries
+    more combined delay — PM (21.0) over AM (12.0)."""
+    g = screen.rank_corridor_groups(_directional_ranking(), MEMBERSHIP)
+    assert set(g["worst_peak"]) == {"pm"}
+
+
+def test_group_separates_the_one_window_total_from_the_daily_burden():
+    """The trap grouping sets: a grouped row sums the directions at the SAME clock
+    time, and a commute corridor's directions peak at different times. 2,100 in the
+    PM against 3,000 across both directional peaks."""
+    g = screen.rank_corridor_groups(_directional_ranking(), MEMBERSHIP)
+    pm = g[g["window"] == "pm"].iloc[0]
+    assert pm["vhd"] == pytest.approx(2100.0)                    # one window
+    assert pm["vhd_directional_peaks"] == pytest.approx(3000.0)  # 1000 (EB am) + 2000 (WB pm)
+    assert pm["delay_min_directional_peaks"] == pytest.approx(30.0)
+    # It is a group-level constant: the same on every window row, by construction.
+    assert g["vhd_directional_peaks"].nunique() == 1
+
+
+def test_group_accepts_the_resolve_catalogue_shape_and_entry_objects():
+    from inrix_tools import corridors
+
+    res_shape = pd.DataFrame({"id": ["toy-eb", "toy-wb"], "corridor": ["toy", "toy"],
+                              "direction": ["EB", "WB"]})
+    a = screen.rank_corridor_groups(_directional_ranking(), res_shape)
+    entries = [
+        corridors.CorridorEntry("toy-eb", "EB", (43.6, -116.3), (43.7, -116.3), "d",
+                                corridor="toy", direction="EB"),
+        corridors.CorridorEntry("toy-wb", "WB", (43.7, -116.3), (43.6, -116.3), "d",
+                                corridor="toy", direction="WB"),
+    ]
+    b = screen.rank_corridor_groups(_directional_ranking(), entries)
+    assert a["vhd"].tolist() == b["vhd"].tolist()
+    c = screen.rank_corridor_groups(_directional_ranking(),
+                                    {"toy-eb": "toy", "toy-wb": "toy"})
+    assert c["vhd"].tolist() == b["vhd"].tolist()
+
+
+def test_group_reports_an_entry_that_belongs_to_no_reporting_corridor():
+    """A ranked corridor missing from the membership is dropped from the grouped view
+    — silently losing it from the report is the failure this names."""
+    r = _directional_ranking()
+    extra = r[r["corridor"] == "toy-eb"].copy()
+    extra["corridor"] = "orphan"
+    g = screen.rank_corridor_groups(pd.concat([r, extra], ignore_index=True), MEMBERSHIP)
+    assert g.attrs["ungrouped"] == ["orphan"]
+    assert set(g["corridor_group"]) == {"toy"}
+
+
+def test_group_refuses_an_empty_or_unmatched_membership():
+    with pytest.raises(ValueError, match="No entry carries a reporting corridor"):
+        screen.rank_corridor_groups(_directional_ranking(),
+                                    pd.DataFrame({"corridor": ["toy-eb"],
+                                                  "corridor_group": [None],
+                                                  "direction": ["EB"]}))
+    with pytest.raises(ValueError, match="None of the ranked corridors"):
+        screen.rank_corridor_groups(_directional_ranking(),
+                                    {"someone-else": "elsewhere"})
+
+
+# ---------------------------------------------------------------------------
+# corridor_peak_totals / corridor_breakout  (Item 41)
+# ---------------------------------------------------------------------------
+def test_peak_totals_sum_every_direction_and_peak():
+    t = screen.corridor_peak_totals(_directional_ranking(), MEMBERSHIP,
+                                    names={"toy": "Toy Rd"})
+    assert len(t) == 1
+    r = t.iloc[0]
+    assert r["group_name"] == "Toy Rd" and tuple(r["windows"]) == ("am", "pm")
+    # every cell: EB am+pm and WB am+pm
+    assert r["delay_min"] == pytest.approx(10.0 + 1.0 + 2.0 + 20.0)
+    assert r["vhd"] == pytest.approx(1000 + 100 + 200 + 2000)
+    assert r["travel_time_min"] == pytest.approx(20 + 11 + 12 + 30)
+    assert r["tti"] == pytest.approx(73.0 / 40.0)      # summed components, recomputed
+
+
+def test_peak_totals_count_each_direction_s_miles_once_not_once_per_window():
+    """EB is 5 mi and WB 3 mi in **both** windows. The denominator is 8, not 16 — a
+    direction does not get longer because it has two peaks."""
+    t = screen.corridor_peak_totals(_directional_ranking(), MEMBERSHIP).iloc[0]
+    assert t["directional_miles"] == pytest.approx(8.0)
+    assert t["miles"] == pytest.approx(4.0)
+    assert t["miles_window_spread"] == pytest.approx(0.0)
+    assert t["delay_per_mile"] == pytest.approx(33.0 / 8.0)
+    assert t["vhd_per_mile"] == pytest.approx(3300.0 / 8.0)
+
+
+def test_peak_totals_the_three_rankings_are_three_different_questions():
+    """``vhd``, ``delay_per_mile`` and ``vhd_per_mile`` are not relabellings of each
+    other, and this fixture proves it: three corridors, three **completely different**
+    orders.
+
+    - ``long``  40 mi, 40 min of delay, 4,000 veh-hrs -> 1.0 d/mi,   100 vh/mi
+    - ``short``  1 mi, 10 min,            500 veh-hrs -> 10.0 d/mi,  500 vh/mi
+    - ``busy``  10 mi, 20 min,          8,000 veh-hrs -> 2.0 d/mi,   800 vh/mi
+
+    The bare total says ``busy > long > short`` (length and volume together); the
+    unweighted rate says ``short > busy > long`` (how bad to drive, whoever it happens
+    to); and vehicle-hours per mile says ``busy > short > long`` — volume kept, length
+    reward dropped, which is why it is the default.
+    """
+    rows = []
+    for corridor, group, mi, delay, vhd in [("long-nb", "long", 40.0, 40.0, 4000.0),
+                                            ("short-nb", "short", 1.0, 10.0, 500.0),
+                                            ("busy-nb", "busy", 10.0, 20.0, 8000.0)]:
+        rows.append({"corridor": corridor, "window": "am", "is_peak": True,
+                     "worst_peak": "am", "n_segments": 2, "n_observed": 2,
+                     "miles": mi, "missing_miles": 0.0, "miles_covered_fraction": 1.0,
+                     "n_obs": 10, "min_kept_fraction": 1.0,
+                     "travel_time_min": 10.0 + delay, "free_flow_min": 10.0,
+                     "delay_min": delay, "tti": 1.0, "delay_per_mile": delay / mi,
+                     "vhd": vhd, "vhd_per_mile": vhd / mi,
+                     "n_ramp_weighted": 0, "n_aadt_missing": 0})
+    ranking = pd.DataFrame(rows)
+    ranking.attrs = {}
+    member = pd.DataFrame({"corridor": ["long-nb", "short-nb", "busy-nb"],
+                           "corridor_group": ["long", "short", "busy"],
+                           "direction": ["NB", "NB", "NB"]})
+
+    default = screen.corridor_peak_totals(ranking, member)
+    assert default.attrs["rank_by"] == screen.DEFAULT_RANK_METRIC == "vhd_per_mile"
+    assert list(default["corridor_group"]) == ["busy", "short", "long"]
+    assert default.iloc[0]["vhd_per_mile"] == pytest.approx(800.0)
+
+    by_total = screen.corridor_peak_totals(ranking, member, rank_by="vhd")
+    assert list(by_total["corridor_group"]) == ["busy", "long", "short"]
+    by_rate = screen.corridor_peak_totals(ranking, member, rank_by="delay_per_mile")
+    assert list(by_rate["corridor_group"]) == ["short", "busy", "long"]
+
+    # All three orderings travel with the frame whichever one was chosen, so the
+    # difference between them is visible rather than implied.
+    ranks = default.set_index("corridor_group")
+    assert ranks.loc["short", "rank_vhd"] == 3
+    assert ranks.loc["short", "rank_delay_per_mile"] == 1
+    assert ranks.loc["short", "rank_vhd_per_mile"] == 2
+
+    with pytest.raises(ValueError, match="rank_by must be one of"):
+        screen.corridor_peak_totals(ranking, member, rank_by="miles")
+
+
+def test_peak_totals_say_when_the_rank_metric_is_null_throughout():
+    """Without an AADT join every volume-weighted metric is NaN, and a frame of <NA>
+    ranks is catalogue order wearing a ranking's clothes. The caller is told."""
+    r = _directional_ranking()
+    r["vhd"] = float("nan")
+    r["vhd_per_mile"] = float("nan")
+    t = screen.corridor_peak_totals(r, MEMBERSHIP)
+    assert t.attrs["rank_metric_all_null"] is True
+    assert t["rank"].isna().all()
+    assert screen.corridor_peak_totals(
+        r, MEMBERSHIP, rank_by="delay_per_mile").attrs["rank_metric_all_null"] is False
+
+
+def test_peak_totals_flag_a_one_way_couplet_without_changing_its_arithmetic():
+    plain = screen.corridor_peak_totals(_directional_ranking(), MEMBERSHIP).iloc[0]
+    flagged = screen.corridor_peak_totals(_directional_ranking(), MEMBERSHIP,
+                                          couplets=["toy"]).iloc[0]
+    assert not plain["one_way_couplet"] and flagged["one_way_couplet"]
+    for col in ("delay_min", "vhd", "miles", "directional_miles", "delay_per_mile", "tti"):
+        assert flagged[col] == pytest.approx(plain[col])
+
+
+def test_peak_totals_use_only_peak_windows_by_default():
+    r = _directional_ranking()
+    off = r[r["window"] == "am"].copy()
+    off["window"], off["is_peak"], off["delay_min"], off["vhd"] = "night", False, 99.0, 9999.0
+    both = pd.concat([r, off], ignore_index=True)
+    assert screen.corridor_peak_totals(both, MEMBERSHIP).iloc[0]["delay_min"] \
+        == pytest.approx(33.0)
+    named = screen.corridor_peak_totals(both, MEMBERSHIP, windows=["night"])
+    assert named.iloc[0]["delay_min"] == pytest.approx(198.0)   # the two night rows
+    assert tuple(named.attrs["windows"]) == ("night",)
+
+
+def test_breakout_keeps_every_direction_and_peak_as_its_own_row():
+    t = screen.corridor_peak_totals(_directional_ranking(), MEMBERSHIP)
+    b = screen.corridor_breakout(_directional_ranking(), MEMBERSHIP,
+                                 order=t["corridor_group"].tolist())
+    assert list(b.index.names) == ["corridor_group", "direction", "window"]
+    assert len(b) == 4
+    assert b.loc[("toy", "WB", "pm"), "delay_min"] == pytest.approx(20.0)
+    assert b.loc[("toy", "EB", "am"), "vhd"] == pytest.approx(1000.0)
+    # The cells add up to the total they sit under — the table can be checked by eye.
+    assert b["delay_min"].sum() == pytest.approx(t.iloc[0]["delay_min"])
+    assert b["vhd"].sum() == pytest.approx(t.iloc[0]["vhd"])
+
+
+def test_breakout_follows_the_ranked_order_it_is_given():
+    r = _directional_ranking()
+    extra = r.copy()
+    extra["corridor"] = extra["corridor"].str.replace("toy", "zed")
+    member = pd.concat([MEMBERSHIP, pd.DataFrame({
+        "corridor": ["zed-eb", "zed-wb"], "corridor_group": ["zed", "zed"],
+        "direction": ["EB", "WB"]})], ignore_index=True)
+    both = pd.concat([r, extra], ignore_index=True)
+    b = screen.corridor_breakout(both, member, order=["zed", "toy"])
+    assert list(dict.fromkeys(b.index.get_level_values(0))) == ["zed", "toy"]
+
+
+def test_baseline_screen_carries_quantiles_and_the_realtime_share(area):
+    """Item 50: the weekday travel-time percentile the fallback baseline reads, and
+    the ``Pct Score30`` share, per window."""
+    import numpy as np
+
+    con, key = area
+    scr = screen.segment_screen(con, key, windows=screen.BASELINE_WINDOWS,
+                                cvalue_threshold=None, quantiles=(0.15,))
+    day = [_travel_time(step / 4.0) for step in range(96)]
+    assert scr["weekday_tt_p15"].to_numpy() == pytest.approx(np.quantile(day, 0.15))
+    assert scr["night_tt_p15"].eq(TT_NIGHT).all()
+    # The fixture writes Pct Score30 = 100 on every row.
+    assert scr["realtime_share"].eq(1.0).all()
+    assert scr["pm_realtime_share"].eq(1.0).all()
+    assert scr.attrs["quantiles"] == [0.15]
+
+
+def test_quantiles_outside_zero_one_are_rejected(area):
+    con, key = area
+    with pytest.raises(ValueError):
+        screen.segment_screen(con, key, quantiles=(15,))
+
+
+def test_monthly_screen_splits_by_local_month(area):
+    con, key = area
+    mon = screen.segment_monthly_screen(con, key, cvalue_threshold=None)
+    # The fixture week lies inside March 2026: one month per segment.
+    assert set(mon["month"]) == {"2026-03"}
+    assert len(mon) == mon["Segment ID"].nunique()
+    assert mon["pm_travel_time"].eq(TT_PM).all()
+    assert mon["am_travel_time"].eq(TT_AM).all()

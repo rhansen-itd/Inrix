@@ -107,6 +107,87 @@ guard (an explicit `palette=` still cycles), `folder_by=` groups placemarks into
 `<Folder>`s, and `name_col` defaults to the `names.apply_names` friendly name. The batch
 (Items 34–37) is **complete**. Everything else is in **Future** (needs a planning pass).
 
+**Items 38–39 are a new batch** scoped 2026-09-18, closing out the district screen that
+Items 34–37 built but never ran. Item 36 resolved **13 of 20** D3 corridors and recorded
+the other 7 as findings about the XD network file — correctly, because the mechanism it
+replaced bridged breaks by sorting a bounding box geographically. But the findings
+include **I-184**, the whole west-side commute into downtown Boise, and a district screen
+that cannot rank it is not finished. Re-measured against the D3 subset, six of the seven
+are repairable **without inventing any order**: scoping a repair to XD's own carriageway
+key (`XDGroup`) plus 25 m endpoint contact fills 6,119 null links and overrides 99 that
+point out of their own carriageway, and takes the catalogue to **20/20** — while the
+obvious rule (`RoadNumber` + bearing) walks I-184 into a 196-segment, 110-mile runaway
+and is rejected on that measurement. The seventh, `front-wb`, is not a topology defect at
+all: west of S 13th St all but one lane of Front St becomes I-184 and ITD's interest
+transfers to the freeway, so the extent shortens there for a **roadway** reason.
+**38** repairs the topology as an auditable committed patch table, opt-in at the walk;
+**39** adds the runner that composes `segment_screen` → `join_aadt` → `resolve_catalogue`
+→ `rank_corridors` and produces District 3's actual rankings. Run 38 first — 39 ranks 13
+corridors and silently omits I-184 until it lands. **Item 38 (carriageway-scoped link
+repair) is done** (Session 47): `scripts/d3_link_repairs.csv` carries 6,090 fills and 66
+overrides derived by `corridors.repair_links`, the catalogue resolves **20 of 20** using
+14 of them, and the rule needed two guards that only running it revealed — a rotary that
+reverses a corridor without any junction turning more than 60 degrees, and a link that
+leaves the subset rather than the road. **Item 39 (the district screening runner) is
+done** (Session 48): `scripts/run_district_screening.py` composes the pipeline end to
+end and District 3's rankings exist — **I-84 WB 25,677 veh-hrs** and **EB 19,818** an
+order of magnitude clear of everything else, I-184 WB ranking fifth at 2,700 having been
+unrankable before Item 38, and SH-45 behaving as the rural control at TTI 1.07. The
+`ingest_export_streaming` row-count finding was settled there too, and it was **not** a
+counter bug. **Item 40 (reporting corridors) is done** (Session 49), added after the
+owner clarified that *for reporting purposes one corridor is both directions*: the
+catalogue's 20 directional entries now declare the **10 roads** they group into,
+`screen.rank_corridor_groups` combines them without averaging a ratio or summing the two
+carriageways' miles, and the grouped view re-orders the district — Eagle Rd to #2, I-184
+to #4. **Item 41 (the reporting table) is done** (Session 50): every direction × peak is
+its own row beneath a corridor total summed over both, and the ranking moved to
+**vehicle-hours of delay per mile** — volume-weighted but not length-rewarded, on which
+I-84 leads at 1,539 per mile while the downtown couplet holds 2nd despite ranking 9th of
+10 on the bare total. The batch (Items 38–41) is **complete**.
+
+**Items 42–44 are a new batch** scoped 2026-09-18, out of the owner's reaction to the
+first district ranking: the corridors they expected to see were not in it. The cause is
+**not** a gap in the data — `out/highways/` already inventories D3's state system at 3,947
+segment ids, the export observed 3,905 of them, and **nothing was observed that the list
+did not ask for**. (An earlier pass of this session claimed Karcher Rd and 354 miles of
+arterial were missing; both were wrong — Karcher is 92 of 92 present, and the arterials
+are off-system county roads, correctly excluded. What looked like a 99-segment gap was
+resolved with the owner and is **7**: the SH-55 Eagle Rd segments were deleted on purpose
+as ACHD, the I-84B Caldwell corridor was excluded on purpose as relinquished to the city,
+and the only thing missed in excluding it is that **SH-19 between I-84 and Simplot Blvd is
+still carried in the data as Centennial Way with `RoadNumber` 84** and went out with it.)
+The cause is the **catalogue**: it covers 9.4% of the
+store, roughly 1,190 miles of numbered state highway — US-95, SH-21, SH-51, SH-78, SH-52
+and more — carry no entry at all, and the extents that do exist are drawn from junctions
+and city limits rather than from the congestion. SH-45 is one 17.4-mile corridor of which
+only the 4.4-mile 12th Ave section through Nampa is urban, so its congestion is diluted by
+three times its length of rural highway. The owner's requirement is that extents be
+extracted as contiguous-ish runs of *recurring* congestion, tidied to a junction only when
+the data already lands near one. So: **42** reconciles the id files against the export and
+fixes the AADT join's missing numbered-over-`OH` preference (without which an on-system
+classification flips with the candidate set); **43** extracts corridor candidates from
+recurring congestion, with a gap tolerance and endpoint snapping; **44** rebuilds the
+catalogue from them. **Item 42 is done** (Session 52), with one correction to its own
+premise: preferring a numbered record ahead of distance or coverage is wrong (it hands a
+city street at an interchange the interstate's volume), and the instability was that the
+join's **last comparison was the record's row position in the layer** — so route class
+went in as the last decision, under coverage, and the join is now order-independent.
+Reading on-system-ness off the volume join is what made the old candidate list junk;
+`aadt.classify_on_system` asks it separately and takes 764 segments / 223 mi down to
+**26 / 8.77 mi**, of which the owner's seven confirmed SH-19 segments are found
+independently and **W/E State St in Eagle (11 segs, 4.68 mi) is the one genuinely new
+question**. No re-download is warranted: the export is split by segment, so the gap can
+arrive as a supplemental part. **Nothing here needs new ranking machinery** — Items 38–41 made
+adding a corridor a catalogue edit, and that is what these items feed. **Item 43 (corridors
+extracted from recurring congestion) is done** (Session 54): `screen.segment_recurrence`
+reduces per-day TTI in DuckDB and computes weekday recurrence share, distinguishing
+construction fortnights from daily queues with the same mean; `screen.extract_congestion_runs`
+walks the topology without sorting, bridging gaps within tolerance and respecting
+`XDGroup` boundaries; `screen.tidy_run_endpoints` snaps endpoints within tolerance to
+state-route junctions with distance reported; `screen.pair_directions` checks opposing
+carriageways; and `screen.emit_candidates` produces catalogue candidates with description
+omitted to mandate human review. **Item 44 is the next open item.**
+
 ---
 
 ## Completed (build record in DESIGN_HISTORY.md)
@@ -1215,6 +1296,1452 @@ DESIGN_HISTORY Session 38."
 
 ---
 
+## 38 — The XD topology, repaired as data: carriageway-scoped link repair ✅ (Session 47)
+
+**Target: Opus.** Pure core (`corridors.py`) plus a committed patch table and a
+catalogue edit. No GUI. **Item 39 depends on this** — the district ranking is wrong or
+absent for 7 of 20 corridors until it lands.
+
+Item 36 resolved 13 of 20 D3 corridors and recorded the other 7 as findings, correctly:
+the mechanism it replaced bridged breaks by **sorting the bounding box geographically**,
+which put the Garrity Blvd frontage road in series with I-84. That ban is on *inventing
+order the network does not assert*. It is not a ban on **correcting a link the network
+asserts wrongly**, and the 7 findings are almost entirely that. I-184 — the whole
+west-side commute into downtown Boise — cannot be ranked at all, which is not an
+acceptable resting place for a district screen.
+
+The repair rule is **XD's own carriageway grouping**, not proximity: a candidate must
+touch this segment's end within 25 m, stay inside its `XDGroup`, carry the same cardinal
+`Bearing`, turn no more than 90° on the *local* geometry at the junction, and be the only
+candidate that qualifies. On the D3 subset (16,105 segments; 8,499 = **52.8%** null
+`NextXDSegI`) that is **6,090 fills** (267 ambiguous, left null) and **66 overrides**
+(**zero** ambiguous). Fills alone take the catalogue 13/20 → **17/20**; fills + overrides
+to **20/20**, with I-184 back at **EB 10 segments / 4.717 mi, WB 10 / 4.629 mi**.
+
+**Why `XDGroup` and not `RoadNumber` + bearing** — the obvious rule, measured and
+rejected: at the Flying Y the I-184 EB mainline's end point is **8.1 m** from the on-ramp
+named `1A` (FRC 4, 1 lane) and **4.7 m** from the true mainline continuation. Road number
+and bearing agree with both; distance prefers the ramp. Under that rule `i184-eb` walks
+away into a **196-segment, 110.6-mile** chain. A repair rule that can do that is not a
+repair rule. Scope:
+
+- [x] **`corridors.repair_links(network, *, radius_m=25.0, max_bearing_delta_deg=90.0,
+      require_same_bearing=True, kinds=("fill","override"))`** — pure, returns the patch
+      **as data**: `REPAIR_COLUMNS` = `segment, old_next, new_next, kind, gap_m,
+      bearing_delta_deg, xdgroup, road_name, lanes`, with `attrs` carrying the rule
+      parameters, the counts per kind and the **ambiguous** counts. `apply_link_repairs`
+      (idempotent, subset-safe) returns the patched network; `load_link_repairs` reads a
+      committed table back with its `# key: value` header as `attrs`. Nothing is repaired
+      implicitly and nothing raises: an ambiguous break stays a break.
+- [x] **Two guards the scoped rule turned out to need**, both found by running it rather
+      than by reasoning about it, and both now in DATA_FORMAT: **(a)** a same-`XDGroup`
+      continuation can still reverse the direction of travel — at the south end of Eagle
+      Rd a **rotary** (`Bearing` `O`, six segments of 8–20 m) joins the two carriageways
+      and *no junction in it turns more than 60°*, so the angle guard cannot see it;
+      repaired through, `sh55-eagle-nb` walked south, round the rotary and back north —
+      39 segments / 10.75 mi against the corridor's 16 / 6.64. `require_same_bearing`
+      excludes it. **(b)** a link that leaves the **subset** is not a defect but the edge
+      of the extract (96 in D3) and is left alone, which `walk_chain` already reports as
+      `off_network`.
+- [x] **Opt-in at the walk.** `build_chain` / `resolve_catalogue` / `chain_between_segments`
+      take `repairs=` (default `None`). `ChainResult` carries `repaired_links` — the links
+      **it actually traversed** — so `summary()` and the `resolve_catalogue` row report
+      `n_repaired_links` (added to `CATALOGUE_COLUMNS`), and `attrs` gains
+      `repairs_applied` / `n_repairs`. The whole 20-corridor catalogue uses **14** of the
+      table's 6,156 rows, which is the honest measure of how much it leans on them.
+- [x] **Froze D3's table to `scripts/d3_link_repairs.csv`** (6,156 rows, 506 KB) with the
+      rule, the counts and the meaning of each `kind` in a comment header, so a screening
+      run is reproducible and the **66 overrides are reviewable by a human**. A test
+      regenerates it from the network and asserts the committed rows come back.
+- [x] **Decision: the override class ships on by default** (`kinds=(FILL, OVERRIDE)`),
+      recorded here and in DESIGN_HISTORY. The evidence: all 66 were read, and in every
+      case the replaced target is a cross street, a ramp or a parallel facility while the
+      replacement is XD's own same-carriageway segment (`I-184 E` → off-ramp `3`;
+      `I-84 W` → ramp `27`; `S Cloverdale Rd` → `W Kuna Mora Rd`); ambiguous overrides are
+      **zero**, so none of the 66 is a coin-flip; and exactly one already-accepted
+      corridor moves (below). `kinds=(FILL,)` remains available as the setting that never
+      contradicts the network.
+- [x] **Explained the one accepted corridor that moves.** Under fills alone all 13
+      already-accepted entries are unchanged (`i84-eb` 27 segments / 15.123 mi, SH-45 40 /
+      17.429). Adding overrides changes exactly one: `sh44-wb-boise-eagle` 11 segments /
+      4.1064 mi → **12 / 4.1441**. The responsible override is `484348318` — `N Glenwood
+      St`, `RoadNumber` **44**, 2.705 lanes, FRC 3 — whose `NextXDSegI` pointed at
+      `440882032` `N Gary Ln`, **1.113 lanes**, FRC 4, no route number. The new chain is
+      the better one: it is the SH-44 mainline block the old one dropped.
+- [x] **Reconciled SH-16 against its own description.** Repaired, `sh16-nb` and `sh16-sb`
+      resolve at **22 segments / 12.553 chain mi / 11.947 mi in extent** each, share
+      **zero** segments and carry clean `N`/`S` bearings — so the coincident-carriageway
+      caveat in the entry text did not apply and has been corrected. The description's
+      "12.9 mi north of the break walks cleanly" was the wrong number: it came from an
+      **unbounded** walk, which runs **41.6 mi** past Emmett to Payette on SH-52. The
+      resolved extent checks out independently — sinuosity 1.053 against the 11.345 mi
+      straight line, XD `Miles` and the projected geometry agreeing to 0.005 mi.
+- [x] **`front-wb`: extent shortened at S 13th St, on a roadway reason.** Not a topology
+      defect — the chain reached its target — and not a general case worth generic code.
+      West of 13th all but one lane of Front St becomes I-184; the remnant keeps the name
+      and functions as a frontage road, and ITD's interest transfers to the freeway there
+      because that is the state-owned facility. The XD attributes say the same: the **9**
+      members now in the entry carry `RoadNumber = 20` at **5.0 lanes** (1.072 chain mi),
+      the **3** blocks beyond carry a null `RoadNumber` at **1.0 lane**. The description
+      states the jurisdictional reason **first** and says explicitly that the export's
+      73.1% coverage corroborates the boundary rather than setting it — an extent defined
+      by where the data stops is what Item 36 refused for SH-16. `end_latlon` is
+      `[43.61698, -116.21064]`, 37 ft short of the junction, so the snap lands on the last
+      five-lane block instead of the one-lane remnant across it.
+- [x] **Rewrote the six repaired entries' descriptions** (`i184-eb`, `i184-wb`,
+      `sh44-eb-star-eagle`, `sh44-wb-eagle-star`, `sh16-nb`, `sh16-sb`) and the file's
+      `_note`: the FINDING paragraphs are now history rather than status — what the break
+      *was* is kept, because it is a real fact about this XD vintage, and each entry states
+      its resolved chain and how many repaired links it rests on.
+- [x] pytest (`tests/test_corridors.py`, **+14**, 64 in the file; full suite **499
+      passed, 2 skipped**, was 485/2): fill, ambiguous fill
+      (stays a break), override with its `old_next`, the **ramp trap** (a deliberately
+      *nearer* out-of-group candidate loses to a farther in-group one), the **rotary**
+      (same group, different `Bearing` → refused, and `require_same_bearing=False` accepts
+      it), the anti-parallel cul-de-sac pair, the off-subset pointer, an unknown `kind`
+      raising, `apply_link_repairs` idempotent and subset-safe, `repaired_links` credited
+      only for links a chain actually traversed, the `resolve_catalogue` accounting, and
+      the header round-trip. Plus two real-network tests: the committed table resolves the
+      D3 catalogue **20/20** with `i84-eb` untouched at 27 segments and I-184 at 10, and
+      regenerating the table from the network reproduces the committed rows.
+- [x] DATA_FORMAT.md: a new `XDGroup` subsection — the carriageway key, the two repair
+      classes with their D3 counts, the four measured reasons the rule is shaped this way,
+      and what separates a repair from the geographic sort Item 36 banned.
+- [x] DESIGN_HISTORY entry (Session 47).
+
+*Suggested prompt (done):* "Do Item 38 of ROADMAP.md — repair the XD `NextXDSegI` topology
+as an auditable carriageway-scoped patch table, opt-in at the walk, and resolve the D3
+catalogue 20/20."
+
+---
+
+## 39 — The district screening runner: D3's actual rankings ✅ (Session 48)
+
+**Target: Opus.** A thin shell in `scripts/` over the existing core plus the run it
+produces. **Depends on Item 38** — running it before that ranks 13 corridors and silently
+omits I-184 and both halves of west State St.
+
+Items 34–37 built every piece of the district screen and Session 41 deliberately stopped
+short of running it ("producing the district's actual rankings needs the 2.1 GB store
+ingested and belongs with the display work"). Nothing in the repo ran the pipeline end to
+end: `screen.segment_screen`, `aadt.join_aadt`, `corridors.resolve_catalogue` and
+`screen.rank_corridors` were each tested in isolation and wired together only inside
+tests. The composition is where the interesting failures live — and two of them were
+waiting there. Scope:
+
+- [x] **`scripts/run_district_screening.py`**, modelled on
+      `scripts/build_validation_report.py` — a **thin shell only**: no computation that
+      is not already in `src/inrix_tools/`. CLI over the choices a run actually has:
+      `--db`, `--area` (key *or* name; required only when the store holds several),
+      `--bin-minutes`, `--catalogue`, `--repairs` / `--no-repairs`, `--network` /
+      `--network-cache`, `--aadt` / `--aadt-cache` / `--aadt-year`,
+      `--cvalue-threshold` (default 80), `--windows`, `--date-start` / `--date-end`,
+      `--tz`, `--min-coverage`, `--out-dir`, `--no-kml`, `--top`.
+- [x] **The pipeline:** `store.connect` → `segment_screen(con, area_key,
+      cvalue_threshold=80)` → `aadt.load_aadt` + `join_aadt` (mainline-preferred, Item 34)
+      → `resolve_catalogue(..., observed=…, repairs=…)` → `rank_corridors`.
+- [x] **Outputs:** `corridor_rankings.csv`, `corridor_resolution.csv` (with
+      `n_repaired_links` and the coverage columns), `corridors.kml` and
+      `screening_provenance.json`. The KML is the first caller to exceed Item 37's
+      12-hue guard — 20 corridors — so it passes an explicit 20-colour palette and
+      `folder_by="corridor"`, exactly the case that guard exists to force.
+- [x] **Provenance in the output, not just in the log** — area, bin, dates, CValue
+      threshold, windows, row and segment counts, catalogue, the repair table *with its
+      rule and how many of its rows were used*, and the AADT join policy and caveat. It
+      is written as JSON **and** as a `#` header on both CSVs, so a ranking read off disk
+      still states its basis.
+- [x] **Refuses rather than ranks a corridor that did not resolve.** Findings are listed
+      in their own section with `stop_reason` and coverage; they never appear in the
+      ranking with blank metrics.
+- [x] **Settled the `ingest_export_streaming` row-count finding — and it was not a
+      counter bug.** `io._discover_parts` expands **any** `..._part_N.zip` into all its
+      siblings, so the call was never handed one part: a single call on `part_1.zip`
+      ingests all three and `n_rows_added = 91,054,384` is the correct total. That also
+      explains the anomaly the finding could not — the store reached its complete state
+      "while part 2 was still going" because the *first* call was itself looping over the
+      three parts. `d3_store.duckdb`'s `_ingests` table confirms it: **one** row. The fix
+      is to the record, not the number — `ingest_export` / `ingest_export_streaming` now
+      return `n_parts` / `parts`, log the resolved member list instead of the single
+      argument, and say so in their docstrings. DESIGN_HISTORY Session 40's figures stand
+      as whole-export figures.
+- [x] **Ran it on the D3 store: all 20 corridors ranked, no findings.** 3,905 segments,
+      **54,556,187 of 91,054,384** rows surviving `CValue > 80` (**59.9%**, reproducing
+      Sessions 40–41). Worst by vehicle-hours of delay: **I-84 WB 25,677** (PM, TTI 1.88)
+      and **I-84 EB 19,818** (AM, TTI 1.69), an order of magnitude above everything else;
+      then Eagle Rd NB 2,840, Chinden WB 2,700 and **I-184 WB 2,700** — the corridor that
+      could not be ranked at all before Item 38. SH-45, carried as the rural control,
+      lands near the bottom at TTI 1.07/1.06. Full table in DESIGN_HISTORY Session 48.
+- [x] pytest (`tests/test_run_district_screening.py`, **+8**): a miniature district
+      (export → ingest → network → catalogue → repair table) run end to end; the resolved
+      corridor ranked under its id with its name beside it and `n_repaired_links = 1`;
+      the unresolvable entry reported and **not** ranked; `--no-repairs` turning the run
+      into a refusal rather than a partial ranking; the provenance present in both the
+      JSON and the CSV header; `--no-kml` skipping only the KML; window and area
+      resolution; and a missing repair table refused rather than ignored. Plus **+2**
+      in `tests/test_store.py` for the multi-part ingest. **Full suite: 509 passed, 2
+      skipped** (was 499/2 at the Item 38 checkpoint).
+- [x] README run steps; DESIGN_HISTORY entry (Session 48); check these boxes off.
+
+*Suggested prompt (done):* "Do Item 39 of ROADMAP.md — add the district screening runner
+and produce D3's actual corridor rankings, per DESIGN_HISTORY Session 41."
+
+---
+
+## 40 — One corridor is both directions: reporting corridors ✅ (Session 49)
+
+**Target: Opus.** Pure core (`screen.py`, `corridors.py`) plus a catalogue schema
+addition and a second table in the runner. **Follows Item 39** — it changes how the
+ranking is *read*, not how any number is computed.
+
+Item 39 ranked the 20 D3 catalogue entries and the owner named the gap: **for reporting
+purposes one corridor is both directions.** `i84-eb` and `i84-wb` competed in that table
+as if they were different roads, which is not how a district programmes work — and the
+peak and direction breakout still has to survive the grouping, because which direction
+and which peak is the next question every time. Scope:
+
+- [x] **The catalogue gains the second unit.** An entry keeps being one **direction** of
+      one extent (the unit the `NextXDSegI` walk and the AADT join both work in) and
+      gains `corridor` + `direction`; a new `reporting_corridors` block declares the
+      roads, with the same `{id, name, description}` shape and the same validation the
+      entries get. D3's **20 entries group into 10 roads**. `parse_reporting_corridors`
+      cross-checks both ways: a group an entry names must be declared, and a group
+      declared with no entries raises — a corridor declared and unused is one silently
+      missing from the report. `resolve_catalogue` carries `corridor` / `direction` into
+      the resolution table. A catalogue that declares no groups is still valid and ranks
+      per direction exactly as before.
+- [x] **`screen.rank_corridor_groups(ranking, membership, names=)`** — one row per road ×
+      window. The work is that **the metrics do not combine the same way**: `vhd`,
+      `n_obs`, `n_segments` and the trip components are **summed**; `miles` is the
+      **mean** of the directions because the carriageways run over the same ground and
+      summing would double-count the corridor's length — the identical error as summing a
+      frontage road in series with its freeway — with the sum reported separately as
+      `directional_miles`; and `tti` / `delay_per_mile` / `vhd_per_mile` are
+      **recomputed from the summed components**, never averaged, because a ratio of sums
+      is not the mean of the ratios.
+- [x] **The direction breakout survives the grouping**: `peak_direction` / `peak_entry`
+      (by `vhd`, falling back to `delay_min` when no AADT was joined), `tti_min` /
+      `tti_max`, `delay_min_max`, and `directions`. `worst_peak` is the **road's** worst
+      peak — the window carrying the most *combined* delay — which is not always either
+      direction's own. The per-direction rows are untouched: this is a second view.
+- [x] **Named the trap grouping sets, and gave it a column.** A grouped row sums its
+      directions **at the same clock time**, and a commute corridor's directions peak at
+      different times. I-84 WB carries 25,677 veh-hrs in the PM and EB 19,818 in the AM,
+      but the grouped PM row reads **26,260** because EB at 5pm is nearly empty — right
+      for "how bad at its worst hour", wrong for "how much delay in a day". So the frame
+      carries `vhd_directional_peaks` / `delay_min_directional_peaks`: each direction at
+      **its own** worst peak, summed (**45,495** for I-84), a group-level constant that
+      deliberately spans two windows. D3 splits **five and five** — I-84, Chinden, I-184,
+      State St west and SH-69 have directions that peak in different windows; Eagle Rd,
+      State St east, the couplet, SH-45 and SH-16 do not, and for those the two numbers
+      are identical.
+- [x] **The runner writes `reporting_corridor_rankings.csv`** beside the directional one
+      and prints the road view as the headline with the per-direction table beneath, both
+      with the combining rules stated under the table. An ungrouped catalogue skips it
+      entirely. `front-wb`'s *name* was also corrected to its Item 38 extent (it still
+      said "to the Connector terminus").
+- [x] **Re-ran D3 — grouping re-orders the district**, which is the point: `sh55-eagle`
+      rises to **#2 (5,059 veh-hrs)** where its directions ranked 3rd and 6th separately,
+      and `i184` falls to **#4 (2,738)** because EB is light. `boise-couplet` carries the
+      worst delay per mile (0.94). `sh45` stays flat at TTI 1.06 — the rural control
+      holding — though it outranks `sh16` on veh-hrs, which is length and volume, not
+      congestion, and is exactly why TTI and delay/mile sit beside it.
+- [x] pytest (**+19**): `test_screen.py` +8 on the combining rules against hand-computed
+      arithmetic — the additive set, the mean-not-sum of miles, a **lopsided-length**
+      case where the ratio of sums (2.525) and the mean of ratios (2.05) differ, the peak
+      direction flipping by window, the group's own `worst_peak`, the one-window vs
+      daily-burden split, the three accepted membership shapes, an ungrouped entry
+      reported rather than dropped silently, and the two refusals. `test_corridors.py` +9
+      on the schema (both fields required together, two entries claiming one direction,
+      undeclared and unused groups, field validation, the resolution columns, and the
+      real D3 catalogue grouping 20 → 10 as 2 distinct directions each).
+      `test_run_district_screening.py` +2. **Full suite: 528 passed, 2 skipped** (was 509/2 at the Item 39 checkpoint).
+- [x] DATA_FORMAT.md (the two units and the combining table); README; DESIGN_HISTORY
+      Session 49; check these boxes off.
+
+*Suggested prompt (done):* "Do Item 40 of ROADMAP.md — group the directional catalogue
+entries into reporting corridors, keeping the peak and direction breakout."
+
+---
+
+## 41 — The reporting table: every direction × peak visible, ranked per mile ✅ (Session 50)
+
+**Target: Opus.** Pure core (`screen.py`) plus the runner's printed table and two more
+CSVs. **Follows Item 40.**
+
+Item 40 grouped the directions into roads but still reported each road at a **single**
+window, with the other direction and the other peak collapsed into a `peak_direction`
+label and a TTI range. The owner asked for the reporting shape directly: every direction
+and peak as **its own row**, the corridor's final ranking as a **sum over peaks and
+directions**, and and the ranking taken on a **per-mile rate** rather than a total, so a long
+corridor cannot out-rank a short saturated one on length alone. (The rate was first
+built as `delay_per_mile`; the owner corrected it mid-item to **vehicle-hours per
+mile**, which keeps the volume weighting — see the ranking bullet.) Scope:
+
+- [x] **`screen.corridor_peak_totals(ranking, membership, *, names, windows, rank_by,
+      couplets)`** — one row per reporting corridor, summed over every
+      `direction × peak window` cell (D3: four cells per road, AM and PM × two
+      directions). Delay, travel time, free-flow and `vhd` add, because the two peaks of
+      one direction are two separate trips over the same pavement.
+- [x] **The mileage denominator is counted once per direction, not once per cell** — a
+      direction does not get longer because it has two peaks. Verified first rather than
+      assumed: observed miles have **zero spread** across AM and PM for all 20 D3
+      entries, and `miles_window_spread` reports it per corridor so a future export that
+      breaks that assumption is visible rather than silently halving every rate.
+- [x] **`screen.corridor_breakout`** — the same cells unaggregated, a
+      `(corridor_group, direction, window)` MultiIndex, ordered by the ranked order it is
+      handed. A total that cannot be opened up is a number taken on trust; a test asserts
+      the cells sum to the total they sit under.
+- [x] **Ranked on `vhd_per_mile` — vehicle-hours of delay per mile** (the owner's
+      correction mid-item, after `delay_per_mile` was tried first). The three candidates
+      are three different questions and D3 orders them three different ways: `vhd` asks
+      how much delay a road causes and rewards **length and volume**; `delay_per_mile`
+      asks how bad it is to drive and ignores **how many people it happens to**;
+      `vhd_per_mile` keeps the volume weighting and drops the length reward, which is
+      what a screening rank wants. Every metric's rank is returned beside the chosen one
+      and `--rank-by` selects any of them, so the gaps are visible rather than decided
+      silently. D3: **I-84 1st at 1,539 veh-hrs per mile** (nearly 3× the next), the
+      **downtown couplet 2nd at 554** — a corridor that is 1st on the unweighted rate
+      and **9th of 10** on the bare total — and SH-69 8th where the bare total puts it
+      5th, which is 16.5 directional miles doing that work.
+- [x] **Both `vhd` metrics are null without an AADT join**, and a table of `<NA>` ranks
+      is catalogue order wearing a ranking's clothes. `attrs['rank_metric_all_null']`
+      reports it and the runner falls back to `delay_per_mile`, printing a note.
+- [x] **The one-way couplet caveat, considered and recorded.** `one_way_couplet` is an
+      optional flag on the reporting corridor (D3 has exactly one, and the catalogue says
+      so). It **changes no arithmetic** — every per-mile rate divides by the miles a round
+      trip covers, here as everywhere, and a test asserts the flagged and unflagged
+      totals are identical — but it changes how `directional_miles` *reads*: 2.22 mi of
+      distinct centre-line pavement for the couplet, where I-84's 30.02 is 15.01 mi of
+      ground driven twice. The flag exists so the column is not misread as centre-line
+      mileage for the freeway.
+- [x] **The printed table is the reporting table**: every corridor (no truncation), its
+      total row ranked, its full name, then each of its direction × peak cells beneath,
+      with the combining rules and the rate-vs-total gap explained under it. The
+      single-worst-window view from Item 40 follows it. `corridor_peak_totals.csv` and
+      `corridor_breakout.csv` join the outputs; the provenance records `ranked_on`,
+      `totalled_windows` and the couplets.
+- [x] **Caught a regression in the rewrite**: with the per-direction table replaced by
+      the breakout, an **ungrouped** catalogue would have printed nothing but its
+      findings. The per-direction table is now the fallback when no reporting corridors
+      are declared, with a test that pins it.
+- [x] pytest (**+12**): `test_screen.py` +8 — the cell sum; miles counted once per
+      direction; **a three-corridor fixture on which the three rankings give three
+      completely different orders** (`long` 40 mi / 4,000 vh, `short` 1 mi / 500 vh,
+      `busy` 10 mi / 8,000 vh → total `busy>long>short`, rate `short>busy>long`,
+      vh/mi `busy>short>long`), which is what makes them worth distinguishing; the
+      all-null rank metric; the couplet flag changing nothing; peak-window selection and
+      an explicit `windows=`; the breakout's index and its cells summing to the total;
+      and the ranked ordering. `test_run_district_screening.py` +4, including the
+      fallback firing and announcing itself when no AADT is joined. **Full suite: 540
+      passed, 2 skipped** (was 528/2).
+- [x] DATA_FORMAT.md, README, DESIGN_HISTORY Session 50; check these boxes off.
+
+*Suggested prompt (done):* "Do Item 41 of ROADMAP.md — the reporting table, every
+direction and peak as its own row under a corridor total ranked on a per-mile rate."
+
+---
+
+## 42 — Reconcile the export's segment set against the corridor inventory ✅ (Session 52)
+
+**Target: Sonnet-eligible** on the reconciliation; **Opus** for the `join_aadt` preference
+fix. Small. Any re-download has a long external lead time, so settle the list first.
+
+**The prior inventory is sound, and an earlier pass of this session said otherwise —
+wrongly.** `out/highways/` already holds a per-corridor segment-id list for every D3 state
+route, and `District_3_ALL_Highways.txt` collects **3,947** ids. Against the export's
+3,905 observed segments:
+
+| | segments |
+|---|---|
+| requested **and** returned data | 3,905 |
+| requested, returned **nothing** | 42 |
+| observed but **not** in the list | **0** |
+
+Nothing was observed that the list did not ask for. In particular **SH-55 Karcher Rd was
+fully requested and fully returned — 92 of 92 segments.** The claim earlier in this
+session that Karcher was missing came from searching XD's `RoadName` (46 segments carry
+the string "Karcher", only 2 of them a `RoadNumber` of 55) rather than the corridor list,
+and it was wrong. The same correction applies to the "354 miles of missing arterial"
+framing: those are off-system county roads and correctly excluded.
+
+**What is genuinely absent is 99 segments, and the two halves have different causes:**
+
+- **SH-55 Eagle Rd — 57 segments, 18.86 mi — never requested.** They are in the
+  per-corridor working file `out/highways/SH-55_ALL.txt` (487 ids) but did not make it
+  into `District_3_ALL_Highways.txt` (430 of them did). Untried, and 18.9 miles of the
+  district's busiest arterial.
+- **I-84B Caldwell — 42 segments, 14.81 mi — requested, no rows returned.** The sibling
+  file `District_3_ALL_Highways_No_Caldwell_I84B.txt` holds exactly the other 3,905 ids,
+  which is precisely the observed set — so this corridor was tried, came back empty, and
+  was cut from the query. Re-requesting probably returns nothing again. Neither group is
+  the sub-100-ft stub that usually comes back empty (medians 0.26 and 0.32 mi), so "no
+  INRIX coverage" is a hypothesis to test, not the answer.
+
+Scope:
+
+- [x] **Reconcile every `out/highways/*_ALL.txt` against the master list** and record which
+      per-corridor ids never reached it. SH-55 is the one found so far; the check is cheap
+      and should be run over all 32 files rather than assuming it is the only one.
+      *Done by `scripts/reconcile_export_segments.py`: 4,004 ids across the 32 files,
+      3,947 in the master, 3,905 observed, and the 57 SH-55 Eagle Rd ids are the only
+      ones that never reached the master. Every directional file adds up to its `_ALL`.
+      A finding on the way: the export is split **by segment**, each part's
+      `metadata.csv` listing only its own — the store answers 1,947 to `load_metadata`
+      against 3,905 observed, so `store.area_segments` (new) reads the segment set from
+      the observations.*
+- [x] **Resolved with the owner: the true gap is 7 segments, not 99.** The 57 SH-55 Eagle
+      Rd segments were deleted **on purpose** — 38 are south of I-84 and belong to ACHD,
+      14 are north of State St, and the remaining 5 are edge stubs just beyond each end of
+      the SH-55 extent. The 42 I-84B Caldwell segments were excluded **on purpose** too:
+      that corridor was relinquished to the City of Caldwell about a decade ago. What was
+      missed in excluding it is that **SH-19 between I-84 and Simplot Blvd is still
+      carried in the XD data as Centennial Way with `RoadNumber` 84** — classified as
+      I-84B — so it went out with the rest. Those 7 segments (1.89 mi) are the only ones
+      to add, and they are in `out/segments_to_add_to_export.txt`, paste-ready. The
+      Blaine/Cleveland/Caldwell Blvd remainder stays out.
+- [x] **Fix `join_aadt`'s route-class preference** — done, but **not as specified**, and
+      the difference is recorded in DESIGN_HISTORY Session 52. Preferring a numbered
+      record ahead of distance or coverage was measured on D3 and is wrong (Ustick Rd
+      takes `FRANKLIN RD US-20 IC#29`'s 74,500; W Emerald St takes `COLE RD IC #1B`'s
+      82,000). The real instability was that the **last comparison was the record's row
+      position in the layer** — shuffling the layer moved 9 of the 3,905 export
+      segments' AADT. Route class went in as the **last decision, under coverage**,
+      replacing the index; the join is now provably order-independent. Also:
+      `record_route_number` reads the route an `OH`-band record names for itself
+      (`KARCHER RD (SH-55)`), 330 D3 rows' worth.
+- [x] **Regenerate the candidate list after the fix** and review it by road. *It shrank
+      a long way, but the preference is not what did it: on-system-ness cannot be read
+      off the volume join at all, which is why the 483 were junk. New
+      `aadt.classify_on_system` adds an **identity** test (the record's description
+      names the same street, or the segment names a route itself) — without it, 764
+      segments / 223 mi classify on-system off the export; with it, **26 segments /
+      8.77 mi**. Reviewed by road: Centennial Way (7, the confirmed SH-19 addition,
+      found independently) accept; **W/E State St in Eagle (11 segs, 4.68 mi) and Blaine
+      St (1) are the two questions for the owner**; Caldwell/Cleveland Blvd (5) and the
+      W Karcher Rd interchange stubs (2) reject. Full output in
+      `out/export_reconciliation/`.*
+- [x] **Decide whether any of this justifies a re-download** — **no, and it does not
+      need one.** The confirmed gap is 7 segments (1.89 mi), at most 19 if State St and
+      Blaine come in, against 91.05 M rows / 2.1 GB already held. Because the export is
+      split by segment, a **supplemental** export of just those segments over the same
+      span (2026-01-01..2026-09-01, 15 min) is the same shape as another part and
+      ingests into the same area — ~0.2% of the rows already held. The span has to
+      match or the new segments cannot be compared with the rest.
+- [x] **Record what I-84 Business is in this vintage**: ITD's AADT layer classes Caldwell
+      Blvd and Cleveland Blvd under an `IN084` RouteID, so it is I-84 in the route
+      inventory and has no `84B` route number anywhere in the XD attributes. A future
+      search for "84B" will fail exactly as this one did. *In DATA_FORMAT, with the one
+      place the name does appear — a description parenthetical (`CALDWELL BLVD(I-84
+      BUS)`), which `record_route_number` deliberately refuses to read as route 84.*
+- [x] pytest for the route-class preference; DATA_FORMAT; DESIGN_HISTORY. *+20 tests
+      (`test_aadt` 11, new `test_reconcile_export_segments` 8, `test_store` 1); suite
+      560 passed, 2 skipped.*
+
+**The seven landed** (Session 53). The owner ordered them and
+`Cent_2026-01-01_to_2026-09-01_15_min_part_1.zip` is ingested: 163,268 rows over the
+district export's own span, the store **3,905 → 3,912** segments, "requested, returned
+nothing" 42 → 35. The export labelled itself corridor `"Cent"`, which under the area
+model would have made it an area no district run ever looks at, so
+`store.ingest_export_streaming` gained `corridor_name=` — it relabels as the rows are
+staged and records the rewrite in the provenance. The reporting ranking is unchanged to
+floating point (the seven belong to no catalogue entry — **there is no SH-19 corridor**,
+which is Item 44's business).
+
+**Open for the owner (Item 44 inherits it):** W/E State St in Eagle — 11 segments /
+4.68 mi, the only candidate no corridor list has ever named — and Blaine St in
+Caldwell (1 segment, connects to the now-ingested SH-19 run). Both are laid out with
+their evidence in `out/segments_to_add_to_export.txt`.
+
+*Suggested prompt (done):* "Do Item 42 of ROADMAP.md — reconcile the per-corridor id files
+against the export, re-request the 99 absent segments, and give `join_aadt` a
+numbered-over-OH route-class preference."
+
+---
+
+## 43 — Corridors extracted from recurring congestion, not drawn from landmarks
+
+**Target: Opus.** Pure core (`screen.py` + `corridors.py`). Runs on today's export.
+
+This is the item that changes what the catalogue *is*. The current 20 entries were
+hand-derived from junctions and city limits, and the consequence is visible in the
+ranking: SH-45 is carried as one 17.4-mile corridor of which only the 4.4-mile 12th Ave
+section through Nampa is urban, so its congestion is diluted by three times its length of
+rural highway — which is precisely what a per-mile rate is meant to prevent, and cannot
+when the extent is wrong. The owner's requirement is that **extents come from the
+congestion**: contiguous-ish runs of segments that are *recurrently* congested, with a
+junction or a city limit used to tidy an endpoint only when the data already lands near
+one. Scope:
+
+- [x] **Recurrence is the criterion, and it is not the mean.** `segment_screen` averages
+      over the whole date range, so a fortnight of construction and a daily queue look
+      alike. Add a per-**day** reduction — segment × window × local calendar day, over or
+      under a delay/TTI threshold — and define recurrence as the **share of weekdays**
+      the segment is over it. A corridor is a run of segments that are congested *most
+      days*, and the share is reported per segment so the threshold can be argued with.
+- [x] **Walk the runs, never sort them.** Extend contiguity along the repaired
+      `NextXDSegI` (Item 38) through qualifying segments and emit each maximal run. This
+      is the one place a geographic sort would be tempting and it is the thing Item 36
+      exists to have banned — a run is a chain or it is two runs.
+- [x] **"Contiguous-ish": a gap tolerance, reported not hidden.** One free-flowing
+      segment between two congested runs should not split a corridor; allow a tolerance
+      in segments or miles, and return how many gaps each run bridged and their total
+      length, so the tolerance is visible in the output.
+- [x] **Endpoint tidying, with the distance stated.** After a run is found, look for a
+      meaningful landmark near each end — a junction with another state route, an
+      interchange, a city limit — and snap to it **only within a stated tolerance**,
+      returning `snapped_to` and `snap_distance_miles` for each end. An end that has no
+      landmark within tolerance stays where the data put it, which is the whole point.
+      A run that is snapped half a mile is a decision; a run that is snapped 50 feet is
+      tidying, and the column is what tells them apart.
+- [x] **Directional pairs.** A run found NB should look for its counterpart over the same
+      ground SB (Item 40's reporting corridors are two directions) and **say when it does
+      not find one** — a one-direction run is a finding about the road or the data, not
+      half a corridor to be quietly completed.
+- [x] **Emit candidates in the catalogue's own shape**, carrying `start_latlon` /
+      `end_latlon`, the measured recurrence and metrics, and the label read off the
+      members (`corridors.chain_description` — the outside pass hand-wrote a route number
+      that does not exist in Idaho). Deliberately **no `description`**: that is the field
+      `parse_catalogue` refuses to accept empty, so a candidate cannot become a catalogue
+      entry until a human writes down why that extent is meaningful.
+- [x] **Stay on-system.** Candidates are drawn from the export's segments, which Item 42
+      defines; nothing here should surface a county arterial.
+- [x] pytest: a synthetic corridor congested in its middle recovers exactly that middle,
+      not the whole route; a segment congested on 3 days of 20 does **not** qualify while
+      the same mean spread over every day does; a one-segment gap bridges only within
+      tolerance; a run does not continue past a carriageway change; an endpoint within
+      tolerance of a junction snaps and reports the distance while one beyond it does
+      not; candidates are rejected by `parse_catalogue` until described.
+- [x] DATA_FORMAT (recurrence definition and thresholds); DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 43 of ROADMAP.md — extract corridor candidates as contiguous
+runs of recurring congestion, with a gap tolerance and endpoint snapping."
+
+---
+
+## 44 — Rebuild the D3 catalogue from the extracted runs
+
+**Target: Opus**, possibly two sessions. **Depends on Item 43**. Item 42 settled the
+segment set: the export is complete bar **7 confirmed SH-19 segments** (and two open
+questions, W/E State St in Eagle and Blaine St), and no re-download is needed — a
+supplemental part would carry them.
+
+The catalogue becomes data-derived: Item 43 says where the congestion actually starts and
+stops, a human says why that extent is the meaningful one and what to call it. The
+existing 20 entries stop being the catalogue and become a **check** on it. Scope:
+
+- [x] **Run Item 43 over the whole on-system export** and triage the candidates: accept,
+      merge, or reject with a reason. The rejections are as interesting as the
+      acceptances and should be recorded, not dropped.
+- [x] **Compare against the current 10 reporting corridors.** Where an extracted run
+      disagrees with a hand-drawn extent, the presumption is that the data is right about
+      the *ends* and the hand-drawn entry is right about the *name* — but check each
+      disagreement rather than applying that as a rule. I-84 and Eagle Rd should come back
+      close to what is there now; **SH-45 should split at Nampa** and **SH-55 north of
+      State St** (299 segments / 219 mi, fully in the export today) should break into
+      several extents, most of them ranking near zero. **SH-55 Karcher Rd is rankable
+      today** — all 92 of its segments are in the export — and has no entry; it should
+      pick one up here if the congestion supports one.
+- [x] **The unranked routes get their extents from the data too** — US-95 (345.7 mi in the
+      export), SH-21 (200.5), SH-51 (184.7), SH-78 (183.6), SH-52 (107.6), SH-71, SH-19,
+      SH-167, SH-30, SH-67, SH-72 — roughly 1,190 miles with no catalogue entry at all.
+      Expect most of it to produce **no** candidate, which is the correct answer for a
+      rural state highway and is itself worth recording.
+- [x] **Keep the reporting-corridor grouping honest as it grows**: `corridor` +
+      `direction` on every entry, and both directions per group or a stated reason.
+      **A second one-way couplet is already known** — I-84 Business through downtown
+      Nampa runs westbound on 2nd St S and eastbound on 3rd St S, all 35 segments in the
+      export — so `one_way_couplet` is not a Boise-only flag and any I-84B Nampa entry
+      needs it set. Watch for more; the earlier claim that Myrtle/Front was the district's
+      only couplet was wrong.
+- [x] **Re-run the district screening and record how the ranking moves.** Ten corridors
+      over 9.4% of the store is not a district screen; the number that replaces it is the
+      deliverable.
+- [x] pytest for any new validation; DESIGN_HISTORY with the new ranking and the triage.
+
+Delivered: Rebuilt `scripts/d3_corridors.json` via `scripts/rebuild_d3_catalogue.py`, expanding District 3's screening catalogue from 20 directional entries / 10 reporting corridors to **36 directional entries / 18 reporting corridors**. All 36 entries resolve 100% via `corridors.build_chain` with link repairs (`reached_target=True`, coverage 95.7%-100.0%, mean 99.8%). Incorporates engineering rules and network corrections:
+- **Congestion Congruence Rule & Alignment Refinements**:
+  - **SH-44 Glenwood Alignment & Urban/Rural Split**: Corrected alignment so SH-44 turns south along Glenwood St to terminate at Chinden Blvd (`sh44-urban`, 13.06 mi, 34 segs; State St east of Glenwood is local ACHD arterial). Stitched across Eagle Rd per congruent delay density (~56-67 vhd/mi) and minimum-length rule (Glenwood-Eagle is < 3 mi). Split at Star Rd where congestion drops sharply into rural baseline (`sh44-rural`, 10.65 mi, 22 segs, TTI 1.08, ~15 vhd/mi). SH-44 Urban ranks **#6 in District 3** (319 vhd/mi, 4,171 PM veh-hrs); SH-44 Rural ranks **#11** (100 vhd/mi).
+  - **Chinden Blvd Extension**: Extended to full extent from SH-16 to I-184 Connector (`us2026-chinden`, 14.10-14.45 mi, 27-28 segs) stitching across Eagle Rd due to twin congestion levels (TTI 1.25 west vs 1.27 east). Ranks **#7 in District 3** (261 vhd/mi, 5,330 PM veh-hrs).
+  - **Broadway Ave**: Added official 3.0-mile south Boise arterial (`broadway`, 14-15 segs) from I-84 IC 54 past BSU to Front/Myrtle couplet. Ranks **#8 in District 3** (215 vhd/mi, 1,239 peak veh-hrs).
+  - **SH-55 at Avimor**: Empirical VHD analysis demonstrated negligible commute delay south of Avimor (4.0 vhd/mi, 28 veh-hrs), confirming unity of State St to Horseshoe Bend (`sh55-eagle-hsb`, 18.9 mi).
+- **Candidate Triage Audit Trail**: Congestion candidate extraction (`scripts/triage_candidates.py`) triaged 319 candidates across 3,912 segments and 54.7M peak observations: 8 accepted as empirical backbones, 101 merged into larger corridors (subsuming isolated signal queues per the ~3-mile minimum rule), and 210 rejected (isolated queues on rural routes like US-95, SH-21, SH-51, SH-78, ramp stubs, unnumbered facilities), preserved in `out/district_screening/candidate_triage.csv` and `.json`.
+- **Other Key Outcomes**:
+  - **SH-55 Karcher Rd** (`sh55-karcher`, 3.01 mi): ranks **#5 in District 3** at 420 vhd/mi (2,109 peak veh-hrs delay).
+  - **SH-45 urban/rural split**: urban Nampa (`sh45-nampa`, 4.36 mi) ranks **#10** at 144 vhd/mi; rural control (`sh45-rural`, 13.07 mi) ranks **#18** at 6 vhd/mi (TTI 1.04).
+  - **Downtown Nampa couplet** (`nampa-couplet`, 2nd St S WB / 3rd St S EB, 0.70 mi): ranks **#12** at 67 vhd/mi (`one_way_couplet: true`).
+  - **SH-55 Mountain Highway Sections**: 4 extents covering 225 directional miles (`sh55-eagle-hsb`, `sh55-hsb-cascade`, `sh55-cascade-mccall`, `sh55-mccall-newmeadows`) rank near zero (10-19 vhd/mi, Ranks 14-17, TTI 1.03-1.06, establishing rural baseline).
+- **District Screening Pipeline Re-Run**: Screened footprint expanded to **358.3 directional miles / 723 segments (18.5% of store)**. All 36 directional entries resolve and rank with 0 unranked/findings. Outputs updated in `out/district_screening/`.
+- **Tests**: Full test suite passing (**592 passed, 2 skipped**).
+
+*Suggested prompt:* "Do Item 44 of ROADMAP.md — rebuild the D3 catalogue from Item 43's
+extracted runs, and re-run the district screening."
+
+
+---
+
+## 45 — Statewide Corridor Extent Alternatives, Couplet Synthesis, and Objective Triage ✅ (Sessions 61–62, completed by Item 46 / Session 63)
+
+**Target: Opus / Automated Pipeline.** Builds on Items 40, 43, and 44. Statewide scope (Districts 1–6).
+
+When scaling from District 3 to the entire state of Idaho, local highway intuition is sparse. The corridor screening pipeline cannot rely on hand-drawn endpoints or route-specific hardcoding. Instead, the data itself must propose corridor extents, synthesize one-way couplets, generate hierarchical alternatives (core vs. commuter vs. regional baseline), and triage candidate runs using objective, statewide rules. Scope:
+
+- [x] **Objective Split Criteria for Corridor Extents** ✅ *(module in
+      `src/inrix_tools/extents.py`; wired into the catalogue builder by Item 46,
+      Session 63 — the D1/2/4/5/6 catalogues are cut at these split points)*:
+      Formalize four orthogonal data-driven split dimensions along each linear state highway chain:
+      1. **City Limits & Urban/Rural Transitions**: Detect crossings using ITD Urban Adjusted Boundaries (UAB) / municipal polygons, corroborated by sudden shifts in segment density, speed limits, and functional road classification (FRC). Prevents dilution of concentrated urban arterial bottlenecks by long rural tails (e.g. SH-45 Nampa vs. Melba/Owyhee).
+      2. **Major Highway-to-Highway Junctions & Interchanges**: Graph-topological splits where state routes cross or merge (degree $\ge 3$) and system interchange terminals (e.g. I-84/I-184, US-95/US-2, US-91/US-30, I-15/US-26), where commuter demand profiles bifurcate.
+      3. **AADT Volume Step-Changes**: Detect sharp volume gradients ($|\Delta\text{AADT}| / \text{AADT} > 40\%$ or crossing ITD volume tiers) along the chain, separating high-volume metropolitan commuter sheds from intercity corridors.
+      4. **Congestion Discontinuities (TTI & Delay Rate)**: Segment-level change-point detection identifying where recurring peak TTI drops below 1.15 or delay density drops from bottleneck levels ($> 150$ vhd/mi) to free-flowing baseline ($< 25$ vhd/mi).
+- [x] **Multi-Scale Extent Alternatives & Comparative Ranking** ✅ *(Item 46,
+      Session 63: `aggregate_statewide_rankings.load_extent_tier_groups` reads the
+      tiering out of the generated catalogues — **36 facilities / 80 tier rows**,
+      against the 6 hand-listed facilities `EXTENT_TIER_GROUPS` carried)*:
+      Rather than forcing a single arbitrary extent per route, automatically construct and rank three standardized extent alternatives per congested corridor:
+      - **Tier 1: Congested Core (Empirical Hotspot)** — The contiguous recurring congestion run snapped to nearest major cross-streets; maximizes delay rate (VHD/mile).
+      - **Tier 2: Commuter Corridor (Functional Facility)** — Stitched across moderate-delay gaps between regional junctions or city limits; evaluates trip-level reliability and corridor-wide travel time.
+      - **Tier 3: Regional Highway Baseline (Full Facility / Rural Control)** — Full county/district extent; provides total delay volume context and establishes the non-congested baseline.
+      - **Comparison Matrix**: Report all alternatives side-by-side ranked by Rate (Peak VHD/mi), Volume (Total Peak VHD), and Reliability (95th percentile TTI), explicitly highlighting the "dilution factor" of extended lengths.
+- [x] **Statewide One-Way Couplet Detection & Pairing** ✅ *(Item 46, Session 63: the
+      shipped couplet entries are `detect_couplets` output; the registry is validated
+      by `match_known_couplets`, 9 of 16 matched on street names — see the table below)*:
+      Couplets are directional carriageways on parallel, separate street alignments (e.g., Boise Myrtle/Front, Nampa 2nd/3rd St S). Codify an automated topological detector:
+      1. **Geometric Signature**: Opposing one-way segments on distinct street alignments separated by $30\text{ m} \le d \le 300\text{ m}$ (1–2 city blocks) running parallel for $\ge 0.2$ miles.
+      2. **Topological Split/Merge**: Branch-and-converge cycles in the directed highway graph where a two-way mainline bifurcates into two opposing one-way links and rejoins downstream.
+      3. **Corridor Synthesis**: Automatically pair detected couplet branches under a single reporting corridor ID, assigning matching directional tags (`one_way_couplet: true`) and resolving them in `corridors.resolve_catalogue`.
+      - **Statewide Couplet Registry**: Validate against the statewide catalogue:
+        - **D1**: Sandpoint US-2/US-95 Byway & downtown split; Coeur d'Alene 3rd/4th St (I-90 connector).
+        - **D2**: Moscow US-95 (Jackson St SB / Washington St NB); Lewiston US-12 (Main St EB / D St & 1st St WB).
+        - **D3**: Boise US-20/26 (Front/Myrtle); Nampa I-84B (2nd/3rd St S); Caldwell I-84B/SH-19 (Canyon/Blaine/Cleveland); Mountain Home I-84B/SH-51 (Main/American Legion/8th/Jackson); Weiser US-95 Spur (Idaho/Main).
+        - **D4**: Twin Falls US-30 (2nd Ave North WB / 2nd Ave South EB).
+        - **D5**: Pocatello I-15B/US-91 (4th Ave NB / 5th Ave SB); Blackfoot I-15B (W Bridge St WB / W Judicial St EB — clarifying D5 Bingham County administration vs. D6/US-20); Preston US-91/SH-34 (State St / 800 W); American Falls SH-39 (Idaho St / Lamb Weston Rd).
+        - **D6**: Idaho Falls & Rexburg grade-separated splits / business loops.
+- [x] **Objective Generalization of Triage Code (`triage_candidates.py`)**:
+      Refactor `triage_candidates.py` to eliminate D3-specific hardcoded route lists (`in ("78", "51", ...)` and `CORE_ACCEPTED_RUN_CHECKS`), replacing them with rule-based criteria:
+      - **ACCEPTED**: Run length $\ge 1.0$ mile, recurrence $\ge 0.50$, peak TTI $\ge 1.20$, on a designated state highway mainline forming an empirical corridor extent.
+      - **MERGED**: Contiguous or bridging candidate subsumed into an extent across minor signal gaps ($\le 0.5$ mi) or matching an active corridor chain.
+      - **REJECTED**: Explicitly audited rejections categorized by rule:
+        - *Rule R1 (Topology)*: Ramp stubs, turning loops, or unnumbered local roads outside the state system.
+        - *Rule R2 (Isolated Signal Queue)*: Queue length $< 0.35$ miles at an isolated rural junction without upstream corridor congestion.
+        - *Rule R3 (Geometric Delay)*: Low free-flow speed on mountain passes or tight curves without commute delay or volume.
+      - Output comprehensive, machine-readable audit tables (`candidate_triage.csv` and `.json`) with exact rule IDs and metric thresholds.
+- [x] **Automated Integration & Reporting**:
+      Provide a CLI runner (`scripts/run_statewide_screening.py` or generalized `run_district_screening.py`) that accepts any district or statewide DuckDB store, executes candidate extraction, generates multi-scale extents and couplet pairings, triages candidates, and exports comparative ranking tables and interactive maps.
+
+**Status after Session 60 (review pass).** The two rule-based pieces — the triage
+generalization and the CLI runner — landed and drive the shipped output. The three
+*generative* pieces did not: `extents.py` and `couplets.py` were written and unit-tested
+but imported by nothing outside their own tests, and the D1/D2/D4/D5/D6 catalogues in
+`scripts/build_statewide_catalogues.py` were built from hand-written lat/lon hints per
+district. Item 46 was added to close that gap.
+
+**Closed by Item 46 (Session 63, 2026-09-22).** The five catalogues are generated:
+**194 directional entries / 100 reporting corridors, 194/194 reaching target and
+194/194 accepted** through `corridors.resolve_catalogue`, against 56/28 hand-built.
+The couplet registry is validated for the first time (8 `streets`, 1 `one_street`,
+2 `route_county`, 5 `none` — two of the misses are registry entries the XD network
+carries no route number for). The validation table ships as
+`out/statewide_screening/couplet_registry_validation.csv`. See DESIGN_HISTORY
+Session 63 for what the generated extents moved and the four hand-built corridors
+the measurement does not support as congested.
+
+---
+
+## 45R — Review fixes: the statewide VHD/mile join (Session 60) ✅
+
+Found by review of the Item 42–45 branch: every statewide segment rendered at 0 VHD/mi.
+
+- [x] `generate_statewide_maps.load_statewide_data` joins AADT per segment instead of
+      passing the raw ITD route-measure layer cache, and concatenates the *joined* frames
+      (the old positional-index dedupe dropped 6,510 of 9,317 rows). New `--aadt` /
+      `--aadt-year`; the VHD maps are skipped rather than zero-drawn without a source.
+- [x] Unmatched AADT stays **NaN** through `_segment_tti_frame` rather than being
+      zero-filled, and gets a `No AADT Data (unvolumed)` map tier — a dead join can no
+      longer read as "everything is free-flowing". Tooltips print `n/a` via `_fmt_or_na`.
+- [x] Verified: statewide non-low segments (2,017) now equal the sum across D1–D6 (2,017).
+      Re-run that equality if this regresses.
+- [x] `tests/test_district_inventories.py` skips when `out/` is absent (it asserted on
+      gitignored artifacts and failed on a clean checkout); D2 timezone counts replaced
+      with a partition assertion.
+- [x] `aggregate_statewide_rankings.build_couplet_analysis` no longer raises
+      `KeyError: False` when `one_way_couplet` is missing.
+- [x] `generate_screening_maps.py` runs the full-network AADT join before the
+      corridor-bounds one (shared cache, `load_aadt` ignores bbox on a hit). Root cause
+      is Item 47.
+- [x] `extents.detect_urban_rural_splits` scores on `abs(frc_prev - frc_curr) - 1`, so a
+      boundary no longer scores differently depending on the chain's direction.
+
+---
+
+## 46 — Wire the extent/couplet detectors into the statewide catalogue builder ✅ (Session 63)
+
+**Target: one session.** Depends on Item 45 (the modules exist and are tested).
+
+`src/inrix_tools/extents.py` and `src/inrix_tools/couplets.py` **were** dead code:
+`build_statewide_catalogues.py` imported `couplets` and never called it, and the five
+district catalogues were hand-drawn coordinate hints in
+`build_district_{1,2,4,5,6}_catalogue`. That is exactly the hand-specification Item 45
+existed to remove, and it does not scale to a re-run on a new export. Scope, all
+delivered in Session 63:
+
+- [x] **Replaced the hand-written hints with a generated pass.** New pure-core
+      `extents.enumerate_mainline_chains` (walks `NextXDSegI` within one route number, so a
+      chain ends where the route ends), `pair_chains` (route identity **plus** proximity —
+      matching on route alone marries Coeur d'Alene's US-95 northbound to Bonners Ferry's
+      southbound), `mirror_extent` (the opposing direction's extent is projected onto it,
+      not analysed separately, or the two halves of a corridor end at different
+      cross-streets) and `generate_catalogue`. `build_statewide_catalogues.py` is now a
+      ~200-line runner over the core instead of 981 lines of coordinates. Every entry's
+      `description` carries `split_rationale` **and both bounding splits**, rendered by the
+      new `describe_split`: *"Upstream boundary: an AADT step-change (34,000 -> 11,000 vpd,
+      68%); downstream boundary: a highway junction (crossing 53)"*.
+- [x] **Couplet entries are detector output, and the registry is validated.** The detector
+      found **2** couplets statewide as written and missed Boise's Myrtle/Front; three
+      structural causes were fixed — pairing required exact cardinal opposition (XD codes
+      Front St's westbound carriageway `Bearing = "N"`, and the declared
+      `bearing_tolerance_deg` was never used; pairing is now anti-parallel on the chain's
+      *geometric* heading), a candidate was a whole `XDGroup` chain (Boise's westbound
+      US-20/26 runs up Broadway Ave first, so the length filter threw it out — candidates
+      are now **street runs**), and `street_key` stripped the trailing quadrant, merging
+      Twin Falls' `2nd Ave N`/`2nd Ave S`. **17 couplets now ship in the five generated
+      catalogues**; six more are detected in District 3 for the registry check, whose
+      catalogue Item 44 owns. New `couplets.match_known_couplets`
+      scores the registry and **reports rather than asserts** — two registry entries name a
+      leg the XD network carries no `RoadNumber` for, and a detector tuned until those
+      passed would be tuned to the wrong target.
+- [x] **`EXTENT_TIER_GROUPS` is gone**, replaced by `load_extent_tier_groups`, which reads
+      `_facility` / `_tier_number` / `_tier_label` off the generated catalogues'
+      reporting corridors: **36 facilities and 80 tier rows** against six hand-picked
+      facilities. District 3 is absent *and the run says so* — its catalogue is the Item 44
+      empirical rebuild, so it carries no tier metadata and is not back-filled by hand.
+- [x] **`legacy/handbuilt_catalogues/`** holds the old builder, the five hand-built
+      catalogues at `e0fec0b`, and a README. The mapping is recorded in DESIGN_HISTORY
+      Session 63: **14 of the 28** hand-built corridors are ≥80% covered by a generated
+      extent; **5** have no generated counterpart, and four of those are measurably not
+      congested (I-84 Twin Falls peak TTI 1.050, I-15 Pocatello 1.017, I-15 Idaho Falls
+      1.084, US-20 Idaho Falls–Rexburg 1.146 — none with a single segment at ≥1.20). Only
+      `us20-if-urban` is arguable: it clears 1.20 on two segments but over a core under the
+      0.75-mile floor.
+- [x] **The gate was met before the Item 45 boxes were re-checked: 194/194
+      `reached_target` and 194/194 `accepted`**, with zero findings in every district's
+      `screening_provenance.json`. Getting there needed `extents.segment_endpoint`: XD
+      record `1187395985` declares a start **294 m from its own geometry**, so an entry
+      written from `StartLat`/`StartLong` snapped onto a piece of SH-43 776 ft away.
+      Endpoints are now taken from the geometry, with the declared values deciding only
+      *which* terminal. `couplets.couplet_catalogue_entries` had the same bug and now
+      shares the function.
+
+**Two things found along the way that were not in scope and are worth knowing:**
+
+- **A `#` in a generated name nulled its own CSV row.** Endpoint names come from the AADT
+  layer's `Descriptio` (`W POST FALLS IC #5`) — the only cross-street naming available
+  offline. Every CSV here carries a `# key: value` provenance header, and
+  `pd.read_csv(comment="#")` treats a `#` **anywhere** in a line as a comment start, so six
+  of District 1's sixteen corridors arrived downstream as rows of nulls. Fixed at both
+  ends: `#` is written as `No. `, and `load_district_table` skips the header by counting
+  its leading `#` lines. The second half is the one that matters for any future value.
+- **Reading one peak window dropped real corridors.** The first pass read PM only and
+  produced nothing for US-20 Idaho Falls–Rexburg, an **AM** inbound commute. New
+  `extents.worst_window_tti`; `--window` now defaults to `am,pm`. Recovered three
+  facilities (D1 7→10, D2 6→7, D6 9→10).
+
+**Known limitation, not papered over:** splitting couplet candidates by street run reports
+a couplet that changes street name mid-way as two half-couplets (Twin Falls' US-30 as
+`2nd Ave E/2nd Ave S` 0.77 mi and `2nd Ave N/2nd Ave W` 0.56 mi; SH-43 in Bonneville County
+likewise). The halves are correct; merging them is not attempted.
+
+**Tests:** +31 in `tests/test_extents.py`, +14 in `tests/test_couplets.py`. Full suite
+**668 passed, 2 skipped**.
+
+*Suggested prompt:* "Do Item 46 of ROADMAP.md — wire `extents.py` and `couplets.py` into
+`build_statewide_catalogues.py` so the statewide catalogues are generated rather than
+hand-drawn, and reconcile the result against the current hand-built ones."
+
+---
+
+## 47 — Screening-pipeline hardening: cache keying, hoisted joins, script hygiene ✅ (Session 64)
+
+**Target: one session.** Small, independent cleanups found in the Session 60 review.
+
+None of these change a number today; each is a trap that will change one later. Scope:
+
+- [x] **The AADT layer cache is keyed on what it covers.** `load_aadt` writes a
+      `<cache>.meta.json` sidecar recording the `year` / `bbox` / `columns` it was built
+      for, serves the cache only when that covers the request, and otherwise rebuilds for
+      the **union** of the two extents — so a cache shared by a corridor-bounds caller and
+      a full-network one widens to serve both instead of thrashing.
+      `attrs['aadt_layer']` reports `hit` / `written` / `rebuilt (<reason>)`. A cache with
+      no sidecar is judged on the extent of the data it holds, which is conservative in
+      the safe direction (a bbox-filtered read's features never reach past the bbox, so it
+      rebuilds needlessly rather than under-answering). **Verified it was not already
+      wrong:** on District 1 the cached 1,394-record layer and a fresh statewide
+      8,301-record read give an identical join (4,652 matched, same 31,417,670 total), so
+      Item 46's numbers stand.
+- [x] **The junction adjacency map is built once.** New public
+      `extents.incoming_route_map(network)`, built in `generate_catalogue` and threaded
+      through `analyse_chain` → `detect_split_points` → `detect_junction_splits` as an
+      optional argument (each still builds its own when not given, so the functions stand
+      alone). District 1 catalogue generation **4.0 s → 1.19 s**, and all five catalogues
+      regenerate byte-identical.
+- [x] **`build_statewide_catalogues.py` hygiene — landed early, in Item 46 (Session 63)**,
+      because both halves were load-bearing there. The rewritten builder writes a catalogue
+      **only when every entry resolves** (a *generated* pass overwriting a good catalogue
+      with a broken one is a worse risk than a hand-built one doing it), and
+      `find_chain_endpoints` is gone with the rest of the hand-built builder —
+      `extents._nearest_index` and `extents.mirror_extent` measure in a projected metric CRS,
+      which is exactly the automatic reuse that made degrees-on-EPSG:4326 wrong.
+- [x] **`io.discover_parts` is public.** It is not an implementation detail — it is *why*
+      handing `load_data` or `ingest_export` any one `..._part_N.zip` ingests the whole
+      export (Session 48). `_discover_parts` kept as an alias; `store.py`, the script and
+      `tests/test_io.py` updated.
+- [x] **`ruff --select F` is clean** across `src/`, `scripts/`, `tests/` **and** `gui/`
+      (23 at the Session 60 review → 13 after Item 46 → 0). Three were dead *locals* rather
+      than imports — `dr_med`, `t_type`, and `ids` in `geometry.offset_overlapping_segments`
+      — each computed and never read.
+- [x] **`tests/test_aadt.py` +12** on the cache keying: the sidecar records the coverage;
+      a contained request hits; a wider one rebuilds and answers the *wider* question; a
+      rebuild widens rather than narrows; an unrestricted cache serves any bbox and a
+      restricted one does not serve an unrestricted read; a year mismatch replaces rather
+      than widens; a sidecar-less cache is judged on its own data; a missing column
+      rebuilds; the shortfall reasons name what is wrong.
+
+**Two regressions the cache change exposed**, both in the *rebuild* path that nothing
+had reached while the cache always won unconditionally — each now with its own test:
+
+- a `.geoparquet` **source** went to pyogrio (`tests/test_reconcile_export_segments`
+  legitimately passes one file as both source and cache), and GDAL's driver probe died
+  on an unrelated broken DuckDB plugin. `load_aadt` reads a `.parquet`/`.geoparquet`
+  source directly now.
+- a bbox of `(nan, nan, nan, nan)` — what `geo.total_bounds` returns for an empty frame,
+  which `reconcile_export_segments` produces when nothing is absent — reached shapely.
+  `_clean_bbox` reads a non-finite box as *no restriction*, which is what the caller means.
+
+**Verification that the ROADMAP's framing held** ("none of these change a number today"):
+the statewide rankings before and after differ by at most **7e-12** on `vhd` — float
+summation order, nothing else — with every rank, name and integer count identical.
+
+**Tests:** `tests/test_aadt.py` +12. Full suite **680 passed, 2 skipped**.
+
+*Suggested prompt:* "Do Item 47 of ROADMAP.md — the screening-pipeline hardening cleanups
+from the Session 60 review."
+
+---
+
+## 48 — Route membership from ITD's AADT layer, not INRIX `RoadNumber` ✅ (Session 65)
+
+**Target: one session.** Raised by the owner in Session 65 while reviewing the D2 export.
+
+**The defect.** `scripts/generate_district_highway_inventories.py` (D1, D2, D4–D6) picks
+a route's segments by INRIX `RoadNumber` alone. The AADT layer is used only later, for
+volume. INRIX's route numbering is wrong in both directions:
+- **Lewiston:** INRIX puts US-12 on the downtown Main St / D St couplet. Both streets are
+  local (`OH`) records in ITD's layer (`06830AOH000`, `01900AOH000`, `47980AOH000`,
+  `06820AOH000`). US-12 (`01910AUS012`) actually runs the levee bypass. INRIX names it
+  "Levee Byp" with no route number, so ~3.3 mi (12 segments) were never downloaded.
+  `couplets.KNOWN_COUPLETS` also lists Main St/D St as a "validated" US-12 couplet, so
+  the D2 catalogue holds two false couplet corridors.
+- **Session 65 audit** (a scratch join of every district segment to its AADT record,
+  keeping only matches ≤10 m apart, ≥80% overlap, main road only):
+  - *Exported as a state route but ITD shows a local road:* Coeur d'Alene Northwest
+    Blvd / Sherman Ave (I-90, ~6 mi); Kellogg Bunker Ave / Division St (I-90); Sandpoint
+    Pine St / Cedar St (US-2); Caldwell Cleveland / Blaine (I-84B, already recorded in
+    Item 42); Nampa Northside / Karcher (SH-55); SH-37 south of the SH-38 junction in
+    Oneida (27.6 mi); Rexburg Center St / 7th E (SH-33).
+  - *On a state route in ITD's layer but unnumbered in INRIX, so never selected:* D2
+    Levee Byp (US-12, 3.3 mi); D4 Elba-Almo Hwy (SH-77, ~33 mi); D4 Sun Valley Rd
+    (SH-75, 4.8 mi). Each district also has short gaps under 0.2 mi.
+- **The AADT layer is not always the newer source.** D2 Reisenauer Rd (10.1 mi) matches
+  a US-95 record in ITD's layer, but the owner confirms INRIX is right: US-95 moved to a
+  new alignment within the past year, and the old one was renamed and handed to the
+  county. The AADT layer is therefore authoritative for route identity, but not newer
+  than a recent realignment. The rule needs a reviewed escape hatch.
+- **Shared roads are not errors.** Where two routes share a road, ITD records only one
+  route number: US-20/26/93 near Arco and Carey, US-2/95 at Bonners Ferry, US-20 on
+  I-184. A segment whose INRIX number differs from its ITD number is still on the state
+  system. Most of the raw mismatch count in the audit is this case.
+
+Scope:
+
+- [x] **Pure-core route membership** (`aadt.py`, or a new `routes.py`): each segment's
+      ITD route and a verdict — `agree` / `concurrent` / `inrix_only` (INRIX numbers a
+      route, but ITD shows a local road) / `itd_only` (ITD route, but INRIX has no
+      number) / `no_record`. Name agreement cannot be the identity test here: AADT
+      descriptions name the *cross street* at each break ("5TH ST"), so
+      `classify_on_system`'s street-name test rejects Levee Byp. Decide the test from
+      distance, overlap and bearing, and record why.
+      *New `routes.py`, with `business` added as a verdict. Identity is geometric: on
+      ≤ 10 m and ≥ 80% alongside; near ≤ 40 m. It has its own search, because
+      `join_aadt`'s route bonus prefers INRIX's number. Only the `RouteID` **band** is
+      trusted: a route named in an `OH` record's description means "to that route".
+      That bug first added 12 mi of Reubens-Gifford Rd to US-95.*
+- [x] **Shared-road handling from the data:** decide `concurrent` from the ITD record's
+      own description or route list where it names both routes. Otherwise use a small
+      explicit table. Never read "any number mismatch" as an error.
+      *From the segment's `RoadList`/`RoadName`, in every spelling INRIX uses (`N ID-34`,
+      `Highway 30`); the record descriptions never name two routes. Business loops are
+      banded like their parent route (`IN084` Caldwell Blvd, `US093` Twin Falls). So an
+      `IN` band is never given to a segment INRIX doesn't number as that interstate, and
+      a band the `RoadList` names only as `-BL`/`-BR` keeps INRIX's number.*
+- [x] **An owner-reviewed override file** (e.g. `scripts/route_overrides.csv`: segment
+      range or road, route, keep/drop, reason, date). The first entry: Reisenauer Rd is
+      **not** US-95 (realigned ~2025, handed to the county). A segment INRIX numbers with
+      no AADT record nearby (new construction) is kept and flagged, not dropped.
+      *`scripts/route_overrides.csv`; a note is required. The new US-95 alignment's 14
+      segments come out `unconfirmed` and are kept.*
+- [x] **Rewire the inventory generator** to select by ITD route membership plus
+      overrides, with INRIX `RoadNumber` as a backup only. Regenerate `out/highways/`
+      for D1–D6 and report the per-route changes in miles.
+      *Done for D1/D2/D4/D5/D6, reading `out/highways/route_membership/` (built by
+      `scripts/build_route_membership.py`). Changes by road are in
+      `route_changes_by_road.csv` and DESIGN_HISTORY Session 65. **D3 was not
+      regenerated** — its lists are the owner-curated Item 42/44 set. D3 membership is
+      computed and reported, and the decision is carried into Item 49. The old masters
+      are kept in `out/highways/pre_item48/`.*
+- [x] **Generalise Item 42's reconciliation to D1–D6** and write the add-list of
+      segments to download (Levee Byp, SH-77 Elba-Almo, SH-75 Sun Valley Rd, the short
+      gaps). The drop-list stays in the stores but out of the catalogues.
+      *`--district` / `--previous-master`. The add-lists total **117 segments**: D1 4,
+      D2 25, D4 84, D5 2, D6 2. They are paste-ready and labelled by road in
+      `out/export_reconciliation/item48_add_lists.txt`. None of the earlier requests
+      came back empty.*
+- [x] **Fix `KNOWN_COUPLETS`**: remove Lewiston US-12 Main/D St. Check every other entry
+      against ITD route membership (Coeur d'Alene `STC-7195` and Payette `US-95 Conn` in
+      particular). Regenerate the D1–D6 catalogues so the false couplet corridors drop out.
+      *Removed Lewiston, Coeur d'Alene STC-7195, Payette and Caldwell (all local in ITD's
+      layer). The D1/D2/D4/D5/D6 catalogues regenerated and verified. D2 loses its three
+      false US-12 couplet legs, D1 its six I-90 business-loop entries, and D6 four false
+      SH-43 "couplet" legs.*
+- [x] pytest: a synthetic bypass/couplet where the numbering is on the wrong street;
+      a shared-road segment is not flagged; an override beats the layer; a numbered
+      segment with no record is kept and flagged. DATA_FORMAT: INRIX `RoadNumber` vs ITD
+      route identity, the cross-street descriptions, and the AADT layer lagging
+      realignments. DESIGN_HISTORY.
+      *`test_routes.py` +21 (including the real Lewiston case), reconcile +3, and a
+      couplet-registry guard. Suite 705 passed, 2 skipped.*
+
+*Suggested prompt (done):* "Do Item 48 of ROADMAP.md — select route segments by ITD AADT-layer
+route membership with an override file, and fix the Lewiston US-12 couplet."
+
+## 52 — ITD reference layers: the state highway system, AADT 2025, and urban areas ✅ (Session 67)
+
+**Target: one session. Depends on Item 48. Do it before the rest of Item 49**, which
+rebuilds the catalogues. Items 50 and 51 build on it. Scoped 2026-09-23 when the owner
+supplied three ITD layers (gitignored fixtures in the repo root; the names are ours, the
+ArcGIS Online download names meant nothing):
+
+- **`SHS_Primary.zip`**: ITD's State Highway System, the authority for route identity.
+  1,179 lines in EPSG:8826, ~6,000 mi. Fields: `RouteId` with `FromMeasur`/`ToMeasure`
+  (a linear reference, so mileposts order a route), `SHSNumber`, `SignTypeCo` (1 = I,
+  2 = US, 3 = SH; matches the `RouteId` band), `LoopSpurCo`, `RouteTypeC` (1: 1,018
+  lines, 2/3/4: the rest, which include ramps), `RoadType`, and `Travelway` (`A` 1,110 /
+  `D` 69; `D` looks like the second carriageway of a divided highway, e.g. `01010DIN084`).
+  It has `FromDate`/`ToDate` (no `ToDate` set; latest `FromDate` 2026-07-28).
+  **"Primary" means one route per road:** US-2/95 at Sandpoint is recorded as 95,
+  US-20/26/93 as 93, ID-3 on SH-8 as 8. Concurrency is **not** in this layer.
+- **`AADT_2025.zip`**: the 2025 year of ITD's AADT layer, 8,423 lines. It has the same fields as
+  `Cumulative_AADT.zip` (1999–2024), so it drops into `aadt.load_aadt`. It carries US-95 on
+  its new alignment south of Moscow (`01540AUS095`, 7,700 AADT). Reisenauer Rd is no
+  longer US-95, and in the 2024 year it still was.
+- **`Urban_Area.zip`**: 26 polygons carrying Census 2020 urban-area codes (`UACE`),
+  population and density. Bonners Ferry, Kellogg and Salmon are not urban areas.
+
+**What a scratch check found (2026-09-23).** Each D1–D6 membership segment was tested
+against the state highway lines, needing ≥80% of its length within 12 m:
+- Item 48 was right almost everywhere. 9,201 of the 9,255 "agree" miles are on the
+  system. Only 19 of the 7,370 off-system miles are on it, and those are mostly ramps.
+  **No new download is implied.**
+- The Reisenauer override is confirmed: 10.5 mi, all off the system.
+- **Sun Valley Rd (4.8 mi, Item 48 `itd_only`, on the add-list and now ingested) is not
+  on the system.** It stays in the store and goes out of the catalogues.
+- Levee Byp (US-12) and Elba-Almo (SH-77) are confirmed.
+- Of Item 48's 187 `unconfirmed` miles, 135 are on the system, including the new US-95
+  alignment. 52 are off: Old Highway 81 (14 mi), WY-89 (8 mi), Elmore Old Highway 30,
+  Cleveland Blvd, Northside Blvd, Payette 7th Ave / S 7th St, Rexburg Center St / ID-33,
+  Coeur d'Alene Sherman Ave and Kellogg Cameron Ave.
+- 53 "agree" miles miss the 12 m buffer, in 1–7-mi pieces: W Chinden Blvd 6.6 mi,
+  Idaho County US-95 3.9 mi, and others. These are probably alignment offsets; the
+  session should check them.
+
+Scope:
+
+- [x] **Loaders in the pure core** for the highway system and the urban areas (in
+      `routes.py` and a small new module, or one `itd_layers.py`). Handle the one
+      `MultiLineString` and the dropped M values. Decide which `RouteTypeC` /
+      `RoadType` codes are mainline, and what `Travelway` `D` means; record both in
+      DATA_FORMAT.
+      *New `itd_layers.py`: `load_shs` and `load_urban_areas`. The `MultiLineString` is
+      exploded (1,180 parts), and Z/M are dropped. `RoadType` 4 = roadway (the only
+      mainline evidence), 5 = ramp, 6 = short rest-area/interchange pieces.
+      `RouteTypeC` 1 = mainline, 2 = spur, 3 = business loop, 4 = connector. Spurs and
+      connectors are their route. Business loops are state highway in their parent route,
+      labelled `business` (owner correction, Session 67). `Travelway` `D` is a divided
+      road's second carriageway (`01010DIN084` runs all of I-84).*
+- [x] **Route identity from the highway system.** `routes.route_membership` takes the
+      SHS mainline as the identity source, and the AADT layer only as a fallback. The
+      INRIX `RoadList` concurrency logic stays, because SHS names one route per road.
+      Resolve the `unconfirmed` verdicts and explain the 53-mi buffer misses. Retire
+      the Reisenauer override: keep the file, and note there that the source now agrees.
+      *`route_membership(geo, aadt, overrides, shs=)`. The SHS decides every D1–D6
+      non-ramp segment but 2, and a new `source` column records who decided.
+      - Three rule fixes came from the data:
+        - direction is compared at every sample, not at one contact point (winding
+          ID-162 and SH-52 had first come out "off the system");
+        - a business line *on* a segment outranks a mainline *near* it, so Farnsworth
+          Way is labelled `business`;
+        - a road lying on neither of a route's two drawn carriageways is a parallel
+          road (Silver Valley Rd beside I-90).
+      - The `unconfirmed` verdicts are resolved: 124.5 mi on the system (mostly
+        interstate `D` carriageways and the new US-95), 33.9 mi off, 11.6 mi business
+        loop (which stays in its route). The 53 mi are 138 segments confirmed only by the 40 m test: alignment
+        offsets (W Chinden Blvd; US-93 near Twin Falls drawn as one line).
+      - The Reisenauer row is a comment in `route_overrides.csv`.
+      - **Business loops stay in their parent route**, labelled `business`, plus any
+        route INRIX's `RoadList` names. A first pass took them out, on the strength
+        of "D1 I-90 (business loops out)" in Item 49's text. The owner never said
+        that; they corrected it. The only loop excluded is Caldwell's Cleveland Blvd /
+        Blaine St, which is no longer state highway, so the SHS has no line on it.*
+- [x] **Volumes from AADT 2025.** Change `aadt.DEFAULT_YEAR` and the scripts' `--aadt`
+      defaults to `AADT_2025.zip`, and check that the geometry cache keys on the new
+      source. Report how segment AADT and D3 peak VHD shift from 2024 to 2025. Item
+      34's divided-highway problem is unchanged, but note whether the `Travelway` `D`
+      lines give that join a carriageway to match.
+      *`DEFAULT_YEAR = 2025` and `DEFAULT_SOURCE = "AADT_2025.zip"`, used by every
+      script and the GUI. It did **not** key on the source; the cache sidecar now
+      records the source's name and size, and a mismatch rebuilds. **Record kinds now
+      come from the SHS where it is unambiguous** (roadway → mainline, ramp → ramp,
+      matched by `RouteID`). ITD's descriptions had made I-184's mainline a
+      connector, so both carriageways took 5,000–10,000 instead of ~68,000. They also
+      made the Broadway interchange ramps "mainline" (US-20 on Broadway took 9,500
+      instead of 29,500). Owner-flagged, Session 67.
+      - With the SHS classification, inventory VMT is +2.9% (districts +1.6% to
+        +3.5%) and D3 peak VHD is +2.6%.
+      - With correct volumes I-184 is D3's #3–4 (≈4,800 VHD); it was #6 in both years
+        before.
+      - A ramp count filed on a roadway route id stays a ramp (the ramp signature,
+        `aadt.ramp_signature`). I-84 at the Cotterell junction now reads 12,000 /
+        19,500, and Weiser's W 7th St 6,300 (owner-checked).
+      - AADT 2025 has almost no `D`-carriageway records, so the join still has one
+        centreline. The SHS `D` lines are a geometry a future join could map the
+        counts onto.*
+- [x] **Urban context per segment**: the urban area it lies in (`UACE`, name) and its
+      distance to the boundary. This is a context column, **never a gate**. The owner's
+      rule (2026-09-23): the boundaries show where to look for a rural/urban transition,
+      and they are not cutoffs (see Item 50).
+      *`itd_layers.urban_context`: the area it lies in (or the nearest one), whether
+      it is inside, its share inside, and a signed distance to the boundary. Written
+      to `out/highways/route_membership/d<N>_urban_context.csv`. 848 of 9,725 route
+      miles are inside an urban area.*
+- [x] Rebuild membership for D1–D6 and regenerate the D1/D2/D4/D5/D6 inventories. Report
+      the per-road changes against Item 48's in miles, and confirm the add-list diff is
+      empty. Compute and report D3 as Item 48 did, for Item 49's decision.
+      *124.0 mi changed membership. 43.3 mi lost a route: 36.4 dropped off the
+      system, 4.8 Sun Valley Rd reversed, and short stubs. 81.0 mi gained one: 75.1 of
+      it is business-loop concurrency, 1.3 was added. By road:
+      `out/highways/route_membership/item52_changes_vs_item48.csv`.
+      - The masters barely move: D1 2215→2214, D2 2106→2102, D4 3013→2999, D5
+        2590→2582, D6 3447→3446. The pre-Item-52 copies are in
+        `out/highways/pre_item52/`.
+      - **The add-list is not empty: 36 segments, 1.95 mi**
+        (`out/export_reconciliation/item52_d<N>/segments_to_add.txt`). 19 are
+        unnumbered pieces lying on business loops (Markwell Ave, River St, E Seltice
+        Way, Pocatello Ave); 17 are SHS connector pieces or 12–47 m slivers. All are
+        short. The catalogue builder uses only observed segments.
+      - D3 is reported in `d3_curated_vs_shs.csv`. 89.4 mi in the curated list have
+        no SHS route, of which 65.8 mi is Banks-Lowman Hwy, kept in the export on
+        purpose (owner). 1.3 mi of SHS route are missing from the list.*
+- [x] pytest: an SHS record wins over an AADT-layer route; a `Travelway` `D` carriageway
+      is on the system; an urban tag at a boundary; the synthetic Reisenauer case without
+      its override. DATA_FORMAT: a section per layer. DESIGN_HISTORY.
+      *`test_routes.py` +13: every requested case, plus a business loop in its
+      parent route, a former loop off the SHS, a spur and a connector, ramps, the AADT
+      fallback, a winding road, and a frontage road between carriageways. New
+      `test_itd_layers.py` (8, including SHS record kinds and the I-184 join).
+      `test_aadt.py` +2 (the source key, the defaults). DATA_FORMAT: the SHS,
+      urban-area and AADT 2025 sections.*
+
+*Suggested prompt (done):* "Do Item 52 of ROADMAP.md — load ITD's State Highway System, AADT 2025
+and urban-area layers, and take route identity from the highway system."
+
+## 49 — Ingest the Item 48 add-list and re-run the statewide screening ✅ (Sessions 66, 68)
+
+**Target: one session. Depends on Item 48, and now on Item 52** (re-scoped 2026-09-23):
+the catalogues are rebuilt once, on the highway-system membership and AADT 2025, not
+twice.
+
+- [x] Ingest the new segments into the district stores. Confirm that everything on the
+      add-list was delivered: `reconcile_export_segments.py --district N
+      --previous-master out/highways/pre_item48/District_N_ALL_Highways.txt` should
+      show zero new requests.
+      *Verified 2026-09-23. All 117 add-list segments are observed (D1 4, D2 25, D4 84,
+      D5 2, D6 2). They came from `Backfill-Pacific_…_15_min` (D1/D2) and
+      `Backfill-Mountain_…_15_min` (D4–D6), ingested with
+      `scripts/ingest_backfill_segments.py` through a new `segment_ids` filter on
+      `store.ingest_export[_streaming]`. They use the same 15-min cadence and 2026-01-01 to
+      2026-08-31 span as each store's main export, so each went into the existing
+      partition. Each district's reconciliation reports 0 new requests and 0 returned
+      empty. The segments observed but no longer in the inventory (Item 48's drop-list:
+      D1 73, D2 14, D4 5, D5 45, D6 9) stay in the stores, out of the catalogues.*
+- [x] **Regenerate the D1/D2/D4/D5/D6 catalogues** (`build_statewide_catalogues.py`)
+      on Item 52's inventories. The builder uses only observed segments. Lewiston's
+      US-12 facility gains the levee bypass, and Sun Valley Rd stays out.
+      *Re-screened first, so the builder's frames carry the 117 new segments (the old
+      frames predated the ingest). All 169 entries verify.*
+      - *The rebuild shipped two false couplets:*
+        - *Lewiston:* "Us Highway 12" and the Levee Byp were paired twice, as mirror
+          images. Both pairs got the same id, and D2 crashed on it.
+        - *SH-77:* Elba-Almo Rd / Elba-Almo Hwy, two consecutive pieces of one rural
+          road.
+
+        *Two detector guards now reject them (`couplets.drop_mirrored_pairs`,
+        `drop_two_way_legs`; a slice of Item 51). They drop 9 pairs statewide,
+        including Chubbuck, and every registry couplet that matched before still matches. Net change: D2
+        −2 couplets, D4 −1, D5 −3, D6's SH-33 Rexburg core re-tiered.*
+      - *Lewiston: with membership, the Levee Byp **is** US-12 and D St is off it.
+        But it forms its own 1.7-mi chain, because INRIX's `NextXDSegI` continues to
+        D St (DATA_FORMAT trap 4, handed to Item 51). It has no congested core, so
+        neither catalogue carries a Lewiston US-12 entry.*
+      - *No entry walks Sun Valley Rd. Off-route miles inside entries fell in every
+        district (D6 1.9 → 0.2, D3 4.5 → 1.9).*
+- [x] **District 3, the owner's call.** Item 48 reported but did not apply D3's
+      membership (50 dropped / 8 added). Most of it is Caldwell/Cleveland Blvd and
+      Blaine St, which Item 42 kept out, plus Payette's S Main St / 7th Ave N and
+      Nampa's Northside Blvd. Decide whether the curated D3 lists take it. *Evidence
+      from Item 52's scratch check: Cleveland Blvd, Blaine St, Northside Blvd and Payette
+      7th Ave / S 7th St are all off the state highway system.* *Item 52's full D3 report (`out/highways/route_membership/d3_curated_vs_shs.csv`):
+      178 curated segments / 89.4 mi have no SHS route.
+      - 65.8 mi is **Banks-Lowman Hwy**, kept in the export on purpose (owner): it
+        stays in the data and is filtered out of the ranking by membership.
+      - The rest is the roads above plus Elmore's Old Highway 30 and short stubs.
+      - Business loops (Garrity Blvd, Caldwell Blvd, and Mountain Home's I-84
+        Business) are state highway and stay in.
+      - 16 segments / 1.3 mi of SHS route are not in the curated list.*
+      ***Decided (owner, 2026-09-23): the D3 lists take the SHS membership, and US-95
+      moves onto 16th St.***
+      - *`scripts/apply_d3_membership.py` removes 77 segments / 23.5 mi from the
+        master and the per-highway lists (Cleveland Blvd, Blaine St, Northside Blvd,
+        Payette's S Main St / S 7th St / 7th Ave N, Old Highway 30, stubs). It keeps
+        Banks-Lowman and writes the 16-segment add-list to
+        `out/export_reconciliation/item49_d3/`. Old lists: `out/highways/pre_item49/`.*
+      - *None of D3's catalogue entries touched Cleveland Blvd, Blaine St, Northside
+        Blvd or Banks-Lowman. Only `us95-fruitland-payette` did, running 1.3 mi down
+        Main St / 7th St. It is replaced by `us95-fruitland` (Whitley Dr, 2.2 mi) and
+        `us95-payette-16th` (2.5 mi): one entry can't span the 16th St junction
+        (DATA_FORMAT trap 4). D3 now has 54 entries / 27 reporting corridors.*
+      - *For the owner: SH-44 urban's extent to Chinden Blvd runs 0.6 mi down
+        Glenwood St, south of where the SHS ends SH-44 (43.649 N). Left as drawn.*
+- [x] Re-run the district and statewide screening on the corrected catalogues. Record
+      how the ranking moves, especially:
+      - D2 US-12 (bypass instead of downtown);
+      - D1 I-90 (Coeur d'Alene's Northwest Blvd / Sherman Ave are off the SHS; the
+        Silver Valley and Post Falls business loops stay, labelled `business`);
+      - D4 SH-77;
+      - D3 I-184, whose volumes Item 52 corrected. This is the baseline Items 50 and 51 are
+      measured against.
+      *`run_statewide_screening.py --mode full --windows both --maps`, all six
+      districts, on AADT 2025. The screening's AADT join now reads the route
+      membership too (`--membership`, recorded in the provenance).
+      115 reporting corridors ranked, down from 120. Tables:
+      `out/statewide_screening/item49_{peak,7day}_ranking_changes.csv`; the old run is
+      in `pre_item49/`.*
+      - *D3 I-184: peak #6 → **#4** (3,217 → 4,843 VHD, +51%), 7-day #36 → #19.*
+      - *D1 I-90: Kootenai core holds at #7 (−3% VHD). D2 US-12: no Lewiston entry
+        either way; the Idaho County core is flat. D4 SH-77: never ranked; its only
+        appearance was the false couplet, caught before shipping.*
+      - *The top 11 are otherwise unchanged. Other movers: Moscow's US-95 cores swap
+        (#15 → #25, #19 → #12), where the core ends were re-read from the refreshed
+        frames; Gooding SH-46 core #33 → #43; D6 SH-33 Rexburg is Tier 2 (#13), no
+        longer Tier 1 (#14).*
+- [x] DESIGN_HISTORY with the before/after ranking. *Session 68.*
+
+*Suggested prompt (done):* "Do Item 49 of ROADMAP.md — regenerate the catalogues on Item 52's
+membership, settle District 3, and re-run the statewide screening."
+
+---
+
+## 50 — Corridor cores from recurring congestion, not TTI against INRIX's ref speed ✅ (Session 69)
+
+**Target: one session. Depends on Item 52** (AADT 2025 volumes and the per-segment urban
+context). Best done after Item 49, so the regenerated catalogues include the new
+segments. Raised by the owner's Session 65 review of the maps; amended 2026-09-23 for
+the ITD layers.
+
+**The defect.** `extents.generate_catalogue` keeps a facility when either direction has
+a **core**: at least 0.75 mi (`MIN_CORE_MILES`) of segments whose worse AM/PM TTI is
+≥ 1.20 (`TTI_CONGESTED`), bridging up to 2 uncongested segments. TTI here is
+`ref_speed / mean speed`. Nothing checks volume, delay, data quality, or whether the
+road is equally slow off-peak. Session 65 measured the result on the store data
+(Jan–Aug 2026, weekdays, CValue ≥ 80):
+- **Geometry and low data pass as congestion.**
+  - *SH-7 Gilbert Grade:* ref speed 32–34 mph; peak TTI 1.33 against 1.27 at night;
+    180 AADT; about 2 VHD/mi; about 65% real-time data.
+  - *US-12 near Lowell:* 550 AADT; 53% real-time data; no overnight data passes
+    the CValue gate.
+  - *US-95 in Idaho County:* peak TTI 1.32 against 1.29 at night.
+  - *SH-3 in Benewah County:* 460 AADT.
+- **One segment can be the whole core.** Bonners Ferry's core is one 0.84-mi
+  northbound segment at TTI 1.26 (3,600 AADT, 22 VHD/mi).
+- **Hard cliffs.** SH-8 through Moscow misses on a Pullman Rd segment at **1.199**,
+  which leaves a 0.59-mi run on 3rd St, under the 0.75-mi floor.
+- **Mirroring puts an extent on a free-flowing direction.** The opposite direction
+  gets the lead direction's extent without its own data being checked:
+  - I-90 eastbound in Coeur d'Alene: TTI 1.04 against 1.67 westbound;
+  - Bonners Ferry southbound;
+  - Rexburg SH-33 eastbound, whose extent opens with a 0.98-mi ID-33 segment at TTI
+    0.92 (the owner's "west end with TTI < 1").
+- **Tier 2 and Tier 3 sweep in free flow, and the rankings mix all tiers.**
+  - Tier 3 is the whole chain, up to 180 mi. SH-75's 98.5 mi includes Galena, and
+    US-30's 83 mi includes McCammon–Lava.
+  - Tier 2 extends to the nearest split point. Coeur d'Alene's Northwest Blvd Tier 2,
+    ranked #2, added 5 free-flow segments to a ~0.3-mi hotspot.
+  - The rankings list Tier 1, 2 and 3 as peers.
+
+Scope:
+
+- [x] **A congestion test against the road's own baseline.** Compare peak travel time
+      with the same segment's off-peak baseline (overnight, or a low percentile of
+      weekday travel time), not only against INRIX's `Ref Speed`. The peak/night
+      ratios are already in hand from Session 65's diagnostics:
+      - real hotspots are 1.2–1.5 (I-90 westbound 1.54, US-95 Coeur d'Alene 1.30,
+        SH-75 Hailey 1.23, Rexburg 1.23);
+      - the geometric ones are 1.00–1.04.
+
+      Decide how to handle a segment with too little overnight data; don't treat the
+      gap as zero.
+      *Done: `extents.segment_congestion` on the new baseline screen (`screen.BASELINE_WINDOWS`, `quantiles=`). Night mean with ≥ 100 gated rows, else weekday p15, else **unknown** (bridged, never zero delay).*
+- [x] **Delay and data-quality floors.** A core needs a minimum VHD/mi or total VHD
+      from the AADT join, and a minimum real-time share (`Pct Score30`) or kept
+      fraction. Calibrate both on the Session 65 list, **using AADT 2025 volumes**
+      (Item 52), and record the values in DATA_FORMAT.
+      *Done: ≥ 90% `Pct Score30` real-time at peak, plus a **noise floor** of 10 VHD/mi and 10 VHD (AADT 2025), recorded in DATA_FORMAT. The owner (Session 69) chose a permissive floor over a 60 VHD/mi cut: VHD is an index, and thinning to a top-N belongs to the ranking. Small towns (Blackfoot, Bonners Ferry, Soda Springs, Sandpoint, Ammon) stay in and rank low.*
+- [x] **No cliffs.** Replace the per-segment 1.20 / 0.75-mi gates with a length- and
+      delay-weighted score, so one long rural segment can't be a core by itself and
+      1.199 doesn't fall off an edge. Record where SH-8 through Moscow lands.
+      *Done: a smooth weight from 1.05 to 1.20, seeds at ≥ 1.10 with 2-segment/0.5-mi bridges, and ≥ 0.6 effective miles with each segment capped at 0.5 mi. SH-8 through Moscow is now a 1.79-mi core, Warbonnet Dr to Jackson St (rank 30).*
+- [x] **Each direction answers for itself.** Trim a mirrored extent to where that
+      direction's own data supports it. A direction with no core of its own is either
+      reported as the lead direction's companion, clearly labelled, or dropped;
+      decide which.
+      *Done, **dropped** with the reason in `_companion`: the opposite direction is catalogued only with its own qualifying core, at its own bounds. I-90 EB is dropped (1.01, 16 VHD/mi).*
+- [x] **Tier 2 and Tier 3 stop at the congestion.** End Tier 2 at the congestion
+      discontinuity, not just the next junction. Rank Tier 1 cores; report Tiers 2
+      and 3 as context, not as peer rows.
+      *Done: Tier 2 grows until the congestion ends or dilutes (50%); Tier 3 is ≤ 3 mi of context. Only Tier 1 ranks; Tiers 2 and 3 go to `statewide_*_context_extents.csv`. The ranking went from 115 rows to 64.*
+- [x] **Urban areas guide the extent; they don't cut it** (owner, 2026-09-23). Use
+      Item 52's urban context as the first place to look for the rural/urban
+      transition where an extent should end. **The boundary is not a hard cutoff.**
+      Keep congestion that runs past the boundary when it is significant, meaning
+      it doesn't significantly dilute the primary congestion. For example, the
+      extended extent's delay per mile stays within some fraction of the core's;
+      calibrate that fraction and record it. Congestion inside an urban area can
+      also end short of the boundary. Being rural must not be what drops a core:
+      Gilbert Grade, Lowell, Idaho County, Benewah and Bonners Ferry must fail the
+      congestion, delay or data-quality tests on their own. Show where Galena,
+      McCammon–Lava, and SH-45 beyond 12th Ave in Nampa land.
+      *Done: the retention fraction is 0.5; past the boundary nothing uncongested is bridged. The rural false cores fail on data or delay. Galena and McCammon–Lava are out; SH-45 (D3 dry run) cores 12th Ave S to Meadowbrook Dr.*
+- [x] **Acceptance: the owner's list, checked segment by segment.**
+      - Drop: SH-7 Gilbert Grade, US-12 near Lowell, the US-95 Idaho County core,
+        SH-3 Benewah, and Bonners Ferry.
+      - Keep: I-90 westbound IC 12–11, the US-95 Coeur d'Alene core, SH-75 Hailey,
+        the Rexburg Main St hotspot, and Twin Falls US-93.
+      - Galena and McCammon–Lava stay out of the ranked set.
+      - Settle the I-90 westbound winter/summer ratio of 0.43: is it summer-only,
+        and possibly construction?
+      *Done: see the Session 69 table. Gilbert Grade, Lowell, Idaho County and Benewah fail on delay and data. Bonners Ferry passes the noise floor and ranks near the bottom (owner's permissive-floor decision). All five keeps rank. Also fixed: several cores per chain (SH-75 Hailey had been lost behind Ketchum). I-90 WB is summer-only: a step change on 22–23 June 2026 with nights unaffected, a work zone. It carries an `episodic` flag rather than being excluded.*
+- [x] pytest on synthetic chains: a geometric grade, a one-segment core, a mirrored
+      free-flow direction, and a 1.199 neighbour. Regenerate D1/D2/D4–D6, re-run the
+      screening and maps, and record in DATA_FORMAT and DESIGN_HISTORY how the
+      rankings move.
+      *Done: `test_extents.py` (Item 50 classes), `test_screen.py` +2, `test_aggregate_statewide_rankings.py`; 760 passed. D1/D2/D4–D6 regenerated and re-screened; maps and aggregation re-run.*
+
+*Suggested prompt (done):* "Do Item 50 of ROADMAP.md — base corridor cores on recurring peak
+congestion against each road's own baseline, with delay and data-quality floors."
+
+## 51 — Chains across route-numbering changes, and couplets that are real ✅ (Session 70)
+
+**Target: one session. Depends on Item 52** (the highway system's route IDs, mileposts and
+`Travelway`). **Independent of Item 50**, but both regenerate the catalogues, so do one
+after the other and re-run the screening once, after Item 49. Amended 2026-09-23 for
+the ITD layers.
+
+**The defect.** `extents.enumerate_mainline_chains` walks one `RoadNumber` at a time,
+so a street whose number changes along its length becomes several short chains. Each
+one has to clear the 1-mi chain minimum and find its own core:
+- **SH-8 through Moscow** splits in two where it runs concurrently with the US-95
+  couplet, which is numbered 95 there.
+- **Idaho Falls Yellowstone Hwy / Northgate Mile** is numbered as five routes along its
+  length: I-15 BL, US-20 BR, US-26, SH-43 and US-91.
+- **Broadway east of I-15** is a 0.9-mi I-15 BL chain, under the minimum. West of
+  I-15 it is ranked, as US-20.
+
+The couplet detector pairs parallel roads that are not one-way pairs:
+- **Chubbuck:** Yellowstone Ave / Quinn Rd paired with US-91 as a "US-91 couplet",
+  miles north of the real Pocatello couplet.
+- **SH-43 with E 105 N.** Item 48 removed this pair indirectly.
+- **Sandpoint** (US-2/US-95, 1st Ave / 5th Ave) is still in `KNOWN_COUPLETS`. The owner
+  says it is a divided highway, not a couplet.
+
+Scope:
+
+- [x] **Walk a road through its numbering changes.** Build chains on ITD route
+      membership (`routes.py`, including `concurrent` segments), or on street and
+      `XDGroup` continuity, so SH-8 through Moscow and Yellowstone Hwy are each one
+      facility. Show that SH-8 from the WA line to the east city limits resolves as
+      one chain. *From Item 52:* order each chain by the highway system's `RouteId` and
+      milepost, not only by `NextXDSegI`. The layer records one route per road, so SH-8
+      runs as a gap in its own mileposts where it shares the US-95 couplet. Bridge
+      that gap with INRIX `RoadList` concurrency, where the milepost gap shows it.
+      *From Item 49:* two junctions where `NextXDSegI` follows INRIX's old route
+      and not ITD's (DATA_FORMAT, trap 4):
+      - **Lewiston US-12**, where the Levee Byp is its own 1.7-mi chain;
+      - **Payette US-95** on 16th St, which D3's catalogue now carries as two entries,
+        `us95-fruitland` and `us95-payette-16th`.
+
+      An SHS-ordered chain should make each one facility again.
+      *Done (`extents.enumerate_mainline_chains`). A route is walked over its
+      membership routes plus the routes its `RoadList` names. Chains are joined where
+      the route turns off the link, and merged where only the number changes along the
+      street.*
+      - *A junction leaving the route's own run as a stub is taken only on SHS
+        milepost evidence (`itd_layers.shs_mileposts`): SH-8 leaves its line at mp 1.79
+        on 3rd St and returns at 2.35 on Troy Rd.*
+      - *SH-8 is one chain each way from the WA line (mp 0.12) through Moscow, via
+        Jackson St eastbound and Washington St westbound, with its own-line mileposts
+        in order. It ends at a genuine data gap past Bovill (no eastbound segments
+        between mp 36.27 and 37.60).*
+      - *Yellowstone Hwy (US-91 → US-26) is one 75.6-mi chain each way, and Broadway
+        east of I-15 is part of US-20's. Lewiston's US-12 is one chain: Levee Byp →
+        Main St → US Highway 12.*
+      - *98 route junctions statewide are now `route_junction` rows in the repair
+        tables (`scripts/generate_route_junctions.py`). The joins a global patch can't
+        carry go into each generated entry's own `links`.*
+      - *D3's US-95 is one entry again, `us95-fruitland-payette`, on 16th St. D3 now
+        has 52 entries / 26 reporting corridors.*
+- [x] **Couplets must be one-way pairs.**
+      - Require that each leg is actually one-way: there is no opposing-bearing XD
+        segment on the same street. *Partly done in Item 49, because the rebuilt
+        catalogues shipped false couplets at Lewiston and Elba:*
+        `couplets.drop_mirrored_pairs` and `couplets.drop_two_way_legs` (an opposing
+        same-street segment within 15 m over ≥50% of a leg). Chubbuck's Quinn Rd /
+        US-91 now fails, and every registry couplet that matched before still does. What is left here: the
+        route-share test, Sandpoint, the `Travelway` `D` test, and a review of the
+        survivors: Shoshone Greenwood St / US-93, and American Falls ID-39 S / ID-39 N
+        at 28 m.
+      - Require that the legs share a route under ITD membership.
+      - Remove Sandpoint from `KNOWN_COUPLETS`, with the owner's reason recorded.
+      - Use the highway system's `Travelway` `D` lines (Item 52): a divided highway's
+        second carriageway is not a couplet leg.
+      - The Chubbuck pair and the SH-43 / E 105 N pair must fail.
+      - Pocatello 4th/5th Ave and Blackfoot Bridge/Judicial must still pass. Also check
+        the 0.67-mi Pocatello Ave extension on Pocatello's legs.
+
+      *Done.*
+      - *The legs must share a route under membership (`itd_routes`).*
+      - *Sandpoint is out of `KNOWN_COUPLETS`, with the owner's reason recorded.*
+      - *`Travelway` `D` turned out to be **also** how the SHS draws a real couplet's
+        second leg (Moscow, Boise, Nampa, Pocatello, Blackfoot, Twin Falls). So the
+        tests are `drop_same_line_pairs` (both legs on one SHS line: Shoshone fails)
+        and `drop_divided_pairs` (`A` + `D` closer than 50 m: American Falls' ID-39
+        fails at 28 m).*
+      - *Chubbuck and SH-43 / E 105 N fail as two-way legs. Pocatello and Blackfoot
+        pass.*
+      - *Pocatello's 5th Ave leg overran 4th Ave by 0.65 mi north (the extension) and
+        1 mi south onto two-way pavement. `trim_leg_overhang` cuts it: 2.80 → 2.34 mi
+        against the registry's 2.22.*
+      - *Every decision is in `out/statewide_screening/couplet_review.csv`. For the
+        owner: Mountain Home's Main St / 2nd St E (35.5 m) survives, and D3's catalogue
+        doesn't carry it.*
+- [x] **Names say what the road is.** Facility names come from the street and the
+      city (the urban-area name from Item 52 where there is one), not "US-20:
+      Bonneville County (2)"; Northgate Mile ranks as #6 under
+      that name today. Couplet legs are labelled by their own bearing (NB/SB), not
+      WB/EB.
+      *Done (`extents.facility_naming`): `<band>: <street>, <town>`. The town is the
+      urban area, else "<County> County". The band takes `BL`/`BR` from `RoadList`.
+      The street is dropped when the road is named only by its route.*
+      - *Examples: "US-26: Yellowstone Hwy, Idaho Falls" (the old "US-20: Bonneville
+        County"), "SH-8: Pullman Rd, Moscow", "I-15 BL: Bergener Dr, Blackfoot".*
+      - *Couplets read "US-95: Washington St / Jackson St couplet, Moscow".*
+      - *Legs are labelled by their compass direction: `geometry._bearing_deg` now
+        scales longitude by cos(latitude), so Pocatello's legs read NB/SB.*
+- [x] pytest; regenerate the catalogues; DESIGN_HISTORY.
+      *Session 70. New tests in `test_extents.py` (Item 51 classes), `test_couplets.py`,
+      `test_corridors.py`, `test_geometry.py` and `test_itd_layers.py`. D1/D2/D4–D6
+      regenerated and all entries verify. Full screening re-run; the ranking moves are
+      in DESIGN_HISTORY.*
+
+*Suggested prompt (done):* "Do Item 51 of ROADMAP.md — walk corridor chains across route-number
+changes and require couplets to be real one-way pairs."
+
+---
+
+## 53 — Couplet legs carry one-way AADT; everything else carries two-way
+
+**Target: one session. Independent of the other open items**, but it changes VHD, so
+run it before the next statewide re-run, not after. A prerequisite for the Future
+"Directional AADT" bullet: that split needs every segment on one volume basis first.
+Scoped 2026-09-24 (Session 71) from the owner's question.
+
+**The defect (verified Session 71, not yet fixed).** Every XD segment is one direction
+of travel, and VHD is `delay/60 × AADT` per segment (`extents.segment_congestion`,
+`aadt.vehicle_hours_of_delay`). What AADT a segment gets depends on the road:
+- **Two-way road:** both directions match the one centreline and get its **two-way**
+  count.
+- **Divided highway:** AADT 2025 has one centreline per divided highway (the `D` routes
+  are mostly absent). `join_aadt` reaches it from both carriageways (60 m), so both
+  directions get the **two-way** count.
+- **Couplet:** ITD carries each leg as its own record (`A` and `D` route IDs, e.g.
+  `01360AIN015`/`01360DIN015` for Pocatello's I-15 BL), and that count is **one-way**.
+  Where the road splits, the layer halves it: `01360AIN015` goes from 15,000
+  (two-way, "END 1-WAY N OF RAMPS") to 7,500 on the A leg and 7,700 on the D leg.
+  After the join, couplet legs carry 6,500–12,000. The two-way road just past each
+  end carries 13,000–21,500 (Pocatello, Blackfoot, Twin Falls).
+
+So each couplet leg's VHD and VHD/mi is **about half** of what the same delay scores on
+any other road. Nothing corrects for it today: `couplets.py` and the screening never
+touch AADT. The Boise Myrtle/Front couplet (D3 curated) is affected the same way.
+**Moscow fits once SH-8 is included** (owner, Session 71). Between 3rd St and the
+south junction the couplet carries US-95 *and* SH-8: SH-8 comes in from the west on 3rd St
+and leaves to the east on Troy Rd. So that section adds up two routes' traffic, not one. The layer
+agrees:
+- **Concurrent section** (3rd St → south junction): 12,500 on the NB leg (Washington) plus
+  12,000 on the SB leg (Jackson) = 24,500. Compare 14,000 two-way on US-95 south of the
+  couplet, 13,000 on SH-8 Troy Rd east, and 11,000–17,000 on SH-8 3rd St west.
+- **US-95-only section** north of 3rd: 6,800–10,500 NB plus 9,600 SB, against 16,000
+  two-way at "END 1-WAY N OF C ST".
+
+Both legs carry one-way counts, as in every other couplet. One join detail to check:
+the first segment of each leg at the south junction joins to SH-8's
+`WASHINGTON ST (US-95) → BLAINE ST` record (13,000, two-way Troy Rd), not the leg's
+own. With 8 and 95 both in its `RoadList`, the route-number preference lets the SH-8
+record win.
+
+Scope:
+
+- [ ] **Decide the basis.** Recommended: keep the **two-way-equivalent** basis the
+      rest of the network already uses (that is what the noise floors,
+      `MIN_CORE_VHD[_PER_MILE]`, were tuned on). Give a couplet leg its one-way count
+      × 2. A true one-way VHD would halve every other segment instead, and every floor
+      would need re-tuning. Record the decision in DESIGN_HISTORY.
+- [ ] **Decide per record, not per corridor.** Use the layer's own evidence where you
+      can: an `A`/`D` pair on the same measures, or a "BEG/END 1-WAY" boundary where
+      the count halves. Fall back to couplet-leg membership (`one_way_couplet`). Give
+      each segment an `aadt_basis` column (`two_way` / `one_way_x2`) so the per-segment
+      VHD maps agree with the corridor rankings. Apply it once, right after
+      `join_aadt` (`run_district_screening.join_volumes`,
+      `build_statewide_catalogues`, `generate_statewide_maps`). Do not add it at each
+      place VHD is used.
+- [ ] Fix the Moscow south-junction segments that join to SH-8's Troy Rd record
+      (above). Check the Boise couplet's legs against I-184 and the two-way ends. Any
+      check that "the legs add up to the two-way road" has to allow for a concurrent
+      route joining inside the couplet, as Moscow's does.
+- [ ] pytest (the factor, the flag, and an `A`/`D` split fixture); re-run the screening;
+      report how the couplet rankings move; DATA_FORMAT + DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 53 of ROADMAP.md — put couplet legs' AADT on the same
+two-way basis as the rest of the network before VHD is computed."
+
+---
+
 ## Future (not yet scoped — need a planning pass before they're actionable)
 
 - **Directional AADT (direction-aware *volume* + a time-of-day directional
@@ -1233,6 +2760,22 @@ DESIGN_HISTORY Session 38."
   vs multiselect) before it's actionable. **Item 34 comes first:** the join this would
   refine currently attributes ramp counts to one carriageway of a divided highway, so a
   directional split built on today's `join_aadt` would be splitting the wrong number.
+- **Segment-level route overrides (SH-8 in Moscow).** Owner, 2026-09-23 (Session 70):
+  SH-8 eastbound follows 3rd St, then goes down Jackson St (with US-95) to Troy Rd.
+  Westbound, it goes north on Washington St (with US-95) to 3rd St, then heads west.
+  So the block of 3rd St between Washington and Jackson is state route **westbound
+  only**, although it is a two-way street. SHS draws SH-8 as one centreline down 3rd
+  St to Washington, so membership puts both directions on route 8. The two eastbound
+  segments `448932361` / `448932362` are therefore counted as SH-8 in the D2
+  inventory and export lists.
+  - **Today:** the Item 51 chain walk already leaves them out as a milepost-evidenced
+    stub. The catalogue is right, and the owner is OK keeping them in the data for now.
+  - **Later:** `scripts/route_overrides.csv` matches on county + road name, which
+    can't separate the two directions of one street. Add an optional segment-id
+    column, and override those two segments off route 8, so membership states the
+    routing directly instead of relying on the stub rule. After that, rebuild D2
+    membership and the inventories, and re-run the D2 catalogue. Other one-direction
+    route splits like this may exist.
 - **Anomaly / incident flagging** — wrap `traffic_anomaly.anomaly` (z-score /
   GEH on residuals, entity- and group-level) to flag bad sensor data, incidents,
   and unusual days. Deferred from the initial analysis scope.
@@ -1252,6 +2795,19 @@ DESIGN_HISTORY Session 38."
   `corridors.build_chain` walks `NextXDSegI` from snapped endpoint coordinates instead
   of hand-listing members, with endpoint trim and missing-segment accounting; feeds
   `chain_travel_time` / `speed.corridor_travel_time` (and the Item 19 membership table).
+- **~~`ingest_export_streaming` mis-attributes its row count~~ — resolved 2026-09-18
+  (Item 39, Session 48): there was no counter bug.** `io._discover_parts` expands *any*
+  `..._part_N.zip` into all of its siblings, so a call handed `part_1.zip` ingests the
+  **whole** export and `n_rows_added = 91,054,384` is the correct total across the three
+  parts, not part 1's own 45,403,216. That also explains what the finding could not —
+  the store reached its complete, exactly-correct state "while the ingest was still
+  working on part 2" because the *first* call was itself looping over all three parts,
+  and parts 2 and 3 "never logged" because they were never separate ingests.
+  `d3_store.duckdb`'s `_ingests` table has exactly **one** row. DESIGN_HISTORY Session
+  40's "3 parts, 91,054,384 rows, 262 s" stands as a whole-export figure. What was
+  actually wrong was the *record*: both ingest functions now return `n_parts` / `parts`
+  and log the resolved member list rather than the single path handed in, so a
+  provenance row can no longer read as "part 1 carried everything".
 - **OSM geometry fallback** — only needed for segments *not* in the XD shapefile
   (out-of-state, or a future provider change): per-segment map-matching
   (osmnx/OSRM/Valhalla + a Shapely endpoint cut, QA'd against `Miles`). Not

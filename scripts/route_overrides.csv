@@ -1,0 +1,12 @@
+# Owner-reviewed exceptions to ITD's route layers (ROADMAP Items 48, 52; inrix_tools.routes).
+# Identity comes from ITD's State Highway System (SHS_Primary.zip) since Item 52, with the
+# AADT layer as the fallback. An override beats both, for where a layer lags reality.
+# One row per road: county + INRIX RoadName (+ INRIX RoadNumber, optional).
+# route blank = not a state route.  Every row needs a note saying why and who decided.
+#
+# Retired (Item 52, 2026-09-23): Latah,Reisenauer Rd,,,"Old US-95 alignment south of
+# Moscow; US-95 moved to the new alignment ~2025 and this road went to Latah County."
+# (owner, Session 65). The AADT layer still showed it as US-95. The State Highway System
+# agrees with the owner (no SHS line on Reisenauer Rd; US-95 is on the new alignment,
+# 01540AUS095), and so does AADT 2025, so the row is no longer needed.
+county,road_name,inrix_route,route,note

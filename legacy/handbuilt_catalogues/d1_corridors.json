@@ -1,0 +1,218 @@
+{
+  "_note": "ITD District 1 screening catalogue derived from recurring congestion triage and couplet synthesis.",
+  "corridors": [
+    {
+      "id": "us95-cda-nb",
+      "name": "US-95 NB: Coeur d'Alene (I-90) to Hayden (Miles Ave)",
+      "start_latlon": [
+        47.68694,
+        -116.797
+      ],
+      "end_latlon": [
+        47.75903,
+        -116.79097
+      ],
+      "description": "US-95 northbound from I-90 through Coeur d'Alene and Hayden to Miles Ave. High-density retail and commercial corridor.",
+      "corridor": "us95-cda-hayden",
+      "direction": "NB"
+    },
+    {
+      "id": "us95-cda-sb",
+      "name": "US-95 SB: Hayden (Miles Ave) to Coeur d'Alene (I-90)",
+      "start_latlon": [
+        47.75903,
+        -116.79125
+      ],
+      "end_latlon": [
+        47.68694,
+        -116.79725
+      ],
+      "description": "US-95 southbound from Hayden through Coeur d'Alene to the I-90 interchange.",
+      "corridor": "us95-cda-hayden",
+      "direction": "SB"
+    },
+    {
+      "id": "i90-cda-eb",
+      "name": "I-90 EB: Coeur d'Alene (IC 11 to IC 15)",
+      "start_latlon": [
+        47.70059,
+        -116.81303
+      ],
+      "end_latlon": [
+        47.66275,
+        -116.7472
+      ],
+      "description": "Eastbound I-90 through urban Coeur d'Alene from Northwest Blvd to Sherman Ave.",
+      "corridor": "i90-cda",
+      "direction": "EB"
+    },
+    {
+      "id": "i90-cda-wb",
+      "name": "I-90 WB: Coeur d'Alene (IC 15 to IC 11)",
+      "start_latlon": [
+        47.66259,
+        -116.73809
+      ],
+      "end_latlon": [
+        47.7036,
+        -116.83042
+      ],
+      "description": "Westbound I-90 through urban Coeur d'Alene from Sherman Ave to Northwest Blvd.",
+      "corridor": "i90-cda",
+      "direction": "WB"
+    },
+    {
+      "id": "sh41-postfalls-nb",
+      "name": "SH-41 NB: Post Falls (I-90) to Prairie Ave",
+      "start_latlon": [
+        47.71329,
+        -116.89464
+      ],
+      "end_latlon": [
+        47.73916,
+        -116.89394
+      ],
+      "description": "SH-41 northbound from I-90 through Post Falls commercial sector to Prairie Ave.",
+      "corridor": "sh41-postfalls",
+      "direction": "NB"
+    },
+    {
+      "id": "sh41-postfalls-sb",
+      "name": "SH-41 SB: Prairie Ave to Post Falls (I-90)",
+      "start_latlon": [
+        47.74299,
+        -116.89422
+      ],
+      "end_latlon": [
+        47.7136,
+        -116.8945
+      ],
+      "description": "SH-41 southbound from Prairie Ave to I-90 in Post Falls.",
+      "corridor": "sh41-postfalls",
+      "direction": "SB"
+    },
+    {
+      "id": "sandpoint-couplet-nb",
+      "name": "Sandpoint Couplet NB: 1st Ave (US-2/95)",
+      "start_latlon": [
+        48.26902,
+        -116.5416
+      ],
+      "end_latlon": [
+        48.28646,
+        -116.55007
+      ],
+      "description": "Northbound leg of Sandpoint downtown couplet on 1st Ave.",
+      "corridor": "sandpoint-couplet",
+      "direction": "NB"
+    },
+    {
+      "id": "sandpoint-couplet-sb",
+      "name": "Sandpoint Couplet SB: 5th Ave (US-2/95)",
+      "start_latlon": [
+        48.28646,
+        -116.55007
+      ],
+      "end_latlon": [
+        48.26911,
+        -116.5417
+      ],
+      "description": "Southbound leg of Sandpoint downtown couplet on 5th Ave.",
+      "corridor": "sandpoint-couplet",
+      "direction": "SB"
+    },
+    {
+      "id": "sh3-stmaries-nb",
+      "name": "SH-3 NB: St. Maries River Road",
+      "start_latlon": [
+        47.01786,
+        -116.2604
+      ],
+      "end_latlon": [
+        47.04018,
+        -116.27975
+      ],
+      "description": "SH-3 northbound near St. Maries along the St. Joe River corridor.",
+      "corridor": "sh3-stmaries",
+      "direction": "NB"
+    },
+    {
+      "id": "sh3-stmaries-sb",
+      "name": "SH-3 SB: St. Maries River Road",
+      "start_latlon": [
+        47.04018,
+        -116.27975
+      ],
+      "end_latlon": [
+        47.01786,
+        -116.2604
+      ],
+      "description": "SH-3 southbound near St. Maries.",
+      "corridor": "sh3-stmaries",
+      "direction": "SB"
+    },
+    {
+      "id": "us95-bonners-nb",
+      "name": "US-95 NB: Bonners Ferry to Boundary North",
+      "start_latlon": [
+        48.72659,
+        -116.30288
+      ],
+      "end_latlon": [
+        48.7464,
+        -116.29028
+      ],
+      "description": "US-95 northbound through Bonners Ferry across the Kootenai River.",
+      "corridor": "us95-bonners-ferry",
+      "direction": "NB"
+    },
+    {
+      "id": "us95-bonners-sb",
+      "name": "US-95 SB: Boundary North to Bonners Ferry",
+      "start_latlon": [
+        48.74617,
+        -116.29042
+      ],
+      "end_latlon": [
+        48.72892,
+        -116.30143
+      ],
+      "description": "US-95 southbound toward Bonners Ferry.",
+      "corridor": "us95-bonners-ferry",
+      "direction": "SB"
+    }
+  ],
+  "reporting_corridors": [
+    {
+      "id": "us95-cda-hayden",
+      "name": "US-95: Coeur d'Alene (I-90) to Hayden (Miles Ave)",
+      "description": "The 5.8-mile primary urban commercial arterial spine of Kootenai County."
+    },
+    {
+      "id": "i90-cda",
+      "name": "I-90: Coeur d'Alene Urban Freeway (IC 11 to IC 15)",
+      "description": "The 4.2-mile urban interstate corridor through Coeur d'Alene."
+    },
+    {
+      "id": "sh41-postfalls",
+      "name": "SH-41: Post Falls (I-90) to Prairie Ave",
+      "description": "The 3.6-mile suburban arterial connecting Post Falls to Rathdrum Prairie."
+    },
+    {
+      "id": "sandpoint-couplet",
+      "name": "Sandpoint Couplet: 1st Ave NB / 5th Ave SB (US-2/US-95)",
+      "description": "Downtown Sandpoint one-way couplet carrying US-2 and US-95.",
+      "one_way_couplet": true
+    },
+    {
+      "id": "sh3-stmaries",
+      "name": "SH-3: St. Maries River Corridor",
+      "description": "The 1.9-mile rural arterial section of SH-3 near St. Maries."
+    },
+    {
+      "id": "us95-bonners-ferry",
+      "name": "US-95: Bonners Ferry Corridor",
+      "description": "The 4.8-mile northern rural baseline facility on US-95."
+    }
+  ]
+}
