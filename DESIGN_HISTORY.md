@@ -6144,3 +6144,53 @@ sidebar, or for the two legends to be stacked.
     to descriptions ("Generated from the XD topology by inrix_tools.extents
     (ROADMAP Items 46, 50)." and the couplet "Detected by …detect_couplets"
     version), via `_hover_description`. The catalogue JSON keeps it.
+
+### Directional figures and a direction switch (same session, owner follow-up)
+
+- **Per-direction figures in the corridor tooltip.** New core function
+  `screen.direction_totals(breakout)` gives one row per corridor × direction,
+  summed over the windows. It uses the same arithmetic as `corridor_peak_totals`
+  (each direction's miles counted once), so the directions' `vhd` and
+  `delay_min` add up to the corridor total. `attach_direction_totals` adds these
+  rows to the map's rank dict: the district run takes them from its in-memory
+  breakout, and the statewide map from each district's `corridor_*breakout.csv`.
+  The tooltip shows a Combined line, then one line per direction (veh-hrs, VHD/mi,
+  min delay, TTI), with the hovered leg's direction in bold. A single-direction
+  corridor shows just one line. This applies to every multi-direction corridor,
+  couplet or not.
+- **Couplet distance notes** are dropped from the tooltip: the pair's "; N mi per
+  leg, mean lateral separation N m" and a leg's "… N m away". The leg's opposing
+  street stays.
+- **Direction control.** Both directions of a road usually share a line on the
+  map, so the tooltip you got depended on drawing order. Each segment tier is now
+  split into NB/EB, SB/WB and direction-less traces (by XD `Bearing`), sharing
+  one legend entry (`legendgroup`, `tracegroupgap=0`). A new **Both Directions /
+  NB / EB / SB / WB** button row (`_direction_menu`) switches between them.
+  Segments with no cardinal bearing (O/C) always stay visible.
+  - Considered and rejected: a lateral offset between the two directions. Plotly
+    map lines have no pixel offset; faking one in geographic units would need
+    redrawing every segment on zoom (as the termini triangles are), which is
+    too heavy for ~16k segments.
+  - Known limitation: the direction buttons set `visible` directly, so a tier
+    hidden with a legend click is shown again when you switch direction.
+- Tests: `test_screen.py` +1 (directions sum to the total; CSV round trip).
+  `test_run_district_screening.py` +4 (couplet distance strip, bearing classes,
+  tier split and menu, tooltip lines).
+- Owner follow-ups:
+  - **Direction switch scope.** The buttons act on the segment layer, not the
+    corridor outlines. That wasn't what was first asked, but the owner prefers it:
+    the corridor tooltip already lists both directions.
+  - **Bug: the segment legend vanished on "SB / WB".** Each tier's legend entry
+    was attached to its NB/EB trace, and a legend entry is hidden along with its
+    trace. Each tier's entry now sits on its own empty trace, which the buttons
+    never touch.
+  - **Per-direction figures sum both peaks. They are not the peak direction's
+    peak only.** The owner had assumed I-84 EB's figures were AM-only. In fact
+    each direction's figure is AM + PM, like the ranking totals (Item 41). The
+    tooltip now puts an AM/PM split line under each direction (veh-hrs and
+    minutes per window), so the dominant peak is visible. I-84 EB is 20,393 AM /
+    599 PM veh-hrs, and WB 116 / 26,257. The Boise couplet's EB is an even split
+    (366 / 419). A single-window run (7-day) shows no split line. The ranking
+    basis is unchanged.
+  - Owner confirmed: the ranking stays on AM + PM for both directions; the
+    tooltip's split is enough.

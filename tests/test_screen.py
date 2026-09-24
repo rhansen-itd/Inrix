@@ -734,6 +734,25 @@ def test_breakout_follows_the_ranked_order_it_is_given():
     assert list(dict.fromkeys(b.index.get_level_values(0))) == ["zed", "toy"]
 
 
+def test_direction_totals_add_up_to_the_corridor_total():
+    """Per-direction figures for the map tooltip: each direction summed over its
+    peaks, its miles counted once, and the directions summing to the total."""
+    t = screen.corridor_peak_totals(_directional_ranking(), MEMBERSHIP).iloc[0]
+    b = screen.corridor_breakout(_directional_ranking(), MEMBERSHIP)
+    d = screen.direction_totals(b).set_index("direction")
+    assert list(d.index) == ["EB", "WB"]
+    assert d.loc["EB", "delay_min"] == pytest.approx(10.0 + 1.0)
+    assert d.loc["WB", "vhd"] == pytest.approx(200 + 2000)
+    assert d.loc["EB", "miles"] == pytest.approx(5.0)          # not 10: once per direction
+    assert d.loc["WB", "vhd_per_mile"] == pytest.approx(2200 / 3.0)
+    assert d["vhd"].sum() == pytest.approx(t["vhd"])
+    assert d["delay_min"].sum() == pytest.approx(t["delay_min"])
+    assert d["miles"].sum() == pytest.approx(t["directional_miles"])
+    # the CSV round trip (flat columns) gives the same answer
+    flat = screen.direction_totals(b.reset_index())
+    pd.testing.assert_frame_equal(flat, screen.direction_totals(b))
+
+
 def test_baseline_screen_carries_quantiles_and_the_realtime_share(area):
     """Item 50: the weekday travel-time percentile the fallback baseline reads, and
     the ``Pct Score30`` share, per window."""

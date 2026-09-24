@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from inrix_tools import aadt as aadt_mod  # noqa: E402
 from inrix_tools import corridors, screen  # noqa: E402
+from scripts.aggregate_statewide_rankings import load_district_table  # noqa: E402
 from scripts.run_district_screening import (  # noqa: E402
     BBOX_MARGIN_DEG,
     join_volumes,
@@ -39,7 +40,9 @@ from scripts.run_district_screening import (  # noqa: E402
     _build_corridor_overlay,
     _build_segment_vhd_traces,
     _build_segment_traces,
+    _direction_menu,
     _legend_sidebar_layout,
+    attach_direction_totals,
     _map_viewer_html,
     _segment_tti_frame,
     _CORRIDOR_OUTLINE_LIGHT,
@@ -270,6 +273,9 @@ def generate_statewide_map(
                 font=dict(size=11, color="#2d3748"),
             )
         )
+    dir_menu = _direction_menu(fig)
+    if dir_menu is not None:
+        menus.append(dir_menu)
 
     fig.update_layout(
         title=dict(
@@ -347,6 +353,15 @@ def main():
         df_7d = pd.read_csv(d7_rank_csv)
         df_7d["rank"] = df_7d["statewide_rank"]
         d7_ranks = df_7d.set_index("corridor_group").to_dict(orient="index")
+
+    # Per-direction figures for the corridor tooltips, from each district's breakout.
+    def _breakouts(fname):
+        parts = [load_district_table(base_dir / f"d{d}" / fname, d) for d in args.districts]
+        parts = [p for p in parts if p is not None]
+        return pd.concat(parts, ignore_index=True) if parts else None
+
+    attach_direction_totals(peak_ranks, _breakouts("corridor_breakout.csv"))
+    attach_direction_totals(d7_ranks, _breakouts("corridor_7day_breakout.csv"))
 
     map_files = []
 

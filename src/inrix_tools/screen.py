@@ -1115,6 +1115,42 @@ def corridor_breakout(ranking: pd.DataFrame, membership, *, names=None, windows=
     return out
 
 
+def direction_totals(breakout: pd.DataFrame) -> pd.DataFrame:
+    """Per-direction totals of a :func:`corridor_breakout` — one row per
+    ``(corridor_group, direction)``, summed over the windows.
+
+    The arithmetic is :func:`corridor_peak_totals`' restricted to one direction, so
+    the directions **add up** to the corridor total: ``delay_min`` and ``vhd`` sum
+    to its ``delay_min`` / ``vhd``, and each ``vhd_per_mile`` divides by that
+    direction's own miles (counted once, however many windows), whose sum is the
+    total's ``directional_miles``.
+
+    Accepts the breakout either as returned (``MultiIndex``) or as read back from
+    its CSV (flat columns).
+    """
+    cells = breakout.reset_index() if GROUP_COL not in breakout.columns else breakout
+    records = []
+    for (gid, direction), block in cells.groupby([GROUP_COL, DIRECTION_COL], sort=False):
+        miles = float(block["miles"].max())
+        delay = block["delay_min"].sum(min_count=1)
+        vhd = block["vhd"].sum(min_count=1)
+        tt, ff = block["travel_time_min"].sum(), block["free_flow_min"].sum()
+        records.append({
+            GROUP_COL: gid,
+            DIRECTION_COL: direction,
+            "miles": miles,
+            "delay_min": delay,
+            "tti": (tt / ff) if ff > 0 else float("nan"),
+            "delay_per_mile": delay / miles if miles > 0 else float("nan"),
+            "vhd": vhd,
+            "vhd_per_mile": (vhd / miles if miles > 0 and pd.notna(vhd)
+                             else float("nan")),
+        })
+    cols = [GROUP_COL, DIRECTION_COL, "miles", "delay_min", "tti", "delay_per_mile",
+            "vhd", "vhd_per_mile"]
+    return pd.DataFrame.from_records(records, columns=cols)
+
+
 _AADT_CAVEAT = (
     "AADT is a daily total; vhd is a relative weight at the window's mean delay, not "
     "absolute vehicle-hours unless the window is scaled to a full day "

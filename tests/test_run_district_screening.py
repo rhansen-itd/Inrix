@@ -561,3 +561,79 @@ def test_hover_description_drops_tool_provenance():
     assert rds._hover_description(couplet).endswith("0.80 mi per leg.")
     hand = "Split off per ROADMAP Item 44 by hand."
     assert rds._hover_description(hand) == hand
+
+
+def test_couplet_hover_drops_the_distance_note():
+    desc = ("One-way couplet carrying US-95 across Washington St (NB) and Jackson St "
+            "(SB) in Moscow (ZIP 83843); 0.64 mi per leg, mean lateral separation "
+            "179 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).")
+    out = rds._hover_description(desc).replace("<br>", " ")
+    assert out.endswith("in Moscow (ZIP 83843).")
+    assert "separation" not in out and "per leg" not in out
+    leg = ("One-way couplet leg on Washington St (NB) carrying US-95 through Moscow, "
+           "3 segments; the opposing leg runs on Jackson St 179 m away.")
+    assert rds._hover_description(leg).replace("<br>", " ").endswith(
+        "the opposing leg runs on Jackson St.")
+
+
+def test_direction_class_splits_bearings_into_nb_eb_and_sb_wb():
+    assert {rds._direction_class(b) for b in ("N", "E")} == {rds._DIR_POSITIVE}
+    assert {rds._direction_class(b) for b in ("S", "W")} == {rds._DIR_NEGATIVE}
+    for b in ("O", "C", None, ""):
+        assert rds._direction_class(b) == rds._DIR_OTHER
+
+
+def test_segment_tiers_split_by_direction_but_list_once_in_the_legend():
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    line = LineString([(-116.2, 43.6), (-116.19, 43.61)])
+    merged = gpd.GeoDataFrame({
+        "Bearing": ["N", "S", "O"], "RoadName": ["A", "A", "B"], "RoadNumber": ["1"] * 3,
+        "Miles": [1.0] * 3, "worst_tti": [1.0] * 3, "worst_speed": [60.0] * 3,
+        "ref_speed": [60.0] * 3, "worst_delay_rate": [0.0] * 3,
+    }, geometry=[line] * 3, index=[11, 12, 13])
+    all_traces = rds._build_segment_traces(merged)
+    tier = [t for t in all_traces if t.legendgroup == all_traces[0].legendgroup]
+    # the legend entry is its own empty trace, which no direction button touches —
+    # hiding NB/EB must not take the tier's legend entry with it
+    holder = [t for t in tier if t.showlegend]
+    assert len(holder) == 1 and holder[0].meta is None and list(holder[0].lat) == [None]
+    traces = [t for t in all_traces if t.meta and list(t.lat) != [None]]
+    assert sorted(t.meta["dir"] for t in traces) == ["neg", "other", "pos"]
+    assert not any(t.showlegend for t in traces)
+
+    import plotly.graph_objects as go
+    menu = rds._direction_menu(go.Figure(traces))
+    assert rds._direction_menu(go.Figure(all_traces))["buttons"][2]["args"][1] == [
+        i for i, t in enumerate(all_traces) if t.meta and t.meta["dir"] != "other"]
+    labels = [b["label"] for b in menu["buttons"]]
+    assert labels == ["Both Directions", "NB / EB", "SB / WB"]
+    other = next(i for i, t in enumerate(traces) if t.meta["dir"] == "other")
+    for b in menu["buttons"]:
+        assert other not in b["args"][1]      # direction-less segments never hidden
+    nb_only = dict(zip(menu["buttons"][1]["args"][1], menu["buttons"][1]["args"][0]["visible"]))
+    assert [nb_only[i] for i, t in enumerate(traces) if t.meta["dir"] != "other"] == \
+        [t.meta["dir"] == "pos" for t in traces if t.meta["dir"] != "other"]
+
+
+def test_corridor_tooltip_lists_each_direction_beside_the_combined_figures():
+    breakout = pd.DataFrame({
+        "corridor_group": ["g"] * 4, "direction": ["EB", "EB", "WB", "WB"],
+        "window": ["am", "pm"] * 2, "miles": [5.0, 5.0, 3.0, 3.0],
+        "delay_min": [10.0, 1.0, 2.0, 20.0], "vhd": [1000.0, 100.0, 200.0, 2000.0],
+        "travel_time_min": [20.0, 11.0, 12.0, 30.0], "free_flow_min": [10.0] * 4,
+    })
+    ranks = rds.attach_direction_totals(
+        {"g": {"vhd": 3300.0, "vhd_per_mile": 412.5, "delay_min": 33.0, "tti": 1.8}},
+        breakout)
+    html = rds._corridor_figures_html(ranks["g"], "Total Peak Delay", hovered="WB")
+    assert "<b>Combined:</b> 3,300 veh-hrs" in html
+    assert "EB: 1,100 veh-hrs | 220.0 VHD/mi | 11.0 min delay" in html
+    assert "<b>WB: 2,200 veh-hrs" in html                     # hovered leg in bold
+    # each direction's figures sum its peaks; the split says which peak they came from
+    assert "AM 1,000 veh-hrs, 10.0 min · PM 100 veh-hrs, 1.0 min" in html
+    assert "AM 200 veh-hrs, 2.0 min · PM 2,000 veh-hrs, 20.0 min" in html
+    single = rds._corridor_figures_html({"vhd": 5.0, "vhd_per_mile": 1.0,
+                                         "delay_min": 1.0, "tti": 1.1}, "Total Peak Delay")
+    assert "Combined" not in single and "5 veh-hrs" in single

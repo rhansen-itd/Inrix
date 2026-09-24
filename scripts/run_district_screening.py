@@ -418,14 +418,89 @@ def _fmt_or_na(val, fmt=",.0f") -> str:
     return format(float(val), fmt)
 
 
+# Direction classes for the segment layer. Both carriageways of a road usually
+# share (or nearly share) a line on the map, so which one a hover reaches depends
+# on drawing order; splitting each tier by direction lets the direction buttons
+# show one side at a time. XD ``Bearing`` is N/S/E/W, with O/C for the odd rest.
+_DIR_POSITIVE = "pos"     # NB / EB
+_DIR_NEGATIVE = "neg"     # SB / WB
+_DIR_OTHER = "other"      # no cardinal bearing: shown whichever side is chosen
+_DIR_CLASS_OF_BEARING = {"N": _DIR_POSITIVE, "E": _DIR_POSITIVE,
+                         "S": _DIR_NEGATIVE, "W": _DIR_NEGATIVE}
+
+
+def _direction_class(bearing) -> str:
+    """``pos`` (NB/EB), ``neg`` (SB/WB) or ``other`` for an XD ``Bearing``."""
+    return _DIR_CLASS_OF_BEARING.get(str(bearing or "").strip().upper()[:1], _DIR_OTHER)
+
+
+def _segment_line_traces(buckets, tooltip_of) -> list:
+    """One Scattermap line trace per ``tier x direction class``.
+
+    ``buckets`` is ``[(label, subset, color, width), ...]`` and ``tooltip_of(sid,
+    row)`` the hover text. A tier's traces share a ``legendgroup`` whose legend
+    entry is an empty, always-visible trace, so the legend lists each tier once
+    (with its full segment count) whichever direction is shown, and a click toggles
+    all its directions together. Each line trace carries ``meta={"dir": class}``
+    for :func:`_direction_menu`.
+    """
+    import plotly.graph_objects as go
+
+    traces = []
+    for label, subset, color, width in buckets:
+        classes = (subset["Bearing"].map(_direction_class) if "Bearing" in subset.columns
+                   else pd.Series(_DIR_OTHER, index=subset.index))
+        present = [c for c in (_DIR_POSITIVE, _DIR_NEGATIVE, _DIR_OTHER)
+                   if (classes == c).any()]
+        # The tier's legend entry lives on an empty trace the direction buttons never
+        # touch: a legend entry disappears with its trace when that is hidden.
+        traces.append(go.Scattermap(
+            lat=[None], lon=[None], mode="lines",
+            line=dict(color=color, width=width),
+            name=f"{label} ({len(subset):,} segs)",
+            legendgroup=f"tier:{label}", showlegend=True, hoverinfo="skip"))
+        for dir_class in present:
+            all_lats, all_lons, all_texts = [], [], []
+            for sid, row in subset[classes == dir_class].iterrows():
+                lats, lons = _extract_linestring_coords(row.geometry)
+                if not lats:
+                    continue
+                tooltip = tooltip_of(sid, row)
+                for lat, lon in zip(lats, lons):
+                    if lat is None:
+                        all_lats.append(None); all_lons.append(None); all_texts.append(None)
+                    else:
+                        all_lats.append(lat); all_lons.append(lon); all_texts.append(tooltip)
+                all_lats.append(None); all_lons.append(None); all_texts.append(None)
+
+            traces.append(go.Scattermap(
+                lat=all_lats, lon=all_lons, mode="lines",
+                line=dict(color=color, width=width),
+                name=f"{label} ({len(subset):,} segs)",
+                legendgroup=f"tier:{label}",
+                showlegend=False,
+                meta={"dir": dir_class},
+                text=all_texts, hoverinfo="text",
+                hoverlabel=dict(bgcolor="rgba(255,255,255,0.95)",
+                                font_size=12, font_color="#1a202c"),
+            ))
+    return traces
+
+
+def _segment_header(row) -> str:
+    rname = row.get("RoadName", "Segment") or "Segment"
+    rnum = row.get("RoadNumber", "") or ""
+    bearing = row.get("Bearing", "") or ""
+    route_str = f"Route {rnum} ({bearing})" if rnum else bearing
+    return f"<b>{rname}</b> {route_str}<br>"
+
+
 def _build_segment_vhd_traces(merged, window_label="Peak"):
     """Build Plotly Scattermap traces for all segments, tiered by VHD / Mile.
 
     Segments whose ``worst_vhd_per_mile`` is NaN (no AADT joined) get their own
     ``No AADT Data`` trace instead of falling into the lowest delay tier.
     """
-    import plotly.graph_objects as go
-
     rate = merged["worst_vhd_per_mile"]
 
     # Unvolumed segments first, then the delay-density tiers over the rest.
@@ -439,104 +514,88 @@ def _build_segment_vhd_traces(merged, window_label="Peak"):
         buckets.append((label, merged[mask], color, width))
         prev_upper = upper if upper is not None else prev_upper
 
-    traces = []
-    for label, subset, color, width in buckets:
-        all_lats, all_lons, all_texts = [], [], []
-        for sid, row in subset.iterrows():
-            lats, lons = _extract_linestring_coords(row.geometry)
-            if not lats:
-                continue
-            rname = row.get("RoadName", "Segment") or "Segment"
-            rnum = row.get("RoadNumber", "") or ""
-            bearing = row.get("Bearing", "") or ""
-            route_str = f"Route {rnum} ({bearing})" if rnum else bearing
-            miles = row.get("Miles", 0.0)
-            # "n/a", never "0" — a segment with no joined volume has no delay
-            # density, and printing a zero would assert free flow it cannot know.
-            aadt_val = _fmt_or_na(row.get("aadt"))
-            vhd_val = _fmt_or_na(row.get("worst_vhd"))
-            vhd_rate = _fmt_or_na(row.get("worst_vhd_per_mile"))
-            tooltip = (
-                f"<b>{rname}</b> {route_str}<br>"
-                f"<b>Window:</b> {row.get('worst_window', window_label)} | "
-                f"<b>Length:</b> {miles:.2f} mi<br>"
-                f"<b>Delay Density:</b> {vhd_rate} VHD/mi "
-                f"({vhd_val} veh-hrs)<br>"
-                f"<b>AADT:</b> {aadt_val} veh/day<br>"
-                f"<b>TTI:</b> {row['worst_tti']:.2f} | "
-                f"<b>Delay Rate:</b> {row['worst_delay_rate']:.2f} min/mi<br>"
-                f"<b>Speed:</b> {row['worst_speed']:.1f} mph "
-                f"(Ref: {row['ref_speed']:.0f} mph)<br>"
-                f"<span style='font-size:10px;color:#718096'>Segment ID: {sid}</span>"
-            )
-            for lat, lon in zip(lats, lons):
-                if lat is None:
-                    all_lats.append(None); all_lons.append(None); all_texts.append(None)
-                else:
-                    all_lats.append(lat); all_lons.append(lon); all_texts.append(tooltip)
-            all_lats.append(None); all_lons.append(None); all_texts.append(None)
+    def tooltip_of(sid, row):
+        miles = row.get("Miles", 0.0)
+        # "n/a", never "0" — a segment with no joined volume has no delay
+        # density, and printing a zero would assert free flow it cannot know.
+        aadt_val = _fmt_or_na(row.get("aadt"))
+        vhd_val = _fmt_or_na(row.get("worst_vhd"))
+        vhd_rate = _fmt_or_na(row.get("worst_vhd_per_mile"))
+        return (
+            _segment_header(row)
+            + f"<b>Window:</b> {row.get('worst_window', window_label)} | "
+            f"<b>Length:</b> {miles:.2f} mi<br>"
+            f"<b>Delay Density:</b> {vhd_rate} VHD/mi "
+            f"({vhd_val} veh-hrs)<br>"
+            f"<b>AADT:</b> {aadt_val} veh/day<br>"
+            f"<b>TTI:</b> {row['worst_tti']:.2f} | "
+            f"<b>Delay Rate:</b> {row['worst_delay_rate']:.2f} min/mi<br>"
+            f"<b>Speed:</b> {row['worst_speed']:.1f} mph "
+            f"(Ref: {row['ref_speed']:.0f} mph)<br>"
+            f"<span style='font-size:10px;color:#718096'>Segment ID: {sid}</span>"
+        )
 
-        traces.append(go.Scattermap(
-            lat=all_lats, lon=all_lons, mode="lines",
-            line=dict(color=color, width=width),
-            name=f"{label} ({len(subset):,} segs)",
-            text=all_texts, hoverinfo="text",
-            hoverlabel=dict(bgcolor="rgba(255,255,255,0.95)",
-                            font_size=12, font_color="#1a202c"),
-        ))
-    return traces
+    return _segment_line_traces(buckets, tooltip_of)
 
 
 def _build_segment_traces(merged, window_label="Peak"):
     """Build Plotly Scattermap traces for all segments, tiered by TTI."""
-    import plotly.graph_objects as go
-
-    traces = []
+    buckets = []
     prev_upper = 0.0
     for label, upper, color, width in _TTI_TIERS:
         if upper is not None:
             mask = (merged["worst_tti"] >= prev_upper) & (merged["worst_tti"] < upper)
         else:
             mask = merged["worst_tti"] >= prev_upper
-        subset = merged[mask]
+        buckets.append((label, merged[mask], color, width))
         prev_upper = upper or 999.0
 
-        all_lats, all_lons, all_texts = [], [], []
-        for sid, row in subset.iterrows():
-            lats, lons = _extract_linestring_coords(row.geometry)
-            if not lats:
-                continue
-            rname = row.get("RoadName", "Segment") or "Segment"
-            rnum = row.get("RoadNumber", "") or ""
-            bearing = row.get("Bearing", "") or ""
-            route_str = f"Route {rnum} ({bearing})" if rnum else bearing
-            miles = row.get("Miles", 0.0)
-            tooltip = (
-                f"<b>{rname}</b> {route_str}<br>"
-                f"<b>Window:</b> {row.get('worst_window', window_label)} | "
-                f"<b>Length:</b> {miles:.2f} mi<br>"
-                f"<b>TTI:</b> {row['worst_tti']:.2f} | "
-                f"<b>Speed:</b> {row['worst_speed']:.1f} mph "
-                f"(Ref: {row['ref_speed']:.0f} mph)<br>"
-                f"<b>Excess Delay:</b> {row['worst_delay_rate']:.2f} min/mi<br>"
-                f"<span style='font-size:10px;color:#718096'>Segment ID: {sid}</span>"
-            )
-            for lat, lon in zip(lats, lons):
-                if lat is None:
-                    all_lats.append(None); all_lons.append(None); all_texts.append(None)
-                else:
-                    all_lats.append(lat); all_lons.append(lon); all_texts.append(tooltip)
-            all_lats.append(None); all_lons.append(None); all_texts.append(None)
+    def tooltip_of(sid, row):
+        miles = row.get("Miles", 0.0)
+        return (
+            _segment_header(row)
+            + f"<b>Window:</b> {row.get('worst_window', window_label)} | "
+            f"<b>Length:</b> {miles:.2f} mi<br>"
+            f"<b>TTI:</b> {row['worst_tti']:.2f} | "
+            f"<b>Speed:</b> {row['worst_speed']:.1f} mph "
+            f"(Ref: {row['ref_speed']:.0f} mph)<br>"
+            f"<b>Excess Delay:</b> {row['worst_delay_rate']:.2f} min/mi<br>"
+            f"<span style='font-size:10px;color:#718096'>Segment ID: {sid}</span>"
+        )
 
-        traces.append(go.Scattermap(
-            lat=all_lats, lon=all_lons, mode="lines",
-            line=dict(color=color, width=width),
-            name=f"{label} ({len(subset):,} segs)",
-            text=all_texts, hoverinfo="text",
-            hoverlabel=dict(bgcolor="rgba(255,255,255,0.95)",
-                            font_size=12, font_color="#1a202c"),
-        ))
-    return traces
+    return _segment_line_traces(buckets, tooltip_of)
+
+
+def _direction_menu(fig, *, x=0.98, y=0.85) -> dict | None:
+    """Buttons that show both directions, NB/EB only, or SB/WB only.
+
+    They restyle ``visible`` on the segment traces by their ``meta["dir"]``;
+    direction-less segments (``other``) stay on. ``None`` when the figure has no
+    directional segment traces to switch.
+    """
+    idx = {c: [] for c in (_DIR_POSITIVE, _DIR_NEGATIVE, _DIR_OTHER)}
+    for i, tr in enumerate(fig.data):
+        meta = tr.meta if isinstance(tr.meta, dict) else {}
+        if meta.get("dir") in idx:
+            idx[meta["dir"]].append(i)
+    if not (idx[_DIR_POSITIVE] or idx[_DIR_NEGATIVE]):
+        return None
+    targets = idx[_DIR_POSITIVE] + idx[_DIR_NEGATIVE]
+    npos = len(idx[_DIR_POSITIVE])
+
+    def show(pos: bool, neg: bool) -> list:
+        return [{"visible": [pos] * npos + [neg] * (len(targets) - npos)}, targets]
+
+    return dict(
+        type="buttons", direction="left", x=x, xanchor="right", y=y,
+        active=0, showactive=True,
+        buttons=[
+            dict(args=show(True, True), label="Both Directions", method="restyle"),
+            dict(args=show(True, False), label="NB / EB", method="restyle"),
+            dict(args=show(False, True), label="SB / WB", method="restyle"),
+        ],
+        bgcolor="rgba(255,255,255,0.9)",
+        bordercolor="#cbd5e0", font=dict(size=11, color="#2d3748"))
 
 
 # Corridor outline styling (underlay casing behind segment TTI lines).
@@ -562,9 +621,17 @@ _PROVENANCE_RE = re.compile(
     r"\s*(?:Generated from|Detected by)\b[^.]*?\binrix_tools\.[\w.]+ \(ROADMAP[^)]*\)\.")
 
 
+# The couplet detector's distance notes: the pair's "; 0.64 mi per leg, mean
+# lateral separation 179 m" clause and a leg's "... runs on Jackson St 179 m away".
+_COUPLET_DISTANCE_RE = re.compile(
+    r";\s*[\d.]+ mi per leg, mean lateral separation [\d.]+ m|\s+[\d.]+ m away(?=\.)")
+
+
 def _hover_description(description: str) -> str:
-    """A catalogue description for a map tooltip: provenance stripped, wrapped."""
-    return _wrap_html(_PROVENANCE_RE.sub("", description).strip(), _HOVER_WRAP_CHARS)
+    """A catalogue description for a map tooltip: provenance and the couplet
+    distance note stripped, wrapped."""
+    text = _COUPLET_DISTANCE_RE.sub("", _PROVENANCE_RE.sub("", description))
+    return _wrap_html(text.strip(), _HOVER_WRAP_CHARS)
 
 
 def _wrap_html(text: str, width: int, indent: str = "") -> str:
@@ -592,6 +659,7 @@ def _legend_sidebar_layout(seg_legend_title: str) -> dict:
         margin=dict(l=0, r=_LEGEND_SIDEBAR_PX, t=75, b=0),
         legend=dict(
             **common, y=0.0, yanchor="bottom",
+            tracegroupgap=0,   # each tier is a legendgroup of direction traces
             title=dict(text=f"<b>Segment Delay ({seg_legend_title})</b>",
                        font=dict(size=11, color="#1a202c")),
             font=dict(size=11, color="#2d3748")),
@@ -711,6 +779,69 @@ Plotly substitutes ``{plot_id}``; the triangles' centres and bearings travel in 
 termini trace's ``meta["termini"]``."""
 
 
+def _figures_line(label: str, fig: dict) -> str:
+    prefix = f"{label} " if label else ""
+    return (f"{prefix}{_fmt_or_na(fig.get('vhd'))} veh-hrs | "
+            f"{_fmt_or_na(fig.get('vhd_per_mile'), ',.1f')} VHD/mi | "
+            f"{_fmt_or_na(fig.get('delay_min'), ',.1f')} min delay | "
+            f"TTI {_fmt_or_na(fig.get('tti'), '.2f')}")
+
+
+def _window_split_line(windows: list) -> str:
+    """``AM 20,393 veh-hrs, 9.3 min · PM 599 veh-hrs, 0.3 min`` for a direction
+    whose figures sum several windows; empty for a single-window run (7-day)."""
+    if len(windows) < 2:
+        return ""
+    parts = [f"{str(w.get('window', '?')).upper()} {_fmt_or_na(w.get('vhd'))} veh-hrs, "
+             f"{_fmt_or_na(w.get('delay_min'), ',.1f')} min" for w in windows]
+    return "&nbsp;&nbsp;&nbsp;" + " · ".join(parts)
+
+
+def _corridor_figures_html(ri: dict, delay_label: str, *, hovered=None) -> str:
+    """The corridor tooltip's figures: the combined total, then — when the corridor
+    has more than one direction — each direction's own line (``ri["by_direction"]``,
+    from :func:`screen.direction_totals`), the hovered one in bold, each followed by
+    its per-window split (every direction's figures sum all its peak windows)."""
+    by_dir = ri.get("by_direction") or []
+    lines = [f"<b>{delay_label}:</b>"]
+    if len(by_dir) < 2:
+        lines.append(_figures_line("", ri))
+        split = _window_split_line(by_dir[0].get("windows", [])) if by_dir else ""
+        if split:
+            lines.append(split)
+    else:
+        lines.append(_figures_line("<b>Combined:</b>", ri))
+        for d in by_dir:
+            name = d.get("direction") or "?"
+            line = _figures_line(f"{name}:", d)
+            lines.append(f"<b>{line}</b>" if name == hovered else line)
+            split = _window_split_line(d.get("windows", []))
+            if split:
+                lines.append(split)
+    return "<br>".join(lines) + "<br>"
+
+
+def attach_direction_totals(corridor_ranks: dict, breakout) -> dict:
+    """Add ``by_direction`` (a list of per-direction figure dicts, each with its
+    per-window ``windows`` split) to each corridor's entry in ``corridor_ranks``,
+    from a :func:`screen.corridor_breakout` frame (as returned or read back from
+    CSV). Returns ``corridor_ranks``."""
+    if breakout is None or len(breakout) == 0:
+        return corridor_ranks
+    per_dir = screen.direction_totals(breakout)
+    cells = breakout.reset_index() if screen.GROUP_COL not in breakout.columns else breakout
+    windows = {key: block[[screen.WINDOW_COL, "vhd", "delay_min"]].to_dict(orient="records")
+               for key, block in cells.groupby([screen.GROUP_COL, screen.DIRECTION_COL],
+                                               sort=False)}
+    for gid, block in per_dir.groupby(screen.GROUP_COL, sort=False):
+        if gid in corridor_ranks:
+            recs = block.to_dict(orient="records")
+            for r in recs:
+                r["windows"] = windows.get((gid, r[screen.DIRECTION_COL]), [])
+            corridor_ranks[gid]["by_direction"] = recs
+    return corridor_ranks
+
+
 def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
                             delay_label="Total Peak Delay", zoom=9.5):
     """Build Plotly traces for ranked corridor centerlines and termini markers.
@@ -762,16 +893,12 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
 
         for entry in entries_by_group[gid]:
             ch = chains[entry.id]
-            vhd_rate = ri.get("vhd_per_mile", 0.0)
-            total_vhd = ri.get("vhd", 0.0)
-            tti = ri.get("tti", 0.0)
             tip = (
                 f"<b>{_wrap_html(f'RANK {rank_str}: {entry.name}', _HOVER_WRAP_CHARS)}</b><br>"
                 f"<b>Direction:</b> {entry.direction} | "
                 f"<b>Length:</b> {ch.chain_miles:.2f} mi<br>"
-                f"<b>TTI:</b> {tti:.2f} | <b>VHD/mi:</b> {vhd_rate:,.1f}<br>"
-                f"<b>{delay_label}:</b> {total_vhd:,.0f} veh-hrs<br>"
-                f"<i>{_hover_description(entry.description)}</i>"
+                + _corridor_figures_html(ri, delay_label, hovered=entry.direction)
+                + f"<i>{_hover_description(entry.description)}</i>"
             )
 
             coords = []
@@ -912,6 +1039,9 @@ def _assemble_map(seg_traces, corridor_traces, termini_traces=None, ends_trace=N
                 bgcolor="rgba(255,255,255,0.9)",
                 bordercolor="#cbd5e0", font=dict(size=11, color="#2d3748"))
         )
+    dir_menu = _direction_menu(fig)
+    if dir_menu is not None:
+        menus.append(dir_menu)
 
     fig.update_layout(
         title=dict(
@@ -1268,8 +1398,8 @@ def run(args) -> dict:
         # succeeds even if plotly is not installed — the maps are optional.
         if getattr(args, "maps", False) and totals is not None:
             cat_entries = corridors.load_catalogue(args.catalogue)
-            corridor_ranks = totals.set_index(
-                screen.GROUP_COL).to_dict(orient="index")
+            corridor_ranks = attach_direction_totals(
+                totals.set_index(screen.GROUP_COL).to_dict(orient="index"), breakout)
 
             # Build a human-readable window label from the windows that were run.
             dist_label = f"District {args.district}" if args.district else "District"
