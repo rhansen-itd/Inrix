@@ -646,8 +646,13 @@ def route_segments(membership, route) -> list:
     return list(membership.index[hit])
 
 
+ITD_ROUTES_COL = "itd_routes"        # "/"-joined routes the segment belongs to ("" = none)
+ITD_ROUTE_ID_COL = "itd_route_id"    # the SHS/AADT line that decided (``01540DUS095``)
+
+
 def apply_route_membership(net, membership):
-    """``net`` with ``RoadNumber`` replaced by the resolved ``route_number``.
+    """``net`` with ``RoadNumber`` replaced by the resolved ``route_number``, plus
+    :data:`ITD_ROUTES_COL` (every route, ``"12/95"``) and :data:`ITD_ROUTE_ID_COL`.
 
     INRIX's value is kept as ``RoadNumber_inrix`` so nothing is lost. Segments the
     membership frame doesn't cover keep their ``RoadNumber``. ``net`` may be indexed
@@ -662,6 +667,16 @@ def apply_route_membership(net, membership):
     out["RoadNumber_inrix"] = out["RoadNumber"]
     new = ids[covered].map(resolved)
     out.loc[covered, "RoadNumber"] = new.where(new.notna(), None)
+    # Every route the segment belongs to, and the SHS line that decided it (Item 51):
+    # the chain walk follows concurrency (SH-8 on Moscow's US-95 couplet) and the
+    # couplet tests read the line's travelway.
+    for src, col in (("routes", ITD_ROUTES_COL), ("itd_route_id", ITD_ROUTE_ID_COL)):
+        if src in membership.columns:
+            vals = membership[src]
+            vals.index = pd.array(vals.index, dtype="Int64")
+            out[col] = None
+            out.loc[covered, col] = ids[covered].map(vals).where(
+                ids[covered].map(vals).notna(), None)
     return out
 
 

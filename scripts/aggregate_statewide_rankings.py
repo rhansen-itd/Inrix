@@ -32,7 +32,13 @@ import pandas as pd
 DEFAULT_CATALOGUE = "scripts/d{district}_corridors.json"
 
 
-def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE) -> list[dict]:
+def catalogue_file(pattern: str, district: int, overrides: dict | None = None) -> Path:
+    """The catalogue a district was screened on: ``overrides`` wins over ``pattern``."""
+    return Path((overrides or {}).get(district) or pattern.format(district=district))
+
+
+def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE,
+                            overrides: dict | None = None) -> list[dict]:
     """Read the multi-scale extent tiers out of the **generated** catalogues.
 
     Before ROADMAP Item 46 this was a hand-written list of six facilities
@@ -47,7 +53,7 @@ def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE) -> list
     """
     groups: list[dict] = []
     for d in districts:
-        path = Path(pattern.format(district=d))
+        path = catalogue_file(pattern, d, overrides)
         if not path.exists():
             continue
         cat = json.loads(path.read_text())
@@ -70,13 +76,14 @@ def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE) -> list
     return groups
 
 
-def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE) -> dict:
+def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE,
+                     overrides: dict | None = None) -> dict:
     """``(district, corridor_group) -> (tier_number, ranked, facility, flags)`` from the
     generated catalogues. A group with no tier metadata (a couplet, District 3's
     curated entries) is absent and ranks as before."""
     out = {}
     for d in districts:
-        path = Path(pattern.format(district=d))
+        path = catalogue_file(pattern, d, overrides)
         if not path.exists():
             continue
         cat = json.loads(path.read_text())
@@ -326,10 +333,16 @@ def main():
     parser.add_argument("--districts", nargs="*", type=int, default=[1, 2, 3, 4, 5, 6])
     parser.add_argument("--catalogue", default=DEFAULT_CATALOGUE,
                         help="catalogue path pattern the extent tiers are read from")
+    parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
+                        help="district D's catalogue is PATH (repeatable)")
     args = parser.parse_args()
+    overrides = {}
+    for v in args.catalogue_override:
+        d, _, path = v.partition("=")
+        overrides[int(d)] = path
 
     base_dir = Path(args.dir)
-    group_tiers = load_group_tiers(args.districts, args.catalogue)
+    group_tiers = load_group_tiers(args.districts, args.catalogue, overrides)
 
     def _write(label: str, filename: str, stem: str) -> pd.DataFrame:
         """Aggregate, split ranked/context, write both; return the **full** table
@@ -361,7 +374,7 @@ def main():
             print(f"  -> Written {c_path} ({len(couplets)} couplets)")
 
         print("Generating multi-scale extent tiers comparison...")
-        tier_groups = load_extent_tier_groups(args.districts, args.catalogue)
+        tier_groups = load_extent_tier_groups(args.districts, args.catalogue, overrides)
         covered = sorted({g["district"] for g in tier_groups})
         missing = [d for d in args.districts if d not in covered]
         print(f"  {len(tier_groups)} tiered facilities read from the generated "

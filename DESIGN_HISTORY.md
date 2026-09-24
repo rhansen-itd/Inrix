@@ -5725,3 +5725,201 @@ leave the small ones out. So:
 - Tests: `TestEpisodicFlag` (a summer step is episodic, an every-month queue is not
   flagged, summer-heavy is seasonal, too few months are not judged, a flagged core
   still ranks), a monthly-screen test, and flags in the aggregation test.
+
+## Session 70 — Item 51: chains across route-numbering changes, and couplets that are real (2026-09-23)
+
+Until now `extents.enumerate_mainline_chains` walked one `RoadNumber` at a time. A road
+whose number changes along its length came out as several short chains, and each had
+to clear the chain minimum and find its own core. The couplet detector still paired
+parallel roads that are not one-way pairs. The rules are in DATA_FORMAT, *Chains
+across route-numbering changes*, and the old catalogues and rankings are in
+`out/statewide_screening/pre_item51/`.
+
+### 1. The chain walk
+
+- **Concurrency from `RoadList`.** The SHS records one route per road, so Moscow's US-95
+  couplet is route 95 alone, while its `RoadList` names ID-8. A route now walks over its
+  membership routes plus its `RoadList` routes, on the state system only
+  (`segment_route_sets`). `routes.apply_route_membership` carries `itd_routes` and
+  `itd_route_id` onto the network for this.
+- **Junction joins.** Where a route turns off INRIX's link (trap 4), its tail is joined to
+  a head nothing in the route links into:
+  - the head must start on the tail's last segment (≤ 20 m, past its first half), with
+    a turn ≤ 120°;
+  - where both lie on one SHS line, the mileposts must agree within 0.25 mi.
+- **Stub junctions, only on milepost evidence.** SH-8 eastbound turns onto Jackson St one
+  block before its own line ends on 3rd St. New `itd_layers.shs_mileposts` projects
+  each segment onto its own route id's line, so the join is taken only when the head's
+  run returns to the line further along: leave at mp 1.79, return at 2.35.
+- **Renumbering merges.** Chains of different routes merge where the same street runs
+  straight on: tail to head, or where one route arrives onto the street or turns off it
+  mid-chain. A merge that cuts a chain needs ≥ 0.5 mi of street on both sides. The
+  first version merged SH-8 into SH-99 at Troy, where S Main St becomes "ID-8" and
+  SH-99 starts down S Main St for 0.04 mi.
+- **Tier 2** no longer treats a renumbering on one street as a junction split.
+- **Results:**
+  - SH-8 is one chain each way from the WA line (mp 0.12) through Moscow. Its own-line
+    mileposts are in order, and only the two couplet legs are off its line. Eastbound
+    ends at a real data gap past Bovill: the D2 network has no eastbound segments
+    between mp 36.27 and 37.60. That is recorded as trap 5.
+  - Yellowstone Hwy (US-91 → US-26) is 75.6 mi each way, and Broadway east of I-15 is
+    in US-20's chain.
+  - Lewiston's US-12 is one chain: Levee Byp → Main St → US Highway 12.
+  - Chains per district: 37–49.
+
+### 2. Carrying the joins to `build_chain`
+
+Every catalogue entry is resolved by `corridors.build_chain`, which walks the link
+alone. Two mechanisms, both reviewable:
+
+- **`route_junction` repair rows.** `scripts/generate_route_junctions.py` →
+  `extents.route_junction_repairs` appends 98 rows statewide to
+  `scripts/d<N>_link_repairs.csv`. A tail junction is written only where the link is
+  null or leaves every route the segment carries.
+- **Entry-scoped `links`.** Stub junctions and renumbering merges can't be global
+  patches (at Sunnyside Rd the US-26 chain follows the street onto US-91 while the
+  I-15 BL approach keeps the link). The generator writes them into each entry;
+  `parse_catalogue` accepts the field, and `resolve_catalogue` applies it to that entry
+  only.
+- **D3:** `us95-fruitland` and `us95-payette-16th` are one entry again,
+  `us95-fruitland-payette`, via the Payette junction rows. D3 is now 52 entries / 26
+  reporting corridors. Nothing else in D3 changed except `build_chain`'s new tie-break:
+  a start point exactly at a junction goes to the segment it begins, not the one it
+  ends. That drops a phantom 0.1–0.5%-in-extent end segment from `myrtle-eb` and
+  `sh69-sb`, with requested miles unchanged. Without it, Myrtle EB would have started
+  on I-184.
+
+### 3. Facilities over shared pavement
+
+Concurrent chains share segments, so `generate_catalogue` now claims cores across all
+chains, strongest first. Several rules were found by checking every ranked core against
+its predecessor:
+
+- A core ≥ 50% inside a stronger core, or inside its Tier 2, is absorbed. Its remainder
+  is re-found with those segments excluded and stands if it qualifies. That gives two
+  small new Pocatello cores: I-15 BL up Pocatello Creek Rd / Alameda Rd, and US-30 on
+  Garrett Way.
+- Otherwise the core keeps the shared pavement and carries a `shares <mi> mi with <id>`
+  flag. Trimming it out left US-95's Moscow cores too short to stand, which lost
+  their delay. US-95 Moscow now shares 0.91 mi with SH-8, and Rathdrum's SH-53 shares
+  0.55 mi with SH-41.
+- **The companion is found on the ground, not by one-to-one pairing.** It is the
+  strongest qualifying core on any chain sharing a route on its pavement that runs
+  beside the lead's Tier 2 (≥ 50% within 200 m) and against it (ends projected onto the
+  Tier 2). Three cases forced this:
+  - `pair_chains` married SH-8 westbound to the wrong eastbound piece, which made two
+    Moscow facilities;
+  - cardinal bearings failed at Burley, where Overland Ave is a southbound SH-27 chain
+    one way and an eastbound I-84 BL loop the other;
+  - a chord test failed on a bending Tier 2.
+- A mirrored span claims the other direction only where it runs alongside and covers
+  ≥ 30% of the footprint. Twin Falls' Pole Line Rd chain *touches* Blue Lakes Blvd at
+  the US-93 turn, and the clamped mirror had swallowed Pole Line's 646-VHD core.
+  Another direction's mirror holds only what lies mostly inside it.
+
+### 4. Couplets
+
+- The legs must share a route under membership (`itd_routes`), not `RoadNumber`.
+- **`Travelway` `D` is not "not a couplet".** The SHS draws the second leg of Moscow,
+  Boise, Nampa, Pocatello, Blackfoot and Twin Falls as `D`. The tests are:
+  - `drop_same_line_pairs`: both legs on one SHS line is one road. Shoshone's S
+    Greenwood St / US-93 fails;
+  - `drop_divided_pairs`: `A` + `D` closer than 50 m is a divided highway. American
+    Falls' ID-39 fails at 28 m.
+- `trim_leg_overhang` trims a leg's end segments that are two-way or > 300 m from the
+  other leg. Pocatello's 5th Ave overran 4th Ave by the 0.65-mi north extension and
+  1 mi of two-way pavement south: 2.80 → 2.34 mi (registry 2.22). Weiser went from
+  0.79 to 0.57 (registry 0.52).
+- Chubbuck (Quinn Rd / US-91) and SH-43 / E 105 N fail as two-way legs. Pocatello and
+  Blackfoot pass, and the registry still matches the same 7 couplets on both streets.
+- Sandpoint is removed from `KNOWN_COUPLETS`: a divided highway (owner).
+- **For the owner:** Mountain Home's N Main St / 2nd St E (I-84 BL, 35.5 m) survives
+  the tests. D3's catalogue is curated and doesn't carry it.
+- `out/statewide_screening/couplet_review.csv` lists every pair and the test that
+  decided it.
+
+### 5. Names
+
+- `extents.facility_naming` gives `<band>: <street>, <town>`:
+  - the band takes `BL` / `BR` / `Spur` from `RoadList`;
+  - the street is the core's `RoadName` by miles, and is omitted for route-named roads
+    and their byway aliases;
+  - the town is Item 52's urban area, else "<County> County".
+- Examples: "US-26: Yellowstone Hwy, Idaho Falls" (Northgate Mile, was "US-20:
+  Bonneville County"), "SH-8: Pullman Rd, Moscow", "I-15 BL: Bergener Dr, Blackfoot",
+  "SH-27: Overland Ave, Burley".
+- Couplets read "US-95: Washington St / Jackson St couplet, Moscow".
+- `geometry._bearing_deg` now scales longitude by cos(latitude). The raw-degree bearing
+  put Pocatello's NNW legs at "WB/EB"; they now read NB/SB. `street_key` keeps
+  ordinals lower-case ("5th Ave", not "5Th Ave").
+
+### 6. What moved
+
+Tables: `out/statewide_screening/item51_{peak,7day}_ranking_changes.csv`, matched on
+shared segments. Peak: 72 ranked rows → 65.
+
+- **Merged:**
+  - Pocatello's three cores (US-91 Chubbuck, I-15 5th Ave, I-15 Yellowstone Ave;
+    #25/#36/#43) → one "US-91: Yellowstone Ave, Pocatello", #24, 808 VHD;
+  - Rexburg's two SH-33 cores (#14/#16) → #15, 751 VHD;
+  - US-95 Moscow's two single-direction cores (#17/#18) → one two-direction facility,
+    #14;
+  - Twin Falls' US-30 Blue Lakes core (#27) → US-93 Blue Lakes (#11, 1,532 VHD).
+- **Up:**
+  - US-2 Sandpoint #60 → #34;
+  - SH-53 Rathdrum #44 → #26 (the core now runs to Honu Ct);
+  - Idaho Falls Broadway #48 → #41 (it now includes Broadway east of I-15).
+- **Northgate Mile:** as "US-26: Yellowstone Hwy", #39 → #43. The core moved south
+  along Yellowstone (W 23rd St to N Holmes Ave, 233 VHD). US-26 Hitt Rd–Iona Rd (#57,
+  49 VHD) is now inside its Tier 2.
+- **Burley:** SH-27 / I-84 BL Overland Ave holds #22, now with both directions.
+- **D3's US-95:** Fruitland (#50) and Payette (#38) → one entry, #39.
+- **New:**
+  - the two Pocatello remainders (#47, #53);
+  - the renamed couplets (they carry no segment lists, so they don't match by overlap).
+- **Gone:** the Shoshone and American Falls couplets.
+- **SH-8 Moscow** holds #30 (390 VHD, both directions).
+- **The top 13 hold their places** apart from names, except that D3's SH-44 (#11 → #10)
+  and US-93 Blue Lakes (#10 → #11) swap.
+
+### 7. Tests
+
+- `test_extents.py`, the Item 51 classes:
+  - the SH-8 chain through the couplet (stub join, with and without milepost evidence);
+  - the Payette tail junction, and the other carriageway never joined;
+  - the Yellowstone renumbering, and Troy not merged;
+  - `route_junction_repairs`;
+  - shared cores (flagged / absorbed), street-and-town naming, entry `links`;
+  - `facility_naming`.
+- `test_couplets.py`: route share, same line, `D` alone, close `A`/`D`, rejection
+  reasons, Sandpoint, compass labels, names, ordinals, the overhang trim.
+- `test_corridors.py`:
+  - entry `links` and their validation;
+  - the junction tie-break;
+  - D3 counts (52 / 26, 21 repaired links, the two `route_junction` uses);
+  - Item 38 regeneration compared on fill/override rows only.
+- `test_geometry.py`: the cos-latitude bearing. `test_itd_layers.py`: `shs_mileposts`.
+
+### 8. Follow-up: District 3 generated alongside its curated catalogue
+
+The owner asked for a ranking with D3 screened the same way as every other district,
+while keeping the hand-curated catalogue (`scripts/d3_corridors.json`) as the primary
+and as an archive.
+
+- `build_statewide_catalogues.py --districts 3` now writes
+  `scripts/d3_corridors_generated.json` and never touches the curated file
+  (`catalogue_name`). The result is 66 chains, 26 facilities, 111 directional entries
+  and 4 couplets, including Mountain Home's Main St / 2nd St E. All 119 entries
+  verify.
+- `run_statewide_screening.py`, `aggregate_statewide_rankings.py` and
+  `generate_statewide_maps.py` take a repeatable `--catalogue-override D=PATH`.
+- The alternative run is `out/statewide_screening_d3generated/`. `d1`, `d2`, `d4`–`d6`
+  are symlinks to the main run, and `d3` is screened on the generated catalogue:
+  69 ranked corridors, against 65 with the curated D3.
+- With D3 generated, the peak ranking has sharper breaks:
+  - after #2: freeways, 1,720 → 935 VHD/mi;
+  - after #8: 497 → 392;
+  - after #27: 217 → 189, where log-space Jenks k=2 and linear Jenks k=4/5 agree;
+  - after #67: 51 → 26 (only two small couplets below).
+
+  Plot: `out/statewide_screening_d3generated/vhd_per_mile_by_rank.html`.

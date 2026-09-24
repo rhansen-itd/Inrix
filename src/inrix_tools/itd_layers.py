@@ -295,3 +295,61 @@ def urban_context(geo, urban) -> pd.DataFrame:
         out.at[sid, URBAN_SHARE_COL] = round(float(share), 3)
         out.at[sid, URBAN_EDGE_COL] = round(d if inside else -d, 1)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Mileposts (Item 51)
+# ---------------------------------------------------------------------------
+SHS_MP_START_COL = "shs_mp_start"
+SHS_MP_END_COL = "shs_mp_end"
+SHS_MP_MAX_OFFSET_M = 40.0
+"""A segment end further than this from its own route id's line gets no milepost —
+the same reach as membership's *near* test."""
+
+
+def shs_mileposts(geo, shs, route_ids) -> pd.DataFrame:
+    """Each segment's start and end milepost on the SHS line that decided it.
+
+    The SHS is a linear reference: every line carries ``FromMeasur``/``ToMeasure`` and
+    its vertices run from the one to the other. A segment's ends are projected onto the
+    nearest part of its own ``RouteID`` (membership's ``itd_route_id``) and the measure
+    is interpolated along it. Ordered by milepost, a route's pieces show where it runs
+    concurrently with another route: SH-8 stops at mp 1.92 on 3rd St in Moscow and
+    resumes at 2.35 on Troy Rd, and the 0.43 mi between is the US-95 couplet.
+
+    Args:
+        geo: GeoDataFrame indexed by segment id (any CRS).
+        shs: :func:`load_shs`.
+        route_ids: Series indexed like ``geo`` — the SHS ``RouteID`` per segment
+            (``None`` where no SHS line decided).
+
+    Returns:
+        A DataFrame indexed like ``geo`` with :data:`SHS_MP_START_COL` /
+        :data:`SHS_MP_END_COL` (miles, NaN where there is no line within
+        :data:`SHS_MP_MAX_OFFSET_M`).
+    """
+    out = pd.DataFrame({SHS_MP_START_COL: float("nan"), SHS_MP_END_COL: float("nan")},
+                       index=geo.index)
+    rid = pd.Series(route_ids).reindex(geo.index)
+    valid = geo.geometry.notna() & ~geo.geometry.is_empty & rid.notna()
+    if not valid.any() or len(shs) == 0:
+        return out
+    metric = geo[valid].estimate_utm_crs()
+    seg = geo.geometry[valid].to_crs(metric)
+    lines = shs.to_crs(metric)
+    by_route = {r: grp for r, grp in lines.groupby("RouteID")}
+    for sid, line in seg.items():
+        grp = by_route.get(str(rid.loc[sid]))
+        if grp is None or line.length <= 0:
+            continue
+        for col, frac in ((SHS_MP_START_COL, 0.0), (SHS_MP_END_COL, 1.0)):
+            pt = line.interpolate(frac, normalized=True)
+            d = grp.geometry.distance(pt)
+            k = d.idxmin()
+            if float(d.loc[k]) > SHS_MP_MAX_OFFSET_M:
+                continue
+            part = grp.geometry.loc[k]
+            f0, f1 = float(grp.at[k, "FromMeasur"]), float(grp.at[k, "ToMeasure"])
+            t = part.project(pt, normalized=True) if part.length > 0 else 0.0
+            out.at[sid, col] = round(f0 + (f1 - f0) * t, 3)
+    return out

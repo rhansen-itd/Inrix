@@ -238,3 +238,26 @@ def test_a_ramp_count_on_a_roadway_route_id_stays_a_ramp():
          "geometry": [LineString([(-113.5, 42.571), (-113.5, 42.579)])]},
         index=pd.Index([1], name=SEGMENT_COL), crs="EPSG:4326")
     assert aadt.join_aadt(seg, fixed).loc[1, "AADT"] == 12000
+
+
+def test_shs_mileposts_interpolate_along_the_segments_own_line():
+    """Item 51: a segment's ends are projected onto its own route id's line and the
+    measure interpolated; a second route id nearby is ignored."""
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    shs = itd_layers.shs_frame([
+        {"RouteId": "01870ASH008", "FromMeasur": 0.0, "ToMeasure": 2.0,
+         "geometry": LineString([(-117.04, 46.732), (-117.00, 46.732)])},
+        {"RouteId": "01540AUS095", "FromMeasur": 330.0, "ToMeasure": 331.0,
+         "geometry": LineString([(-117.04, 46.7321), (-117.00, 46.7321)])},
+    ])
+    geo = gpd.GeoDataFrame(
+        {"geometry": [LineString([(-117.03, 46.732), (-117.02, 46.732)]),
+                      LineString([(-116.90, 46.80), (-116.89, 46.80)])]},
+        index=pd.Index([1, 2], name="Segment ID"), crs="EPSG:4326")
+    mp = itd_layers.shs_mileposts(geo, shs, pd.Series(["01870ASH008", "01870ASH008"],
+                                                      index=geo.index))
+    assert mp.loc[1, itd_layers.SHS_MP_START_COL] == pytest.approx(0.5, abs=0.01)
+    assert mp.loc[1, itd_layers.SHS_MP_END_COL] == pytest.approx(1.0, abs=0.01)
+    assert mp.loc[2].isna().all()          # nowhere near its line

@@ -2556,7 +2556,7 @@ Scope:
 *Suggested prompt (done):* "Do Item 50 of ROADMAP.md — base corridor cores on recurring peak
 congestion against each road's own baseline, with delay and data-quality floors."
 
-## 51 — Chains across route-numbering changes, and couplets that are real
+## 51 — Chains across route-numbering changes, and couplets that are real ✅ (Session 70)
 
 **Target: one session. Depends on Item 52** (the highway system's route IDs, mileposts and
 `Travelway`). **Independent of Item 50**, but both regenerate the catalogues, so do one
@@ -2582,7 +2582,7 @@ The couplet detector pairs parallel roads that are not one-way pairs:
 
 Scope:
 
-- [ ] **Walk a road through its numbering changes.** Build chains on ITD route
+- [x] **Walk a road through its numbering changes.** Build chains on ITD route
       membership (`routes.py`, including `concurrent` segments), or on street and
       `XDGroup` continuity, so SH-8 through Moscow and Yellowstone Hwy are each one
       facility. Show that SH-8 from the WA line to the east city limits resolves as
@@ -2597,7 +2597,26 @@ Scope:
         `us95-fruitland` and `us95-payette-16th`.
 
       An SHS-ordered chain should make each one facility again.
-- [ ] **Couplets must be one-way pairs.**
+      *Done (`extents.enumerate_mainline_chains`). A route is walked over its
+      membership routes plus the routes its `RoadList` names. Chains are joined where
+      the route turns off the link, and merged where only the number changes along the
+      street.*
+      - *A junction leaving the route's own run as a stub is taken only on SHS
+        milepost evidence (`itd_layers.shs_mileposts`): SH-8 leaves its line at mp 1.79
+        on 3rd St and returns at 2.35 on Troy Rd.*
+      - *SH-8 is one chain each way from the WA line (mp 0.12) through Moscow, via
+        Jackson St eastbound and Washington St westbound, with its own-line mileposts
+        in order. It ends at a genuine data gap past Bovill (no eastbound segments
+        between mp 36.27 and 37.60).*
+      - *Yellowstone Hwy (US-91 → US-26) is one 75.6-mi chain each way, and Broadway
+        east of I-15 is part of US-20's. Lewiston's US-12 is one chain: Levee Byp →
+        Main St → US Highway 12.*
+      - *98 route junctions statewide are now `route_junction` rows in the repair
+        tables (`scripts/generate_route_junctions.py`). The joins a global patch can't
+        carry go into each generated entry's own `links`.*
+      - *D3's US-95 is one entry again, `us95-fruitland-payette`, on 16th St. D3 now
+        has 52 entries / 26 reporting corridors.*
+- [x] **Couplets must be one-way pairs.**
       - Require that each leg is actually one-way: there is no opposing-bearing XD
         segment on the same street. *Partly done in Item 49, because the rebuilt
         catalogues shipped false couplets at Lewiston and Elba:*
@@ -2614,14 +2633,43 @@ Scope:
       - The Chubbuck pair and the SH-43 / E 105 N pair must fail.
       - Pocatello 4th/5th Ave and Blackfoot Bridge/Judicial must still pass. Also check
         the 0.67-mi Pocatello Ave extension on Pocatello's legs.
-- [ ] **Names say what the road is.** Facility names come from the street and the
+
+      *Done.*
+      - *The legs must share a route under membership (`itd_routes`).*
+      - *Sandpoint is out of `KNOWN_COUPLETS`, with the owner's reason recorded.*
+      - *`Travelway` `D` turned out to be **also** how the SHS draws a real couplet's
+        second leg (Moscow, Boise, Nampa, Pocatello, Blackfoot, Twin Falls). So the
+        tests are `drop_same_line_pairs` (both legs on one SHS line: Shoshone fails)
+        and `drop_divided_pairs` (`A` + `D` closer than 50 m: American Falls' ID-39
+        fails at 28 m).*
+      - *Chubbuck and SH-43 / E 105 N fail as two-way legs. Pocatello and Blackfoot
+        pass.*
+      - *Pocatello's 5th Ave leg overran 4th Ave by 0.65 mi north (the extension) and
+        1 mi south onto two-way pavement. `trim_leg_overhang` cuts it: 2.80 → 2.34 mi
+        against the registry's 2.22.*
+      - *Every decision is in `out/statewide_screening/couplet_review.csv`. For the
+        owner: Mountain Home's Main St / 2nd St E (35.5 m) survives, and D3's catalogue
+        doesn't carry it.*
+- [x] **Names say what the road is.** Facility names come from the street and the
       city (the urban-area name from Item 52 where there is one), not "US-20:
       Bonneville County (2)"; Northgate Mile ranks as #6 under
       that name today. Couplet legs are labelled by their own bearing (NB/SB), not
       WB/EB.
-- [ ] pytest; regenerate the catalogues; DESIGN_HISTORY.
+      *Done (`extents.facility_naming`): `<band>: <street>, <town>`. The town is the
+      urban area, else "<County> County". The band takes `BL`/`BR` from `RoadList`.
+      The street is dropped when the road is named only by its route.*
+      - *Examples: "US-26: Yellowstone Hwy, Idaho Falls" (the old "US-20: Bonneville
+        County"), "SH-8: Pullman Rd, Moscow", "I-15 BL: Bergener Dr, Blackfoot".*
+      - *Couplets read "US-95: Washington St / Jackson St couplet, Moscow".*
+      - *Legs are labelled by their compass direction: `geometry._bearing_deg` now
+        scales longitude by cos(latitude), so Pocatello's legs read NB/SB.*
+- [x] pytest; regenerate the catalogues; DESIGN_HISTORY.
+      *Session 70. New tests in `test_extents.py` (Item 51 classes), `test_couplets.py`,
+      `test_corridors.py`, `test_geometry.py` and `test_itd_layers.py`. D1/D2/D4–D6
+      regenerated and all entries verify. Full screening re-run; the ranking moves are
+      in DESIGN_HISTORY.*
 
-*Suggested prompt:* "Do Item 51 of ROADMAP.md — walk corridor chains across route-number
+*Suggested prompt (done):* "Do Item 51 of ROADMAP.md — walk corridor chains across route-number
 changes and require couplets to be real one-way pairs."
 
 ---
@@ -2644,6 +2692,22 @@ changes and require couplets to be real one-way pairs."
   vs multiselect) before it's actionable. **Item 34 comes first:** the join this would
   refine currently attributes ramp counts to one carriageway of a divided highway, so a
   directional split built on today's `join_aadt` would be splitting the wrong number.
+- **Segment-level route overrides (SH-8 in Moscow).** Owner, 2026-09-23 (Session 70):
+  SH-8 eastbound follows 3rd St, then goes down Jackson St (with US-95) to Troy Rd.
+  Westbound, it goes north on Washington St (with US-95) to 3rd St, then heads west.
+  So the block of 3rd St between Washington and Jackson is state route **westbound
+  only**, although it is a two-way street. SHS draws SH-8 as one centreline down 3rd
+  St to Washington, so membership puts both directions on route 8. The two eastbound
+  segments `448932361` / `448932362` are therefore counted as SH-8 in the D2
+  inventory and export lists.
+  - **Today:** the Item 51 chain walk already leaves them out as a milepost-evidenced
+    stub. The catalogue is right, and the owner is OK keeping them in the data for now.
+  - **Later:** `scripts/route_overrides.csv` matches on county + road name, which
+    can't separate the two directions of one street. Add an optional segment-id
+    column, and override those two segments off route 8, so membership states the
+    routing directly instead of relying on the stub rule. After that, rebuild D2
+    membership and the inventories, and re-run the D2 catalogue. Other one-direction
+    route splits like this may exist.
 - **Anomaly / incident flagging** — wrap `traffic_anomaly.anomaly` (z-score /
   GEH on residuals, entity- and group-level) to flag bad sensor data, incidents,
   and unusual days. Deferred from the initial analysis scope.

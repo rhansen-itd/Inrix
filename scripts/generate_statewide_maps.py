@@ -47,7 +47,8 @@ from scripts.run_district_screening import (  # noqa: E402
 
 
 def load_statewide_data(districts: list[int], base_dir: Path, *,
-                        aadt_source=None, aadt_year: int = aadt_mod.DEFAULT_YEAR):
+                        aadt_source=None, aadt_year: int = aadt_mod.DEFAULT_YEAR,
+                        catalogue_overrides: dict | None = None):
     """Load combined networks, AADT, catalogues, resolved chains, and screen frames.
 
     The AADT returned is the **spatially joined, per-segment** frame (indexed by
@@ -84,7 +85,7 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
             if joined is not None:
                 aadt_parts.append(joined)
 
-        cat_path = Path(f"scripts/d{d}_corridors.json")
+        cat_path = Path((catalogue_overrides or {}).get(d) or f"scripts/d{d}_corridors.json")
         repairs_path = Path(f"scripts/d{d}_link_repairs.csv")
         if cat_path.exists():
             entries = corridors.load_catalogue(cat_path)
@@ -327,7 +328,10 @@ def main():
                         help="AADT source for the per-segment volume join; "
                              "omitted skips the two VHD/mile maps")
     parser.add_argument("--aadt-year", type=int, default=aadt_mod.DEFAULT_YEAR)
+    parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
+                        help="district D's catalogue is PATH (repeatable)")
     args = parser.parse_args()
+    overrides = {int(v.partition("=")[0]): v.partition("=")[2] for v in args.catalogue_override}
 
     base_dir = Path(args.dir)
     t0 = time.time()
@@ -341,7 +345,8 @@ def main():
         scr_peak,
         scr_7d,
     ) = load_statewide_data(args.districts, base_dir,
-                            aadt_source=args.aadt, aadt_year=args.aadt_year)
+                            aadt_source=args.aadt, aadt_year=args.aadt_year,
+                            catalogue_overrides=overrides)
     if aadt is None or aadt.empty:
         print("  WARNING: no AADT joined — the VHD/mile maps will be skipped.")
     else:

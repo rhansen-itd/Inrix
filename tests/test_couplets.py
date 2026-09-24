@@ -1,8 +1,11 @@
 """Tests for inrix_tools.couplets — one-way couplet detection and pairing."""
 from __future__ import annotations
 
+import dataclasses
+
 import geopandas as gpd
 import pandas as pd
+import pytest
 from shapely.geometry import LineString
 
 from inrix_tools import couplets
@@ -110,14 +113,17 @@ class TestDetectCouplets:
     def test_known_couplets_registry(self):
         """The KNOWN_COUPLETS registry has expected districts and valid entries."""
         districts = {c["district"] for c in couplets.KNOWN_COUPLETS}
-        assert districts == {1, 2, 3, 4, 5, 6}
-        assert len(couplets.KNOWN_COUPLETS) >= 12
+        # District 1's only entry was Sandpoint, removed in Item 51.
+        assert districts == {2, 3, 4, 5, 6}
+        assert len(couplets.KNOWN_COUPLETS) >= 11
 
     def test_registry_holds_no_pair_itd_carries_as_local(self):
         """Item 48: entries whose streets ITD's route layer carries as local roads
-        were removed, and must not creep back."""
+        were removed, and must not creep back. Item 51: Sandpoint is a divided
+        highway (owner)."""
         cities = {c["city"] for c in couplets.KNOWN_COUPLETS}
-        assert not cities & {"Lewiston", "Coeur d'Alene", "Payette", "Caldwell"}
+        assert not cities & {"Lewiston", "Coeur d'Alene", "Payette", "Caldwell",
+                             "Sandpoint"}
 
     def test_filter_by_district(self):
         """Filtering by district preserves only matching counties."""
@@ -348,3 +354,133 @@ def test_a_leg_with_its_own_streets_opposing_carriageway_on_it_is_not_a_couplet(
     # One two-way leg is enough: a one-way street paired with a two-way one goes too.
     half = pair(5, "1st Ave", 3, "Elba-Almo Rd")
     assert couplets.drop_two_way_legs([half], net) == []
+
+
+# ─── ROADMAP Item 51: couplets must be real one-way pairs ─────────────
+
+def _membership(net, routes_a="95", routes_b="95", rid_a="01540AUS095",
+                rid_b="01540DUS095"):
+    """``_grid_network`` with ITD membership columns: leg A (7000s) and leg B (8000s)."""
+    net = net.copy()
+    is_a = net["XDSegID"] < 8000
+    net["itd_routes"] = [routes_a if a else routes_b for a in is_a]
+    net["itd_route_id"] = [rid_a if a else rid_b for a in is_a]
+    return net
+
+
+class TestItem51OneWayTests:
+    def test_the_legs_must_share_a_route_under_membership(self):
+        """A parallel local street INRIX numbers is not a leg: SH-43 with E 105 N."""
+        net = _membership(_grid_network(), routes_a="43", routes_b="")
+        assert couplets.detect_couplets(net, min_length_mi=0.5) == []
+        both = _membership(_grid_network(), routes_a="43", routes_b="43",
+                           rid_a="02400ASH043", rid_b="02400DSH043")
+        assert len(couplets.detect_couplets(both, min_length_mi=0.5)) == 1
+
+    def test_membership_decides_the_route_not_roadnumber(self):
+        net = _membership(_grid_network(route="20"), routes_a="12", routes_b="12",
+                          rid_a="01910AUS012", rid_b="01910DUS012")
+        pairs = couplets.detect_couplets(net, min_length_mi=0.5)
+        assert [p.route_numbers for p in pairs] == [("12",)]
+
+    def test_two_legs_on_one_shs_line_are_one_road(self):
+        """Shoshone: S Greenwood St and US-93, both on 02220AUS093."""
+        net = _membership(_grid_network(), rid_a="02220AUS093", rid_b="02220AUS093",
+                          routes_a="93", routes_b="93")
+        rejected = []
+        assert couplets.detect_couplets(net, min_length_mi=0.5, rejected=rejected) == []
+        assert [r for _, r in rejected] == ["same_shs_line"]
+
+    def test_the_d_travelway_alone_does_not_reject_a_couplet(self):
+        """Moscow's Jackson St is 01540DUS095 beside Washington St's 01540AUS095, a
+        block (~170 m) apart: the SHS draws most real couplets' second leg as D."""
+        net = _membership(_grid_network())
+        assert len(couplets.detect_couplets(net, min_length_mi=0.5)) == 1
+
+    def test_a_close_a_d_pair_is_a_divided_highway(self):
+        """American Falls' ID-39 S / ID-39 N: the A and D lines 28 m apart."""
+        net = _membership(_grid_network(), rid_a="02330ASH039", rid_b="02330DSH039",
+                          routes_a="39", routes_b="39")
+        pairs = couplets.detect_couplets(net, min_length_mi=0.5)
+        assert len(pairs) == 1
+        close = dataclasses.replace(pairs[0], mean_lateral_sep_m=28.4)
+        assert couplets.drop_divided_pairs([close], net) == []
+        assert couplets.drop_divided_pairs(pairs, net) == pairs
+
+    def test_rejections_are_reported_with_their_reason(self):
+        net = _membership(_grid_network(), rid_a="02220AUS093", rid_b="02220AUS093")
+        rejected = []
+        couplets.detect_couplets(net, min_length_mi=0.5, rejected=rejected)
+        assert rejected and all(isinstance(p, couplets.CoupletPair) for p, _ in rejected)
+
+    def test_sandpoint_is_not_in_the_registry(self):
+        """Owner: US-2/US-95 at Sandpoint is a divided highway, not a couplet."""
+        assert all(k["city"] != "Sandpoint" for k in couplets.KNOWN_COUPLETS)
+
+
+class TestItem51CoupletNames:
+    def test_legs_are_labelled_by_their_own_compass_direction(self):
+        """Pocatello's 4th/5th Ave run NNW (~320 deg). Read in raw lon/lat degrees the
+        bearing was ~311 deg, "W"; with cos(latitude) it is N."""
+        lat = 42.86
+        dlat, dlon = 0.0365 / 4, -0.0413 / 4
+        rows = []
+        for i in range(4):
+            for base, sign, name, off in ((100, 1, "5th Ave", 0.0), (200, -1, "4th Ave", 0.0018)):
+                a = (-112.41 + off + (i if sign > 0 else 4 - i) * dlon,
+                     lat + (i if sign > 0 else 4 - i) * dlat)
+                b = (a[0] + sign * dlon, a[1] + sign * dlat)
+                rows.append({"XDSegID": base + i, "PreviousXD": None,
+                             "NextXDSegI": base + i + 1 if i < 3 else None, "FRC": 3,
+                             "RoadNumber": "15", "RoadName": name, "Miles": 0.7,
+                             "Bearing": "N", "SlipRoad": 0, "XDGroup": base,
+                             "County": "Bannock", "PostalCode": "83201",
+                             "StartLat": a[1], "StartLong": a[0], "EndLat": b[1],
+                             "EndLong": b[0], "geometry": LineString([a, b])})
+        net = gpd.GeoDataFrame(rows, crs="EPSG:4326")
+        pairs = couplets.detect_couplets(net, min_length_mi=0.5)
+        assert len(pairs) == 1
+        assert {pairs[0].dir1_bearing, pairs[0].dir2_bearing} == {"N", "S"}
+
+    def test_a_couplet_is_named_for_its_streets_and_town(self):
+        net = _grid_network(name_a="W Front St", name_b="W Myrtle St")
+        net["urban_area"] = "Boise City, ID"
+        net["urban_share"] = 1.0
+        pair = couplets.detect_couplets(net, min_length_mi=0.5)[0]
+        d1, _, rc = couplets.couplet_catalogue_entries(pair, net)
+        assert rc["name"].split(": ", 1)[1] in (
+            "Front St / Myrtle St couplet, Boise City",
+            "Myrtle St / Front St couplet, Boise City")
+        assert "County" not in rc["name"]
+        assert d1["name"].endswith("couplet leg, Boise City")
+
+    def test_ordinals_keep_a_lower_case_suffix(self):
+        assert couplets.street_key("W 5th Ave") == "5th Ave"
+        assert couplets.street_key("2nd St S") == "2nd St S"
+
+
+def test_a_leg_is_trimmed_where_the_couplet_ends():
+    """Item 51, Pocatello: 5th Ave's leg ran on past the end of 4th Ave. A segment far
+    from the other leg, or carrying both directions of its street, is trimmed from the
+    ends of the leg."""
+    net = _grid_network()
+    # Myrtle St (the eastbound leg) runs on two more segments east, beyond Front St...
+    extra = []
+    for i, sid in enumerate((8004, 8005)):
+        lon0 = -116.210 + (4 + i) * 0.0040
+        extra.append({**net[net["XDSegID"] == 8003].iloc[0].to_dict(), "XDSegID": sid,
+                      "NextXDSegI": 8005 if sid == 8004 else None, "StartLong": lon0,
+                      "EndLong": lon0 + 0.0040,
+                      "geometry": LineString([(lon0, 43.616), (lon0 + 0.0040, 43.616)])})
+    net.loc[net["XDSegID"] == 8003, "NextXDSegI"] = 8004
+    # ...where it is two-way: a westbound Myrtle St segment lies on 8004.
+    twin = {**extra[0], "XDSegID": 9004, "NextXDSegI": None, "XDGroup": 900,
+            "geometry": LineString([(-116.210 + 5 * 0.0040, 43.616),
+                                    (-116.210 + 4 * 0.0040, 43.616)])}
+    more = gpd.GeoDataFrame(extra + [twin], geometry="geometry", crs=net.crs)
+    net = gpd.GeoDataFrame(pd.concat([net, more], ignore_index=True), crs=net.crs)
+    pairs = couplets.detect_couplets(net, min_length_mi=0.5, max_length_mi=3.0)
+    assert len(pairs) == 1
+    legs = set(pairs[0].dir1_segment_ids) | set(pairs[0].dir2_segment_ids)
+    assert not legs & {8004, 8005}
+    assert pairs[0].total_miles == pytest.approx(0.8)

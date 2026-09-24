@@ -37,8 +37,28 @@ def repairs_path(district: int) -> str:
     return f"scripts/d{district}_link_repairs.csv"
 
 
+CATALOGUE_OVERRIDES: dict[int, str] = {}
+"""District -> catalogue path, from ``--catalogue-override`` (e.g. District 3's
+generated catalogue instead of its curated one)."""
+
+
 def catalogue_path(district: int) -> str:
-    return f"scripts/d{district}_corridors.json"
+    return CATALOGUE_OVERRIDES.get(district, f"scripts/d{district}_corridors.json")
+
+
+def parse_overrides(values) -> dict[int, str]:
+    """``["3=scripts/d3_corridors_generated.json"]`` -> ``{3: "scripts/..."}``."""
+    out = {}
+    for v in values or []:
+        d, sep, path = str(v).partition("=")
+        if not sep or not d.strip().isdigit() or not path.strip():
+            raise SystemExit(f"--catalogue-override expects D=PATH, got {v!r}")
+        out[int(d)] = path.strip()
+    return out
+
+
+def override_args(overrides: dict[int, str]) -> list[str]:
+    return [a for d, p in sorted(overrides.items()) for a in ("--catalogue-override", f"{d}={p}")]
 
 
 def network_cache_path(district: int) -> str:
@@ -110,7 +130,12 @@ def main():
     parser.add_argument("--aadt", default="AADT_2025.zip")
     parser.add_argument("--aadt-year", type=int, default=2025)
     parser.add_argument("--maps", action="store_true")
+    parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
+                        help="screen district D on catalogue PATH instead of "
+                             "scripts/dD_corridors.json (repeatable); passed on to the "
+                             "aggregation and the statewide maps")
     args, extra = parser.parse_known_args()
+    CATALOGUE_OVERRIDES.update(parse_overrides(args.catalogue_override))
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -156,6 +181,7 @@ def main():
             sys.executable, "scripts/aggregate_statewide_rankings.py",
             "--dir", str(out_dir),
             "--districts", *[str(d) for d in args.districts],
+            *override_args(CATALOGUE_OVERRIDES),
         ]
         rc_agg = subprocess.call(cmd_agg)
         results["statewide_aggregation"] = rc_agg
@@ -169,6 +195,7 @@ def main():
                 sys.executable, "scripts/generate_statewide_maps.py",
                 "--dir", str(out_dir),
                 "--districts", *[str(d) for d in args.districts],
+                *override_args(CATALOGUE_OVERRIDES),
             ]
             rc_maps = subprocess.call(cmd_maps)
             results["statewide_maps"] = rc_maps

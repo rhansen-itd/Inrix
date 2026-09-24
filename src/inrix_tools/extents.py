@@ -305,8 +305,16 @@ def detect_junction_splits(
         rn_prev = str(row_prev.get("RoadNumber", "")).strip() if pd.notna(row_prev.get("RoadNumber")) else ""
         rn_curr = str(row_curr.get("RoadNumber", "")).strip() if pd.notna(row_curr.get("RoadNumber")) else ""
 
-        # Case 1: Route number changes along the chain
+        # Case 1: Route number changes along the chain — unless the street runs
+        # straight on (Item 51): Yellowstone Hwy renumbering from I-15 BL to US-20 BR
+        # is one road, not a junction.
+        same_street = False
         if rn_prev and rn_curr and rn_prev != rn_curr:
+            from .couplets import street_key
+            n_prev, n_curr = row_prev.get("RoadName"), row_curr.get("RoadName")
+            same_street = (pd.notna(n_prev) and pd.notna(n_curr) and str(n_prev).strip()
+                           and street_key(n_prev).lower() == street_key(n_curr).lower())
+        if rn_prev and rn_curr and rn_prev != rn_curr and not same_street:
             splits.append(SplitPoint(
                 segment_index=i,
                 segment_id=int(seg_curr),
@@ -893,12 +901,18 @@ _OPPOSITE = {"N": "S", "S": "N", "E": "W", "W": "E"}
 
 @dataclass(frozen=True)
 class MainlineChain:
-    """One maximal run of a numbered route's segments in travel order.
+    """One maximal directional run of a state route's segments in travel order.
 
-    Built by walking ``NextXDSegI`` **within one route number**, so the chain
-    stays on one carriageway (``NextXDSegI`` is directional) and does not wander
-    onto the cross-route at a junction. A divided highway therefore yields two
-    chains — that is the point; they are paired by :func:`pair_chains`.
+    Built by walking ``NextXDSegI`` **within one route's segments**, so the chain stays
+    on one carriageway (``NextXDSegI`` is directional) and does not wander onto the
+    cross-route at a junction. A divided highway therefore yields two chains — that is
+    the point; they are paired by :func:`pair_chains`.
+
+    Since Item 51 a route's segments include its **concurrent** ones (ITD membership plus
+    INRIX ``RoadList``), a chain is **joined where its route turns** at a junction the
+    link doesn't follow, and chains are **merged where only the number changes** along
+    one street — so SH-8 through Moscow and Idaho Falls' Yellowstone Hwy are each one
+    chain. ``route_numbers`` lists every route the chain walked, most miles first.
     """
 
     route_number: str
@@ -913,6 +927,13 @@ class MainlineChain:
     localities: tuple[str, ...]
     """``PostalCode`` values along the chain, most frequent first."""
     counties: tuple[str, ...]
+    route_numbers: tuple[str, ...] = ()
+    """Every route the chain walked (a merge across a renumbering walks several)."""
+    route_labels: tuple[str, ...] = ()
+    """``route_label`` for each of ``route_numbers``."""
+    joins: tuple[dict, ...] = ()
+    """How the chain was assembled beyond ``NextXDSegI``: each junction join and
+    renumbering merge, for the audit (Item 51)."""
 
     @property
     def n_segments(self) -> int:
@@ -922,6 +943,10 @@ class MainlineChain:
     def direction(self) -> str:
         """``NB``/``SB``/``EB``/``WB``, or the raw bearing if it is not cardinal."""
         return _DIR_LABEL.get(self.bearing, self.bearing)
+
+    @property
+    def routes(self) -> tuple[str, ...]:
+        return self.route_numbers or (self.route_number,)
 
 
 def route_label(route_number: str, road_names: Sequence[str], frc: int | None = None) -> str:
@@ -945,114 +970,577 @@ def route_label(route_number: str, road_names: Sequence[str], frc: int | None = 
     return f"SH-{num}"
 
 
+# ─── Chains across route-numbering changes (ROADMAP Item 51) ─────────
+#
+# Item 46 walked one ``RoadNumber`` at a time, and a road whose number changes along
+# its length came out as several short chains, each of which had to clear the chain
+# minimum and find its own core. Three things are needed to walk a road as a road:
+#
+# 1. **Concurrency.** ITD's SHS records one route per road, so the US-95 couplet in
+#    Moscow is route 95 only, although SH-8 runs on it; INRIX's ``RoadList`` names
+#    ``ID-8`` there. A route's segments are its membership routes plus the routes its
+#    ``RoadList`` names, for segments on the state system.
+# 2. **Junction joins.** Where a route turns and the link runs straight on, the route's
+#    walk ends at the junction and resumes on a segment that nothing in the route
+#    links into (DATA_FORMAT trap 4: Payette 16th St, Lewiston's levee, SH-8 onto the
+#    couplet). A tail is joined to such a head when the head starts on the tail's last
+#    segment and the turn is not a reversal. Where the route's own SHS line runs past
+#    the junction as a short stub, the head is joined at the junction and the stub
+#    left behind — but only when the milepost gap shows it (the head's run comes back
+#    to the route's line further along).
+# 3. **Renumbering merges.** A route that ends where another begins, on the same
+#    street, is one road (Yellowstone Hwy is I-15 BL, US-20 BR, US-26 and US-91 along
+#    its length; Broadway east of I-15 is I-15 BL).
+
+ROUTE_JOIN_TOL_M = 20.0
+"""How close a head's start must lie to the tail's last segment to be its continuation."""
+ROUTE_JOIN_MIN_FRACTION = 0.5
+"""...and how far along that segment: a head leaving its first half is a side road."""
+ROUTE_JOIN_MAX_TURN_DEG = 120.0
+"""A join may turn a corner (90 degrees) but not reverse onto the other carriageway."""
+ROUTE_STUB_MILES = 0.3
+"""The most of a route's own run that a junction join may leave behind as a stub."""
+ROUTE_JOIN_MP_TOL = 0.25
+"""Where both sides lie on one SHS line, their mileposts must agree to this (miles)."""
+ROUTE_BRIDGE_MAX_MILES = 2.0
+"""A stub join must return to the route's own line within this many chain miles."""
+MERGE_MAX_TURN_DEG = 60.0
+"""A renumbering merge continues straight on; it does not turn a corner."""
+SHARED_CORE_MAX = 0.5
+"""A core with this share of its miles already in a stronger facility's core (or its
+Tier 2) is that facility's queue seen from a concurrent route, and is absorbed. Below
+it the core stands, with a ``shares`` flag (Item 51)."""
+MERGE_MIN_STREET_MILES = 0.5
+"""A merge that cuts a chain (a route turning off the street, or arriving onto it)
+needs the street to run on for this far on both sides. At Troy, SH-8 eastbound on S
+Main St becomes "ID-8" where SH-99 starts down S Main St for 0.04 mi: that is a route
+changing its name, not a street changing its number. Yellowstone Hwy runs 4.9 mi."""
+
+
+def segment_route_sets(network: gpd.GeoDataFrame | pd.DataFrame) -> dict[int, frozenset[str]]:
+    """``{segment: routes it belongs to}`` over the network's state-route segments.
+
+    With ITD membership applied (``routes.apply_route_membership`` adds
+    ``itd_routes``), a segment on the system belongs to its membership routes plus the
+    routes its ``RoadList`` names: the SHS records one route per road, so concurrency
+    comes from INRIX. A segment membership leaves on no route is not a member of any,
+    whatever ``RoadList`` says. Without membership the ``RoadNumber`` alone decides
+    (Item 46's reading). Ramps (``SlipRoad`` 1) are never members.
+    """
+    from .routes import ITD_ROUTES_COL, road_list_routes
+
+    net = network
+    ids = net["XDSegID"] if "XDSegID" in net.columns else pd.Series(net.index, index=net.index)
+    slip = (net["SlipRoad"].astype(str).str.strip().isin(["1", "1.0"])
+            if "SlipRoad" in net.columns else pd.Series(False, index=net.index))
+    out: dict[int, frozenset[str]] = {}
+    if ITD_ROUTES_COL in net.columns:
+        road_list = net["RoadList"] if "RoadList" in net.columns else pd.Series(None, index=net.index)
+        names = net["RoadName"] if "RoadName" in net.columns else pd.Series(None, index=net.index)
+        for sid, r, rl, nm, s in zip(ids, net[ITD_ROUTES_COL], road_list, names, slip):
+            if s or r is None or (isinstance(r, float) and pd.isna(r)):
+                continue
+            base = {x.strip() for x in str(r).split("/") if x.strip()}
+            if not base:
+                continue
+            conc = {str(x) for x in road_list_routes(rl, nm)} if pd.notna(rl) else set()
+            out[int(sid)] = frozenset(base | conc)
+        return out
+    rn = net["RoadNumber"].astype(str).str.strip()
+    for sid, r, s in zip(ids, rn, slip):
+        if s or r in ("", "None", "nan"):
+            continue
+        out[int(sid)] = frozenset({r})
+    return out
+
+
+class _ChainGeometry:
+    """Metric geometry, terminal bearings and SHS mileposts for the member segments."""
+
+    def __init__(self, net_idx, members: set[int]):
+        from .corridors import _terminal_bearing
+        from .itd_layers import SHS_MP_END_COL, SHS_MP_START_COL
+        from .routes import ITD_ROUTE_ID_COL
+
+        self.miles = pd.to_numeric(net_idx["Miles"], errors="coerce").fillna(0.0).to_dict()
+        self.name = {int(k): (str(v).strip() if pd.notna(v) else "")
+                     for k, v in net_idx.get("RoadName", pd.Series(dtype=object)).items()}
+        self.group = {int(k): v for k, v in net_idx.get("XDGroup", pd.Series(dtype=object)).items()}
+        self.route_id = {}
+        if ITD_ROUTE_ID_COL in net_idx.columns:
+            self.route_id = {int(k): str(v) for k, v in net_idx[ITD_ROUTE_ID_COL].items()
+                             if v is not None and pd.notna(v)}
+        self.mp0, self.mp1 = {}, {}
+        if SHS_MP_START_COL in net_idx.columns:
+            self.mp0 = pd.to_numeric(net_idx[SHS_MP_START_COL], errors="coerce").dropna().to_dict()
+            self.mp1 = pd.to_numeric(net_idx[SHS_MP_END_COL], errors="coerce").dropna().to_dict()
+        self.geom: dict[int, object] = {}
+        self.start: dict[int, Point] = {}
+        self.in_brg: dict[int, float | None] = {}
+        self.out_brg: dict[int, float | None] = {}
+        self._tbrg = _terminal_bearing
+        if not isinstance(net_idx, gpd.GeoDataFrame) or "geometry" not in net_idx.columns:
+            return
+        sub = net_idx.loc[[s for s in members if s in net_idx.index]]
+        sub = sub[sub.geometry.notna() & ~sub.geometry.is_empty]
+        if sub.empty:
+            return
+        try:
+            metric = sub.estimate_utm_crs()
+        except Exception:
+            metric = "EPSG:3857"
+        for sid, g in sub.geometry.to_crs(metric).items():
+            sid = int(sid)
+            self.geom[sid] = g
+            self.start[sid] = g.interpolate(0.0)
+            self.in_brg[sid] = _terminal_bearing(g, at_end=False, probe=30.0)
+            self.out_brg[sid] = _terminal_bearing(g, at_end=True, probe=30.0)
+
+    def bearing_at(self, sid: int, dist: float) -> float | None:
+        """Local bearing of ``sid`` over the 30 m before ``dist`` along it."""
+        g = self.geom[sid]
+        lo = max(0.0, dist - 30.0)
+        if dist - lo < 1.0:
+            return self.in_brg.get(sid)
+        from shapely.geometry import LineString
+        p1, p2 = g.interpolate(lo), g.interpolate(dist)
+        return self._tbrg(LineString([p1, p2]), at_end=True, probe=30.0)
+
+    def street(self, sid: int) -> str:
+        from .couplets import street_key
+        n = self.name.get(sid, "")
+        return street_key(n).lower() if n else ""
+
+    def run_miles(self, ids) -> float:
+        return float(sum(self.miles.get(s, 0.0) for s in ids))
+
+
+def _turn(a: float | None, b: float | None) -> float:
+    if a is None or b is None:
+        return 0.0
+    return abs((a - b + 180.0) % 360.0 - 180.0)
+
+
+def _join_candidate(cg: _ChainGeometry, tail: int, head: int) -> dict | None:
+    """Does ``head`` continue the route from ``tail``'s last segment? ``None``, or
+    ``{gap_m, turn_deg, at}`` — ``at`` is how far along ``tail`` the head leaves."""
+    g, s = cg.geom.get(tail), cg.start.get(head)
+    if g is None or s is None or g.length <= 0:
+        return None
+    gap = float(g.distance(s))
+    if gap > ROUTE_JOIN_TOL_M:
+        return None
+    at = float(g.project(s))
+    if at < ROUTE_JOIN_MIN_FRACTION * g.length:
+        return None
+    turn = _turn(cg.bearing_at(tail, at), cg.in_brg.get(head))
+    if turn > ROUTE_JOIN_MAX_TURN_DEG:
+        return None
+    rid_t, rid_h = cg.route_id.get(tail), cg.route_id.get(head)
+    if rid_t and rid_t == rid_h and tail in cg.mp0 and tail in cg.mp1 and head in cg.mp0:
+        mp_at = cg.mp0[tail] + (cg.mp1[tail] - cg.mp0[tail]) * (at / g.length)
+        if abs(cg.mp0[head] - mp_at) > ROUTE_JOIN_MP_TOL:
+            return None
+    return {"gap_m": round(gap, 1), "turn_deg": round(turn, 0), "at": at}
+
+
+def _returns_to_line(cg: _ChainGeometry, a: int, run: Sequence[int]) -> float | None:
+    """Mileposts past ``a`` on ``a``'s own SHS line, reached within the bridge limit.
+
+    The milepost evidence for a stub join: SH-8 eastbound leaves its line at mp 1.79
+    onto the US-95 couplet and ``run`` comes back to it at mp 2.35 on Troy Rd. Returns
+    the milepost it comes back at, or ``None``."""
+    rid = cg.route_id.get(a)
+    if not rid or a not in cg.mp0 or a not in cg.mp1:
+        return None
+    sense = np.sign(cg.mp1[a] - cg.mp0[a])
+    if sense == 0:
+        return None
+    walked = 0.0
+    for s in run:
+        if walked > ROUTE_BRIDGE_MAX_MILES:
+            return None
+        if cg.route_id.get(s) == rid and s in cg.mp0:
+            ahead = (cg.mp0[s] - cg.mp1[a]) * sense
+            return cg.mp0[s] if ahead >= -ROUTE_JOIN_MP_TOL else None
+        walked += cg.miles.get(s, 0.0)
+    return None
+
+
+def _walk_route(members: set[int], nxt_raw: dict[int, int]) -> list[list[int]]:
+    """Maximal ``NextXDSegI`` walks through ``members`` (heads first, then cycles)."""
+    nxt = {s: n for s in members if (n := nxt_raw.get(s)) is not None and n in members}
+    preds = set(nxt.values())
+    visited: set[int] = set()
+    walks: list[list[int]] = []
+
+    def _walk(start: int) -> list[int]:
+        out, cur = [], start
+        while cur is not None and cur in members and cur not in visited:
+            out.append(cur)
+            visited.add(cur)
+            cur = nxt.get(cur)
+        return out
+
+    for head in sorted(members - preds):
+        if head not in visited:
+            walks.append(_walk(head))
+    for sid in sorted(members - visited):
+        w = _walk(sid)
+        if w:
+            walks.append(w)
+    return walks
+
+
+def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
+                      linked_into: set[int]) -> list[tuple[list[int], list[dict]]]:
+    """Join one route's walks where the route turns off the link (see the section note).
+
+    ``linked_into`` is every member segment some member of this route links into; a
+    head that appears there is mid-route and never a join target."""
+    items = [(list(w), []) for w in walks if w]
+
+    def _heads(exclude: int) -> list[tuple[int, int]]:
+        return [(j, it[0][0]) for j, it in enumerate(items)
+                if j != exclude and it[0] and it[0][0] not in linked_into]
+
+    changed = True
+    while changed:
+        changed = False
+        # Tail joins: the head leaves the tail's last segment.
+        for i, (walk, log) in enumerate(items):
+            if not walk:
+                continue
+            tail = walk[-1]
+            best = None
+            for j, head in _heads(i):
+                if head in walk:
+                    continue
+                c = _join_candidate(cg, tail, head)
+                if c is not None and (best is None or (c["gap_m"], c["turn_deg"])
+                                      < (best[1]["gap_m"], best[1]["turn_deg"])):
+                    best = (j, c)
+            if best is not None:
+                j, c = best
+                other_walk, other_log = items[j]
+                log.append({"kind": "junction", "route": route, "from": tail,
+                            "to": other_walk[0], "gap_m": c["gap_m"],
+                            "turn_deg": c["turn_deg"]})
+                items[i] = (walk + other_walk, log + other_log)
+                items[j] = ([], [])
+                changed = True
+                break
+        if changed:
+            continue
+        # Stub joins: the head leaves an earlier segment and the route's own run past
+        # it is a short stub — only on milepost evidence.
+        for i, (walk, log) in enumerate(items):
+            if len(walk) < 2:
+                continue
+            for k in range(len(walk) - 2, -1, -1):
+                stub = walk[k + 1:]
+                if cg.run_miles(stub) > ROUTE_STUB_MILES:
+                    break
+                a = walk[k]
+                best = None
+                for j, head in _heads(i):
+                    if head in walk:
+                        continue
+                    c = _join_candidate(cg, a, head)
+                    if c is None:
+                        continue
+                    mp = _returns_to_line(cg, a, items[j][0])
+                    if mp is None:
+                        continue
+                    if best is None or (c["gap_m"], c["turn_deg"]) < (best[1]["gap_m"],
+                                                                     best[1]["turn_deg"]):
+                        best = (j, c, mp)
+                if best is None:
+                    continue
+                j, c, mp = best
+                other_walk, other_log = items[j]
+                log.append({"kind": "stub_junction", "route": route, "from": a,
+                            "to": other_walk[0], "gap_m": c["gap_m"],
+                            "turn_deg": c["turn_deg"], "stub": list(stub),
+                            "stub_miles": round(cg.run_miles(stub), 3),
+                            "mp_leave": round(cg.mp1.get(a, float("nan")), 3),
+                            "mp_return": round(mp, 3)})
+                items[i] = (walk[:k + 1] + other_walk, log + other_log)
+                items[j] = (list(stub), [])
+                changed = True
+                break
+            if changed:
+                break
+    return [it for it in items if it[0]]
+
+
+def _merge_renumberings(chains: list[dict], cg: _ChainGeometry,
+                        nxt_raw: dict[int, int]) -> list[dict]:
+    """Merge chains where the street runs on and only the route number changes.
+
+    ``chains`` are dicts ``{route, ids, joins}``, one route's walk each. The street runs
+    on from segment ``x`` of one chain to segment ``y`` of another route's chain when
+    ``y`` is ``x`` itself (a shared concurrent segment: Broadway's I-15 BL / US-20
+    piece), ``x``'s own ``NextXDSegI``, or starts at ``x``'s end; the two are the **same
+    street**; the road runs straight on; and each chain leaves or joins the street
+    there — ``x`` is its chain's tail or its chain turns off the street after it, and
+    ``y`` is its chain's head or its chain arrives from another street. The street
+    pieces are joined, and what the chains did off the street is left as chains of
+    their own. On Yellowstone Hwy, US-91 hands over to US-26 / I-15 BL, which arrive
+    from Sunnyside Rd: the street is one chain and the Sunnyside Rd approach another.
+    Where continuations compete, the one that stays on the street longest wins.
+
+    Built as a graph of ``(chain, position)`` nodes: each chain's own links, with a
+    street continuation replacing the link it overrides; chains are then its maximal
+    paths.
+    """
+    from shapely import STRtree
+
+    n = len(chains)
+    occ: dict[int, list[tuple[int, int]]] = {}
+    for i, c in enumerate(chains):
+        for k, s in enumerate(c["ids"]):
+            occ.setdefault(s, []).append((i, k))
+
+    start_ids = list(cg.start)
+    tree = STRtree([cg.start[s] for s in start_ids]) if start_ids else None
+
+    def _street_run(ids, k, street):
+        m = 0.0
+        for s in ids[k:]:
+            if cg.street(s) != street:
+                break
+            m += cg.miles.get(s, 0.0)
+        return m
+
+    events = []   # (score, (i, k), (j, m))
+    for i, c in enumerate(chains):
+        ids = c["ids"]
+        for k, x in enumerate(ids):
+            street = cg.street(x)
+            if not street:
+                continue
+            if k < len(ids) - 1 and cg.street(ids[k + 1]) == street:
+                continue                      # the chain stays on the street
+            targets = {x}
+            if nxt_raw.get(x) is not None:
+                targets.add(nxt_raw[x])
+            g = cg.geom.get(x)
+            if g is not None and tree is not None:
+                end = g.interpolate(g.length)
+                for q in tree.query(end.buffer(ROUTE_JOIN_TOL_M)):
+                    targets.add(start_ids[int(q)])
+            is_tail = k == len(ids) - 1
+            for y in targets:
+                if cg.street(y) != street:
+                    continue
+                if y != x and _turn(cg.out_brg.get(x), cg.in_brg.get(y)) > MERGE_MAX_TURN_DEG:
+                    continue
+                for j, m in occ.get(y, []):
+                    o = chains[j]
+                    if j == i or o["route"] == c["route"]:
+                        continue
+                    # One side must be a chain end — a tail running on into another
+                    # route, or a chain turning off the street where another route's
+                    # chain starts. Two chains merely sharing concurrent pavement are
+                    # not a renumbering; a shared segment counts only tail to head.
+                    if not (is_tail or m == 0) or (y == x and not (is_tail and m == 0)):
+                        continue
+                    if m > 0 and cg.street(o["ids"][m - 1]) == street:
+                        continue              # that chain was already on the street
+                    up = _street_run(list(reversed(ids[:k + 1])), 0, street)
+                    down = _street_run(o["ids"], m, street)
+                    if not (is_tail and m == 0) and min(up, down) < MERGE_MIN_STREET_MILES:
+                        continue
+                    events.append((down + up, (i, k), (j, m)))
+
+    # Each node keeps at most one replacement out-link and one replacement in-link.
+    events.sort(key=lambda e: -e[0])
+    out_link: dict[tuple[int, int], tuple[int, int]] = {}
+    in_link: dict[tuple[int, int], tuple[int, int]] = {}
+    for _, src, dst in events:
+        if src in out_link or dst in in_link:
+            continue
+        out_link[src] = dst
+        in_link[dst] = src
+
+    def _next(node):
+        if node in out_link:
+            return out_link[node]
+        i, k = node
+        nxt = (i, k + 1)
+        if k + 1 < len(chains[i]["ids"]) and nxt not in in_link:
+            return nxt
+        return None
+
+    has_pred: set[tuple[int, int]] = set(in_link)
+    for i, c in enumerate(chains):
+        for k in range(1, len(c["ids"])):
+            if (i, k - 1) not in out_link and (i, k) not in in_link:
+                has_pred.add((i, k))
+
+    all_nodes = [(i, k) for i, c in enumerate(chains) for k in range(len(c["ids"]))]
+    seen: set[tuple[int, int]] = set()
+    out = []
+    starts = [nd for nd in all_nodes if nd not in has_pred]
+    for start in starts + all_nodes:
+        if start in seen:
+            continue
+        ids, routes_miles, joins, logged = [], {}, [], set()
+        node = start
+        while node is not None and node not in seen:
+            seen.add(node)
+            i, k = node
+            sid = chains[i]["ids"][k]
+            route = chains[i]["route"]
+            if i not in logged:
+                logged.add(i)
+                joins.extend(j for j in chains[i]["joins"]
+                             if j.get("from") in chains[i]["ids"][k:] or k == 0)
+            if not ids or ids[-1] != sid:
+                if sid in ids:
+                    break                     # a loop back onto itself
+                ids.append(sid)
+                routes_miles[route] = routes_miles.get(route, 0.0) + cg.miles.get(sid, 0.0)
+            nxt = _next(node)
+            if nxt is not None and node in out_link:
+                joins.append({"kind": "renumbering", "route": chains[nxt[0]]["route"],
+                              "from": sid, "to": chains[nxt[0]]["ids"][nxt[1]]})
+            node = nxt
+        if ids:
+            out.append({"ids": ids, "joins": joins, "routes_miles": routes_miles})
+    return out
+
+
 def enumerate_mainline_chains(
     network: gpd.GeoDataFrame | pd.DataFrame,
     *,
     min_miles: float = MIN_CHAIN_MILES,
     route_numbers: Sequence[str] | None = None,
+    join: bool = True,
 ) -> list[MainlineChain]:
-    """Walk every numbered route in ``network`` into maximal directional chains.
+    """Walk every state route in ``network`` into maximal directional chains.
 
     The walk is topological, never geographic (ROADMAP Item 36): it follows
-    ``NextXDSegI`` and only through segments carrying the **same route number**,
-    so the chain ends where the route ends rather than continuing onto whatever
-    happens to lie ahead. Apply :func:`corridors.apply_link_repairs` to the
-    network first if you want the Item 38 repairs honoured — this reads
-    ``NextXDSegI`` as it finds it.
+    ``NextXDSegI`` through one route's segments (:func:`segment_route_sets` —
+    membership plus ``RoadList`` concurrency when ``routes.apply_route_membership`` has
+    been applied, else ``RoadNumber``), so the chain ends where the route ends rather
+    than continuing onto whatever happens to lie ahead. With ``join`` (Item 51) a
+    route's walks are joined where the route turns off the link, and chains are merged
+    where only the route number changes along a street (see the section note). Apply
+    :func:`corridors.apply_link_repairs` to the network first if you want the Item 38
+    repairs honoured.
 
     Args:
         network: XD network with ``XDSegID``, ``NextXDSegI``, ``RoadNumber``,
-            ``Bearing``, ``Miles``.
+            ``Bearing``, ``Miles`` (and ``itd_routes`` / ``itd_route_id`` /
+            ``shs_mp_start`` / ``shs_mp_end`` for the Item 51 walk).
         min_miles: drop chains shorter than this (stubs and connector fragments).
         route_numbers: optional whitelist of route numbers to walk.
+        join: join and merge across junctions and renumberings (Item 51). ``False``
+            walks each route by the link alone.
 
     Returns:
-        Chains sorted by miles descending. Every numbered segment lands in
-        exactly one chain (segments left over after the head walk — routes whose
-        topology forms a cycle — are walked from their lowest remaining id).
+        Chains sorted by miles descending. A concurrent segment can lie on more than
+        one chain (SH-8 and US-95 share Moscow's couplet); a chain wholly inside a
+        longer one is dropped.
     """
     if network is None or len(network) == 0:
         return []
-
-    net = network
-    rn = net["RoadNumber"].astype(str).str.strip()
-    keep = rn.ne("") & rn.ne("None") & rn.ne("nan")
+    net_idx = _ensure_indexed(network)
+    sets = segment_route_sets(network)
     if route_numbers is not None:
-        keep &= rn.isin([str(r).strip() for r in route_numbers])
-    net = net[keep].copy()
-    if net.empty:
+        want = {str(r).strip() for r in route_numbers}
+        sets = {s: r & want for s, r in sets.items() if r & want}
+    sets = {s: r for s, r in sets.items() if s in net_idx.index}
+    if not sets:
         return []
-    net["_rn"] = rn[keep]
 
-    ids = {int(s) for s in net["XDSegID"]}
-    route_of = {int(s): r for s, r in zip(net["XDSegID"], net["_rn"])}
+    by_route: dict[str, set[int]] = {}
+    for sid, rs in sets.items():
+        for r in rs:
+            by_route.setdefault(r, set()).add(sid)
 
     # The band is a property of the *route*, not of a chain on it. Reading it per
     # chain labels I-90's Coeur d'Alene business route "SH-90", because no segment
     # of it is called "I-90" — every segment is called "Northwest Blvd".
+    # ``RoadList`` is read too: US-91 on S Yellowstone Hwy is never *named* US-91, only
+    # listed as it, and a RoadName-only read labelled it "SH-91".
     labels: dict[str, str] = {}
-    for route, grp in net.groupby("_rn"):
-        names = [str(v).strip() for v in grp.get("RoadName", pd.Series(dtype=object)).dropna()
-                 if str(v).strip()]
-        frc_vals = pd.to_numeric(grp.get("FRC", pd.Series(dtype=float)), errors="coerce").dropna()
-        labels[str(route)] = route_label(route, names,
-                                         int(frc_vals.min()) if len(frc_vals) else None)
+    names_col = net_idx.get("RoadName", pd.Series(dtype=object))
+    list_col = net_idx.get("RoadList", pd.Series(dtype=object))
+    frc_col = pd.to_numeric(net_idx.get("FRC", pd.Series(dtype=float)), errors="coerce")
+    for route, members in by_route.items():
+        ids = list(members)
+        names = [str(v).strip() for v in names_col.reindex(ids).dropna() if str(v).strip()]
+        names += [t.strip() for v in list_col.reindex(ids).dropna()
+                  for t in str(v).split("|") if t.strip()]
+        frc_vals = frc_col.reindex(ids).dropna()
+        labels[route] = route_label(route, names, int(frc_vals.min()) if len(frc_vals) else None)
 
-    nxt: dict[int, int] = {}
-    for sid, nid in zip(net["XDSegID"], net.get("NextXDSegI", pd.Series(dtype="float"))):
-        if pd.isna(nid):
-            continue
-        nid = int(nid)
-        sid = int(sid)
-        if nid in ids and route_of[nid] == route_of[sid]:
-            nxt[sid] = nid
+    nxt_raw: dict[int, int] = {}
+    for sid, nid in pd.to_numeric(net_idx.get("NextXDSegI", pd.Series(dtype=float)),
+                                  errors="coerce").dropna().items():
+        nxt_raw[int(sid)] = int(nid)
 
-    by_id = net.set_index("XDSegID", drop=False)
-    predecessors = set(nxt.values())
-    visited: set[int] = set()
-    walks: list[list[int]] = []
+    cg = _ChainGeometry(net_idx, set(sets)) if join else None
+    raw: list[dict] = []
+    for route in sorted(by_route, key=lambda r: (len(r), r)):
+        members = by_route[route]
+        walks = _walk_route(members, nxt_raw)
+        if join and cg is not None and cg.geom:
+            linked_into = {n for s in members if (n := nxt_raw.get(s)) in members}
+            joined = _join_route_walks(route, walks, cg, linked_into)
+        else:
+            joined = [(w, []) for w in walks]
+        raw.extend({"route": route, "ids": w, "joins": log} for w, log in joined)
 
-    def _walk(start: int) -> list[int]:
-        chain, cur = [], start
-        while cur is not None and cur in ids and cur not in visited:
-            chain.append(cur)
-            visited.add(cur)
-            cur = nxt.get(cur)
-        return chain
+    if join and cg is not None and cg.geom:
+        merged = _merge_renumberings(raw, cg, nxt_raw)
+    else:
+        merged = [{"ids": c["ids"], "joins": c["joins"],
+                   "routes_miles": {c["route"]: 0.0}} for c in raw]
 
-    for head in sorted(ids - predecessors):
-        if head not in visited:
-            walks.append(_walk(head))
-    # Anything still unvisited sits on a cycle; start it somewhere deterministic.
-    for sid in sorted(ids - visited):
-        walk = _walk(sid)
-        if walk:
-            walks.append(walk)
-
+    miles_of = pd.to_numeric(net_idx["Miles"], errors="coerce").fillna(0.0)
     out: list[MainlineChain] = []
-    for walk in walks:
-        sub = by_id.loc[walk]
-        total_miles = round(float(pd.to_numeric(sub["Miles"], errors="coerce").fillna(0.0).sum()), 3)
+    for c in merged:
+        walk = c["ids"]
+        sub = net_idx.loc[walk]
+        total_miles = round(float(miles_of.reindex(walk).sum()), 3)
         if total_miles < min_miles:
             continue
         bearings = [str(b).strip() for b in sub["Bearing"].dropna() if str(b).strip()]
-        bearing = _mode(bearings)
         names = [str(v).strip() for v in sub.get("RoadName", pd.Series(dtype=object)).dropna()
                  if str(v).strip()]
-        route = str(sub["_rn"].iloc[0])
+        rm = c["routes_miles"]
+        ordered = tuple(sorted(rm, key=lambda r: -rm[r]))
+        route = ordered[0]
         out.append(MainlineChain(
             route_number=route,
-            bearing=bearing,
+            bearing=_mode(bearings),
             segment_ids=tuple(int(s) for s in walk),
             miles=total_miles,
             road_name=_mode(names),
             route_label=labels.get(route, route_label(route, names)),
             localities=_ranked_values(sub, "PostalCode"),
             counties=_ranked_values(sub, "County"),
+            route_numbers=ordered,
+            route_labels=tuple(labels.get(r, route_label(r, names)) for r in ordered),
+            joins=tuple(c["joins"]),
         ))
 
+    # A chain wholly inside a longer one adds nothing (a concurrent route's walk that
+    # never leaves its partner, like SH-3 on SH-8's pavement).
     out.sort(key=lambda c: -c.miles)
-    return out
+    kept: list[MainlineChain] = []
+    covered: list[set[int]] = []
+    for c in out:
+        ids = set(c.segment_ids)
+        if any(ids <= other for other in covered):
+            continue
+        kept.append(c)
+        covered.append(ids)
+    return kept
 
 
 def _mode(values: Sequence[str]) -> str:
@@ -1089,8 +1577,8 @@ def pair_chains(
 ) -> list[tuple[MainlineChain, MainlineChain | None]]:
     """Pair each chain with the opposing carriageway of the same facility.
 
-    Pairing is by **route identity plus proximity**, in that order: same route
-    number, opposing cardinal bearing, and a mean lateral separation under
+    Pairing is by **route identity plus proximity**, in that order: a route in
+    common (Item 51: a chain can walk several), opposing cardinal bearing, and a mean lateral separation under
     ``max_mean_sep_m``. Proximity is the necessary second test because one route
     yields several chains in a district — US-95 in District 1 walks as a
     101-mile pair *and* a 28-mile pair, and matching on route alone would marry
@@ -1118,9 +1606,15 @@ def pair_chains(
             for j, other in enumerate(chains):
                 if j == i or j in taken or other.bearing != opp:
                     continue
-                if other.route_number != chain.route_number or geoms[j] is None:
+                if not (set(other.routes) & set(chain.routes)) or geoms[j] is None:
                     continue
-                sep = _mean_separation_m(geoms[i], geoms[j])
+                # Sampled along the *shorter* chain: since Item 51 the two directions
+                # can be joined and merged differently (a data gap splits one), and
+                # the longer one's extra miles say nothing about the pairing.
+                if other.miles < chain.miles:
+                    sep = _mean_separation_m(geoms[j], geoms[i])
+                else:
+                    sep = _mean_separation_m(geoms[i], geoms[j])
                 if sep < best_sep:
                     best_sep, best_j = sep, j
         if best_j is not None and best_sep <= max_mean_sep_m:
@@ -1354,6 +1848,112 @@ def _slug(text: str) -> str:
     return s or "corridor"
 
 
+_ROUTE_LIKE = re.compile(
+    r"^(?:(?:I|US|ID|SH|SR)-?\d+\b|(?:us |state |old )?(?:highway|hwy) \d+\b"
+    r"|\d+(?: ?[NSEW])?$)", re.IGNORECASE)
+"""A name that is only a route: ``US-95``, ``ID-8 E``, ``Us Highway 12``, ``95 N``. A
+numbered street (``50 St S``, ``2nd S``) is a street."""
+_BUSINESS_SUFFIX = {"BL": "BL", "BR": "BR", "BUS": "BL", "SPUR": "Spur"}
+
+
+def business_band(band: str, sub: pd.DataFrame) -> str:
+    """``band`` with ``BL`` / ``BR`` / ``Spur`` appended when at least half of ``sub``'s
+    miles list themselves in ``RoadList`` as that route's business loop or spur
+    (``I-15-BL`` on Pocatello's 5th Ave -> ``I-15 BL``)."""
+    if "RoadList" not in sub.columns or sub.empty:
+        return band
+    miles = pd.to_numeric(sub.get("Miles"), errors="coerce").fillna(0.0)
+    if miles.sum() <= 0:
+        return band
+    pat = re.compile(rf"^{re.escape(band)}-(BL|BR|BUS|SPUR)$", re.IGNORECASE)
+    for suffix in ("BL", "BR", "BUS", "SPUR"):
+        hit = sub["RoadList"].fillna("").map(
+            lambda v: any((m := pat.match(t.strip())) and m.group(1).upper() == suffix
+                          for t in str(v).split("|")))
+        if float(miles[hit].sum()) >= 0.5 * float(miles.sum()):
+            return f"{band} {_BUSINESS_SUFFIX[suffix]}"
+    return band
+
+
+def place_name(sub: pd.DataFrame) -> str:
+    """The urban area most of ``sub``'s miles lie inside (Item 52's context, first part
+    of the Census name: ``Idaho Falls``), else the county (``Latah County``)."""
+    miles = pd.to_numeric(sub.get("Miles"), errors="coerce").fillna(0.0)
+    if "urban_area" in sub.columns and "urban_share" in sub.columns:
+        inside = pd.to_numeric(sub["urban_share"], errors="coerce").fillna(0.0) >= URBAN_SHARE_INSIDE
+        names = sub["urban_area"].where(inside).dropna()
+        if len(names):
+            by = miles[names.index].groupby(names.astype(str)).sum()
+            return str(by.idxmax()).split(",")[0].strip()
+    if "County" in sub.columns:
+        c = sub["County"].dropna().astype(str).str.strip()
+        c = c[c.str.len() > 0]
+        if len(c):
+            by = miles[c.index].groupby(c).sum()
+            return f"{by.idxmax()} County"
+    return "Idaho"
+
+
+def facility_naming(chain: MainlineChain, core: CoreCandidate | None, seg: pd.DataFrame,
+                    net_idx, route_sets: dict[int, frozenset[str]] | None = None
+                    ) -> tuple[str, str, str]:
+    """``(band, street, place)`` for a facility, from where its **core** lies (Item 51).
+
+    * **band**: of the chain's routes, the one that carries most of the core's miles,
+      with ``BL`` / ``BR`` / ``Spur`` when the core's ``RoadList`` says it is that
+      route's business loop or spur (Pocatello's 5th Ave is ``I-15 BL``);
+    * **street**: the core's street by ``RoadName`` miles (``street_key``: ``W Pullman
+      Rd`` -> ``Pullman Rd``), and a second when it carries at least 30% (``Pullman Rd
+      / 3rd St``); empty when the core is named only by its route (``US-95``,
+      ``Highway 95``);
+    * **place**: the urban area most of the core lies in (Item 52), else its county.
+    """
+    from .couplets import street_key
+
+    ids = list(core.segment_ids) if core is not None else list(chain.segment_ids)
+    sub = net_idx.reindex([s for s in ids if s in net_idx.index])
+    miles = pd.to_numeric(sub.get("Miles"), errors="coerce").fillna(0.0) \
+        if len(sub) else pd.Series(dtype=float)
+
+    routes = list(chain.routes)
+    labels = dict(zip(chain.route_numbers, chain.route_labels)) if chain.route_labels else {}
+    band_route = chain.route_number
+    if route_sets and len(routes) > 1:
+        cover = {r: float(miles[[r in route_sets.get(int(s), ()) for s in sub.index]].sum())
+                 for r in routes}
+        band_route = max(routes, key=lambda r: (cover[r], -routes.index(r)))
+    band = labels.get(band_route, chain.route_label if band_route == chain.route_number
+                      else f"SH-{band_route}")
+    band = business_band(band, sub)
+
+    # A segment INRIX names by its route ("US-20", "ID-33") is the highway, not a
+    # street; its RoadList aliases are byway and memorial names ("Idaho Medal of Honor
+    # Hwy", "Teton Scenic Bywy") and are not read.
+    by_street: dict[str, float] = {}
+    for sid, mi in miles.items():
+        n = sub.at[sid, "RoadName"] if "RoadName" in sub.columns else None
+        if n is None or pd.isna(n) or not str(n).strip():
+            continue
+        if _ROUTE_LIKE.match(str(n).strip()) or _ROUTE_LIKE.match(street_key(n)):
+            continue
+        name = street_key(n)
+        by_street[name] = by_street.get(name, 0.0) + float(mi)
+    street = ""
+    total = float(miles.sum())
+    if by_street and total > 0:
+        ranked = sorted(by_street, key=lambda k: -by_street[k])
+        if by_street[ranked[0]] >= 0.3 * total:
+            street = ranked[0]
+            if len(ranked) > 1 and by_street[ranked[1]] >= 0.3 * total:
+                street = f"{ranked[0]} / {ranked[1]}"
+
+    place = _core_town(seg, core) if core is not None else ""
+    if not place:
+        county = _core_county(net_idx, core) or (chain.counties[0] if chain.counties else "")
+        place = f"{county.strip()} County" if county.strip() else "Idaho"
+    return band, street, place
+
+
 def facility_label(chain: MainlineChain) -> str:
     """Name the facility a chain belongs to, distinguishing it from the route's
     other chains.
@@ -1438,6 +2038,18 @@ def extent_catalogue_entries(
     if group_meta:
         group.update(group_meta)
 
+    nxt = (pd.to_numeric(net["NextXDSegI"], errors="coerce")
+           if "NextXDSegI" in net.columns else pd.Series(dtype=float))
+
+    def _links(ids: Sequence[int]) -> list[list[int]]:
+        """The steps the extent takes that ``NextXDSegI`` does not (Item 51's joins)."""
+        out = []
+        for a, b in zip(ids[:-1], ids[1:]):
+            n = nxt.get(a) if a in nxt.index else None
+            if n is None or pd.isna(n) or int(n) != int(b):
+                out.append([int(a), int(b)])
+        return out
+
     entries: list[dict] = []
     for member_alt, member_chain in ((alt, chain), (counterpart_alt, counterpart)):
         if member_alt is None or member_chain is None:
@@ -1459,6 +2071,7 @@ def extent_catalogue_entries(
             "description": _rationale(member_alt, direction),
             "corridor": group_id,
             "direction": direction,
+            **({"links": links} if (links := _links(member_alt.segment_ids)) else {}),
             "_tier": tier.value,
             "_facility": facility_id,
             "_split_rationale": member_alt.split_rationale,
@@ -1769,7 +2382,8 @@ def core_fails(m: dict) -> tuple[str, ...]:
     return tuple(fails)
 
 
-def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame) -> list[CoreCandidate]:
+def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame, *,
+               exclude: set[int] | frozenset[int] = frozenset()) -> list[CoreCandidate]:
     """Every congested run on a chain, scored — qualifying or not.
 
     A run starts and ends on a segment at :data:`CORE_SEED_RATIO` or worse and bridges
@@ -1777,18 +2391,24 @@ def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame) -> list[CoreCan
     less congested segments *and* segments whose congestion is unknown. Each run is
     scored on its effective miles, its delay and its data (:func:`core_fails`).
 
+    ``exclude`` segments (another facility's core, Item 51) are hard breaks: never a
+    seed, never bridged.
+
     Returns candidates strongest first (total VHD, then effective miles).
     """
     ids = [int(s) for s in chain_segments]
     ratio = seg["ratio"].reindex(ids)
     miles = seg["miles"].reindex(ids).fillna(0.0)
-    seeds = [i for i, r in enumerate(ratio) if pd.notna(r) and r >= CORE_SEED_RATIO]
+    seeds = [i for i, r in enumerate(ratio)
+             if pd.notna(r) and r >= CORE_SEED_RATIO and ids[i] not in exclude]
     runs: list[tuple[int, int]] = []
     for i in seeds:
         if runs:
             lo, hi = runs[-1]
             gap = range(hi, i)
-            if len(gap) <= CORE_GAP_SEGMENTS and float(miles.iloc[list(gap)].sum()) <= CORE_GAP_MILES:
+            if (len(gap) <= CORE_GAP_SEGMENTS
+                    and float(miles.iloc[list(gap)].sum()) <= CORE_GAP_MILES
+                    and not any(ids[g] in exclude for g in gap)):
                 runs[-1] = (lo, i + 1)
                 continue
         runs.append((i, i + 1))
@@ -2101,6 +2721,82 @@ def _core_town(seg: pd.DataFrame, core: CoreCandidate | None) -> str:
     return str(inside["urban_area"].dropna().mode().iloc[0]).split(",")[0].strip()
 
 
+MIRROR_MIN_COVER = 0.3
+"""An opposite chain's mirrored slice must be at least this share of the footprint's
+length to count as its other direction."""
+
+
+def _runs_alongside(slice_geom, footprint_geom, *, max_sep_m: float = PAIR_MAX_MEAN_SEP_M,
+                    min_share: float = 0.5, step_m: float = 50.0,
+                    min_cover: float = MIRROR_MIN_COVER) -> bool:
+    """Whether an opposite chain's mirrored slice really runs beside a footprint (Item 51).
+
+    ``mirror_extent`` snaps a footprint's ends to the nearest points of any chain, and a
+    chain that only *touches* it at a junction snaps to its own end there: Twin Falls'
+    US-93 northbound on Pole Line Rd ends where US-93 turns onto Blue Lakes Blvd, and
+    that one clamped segment was claimed as Blue Lakes' other direction, taking Pole
+    Line's own core with it. A slice counts when at least ``min_share`` of its length
+    (sampled every ``step_m``) lies within ``max_sep_m`` of the footprint — a couplet leg
+    a block over (~180 m) is alongside — and it is at least ``min_cover`` of the
+    footprint's length (0 for a companion *core*, naturally shorter than the lead's
+    Tier 2)."""
+    if slice_geom is None or footprint_geom is None or footprint_geom.length <= 0:
+        return False
+    if slice_geom.length < min_cover * footprint_geom.length:
+        return False
+    try:
+        parts = list(slice_geom.geoms) if slice_geom.geom_type == "MultiLineString" \
+            else [slice_geom]
+        pts = [p.interpolate(d) for p in parts
+               for d in np.arange(step_m / 2.0, max(p.length, step_m / 2.0 + 1e-9), step_m)]
+    except Exception:
+        return False
+    if not pts:
+        return False
+    near = sum(1 for pt in pts if footprint_geom.distance(pt) <= max_sep_m)
+    return near >= min_share * len(pts)
+
+
+def _opposed_slice(net_idx, ids_a: Sequence[int], ids_b: Sequence[int]) -> bool:
+    """Whether run ``b`` travels against run ``a``: ``b``'s start and end are projected
+    onto ``a`` laid out in travel order, and ``b`` is opposed when its end lands behind
+    its start by at least a quarter of its own length. A run's own direction, not its
+    chain's majority ``Bearing`` — Burley's Overland Ave is part of a southbound SH-27
+    chain one way and an eastbound I-84 BL chain the other — and not a chord either,
+    which a bending Tier 2 makes meaningless."""
+    from shapely.geometry import LineString
+
+    coords = []
+    for sid in ids_a:
+        if sid not in net_idx.index:
+            continue
+        g = net_idx.at[sid, "geometry"] if "geometry" in net_idx.columns else None
+        if g is None or g.is_empty:
+            continue
+        parts = list(g.geoms) if g.geom_type == "MultiLineString" else [g]
+        pts = [c for p in parts for c in p.coords]
+        # geometry may be digitised against travel; orient each piece by its endpoints
+        try:
+            s0 = segment_endpoint(net_idx, int(sid), end=False)
+            if Point(pts[0]).distance(Point(s0[1], s0[0])) > Point(pts[-1]).distance(
+                    Point(s0[1], s0[0])):
+                pts = pts[::-1]
+        except Exception:
+            pass
+        coords.extend(pts)
+    if len(coords) < 2:
+        return False
+    line = LineString(coords)
+    try:
+        a = segment_endpoint(net_idx, int(ids_b[0]), end=False)
+        b = segment_endpoint(net_idx, int(ids_b[-1]), end=True)
+    except Exception:
+        return False
+    pa, pb = line.project(Point(a[1], a[0])), line.project(Point(b[1], b[0]))
+    span = Point(a[1], a[0]).distance(Point(b[1], b[0]))
+    return span > 0 and (pa - pb) > 0.25 * span
+
+
 def _index_span(target: Sequence[int], alt: ExtentAlternative, network,
                 metric_crs) -> tuple[int, int] | None:
     """The ``[lo, hi)`` indices on ``target`` that ``alt``'s footprint mirrors onto."""
@@ -2169,6 +2865,7 @@ def generate_catalogue(
 
     seg = segment_congestion(baseline, network, peak_windows=peak_windows)
     chains = enumerate_mainline_chains(network, min_miles=min_chain_miles)
+    route_sets = segment_route_sets(network)
     pairs = pair_chains(chains, network, metric_crs=metric_crs)
     junctions = incoming_route_map(network)
 
@@ -2188,7 +2885,10 @@ def generate_catalogue(
                "direction": a.chain.direction,
                "county": a.chain.counties[0] if a.chain.counties else "",
                "chain_first_segment": a.chain.segment_ids[0],
-               "chain_miles": a.chain.miles, "role": role, "facility": facility,
+               "chain_miles": a.chain.miles, "chain_routes": "/".join(a.chain.routes),
+               "chain_joins": "; ".join(
+                   f"{j['kind']} {j['route']} {j['from']}->{j['to']}" for j in a.chain.joins),
+               "role": role, "facility": facility,
                "n_candidates": len(a.candidates), "n_qualifying": len(a.qualifying)}
         if best is not None:
             row.update({f"core_{k}": (";".join(v) if isinstance(v, list) else v)
@@ -2200,68 +2900,194 @@ def generate_catalogue(
     def _overlaps(spans: list[tuple[int, int]], lo: int, hi: int) -> bool:
         return any(lo < s_hi and hi > s_lo for s_lo, s_hi in spans)
 
+    def _mostly_in(spans: list[tuple[int, int]], lo: int, hi: int) -> bool:
+        inside = {i for s_lo, s_hi in spans for i in range(max(lo, s_lo), min(hi, s_hi))}
+        return hi > lo and len(inside) >= 0.5 * (hi - lo)
+
+    def _held(d, c) -> bool:
+        return (_overlaps(claimed[id(d)], c.start, c.stop)
+                or _mostly_in(mirrored[id(d)], c.start, c.stop))
+
+    # Cores are claimed across **all** chains, strongest first (Item 51). Since chains
+    # follow concurrency, one segment can lie on two chains (SH-8 and US-95 on Moscow's
+    # couplet, US-2 and US-95 through Sandpoint); a segment is in at most one ranked
+    # core, and a core mostly inside a stronger facility's Tier 2 belongs to it.
+    # Each chain is analysed once, and a lead core looks for its companion on **every**
+    # opposite-direction chain sharing a route that lies along its footprint — not
+    # only the one ``pair_chains`` married it to. Since Item 51 one direction can be a
+    # single chain where the other is two (SH-8 eastbound breaks at a data gap past
+    # Bovill), and one-to-one pairing then put the Moscow core's two directions in two
+    # facilities.
+    dirs_all = [_analyse(c) for c in chains]
+    partner = {}
+    for lead_c, other_c in pairs:
+        if other_c is not None:
+            partner[id(lead_c)] = other_c
+            partner[id(other_c)] = lead_c
+    by_chain = {id(d.chain): d for d in dirs_all}
+    geoms = dict(zip((id(c) for c in chains),
+                     _chain_geometries(chains, network, metric_crs=metric_crs)))
+
+    # The routes on a chain's pavement, not only the one it walked: Burley's Overland
+    # Ave is walked as SH-27 one way and I-84 BL the other, and carries both.
+    carried = {id(c): frozenset().union(*(route_sets.get(s, frozenset())
+                                          for s in c.segment_ids)) | frozenset(c.routes)
+               for c in chains}
+
+    def _opposites(d: DirectionAnalysis) -> list[DirectionAnalysis]:
+        # Any other chain sharing a route; whether it runs the *other way* is judged on
+        # the footprint itself (:func:`_opposed_slice`), because a merged chain's
+        # majority bearing says little about one stretch of it.
+        out = [o for o in dirs_all if o is not d
+               and carried[id(o.chain)] & carried[id(d.chain)]]
+        paired = partner.get(id(d.chain))
+        out.sort(key=lambda o: (paired is None or o.chain is not paired, -o.chain.miles))
+        return out
+
+    def _alt_geom(ids):
+        present = [s for s in ids if s in net_idx.index]
+        if not present or "geometry" not in net_idx.columns:
+            return None
+        return gpd.GeoSeries(net_idx.loc[present, "geometry"].values,
+                             crs=network.crs).to_crs(metric_crs).union_all()
+
+    claimed: dict[int, list[tuple[int, int]]] = {id(d): [] for d in dirs_all}
+    # Spans claimed on a chain by *another* direction's mirror, kept apart from the
+    # chain's own Tier 2 spans: since Item 51 a mirror can land on a different route's
+    # chain, and it holds only what lies mostly inside it (the southbound half of the
+    # I-15 BL core down Pocatello's 5th Ave overlapped US-91's mirror at one end).
+    mirrored: dict[int, list[tuple[int, int]]] = {id(d): [] for d in dirs_all}
+    core_owner: dict[int, int] = {}
+    t2_owner: dict[int, int] = {}
+    miles_of = seg["miles"].fillna(0.0)
+
+    def _share(core: CoreCandidate, owner: dict[int, int]) -> float:
+        m = float(miles_of.reindex(list(core.segment_ids)).sum())
+        inside = float(miles_of.reindex([s for s in core.segment_ids if s in owner]).sum())
+        return inside / m if m > 0 else 0.0
+
+    def _free(d: DirectionAnalysis, core: CoreCandidate) -> CoreCandidate | None:
+        """``core`` as it may be catalogued beside the stronger facilities already taken.
+
+        A core held by a claim — overlapping a stronger facility's Tier 2 on its own
+        chain (Item 50), or mostly under another direction's mirror — is re-found with
+        those segments taken out, and what qualifies stands.
+
+        A core that only *shares* some pavement with another facility's core keeps it,
+        flagged: trimming the shared blocks out of US-95's Moscow cores left pieces too
+        short to stand, and their delay out of the ranking. A core that is *mostly*
+        another's is that queue seen from a concurrent route; what is left of it once
+        the other's segments are taken out stands if it still qualifies (I-15 BL down
+        5th Ave south of Humbolt St, past where US-91's Pocatello core ends), else
+        ``None``. The same holds for a core mostly inside a stronger facility's Tier 2."""
+        if (not _held(d, core) and _share(core, core_owner) < SHARED_CORE_MAX
+                and not _inside_t2(core)):
+            return core
+        ids = d.chain.segment_ids
+        held = {ids[i] for lo, hi in claimed[id(d)] + mirrored[id(d)] for i in range(lo, hi)}
+        taken = set(core_owner) | set(t2_owner) | held
+        pieces = [c for c in find_cores(ids, seg, exclude=taken)
+                  if c.qualifies and c.start < core.stop and c.stop > core.start]
+        if observed is not None:
+            pieces = [c for c in pieces if any(s in observed for s in c.segment_ids)]
+        return pieces[0] if pieces else None
+
+    def _inside_t2(core: CoreCandidate) -> bool:
+        return _share(core, t2_owner) >= SHARED_CORE_MAX
+
     facilities: list[dict] = []
-    for chain, counterpart in pairs:
-        dirs = [_analyse(chain)] + ([_analyse(counterpart)] if counterpart is not None else [])
-        # Every qualifying core on the pair is its own facility — SH-75 carries
-        # Ketchum and Hailey, US-95 carries Coeur d'Alene and Moscow — strongest
-        # first. A core inside ground already claimed (by a stronger core's Tier 2,
-        # or by the opposing direction's mirror of it) belongs to that facility.
-        claimed: dict[int, list[tuple[int, int]]] = {id(d): [] for d in dirs}
-        pool = sorted(((d, c) for d in dirs for c in d.qualifying), key=lambda dc: -dc[1].vhd)
-        n_fac = 0
-        for d, core in pool:
-            if _overlaps(claimed[id(d)], core.start, core.stop):
-                _audit(DirectionAnalysis(d.chain, d.candidates, core), "absorbed")
+    pool = sorted(((d, c) for d in dirs_all for c in d.qualifying), key=lambda x: -x[1].vhd)
+    with_facility: set[int] = set()
+    for d, core in pool:
+        freed = _free(d, core)
+        if freed is None:
+            _audit(DirectionAnalysis(d.chain, d.candidates, core),
+                   "absorbed" if _held(d, core) else "absorbed_shared")
+            continue
+        core = freed
+        n_now = len(facilities)
+        splits = detect_split_points(list(d.chain.segment_ids), network,
+                                     incoming_routes=junctions)
+        lead = DirectionAnalysis(d.chain, d.candidates, core)
+        lead.tiers = _tiers_for(d.chain, core, seg, splits, net_idx)
+        t2 = lead.tiers[ExtentTier.COMMUTER]
+        pos = {s: i for i, s in enumerate(d.chain.segment_ids)}
+        claimed[id(d)].append((pos[t2.segment_ids[0]], pos[t2.segment_ids[-1]] + 1))
+        t2_geom = _alt_geom(t2.segment_ids)
+
+        companion, note, other = None, "", None
+        spans: list[tuple[DirectionAnalysis, tuple[int, int]]] = []
+        for o in _opposites(d):
+            span = _index_span(list(o.chain.segment_ids), t2, network, metric_crs)
+            if span is None:
                 continue
-            splits = detect_split_points(list(d.chain.segment_ids), network,
-                                         incoming_routes=junctions)
-            lead = DirectionAnalysis(d.chain, d.candidates, core)
-            lead.tiers = _tiers_for(d.chain, core, seg, splits, net_idx)
-            t2 = lead.tiers[ExtentTier.COMMUTER]
-            pos = {s: i for i, s in enumerate(d.chain.segment_ids)}
-            claimed[id(d)].append((pos[t2.segment_ids[0]], pos[t2.segment_ids[-1]] + 1))
+            o_ids = o.chain.segment_ids[span[0]:span[1]]
+            o_geom = _alt_geom(o_ids)
+            if not _runs_alongside(o_geom, t2_geom):
+                continue
+            if not _opposed_slice(net_idx, t2.segment_ids, o_ids):
+                continue
+            spans.append((o, span))
+        # The companion is the strongest qualifying core, on any chain sharing a route,
+        # that runs beside the lead's Tier 2 the other way. Matched on the core itself,
+        # not through the mirror: a business loop's chain passes the same street both
+        # ways (Burley's I-84 BL on Overland Ave), and a mirror snaps to either pass.
+        best_c = None
+        for o in _opposites(d):
+            for c in o.qualifying:
+                c = _free(o, c)
+                if c is None or (best_c is not None and c.vhd <= best_c[1].vhd):
+                    continue
+                if not (_runs_alongside(_alt_geom(c.segment_ids), t2_geom, min_cover=0.0)
+                        and _opposed_slice(net_idx, t2.segment_ids, c.segment_ids)):
+                    continue
+                best_c = (o, c)
+        if best_c is not None:
+            companion = DirectionAnalysis(best_c[0].chain, best_c[0].candidates, best_c[1])
+        if companion is not None:
+            other = by_chain[id(companion.chain)]
+            companion.tiers = _tiers_for(
+                companion.chain, companion.core, seg,
+                detect_split_points(list(companion.chain.segment_ids), network,
+                                    incoming_routes=junctions), net_idx)
+            c2 = companion.tiers[ExtentTier.COMMUTER]
+            opos = {s: i for i, s in enumerate(companion.chain.segment_ids)}
+            claimed[id(other)].append((opos[c2.segment_ids[0]], opos[c2.segment_ids[-1]] + 1))
+        elif spans:
+            other, span = spans[0]
+            own = _run_metrics(seg, other.chain.segment_ids[span[0]:span[1]])
+            note = (
+                f"{other.chain.direction} not catalogued: no qualifying core of "
+                f"its own opposite the {d.chain.direction} one"
+                + (f" (peak/baseline {own['peak_ratio']:.2f}, "
+                   f"{own['vhd_per_mile']:.0f} VHD/mi over the mirrored span)"
+                   if pd.notna(own["peak_ratio"]) else "")
+            )
+        for o, span in spans:
+            if companion is None or o.chain is not companion.chain:
+                mirrored[id(o)].append(span)
+        for m in [lead] + ([companion] if companion is not None else []):
+            for sgm in m.core.segment_ids:
+                core_owner.setdefault(sgm, n_now)
+            for sgm in m.tiers[ExtentTier.COMMUTER].segment_ids:
+                t2_owner.setdefault(sgm, n_now)
+        shared: dict[int, float] = {}
+        for m in [lead] + ([companion] if companion is not None else []):
+            for sgm in m.core.segment_ids:
+                if sgm in core_owner and core_owner[sgm] != n_now:
+                    shared[core_owner[sgm]] = shared.get(core_owner[sgm], 0.0) + \
+                        float(miles_of.get(sgm, 0.0))
+        facilities.append({"lead": lead, "other": companion,
+                           "other_chain": other.chain if other is not None else None,
+                           "note": note, "score": core.vhd, "shared": shared})
+        with_facility.add(id(d))
+        if other is not None:
+            with_facility.add(id(other))
+    for d in dirs_all:
+        if id(d) not in with_facility and not d.qualifying:
+            _audit(d, "rejected")
 
-            other = next((o for o in dirs if o is not d), None)
-            companion, note = None, ""
-            if other is not None:
-                span = _index_span(list(other.chain.segment_ids), t2, network, metric_crs)
-                match = None
-                if span is not None:
-                    match = next((c for c in other.qualifying
-                                  if c.start < span[1] and c.stop > span[0]
-                                  and not _overlaps(claimed[id(other)], c.start, c.stop)),
-                                 None)
-                if match is not None:
-                    companion = DirectionAnalysis(other.chain, other.candidates, match)
-                    companion.tiers = _tiers_for(
-                        other.chain, match, seg,
-                        detect_split_points(list(other.chain.segment_ids), network,
-                                            incoming_routes=junctions), net_idx)
-                    c2 = companion.tiers[ExtentTier.COMMUTER]
-                    opos = {s: i for i, s in enumerate(other.chain.segment_ids)}
-                    claimed[id(other)].append((opos[c2.segment_ids[0]],
-                                               opos[c2.segment_ids[-1]] + 1))
-                else:
-                    own = (_run_metrics(seg, other.chain.segment_ids[span[0]:span[1]])
-                           if span is not None else None)
-                    note = (
-                        f"{other.chain.direction} not catalogued: no qualifying core of "
-                        f"its own opposite the {d.chain.direction} one"
-                        + (f" (peak/baseline {own['peak_ratio']:.2f}, "
-                           f"{own['vhd_per_mile']:.0f} VHD/mi over the mirrored span)"
-                           if own is not None and pd.notna(own["peak_ratio"]) else "")
-                    )
-                if span is not None:
-                    claimed[id(other)].append(span)
-            facilities.append({"lead": lead, "other": companion,
-                               "other_chain": other.chain if other is not None else None,
-                               "note": note, "score": core.vhd})
-            n_fac += 1
-        if not n_fac:
-            for d in dirs:
-                _audit(d, "rejected")
-
+    as_built = list(facilities)          # ``shared`` indexes this order
     facilities.sort(key=lambda f: -f["score"])
     if max_facilities is not None:
         for f in facilities[max_facilities:]:
@@ -2272,34 +3098,34 @@ def generate_catalogue(
     groups: list[dict] = []
     used_ids: set[str] = set()
 
+    used_names: set[str] = set()
+    fac_ids: dict[int, str] = {}
     for fac in facilities:
         lead: DirectionAnalysis = fac["lead"]
         other: DirectionAnalysis | None = fac["other"]
         chain = lead.chain
-        # The county the **core** lies in, not where the chain starts: US-95 walks
-        # from Kootenai County into Bonner, and a Sandpoint core is Bonner's.
-        county = _core_county(net_idx, lead.core) or \
-            (chain.counties[0] if chain.counties else "").strip()
-        label = facility_label(chain)
-        base = _slug(f"{label}-{county or 'idaho'}")
-        facility_name = f"{label}: {county} County" if county else label
-        facility_id, n = base, 1
-        if facility_id in used_ids:
-            # One route runs through one county as several facilities: separate
-            # chains (US-95 crosses Latah twice) or separate cores on one chain
-            # (SH-75's Ketchum and Hailey). Name the second by the town its core is
-            # in when the urban context says, else number it — the *name* has to
-            # differ as well as the id, or the tier comparison collapses them.
-            town = _core_town(seg, lead.core)
-            if town and _slug(f"{base}-{town}") not in used_ids:
-                facility_id = _slug(f"{base}-{town}")
-                facility_name = f"{facility_name} ({town})"
-            else:
-                while facility_id in used_ids:
-                    n += 1
-                    facility_id = f"{base}-{n}"
-                facility_name = f"{facility_name} ({n})"
+        # Named for the road and the town (Item 51): "US-20: Northgate Mile, Idaho
+        # Falls", not "US-20: Bonneville County (2)". The county the **core** lies in
+        # stands in for a town outside every urban area.
+        band, street, place = facility_naming(chain, lead.core, seg, net_idx, route_sets)
+        facility_name = f"{band}: {street}, {place}" if street else f"{band}: {place}"
+        facility_id = _slug(f"{band}-{street}-{place}" if street else f"{band}-{place}")
+        if facility_name in used_names or facility_id in used_ids:
+            # Two cores on one road in one town (SH-41 in Rathdrum): say where each
+            # starts. The *name* has to differ as well as the id, or the tier
+            # comparison collapses them.
+            where = _endpoint_name(net_idx, lead.core.segment_ids[0], end=False)
+            facility_name = f"{facility_name} (from {where})" if where else facility_name
+            facility_id = _slug(f"{facility_id}-{where}") if where else facility_id
+            n = 1
+            base = facility_id
+            while facility_id in used_ids or facility_name in used_names:
+                n += 1
+                facility_id = f"{base}-{n}"
+                facility_name = f"{facility_name.rsplit(' #', 1)[0]} #{n}"
         used_ids.add(facility_id)
+        used_names.add(facility_name)
+        fac_ids[id(fac)] = facility_id
         _audit(lead, "lead", facility_id)
         if other is not None:
             _audit(other, "companion", facility_id)
@@ -2327,6 +3153,11 @@ def generate_catalogue(
             "_directions": [m.chain.direction for m in members],
             "_flags": [],
         }
+        # A core sharing concurrent pavement with a stronger facility's core keeps it
+        # and says so (Item 51): its delay is in both rows.
+        for owner, mi in sorted(fac.get("shared", {}).items()):
+            other_id = fac_ids.get(id(as_built[owner]), "a capped facility")
+            meta["_flags"].append(f"shares {mi:.2f} mi with {other_id}")
         if monthly is not None:
             core_ids = [s for m in members for s in m.core.segment_ids]
             profile = monthly_delay_profile(core_ids, seg, monthly,
@@ -2387,3 +3218,69 @@ def generate_catalogue(
         "corridors": entries,
         "reporting_corridors": groups,
     }
+
+
+# ─── Route junctions as link repairs (ROADMAP Item 51) ───────────────
+
+ROUTE_JUNCTION = "route_junction"
+"""``corridors`` repair kind: a link replaced where the route turns off it (trap 4)."""
+
+
+def route_junction_repairs(network: gpd.GeoDataFrame) -> pd.DataFrame:
+    """The route junctions of :func:`enumerate_mainline_chains` that are safe to write
+    into the ``NextXDSegI`` repair table, so that ``corridors.build_chain`` — which walks
+    the link alone — can resolve a catalogue entry across them (D3's US-95 at Payette's
+    16th St).
+
+    A junction qualifies when the segment's own link is null or leaves **every** route
+    the segment carries (Payette's northbound US-95 links onto S Main St, which is off
+    the system), and every route that breaks there turns onto the same head. Stub
+    junctions are not written: there the link still serves the route's own stub, and
+    only the chain walk, which knows the milepost evidence, may leave it.
+
+    Returns a frame of ``corridors.REPAIR_COLUMNS`` with ``kind`` =
+    :data:`ROUTE_JUNCTION` (``xdgroup`` is the head's: the repair crosses groups, which
+    is what distinguishes it from Item 38's).
+    """
+    from .corridors import REPAIR_COLUMNS
+
+    net_idx = _ensure_indexed(network)
+    sets = segment_route_sets(network)
+    sets = {s: r for s, r in sets.items() if s in net_idx.index}
+    by_route: dict[str, set[int]] = {}
+    for sid, rs in sets.items():
+        for r in rs:
+            by_route.setdefault(r, set()).add(sid)
+    nxt_raw = {int(s): int(n) for s, n in pd.to_numeric(
+        net_idx.get("NextXDSegI", pd.Series(dtype=float)), errors="coerce").dropna().items()}
+    cg = _ChainGeometry(net_idx, set(sets))
+    found: dict[int, dict[str, tuple[int, dict]]] = {}
+    for route, members in by_route.items():
+        walks = _walk_route(members, nxt_raw)
+        linked_into = {n for s in members if (n := nxt_raw.get(s)) in members}
+        for _, log in _join_route_walks(route, walks, cg, linked_into):
+            for j in log:
+                if j["kind"] == "junction":
+                    found.setdefault(j["from"], {})[route] = (j["to"], j)
+    rows = []
+    for sid, per_route in sorted(found.items()):
+        targets = {to for to, _ in per_route.values()}
+        if len(targets) != 1:
+            continue
+        old = nxt_raw.get(sid)
+        if old is not None and sets.get(old, frozenset()) & sets.get(sid, frozenset()):
+            continue
+        to, j = next(iter(per_route.values()))
+        rows.append({
+            "segment": sid, "old_next": old, "new_next": to, "kind": ROUTE_JUNCTION,
+            "gap_m": j["gap_m"], "bearing_delta_deg": j["turn_deg"],
+            "xdgroup": net_idx.at[to, "XDGroup"] if "XDGroup" in net_idx.columns else None,
+            "road_name": net_idx.at[sid, "RoadName"] if "RoadName" in net_idx.columns else None,
+            "lanes": net_idx.at[sid, "Lanes"] if "Lanes" in net_idx.columns else None,
+        })
+    out = pd.DataFrame(rows, columns=list(REPAIR_COLUMNS))
+    if not out.empty:
+        out["segment"] = out["segment"].astype("int64")
+        out["new_next"] = out["new_next"].astype("int64")
+        out["old_next"] = out["old_next"].astype("Int64")
+    return out

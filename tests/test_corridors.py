@@ -1017,7 +1017,16 @@ def test_committed_repair_table_resolves_the_whole_d3_catalogue():
     assert res.loc["i184-eb", "chain_miles"] == pytest.approx(4.7174, abs=1e-3)
     assert res.loc["i184-eb", "n_repaired_links"] == 5
     # The catalogue leans on the table far less than the table's size suggests.
-    assert res["n_repaired_links"].sum() == 19   # 20 before Item 49: the old SB Payette entry took 1
+    # 20 before Item 49 (the old SB Payette entry took 1); 19 after it; 21 since Item 51,
+    # where US-95 Fruitland-Payette walks the two route_junction rows at 16th St.
+    assert res["n_repaired_links"].sum() == 21
+    kinds = dict(zip(repairs["segment"], repairs["kind"]))
+    used = {i: [l for l in ch.repaired_links if kinds.get(l[0]) == "route_junction"]
+            for i, ch in res.attrs["chains"].items()}
+    assert {i: v for i, v in used.items() if v} == {
+        "us95-fruitland-payette-nb": [(1187491533, 384126765)],
+        "us95-fruitland-payette-sb": [(383865907, 1187629755)],
+    }
 
 
 @pytest.mark.skipif(not D3_NETWORK.exists(), reason="D3 network cache not available")
@@ -1027,6 +1036,9 @@ def test_committed_repair_table_reproduces_the_rule_it_documents():
     net = gpd.read_parquet(D3_NETWORK)
     fresh = corridors.repair_links(net)
     committed = corridors.load_link_repairs(D3_REPAIRS)
+    # Item 51's route_junction rows come from a different rule (extents.
+    # route_junction_repairs, on ITD membership) and are appended after these.
+    committed = committed[committed["kind"].isin([corridors.FILL, corridors.OVERRIDE])]
     assert len(fresh) == len(committed)
     assert list(fresh["segment"]) == list(committed["segment"])
     assert list(fresh["new_next"]) == list(committed["new_next"])
@@ -1132,8 +1144,9 @@ def test_resolution_table_carries_the_grouping():
 def test_the_d3_catalogue_groups_its_entries_into_reporting_corridors():
     entries = corridors.load_catalogue(D3_CATALOGUE)
     groups = corridors.load_reporting_corridors(D3_CATALOGUE)
-    # 54/27 since Item 49 split US-95 Fruitland–Payette onto ITD's 16th St alignment.
-    assert len(entries) == 54 and len(groups) == 27
+    # 54/27 once Item 49 split US-95 Fruitland–Payette onto ITD's 16th St alignment;
+    # 52/26 since Item 51's route junctions walk it as one facility again.
+    assert len(entries) == 52 and len(groups) == 26
     assert all(e.corridor and e.direction for e in entries)
     # Every reporting corridor is exactly two directions, and they differ.
     by_group: dict[str, list[str]] = {}
@@ -1144,3 +1157,36 @@ def test_the_d3_catalogue_groups_its_entries_into_reporting_corridors():
     couplets = {g.id for g in groups if g.one_way_couplet}
     assert couplets == {"boise-couplet", "nampa-couplet"}
 
+
+
+# ---------------------------------------------------------------------------
+# Item 51: entry-scoped links, and a point exactly at a junction
+# ---------------------------------------------------------------------------
+def test_an_entry_walks_its_own_links_and_only_it_does():
+    """Links an entry names patch its own walk, never the network: the next entry,
+    over the same break, still stops there."""
+    net = _chain_network(4, next_ids=[1001, pd.NA, 1003, pd.NA])
+    base = {"name": "Toy Rd", "start_latlon": list(_at(0.5, 0)),
+            "end_latlon": list(_at(0.5, 3)), "description": "A test extent."}
+    cat = [{**base, "id": "linked", "links": [[1001, 1002]]}, {**base, "id": "plain"}]
+    res = corridors.resolve_catalogue(net, cat).set_index("id")
+    assert bool(res.loc["linked", "reached_target"])
+    assert res.loc["linked", "n_repaired_links"] == 1
+    assert not bool(res.loc["plain", "reached_target"])
+
+
+def test_links_must_be_segment_pairs():
+    bad = [{"id": "x", "name": "n", "start_latlon": [43.6, -116.3],
+            "end_latlon": [43.7, -116.3], "description": "d", "links": [[1, 2, 3]]}]
+    with pytest.raises(ValueError, match="links|pair"):
+        corridors.parse_catalogue(bad)
+
+
+def test_a_start_point_at_a_junction_belongs_to_the_segment_it_begins():
+    """Myrtle St EB starts where I-184 ends. Both snap at the same distance; the chain
+    starts on the segment the point begins, not on the one it finishes (Item 51)."""
+    net = _chain_network(4)
+    start = (LAT0 + 1 * DLAT, LON)          # the 1000/1001 boundary exactly
+    chain = corridors.build_chain(net, start, _at(0.5, 3))
+    assert chain.reached_target
+    assert chain.segment_ids[0] == 1001

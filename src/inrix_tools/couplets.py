@@ -39,6 +39,9 @@ from shapely.geometry import LineString, MultiLineString
 from shapely.ops import linemerge
 
 from . import geometry as _geo
+from .routes import ITD_ROUTE_ID_COL, ITD_ROUTES_COL
+from .extents import business_band as _business_band
+from .extents import place_name as _place_name
 from .extents import route_label as _route_label
 from .extents import segment_endpoint as _segment_endpoint
 
@@ -105,10 +108,11 @@ class CoupletPair:
 #   * Caldwell I-84B/SH-19 Blaine St / Canyon St — I-84B was relinquished to the City of
 #     Caldwell (owner, Item 42); Blaine St is local in the layer, Canyon St unnumbered.
 
+#   * Sandpoint US-2/US-95 1st Ave / 5th Ave — a divided highway, not a couplet (owner,
+#     Session 65 review; removed Item 51). The detector never found it on the 2026
+#     network either.
+
 KNOWN_COUPLETS: list[dict] = [
-    # District 1
-    {"district": 1, "city": "Sandpoint", "route": "US-2/US-95",
-     "street1": "1st Ave", "street2": "5th Ave", "miles": 1.4},
     # District 2
     {"district": 2, "city": "Moscow", "route": "US-95",
      "street1": "S Washington St", "street2": "S Jackson St", "miles": 0.65},
@@ -155,6 +159,7 @@ def _bearing_to_direction(bearing: str) -> str:
 
 _STREET_PREFIX = re.compile(r"^(?:N|S|E|W|NE|NW|SE|SW)\s+", re.IGNORECASE)
 _STREET_SUFFIX = re.compile(r"\s+(N|S|E|W|NE|NW|SE|SW)$", re.IGNORECASE)
+_ORDINAL = re.compile(r"\b(\d+)(St|Nd|Rd|Th)\b")
 
 
 def _base_street(name: str) -> str:
@@ -187,7 +192,8 @@ def street_key(name: str) -> str:
     while True:
         stripped = _STREET_PREFIX.sub("", out).strip()
         if stripped == out or not stripped:
-            return out.title()
+            # ``str.title`` writes "5Th Ave"; ordinals keep a lower-case suffix.
+            return _ORDINAL.sub(lambda m: m.group(1) + m.group(2).lower(), out.title())
         out = stripped
 
 
@@ -243,6 +249,13 @@ def _combine_geometries(geoms: Sequence[LineString | MultiLineString]) -> LineSt
         return MultiLineString(valid)
 
 
+def _membership_routes(value) -> tuple[str, ...]:
+    """``"12/95"`` -> ``("12", "95")``; ``()`` for no route."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ()
+    return tuple(sorted(x.strip() for x in str(value).split("/") if x.strip()))
+
+
 def detect_couplets(
     network: gpd.GeoDataFrame,
     *,
@@ -252,8 +265,15 @@ def detect_couplets(
     max_lateral_sep_m: float = 300.0,
     min_lateral_sep_m: float = 25.0,
     bearing_tolerance_deg: float = 60.0,
+    rejected: list | None = None,
 ) -> list[CoupletPair]:
     """Detect one-way couplet pairs in an XD network.
+
+    With ITD route membership applied (``routes.apply_route_membership``: the
+    ``itd_routes`` and ``itd_route_id`` columns), a leg must be on the state system and
+    the two legs must **share a route under membership**, and the pair must pass the
+    Item 51 tests on the SHS lines (:func:`drop_same_line_pairs`,
+    :func:`drop_divided_pairs`) as well as the Item 49 ones.
 
     Args:
         network: XD network GeoDataFrame (EPSG:4326).
@@ -263,6 +283,8 @@ def detect_couplets(
         max_lateral_sep_m: Maximum perpendicular separation in meters (default 300 m).
         min_lateral_sep_m: Minimum separation to exclude same-street dups (default 25 m).
         bearing_tolerance_deg: Maximum angular deviation from anti-parallel (default 60°).
+        rejected: when given, every pair a one-way test removed is appended as
+            ``(pair, reason)``, for the review table.
 
     Returns:
         List of CoupletPair objects, sorted by county then total_miles descending.
@@ -271,9 +293,14 @@ def detect_couplets(
         return []
 
     slip_series = network["SlipRoad"] if "SlipRoad" in network.columns else pd.Series(0, index=network.index)
+    use_membership = ITD_ROUTES_COL in network.columns
+    if use_membership:
+        on_route = network[ITD_ROUTES_COL].map(_membership_routes).map(bool)
+    else:
+        on_route = (network["RoadNumber"].notna()
+                    & (network["RoadNumber"].astype(str).str.strip() != ""))
     hw = network[
-        network["RoadNumber"].notna()
-        & (network["RoadNumber"].astype(str).str.strip() != "")
+        on_route
         & (slip_series.fillna(0).astype(str).isin(["0", "0.0"]))
         & network["Bearing"].isin(["N", "S", "E", "W"])
     ].copy()
@@ -356,10 +383,16 @@ def detect_couplets(
                     continue
                 majority_bearing = Counter(bearings).most_common(1)[0][0]
 
-                rnums = tuple(sorted(set(
-                    str(rn).strip() for rn in chain_rows["RoadNumber"].dropna()
-                    if str(rn).strip()
-                )))
+                if use_membership:
+                    # "Share a route" means under ITD membership (Item 51), not
+                    # INRIX's RoadNumber.
+                    rnums = tuple(sorted({r for v in chain_rows[ITD_ROUTES_COL]
+                                          for r in _membership_routes(v)}))
+                else:
+                    rnums = tuple(sorted(set(
+                        str(rn).strip() for rn in chain_rows["RoadNumber"].dropna()
+                        if str(rn).strip()
+                    )))
                 if not rnums:
                     continue
 
@@ -487,8 +520,24 @@ def detect_couplets(
     # Step 4: a couplet is two one-way streets. A street pair found in **both**
     # directions, or a leg with its own street's opposing carriageway lying on it, is
     # a two-way road (Item 49; Item 51 takes the rule further).
-    pairs = drop_mirrored_pairs(pairs)
-    pairs = drop_two_way_legs(pairs, network, metric_crs=metric_crs)
+    def _drop(kept: list[CoupletPair], reason: str) -> list[CoupletPair]:
+        nonlocal pairs
+        if rejected is not None:
+            keep_ids = {id(p) for p in kept}
+            rejected.extend((p, reason) for p in pairs if id(p) not in keep_ids)
+        pairs = kept
+        return kept
+
+    _drop(drop_mirrored_pairs(pairs), "mirrored")
+    _drop(drop_two_way_legs(pairs, network, metric_crs=metric_crs), "two_way_leg")
+    # Item 51: the SHS says which line each leg lies on.
+    _drop(drop_same_line_pairs(pairs, network), "same_shs_line")
+    _drop(drop_divided_pairs(pairs, network), "divided_highway")
+    # ...and a leg ends where the couplet does (Pocatello's 5th Ave ran on 0.65 mi
+    # north of 4th Ave and 1 mi south onto two-way pavement).
+    pairs = trim_leg_overhang(pairs, network, metric_crs=metric_crs,
+                              max_sep_m=max_lateral_sep_m)
+    pairs = [p for p in pairs if p.dir1_segment_ids and p.dir2_segment_ids]
 
     # Step 5: Sort by county then total miles descending
     pairs.sort(key=lambda p: (p.county, -p.total_miles))
@@ -564,6 +613,142 @@ def drop_two_way_legs(pairs: Sequence[CoupletPair], network: gpd.GeoDataFrame, *
     return kept
 
 
+DIVIDED_MAX_SEP_M = 50.0
+"""An ``A``/``D`` pair of one SHS route closer than this is a divided highway's two
+carriageways. The real couplets the SHS draws as ``A`` + ``D`` sit a block apart
+(Blackfoot 78 m, Nampa 115 m, Moscow 179 m); American Falls' ID-39 is 28 m."""
+
+
+def _leg_line(leg: Sequence[int], net) -> str | None:
+    """The SHS line (``itd_route_id``, travelway letter included) most of a leg's miles
+    lie on, or ``None``."""
+    if ITD_ROUTE_ID_COL not in net.columns:
+        return None
+    sub = net.reindex([s for s in leg if s in net.index])
+    rid = sub[ITD_ROUTE_ID_COL]
+    miles = pd.to_numeric(sub.get("Miles"), errors="coerce").fillna(0.0)
+    have = rid.notna() & (rid.astype(str).str.len() >= 6)
+    if not have.any():
+        return None
+    by = miles[have].groupby(rid[have].astype(str)).sum()
+    return str(by.idxmax())
+
+
+def _indexed(network):
+    return network.set_index("XDSegID", drop=False) if "XDSegID" in network.columns \
+        else network
+
+
+def drop_same_line_pairs(pairs: Sequence[CoupletPair], network) -> list[CoupletPair]:
+    """Drop every pair whose two legs lie on **one** SHS line: that is one road.
+
+    ITD draws a couplet's second leg as its own line — the route's ``D`` travelway
+    (Moscow's Jackson St ``01540DUS095`` beside Washington St's ``01540AUS095``; Boise's
+    Front St; Pocatello's 4th Ave) — so two legs on the same ``RouteID`` *and*
+    travelway are the two directions of one two-way road, whatever INRIX names them.
+    Shoshone is the case (Item 51): ``S Greenwood St`` southbound and ``US-93``
+    northbound, 172 m "apart" only because the one runs on from the other, both on
+    ``02220AUS093``. A pair with no SHS line on a leg is left alone."""
+    net = _indexed(network)
+    out = []
+    for p in pairs:
+        a, b = _leg_line(p.dir1_segment_ids, net), _leg_line(p.dir2_segment_ids, net)
+        if a is not None and a == b:
+            continue
+        out.append(p)
+    return out
+
+
+def drop_divided_pairs(pairs: Sequence[CoupletPair], network, *,
+                       max_sep_m: float = DIVIDED_MAX_SEP_M) -> list[CoupletPair]:
+    """Drop every pair that is the ``A`` and ``D`` carriageways of one divided route.
+
+    ``Travelway`` ``D`` is not by itself "not a couplet" — the SHS draws most real
+    couplets' second leg as ``D`` (Item 51 found six) — so the test is the pair's
+    spacing: legs on the ``A`` and ``D`` lines of one ``RouteID`` closer than
+    ``max_sep_m`` are a divided highway's carriageways (American Falls' ID-39 S / ID-39
+    N at 28 m), not two streets a block apart."""
+    net = _indexed(network)
+    out = []
+    for p in pairs:
+        a, b = _leg_line(p.dir1_segment_ids, net), _leg_line(p.dir2_segment_ids, net)
+        if (a is not None and b is not None and a[:5] == b[:5] and a[6:] == b[6:]
+                and {a[5], b[5]} == {"A", "D"} and p.mean_lateral_sep_m < max_sep_m):
+            continue
+        out.append(p)
+    return out
+
+
+def trim_leg_overhang(pairs: Sequence[CoupletPair], network, *, metric_crs=None,
+                      max_sep_m: float = 300.0,
+                      tol_m: float = TWO_WAY_TOL_M) -> list[CoupletPair]:
+    """Trim each leg's end segments that are not part of the couplet (Item 51).
+
+    A leg is a run of one street, and the street goes on past the couplet: Pocatello's
+    5th Ave leg ran 0.65 mi north of where 4th Ave ends (532 m from it) and 1 mi south
+    onto pavement that carries both directions. From each end of a leg, a segment is
+    trimmed while it is **two-way** (an opposing segment of its own street lies on it,
+    as :func:`drop_two_way_legs` reads it) or its midpoint lies more than ``max_sep_m``
+    from the other leg. Only the ends: a leg never gets a hole. ``total_miles`` is
+    recomputed."""
+    import dataclasses
+
+    if not pairs or network.empty:
+        return list(pairs)
+    net = _indexed(network)
+    crs = metric_crs or network.estimate_utm_crs()
+    geom = net.geometry.to_crs(crs)
+    names = net["RoadName"].fillna("").map(lambda n: street_key(n).lower())
+    brg = {}
+
+    def _b(sid):
+        if sid not in brg:
+            brg[sid] = _geo._bearing_deg(net.geometry[sid])
+        return brg[sid]
+
+    def _two_way(sid, leg) -> bool:
+        g = geom[sid]
+        cand = net.index[(names == names[sid]) & ~net.index.isin(leg)]
+        for cid in cand:
+            cg = geom[cid]
+            if cg.distance(g) > tol_m or not _opposed(_b(sid), _b(cid)):
+                continue
+            pts = [g.interpolate(f, normalized=True) for f in (0.1, 0.5, 0.9)]
+            if all(cg.distance(pt) <= tol_m for pt in pts):
+                return True
+        return False
+
+    def _trim(leg, other):
+        leg = [s for s in leg if s in net.index]
+        other_g = geom.reindex([s for s in other if s in net.index]).union_all()
+
+        def _out(sid):
+            mid = geom[sid].interpolate(0.5, normalized=True)
+            return other_g.distance(mid) > max_sep_m or _two_way(sid, leg)
+
+        lo, hi = 0, len(leg)
+        while lo < hi and _out(leg[lo]):
+            lo += 1
+        while hi > lo and _out(leg[hi - 1]):
+            hi -= 1
+        return tuple(leg[lo:hi])
+
+    miles = pd.to_numeric(net["Miles"], errors="coerce").fillna(0.0) \
+        if "Miles" in net.columns else None
+    out = []
+    for p in pairs:
+        a = _trim(list(p.dir1_segment_ids), p.dir2_segment_ids)
+        b = _trim(list(p.dir2_segment_ids), p.dir1_segment_ids)
+        if (a, b) == (p.dir1_segment_ids, p.dir2_segment_ids):
+            out.append(p)
+            continue
+        total = (round((float(miles.reindex(a).sum()) + float(miles.reindex(b).sum())) / 2, 3)
+                 if miles is not None else p.total_miles)
+        out.append(dataclasses.replace(p, dir1_segment_ids=a, dir2_segment_ids=b,
+                                       total_miles=total))
+    return out
+
+
 def drop_mirrored_pairs(pairs: Sequence[CoupletPair]) -> list[CoupletPair]:
     """Drop every pair whose two streets were also paired the other way round.
 
@@ -623,13 +808,21 @@ def couplet_catalogue_entries(
 
     rnum = pair.route_numbers[0] if pair.route_numbers else "HWY"
     # The band comes from what the network calls the route. Guessing it from the
-    # digit count ("two digits means US") labels SH-55 "US-55".
+    # digit count ("two digits means US") labels SH-55 "US-55". RoadList is read as
+    # well as RoadName (Item 51).
     names = []
     if "RoadNumber" in net_idx.columns and "RoadName" in net_idx.columns:
         same = net_idx[net_idx["RoadNumber"].astype(str).str.strip() == rnum]
         names = [str(v).strip() for v in same["RoadName"].dropna() if str(v).strip()]
-    label = _route_label(rnum, names)
-    place = pair.county or pair.postal_code or "Couplet"
+        if "RoadList" in same.columns:
+            names += [t.strip() for v in same["RoadList"].dropna()
+                      for t in str(v).split("|") if t.strip()]
+    legs = net_idx.reindex([s for s in (*pair.dir1_segment_ids, *pair.dir2_segment_ids)
+                            if s in net_idx.index])
+    label = _business_band(_route_label(rnum, names), legs)
+    # Named for the town (Item 52's urban area) where there is one, like the corridors.
+    town = _place_name(legs) if len(legs) else ""
+    place = town or (f"{pair.county} County" if pair.county else "Couplet")
 
     # Named for the two streets rather than the ZIP: the XD ``PostalCode`` is a
     # postal code, so a ZIP-keyed id reads ``83672-95-couplet`` and says nothing.
@@ -647,10 +840,10 @@ def couplet_catalogue_entries(
 
     reporting = {
         "id": group_id,
-        "name": f"{label}: {place} County Couplet ({pair.dir1_street}/{pair.dir2_street})",
+        "name": f"{label}: {pair.dir1_street} / {pair.dir2_street} couplet, {place}",
         "description": (
             f"One-way couplet carrying {label} across {pair.dir1_street} "
-            f"({dir1_dir}) and {pair.dir2_street} ({dir2_dir}) in {place} County "
+            f"({dir1_dir}) and {pair.dir2_street} ({dir2_dir}) in {place} "
             f"(ZIP {pair.postal_code or 'n/a'}); {pair.total_miles:.2f} mi per leg, "
             f"mean lateral separation {pair.mean_lateral_sep_m:.0f} m. Detected by "
             f"inrix_tools.couplets.detect_couplets (ROADMAP Item 46)."
@@ -662,11 +855,11 @@ def couplet_catalogue_entries(
 
     entry1 = {
         "id": dir1_id,
-        "name": f"{label} {dir1_dir}: {place} County ({pair.dir1_street})",
+        "name": f"{label} {dir1_dir}: {pair.dir1_street} couplet leg, {place}",
         "start_latlon": dir1_start,
         "end_latlon": dir1_end,
         "description": (f"One-way couplet leg on {pair.dir1_street} ({dir1_dir}) carrying "
-                        f"{label} through {place} County, {len(pair.dir1_segment_ids)} segments; "
+                        f"{label} through {place}, {len(pair.dir1_segment_ids)} segments; "
                         f"the opposing leg runs on {pair.dir2_street} "
                         f"{pair.mean_lateral_sep_m:.0f} m away."),
         "corridor": group_id,
@@ -675,11 +868,11 @@ def couplet_catalogue_entries(
 
     entry2 = {
         "id": dir2_id,
-        "name": f"{label} {dir2_dir}: {place} County ({pair.dir2_street})",
+        "name": f"{label} {dir2_dir}: {pair.dir2_street} couplet leg, {place}",
         "start_latlon": dir2_start,
         "end_latlon": dir2_end,
         "description": (f"One-way couplet leg on {pair.dir2_street} ({dir2_dir}) carrying "
-                        f"{label} through {place} County, {len(pair.dir2_segment_ids)} segments; "
+                        f"{label} through {place}, {len(pair.dir2_segment_ids)} segments; "
                         f"the opposing leg runs on {pair.dir1_street} "
                         f"{pair.mean_lateral_sep_m:.0f} m away."),
         "corridor": group_id,

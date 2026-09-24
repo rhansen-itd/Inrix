@@ -602,63 +602,33 @@
       "direction": "WB"
     },
     {
-      "id": "us95-fruitland-nb",
-      "name": "US-95 NB: Fruitland (US-30) to the Payette 16th St junction",
+      "id": "us95-fruitland-payette-nb",
+      "name": "US-95 NB: Fruitland (US-30) to the north edge of Payette, on 16th St",
       "start_latlon": [
         44.0255,
         -116.9234
-      ],
-      "end_latlon": [
-        44.0552,
-        -116.9256
-      ],
-      "description": "Northbound US-95 from the US-30 junction in Fruitland along N Whitley Dr to where US-95 turns onto Payette's 16th St. ITD's US-95 (the State Highway System) runs up Payette's 16th St; until Item 49 this corridor ran through downtown on S Main St / S 7th St to 7th Ave N, which the SHS puts off the system (owner decision 2026-09-23). It is split at the 16th St junction because INRIX's NextXDSegI there continues onto S Main St (its own US-95), and the southbound 16th St carriageway ends with no link onto US-95; neither is a same-carriageway break that corridors.repair_links may patch.",
-      "corridor": "us95-fruitland",
-      "direction": "NB"
-    },
-    {
-      "id": "us95-fruitland-sb",
-      "name": "US-95 SB: the Payette 16th St junction to Fruitland (US-30)",
-      "start_latlon": [
-        44.0562,
-        -116.9257
-      ],
-      "end_latlon": [
-        44.0255,
-        -116.9234
-      ],
-      "description": "Southbound US-95 from the 16th St junction along N Whitley Dr to US-30 in Fruitland (Item 49; see us95-fruitland-nb).",
-      "corridor": "us95-fruitland",
-      "direction": "SB"
-    },
-    {
-      "id": "us95-payette-16th-nb",
-      "name": "US-95 NB: Payette 16th St (junction to the north edge of town)",
-      "start_latlon": [
-        44.0555,
-        -116.9256
       ],
       "end_latlon": [
         44.0915,
         -116.9232
       ],
-      "description": "Northbound US-95 on Payette's 16th St, ITD's alignment, from the junction south of town to where US-95 leaves Payette to the north. ITD's US-95 (the State Highway System) runs up Payette's 16th St; until Item 49 this corridor ran through downtown on S Main St / S 7th St to 7th Ave N, which the SHS puts off the system (owner decision 2026-09-23). It is split at the 16th St junction because INRIX's NextXDSegI there continues onto S Main St (its own US-95), and the southbound 16th St carriageway ends with no link onto US-95; neither is a same-carriageway break that corridors.repair_links may patch.",
-      "corridor": "us95-payette-16th",
+      "description": "Northbound US-95 from the US-30 junction in Fruitland along N Whitley Dr and up Payette's 16th St, ITD's alignment (the State Highway System), to where US-95 leaves Payette to the north. Item 49 carried this as two entries (us95-fruitland, us95-payette-16th) because INRIX's NextXDSegI at the 16th St junction continues onto S Main St, which the SHS puts off the system (owner decision 2026-09-23). Item 51's route-junction repair (scripts/d3_link_repairs.csv, kind route_junction: 1187491533 -> 384126765) walks it as one facility again. Resolves to 12 segments, 4.72 mi.",
+      "corridor": "us95-fruitland-payette",
       "direction": "NB"
     },
     {
-      "id": "us95-payette-16th-sb",
-      "name": "US-95 SB: Payette 16th St (north edge of town to the junction)",
+      "id": "us95-fruitland-payette-sb",
+      "name": "US-95 SB: the north edge of Payette to Fruitland (US-30), on 16th St",
       "start_latlon": [
         44.0895,
         -116.9232
       ],
       "end_latlon": [
-        44.0566,
-        -116.925
+        44.0255,
+        -116.9234
       ],
-      "description": "Southbound US-95 on Payette's 16th St, ITD's alignment, to the junction south of town (Item 49; see us95-payette-16th-nb).",
-      "corridor": "us95-payette-16th",
+      "description": "Southbound US-95 down Payette's 16th St and N Whitley Dr to US-30 in Fruitland (see us95-fruitland-payette-nb). The southbound 16th St carriageway ends with no link onto US-95; the route-junction repair 383865907 -> 1187629755 (Item 51) joins them. Resolves to 12 segments, 4.62 mi.",
+      "corridor": "us95-fruitland-payette",
       "direction": "SB"
     },
     {
@@ -916,14 +886,9 @@
       "description": "The western section of US-20/26 from Middleton Rd to I-84 at IC 29 in Caldwell."
     },
     {
-      "id": "us95-fruitland",
-      "name": "US-95: Fruitland (Whitley Dr)",
-      "description": "The Fruitland section of US-95 on N Whitley Dr, from US-30 to the Payette 16th St junction. With us95-payette-16th it replaces Item 44's us95-fruitland-payette, which ran through downtown Payette off the State Highway System (Item 49)."
-    },
-    {
-      "id": "us95-payette-16th",
-      "name": "US-95: Payette (16th St)",
-      "description": "US-95 through Payette on 16th St, ITD's alignment, from the junction south of town to the north edge. Replaces the downtown S Main St / S 7th St leg of Item 44's us95-fruitland-payette (Item 49)."
+      "id": "us95-fruitland-payette",
+      "name": "US-95: Fruitland and Payette (N Whitley Dr, 16th St)",
+      "description": "US-95 from US-30 in Fruitland through Payette on 16th St, ITD's alignment. The id is Item 44's; Item 49 split it at the 16th St junction (DATA_FORMAT trap 4) and Item 51's route-junction repairs rejoin it, on the SHS alignment rather than Item 44's downtown S Main St / S 7th St."
     },
     {
       "id": "sh55-mccall-town",

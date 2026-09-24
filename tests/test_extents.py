@@ -729,3 +729,274 @@ class TestEpisodicFlag:
         core = next(g for g in cat["reporting_corridors"] if g["_tier"] == "core")
         assert core["_flags"] and core["_flags"][0].startswith("episodic")
         assert core["_ranked"] is True
+
+
+# ─── ROADMAP Item 51: chains across route-numbering changes ───────────
+
+def _seg_row(sid, nxt, routes, name, p0, p1, *, rid=None, mp=(None, None), group=1,
+             road_list=None, bearing="E", aadt=20000):
+    """One segment (lon/lat ends) with ITD membership columns; Miles from the ends."""
+    import math
+    dx = (p1[0] - p0[0]) * 111_320 * math.cos(math.radians(p0[1]))
+    dy = (p1[1] - p0[1]) * 111_320
+    return {
+        "XDSegID": sid, "NextXDSegI": nxt, "PreviousXD": None, "FRC": 3,
+        "RoadNumber": routes.split("/")[0] if routes else None, "RoadName": name,
+        "RoadList": road_list, "Miles": math.hypot(dx, dy) / 1609.344,
+        "Bearing": bearing, "SlipRoad": 0, "XDGroup": group, "County": "Latah",
+        "PostalCode": "83843", "StartLat": p0[1], "StartLong": p0[0],
+        "EndLat": p1[1], "EndLong": p1[0], "AADT": aadt,
+        "itd_routes": routes, "itd_route_id": rid,
+        "shs_mp_start": mp[0], "shs_mp_end": mp[1],
+        "geometry": LineString([p0, p1]),
+    }
+
+
+def _moscow_sh8(with_mileposts=True):
+    """SH-8 eastbound through a Moscow-like couplet.
+
+    SH-8 runs east on 3rd St (route 8, SHS mp 0-1.29), turns right onto the couplet's
+    southbound leg (route 95 only by the SHS; ``RoadList`` names ID-8), and runs on
+    east on Troy Rd (route 8 again, mp 1.75 on). 3rd St carries on past the turn for
+    0.13 mi of SH-8's own line (the stub) and dead-ends. The link runs straight on;
+    nothing links onto the couplet leg."""
+    L = 46.732
+    rid8 = "01870ASH008"
+    mps = (lambda a, b: (a, b)) if with_mileposts else (lambda a, b: (None, None))
+    rows = [
+        _seg_row(1, 2, "8", "W Pullman Rd", (-117.030, L), (-117.010, L), rid=rid8,
+                 mp=mps(0.0, 0.95)),
+        _seg_row(2, 3, "8", "W 3rd St", (-117.010, L), (-117.003, L), rid=rid8,
+                 mp=mps(0.95, 1.29)),
+        _seg_row(3, None, "8", "E 3rd St", (-117.003, L), (-117.000, L), rid=rid8,
+                 mp=mps(1.29, 1.43)),
+        _seg_row(4, 5, "95", "S Jackson St", (-117.003, L), (-117.003, 46.726),
+                 rid="01540DUS095", road_list="S Jackson St|ID-8|US-95", bearing="S",
+                 group=2),
+        _seg_row(5, 6, "8", "ID-8", (-117.003, 46.726), (-116.990, 46.726), rid=rid8,
+                 mp=mps(1.75, 2.35), group=3),
+        _seg_row(6, None, "8", "ID-8", (-116.990, 46.726), (-116.970, 46.726), rid=rid8,
+                 mp=mps(2.35, 3.30), group=3),
+    ]
+    return gpd.GeoDataFrame(rows, crs="EPSG:4326")
+
+
+class TestItem51ChainWalk:
+    def test_concurrency_and_the_milepost_gap_make_sh8_one_chain(self):
+        chains = extents.enumerate_mainline_chains(_moscow_sh8(), min_miles=0.1)
+        sh8 = max((c for c in chains if "8" in c.routes), key=lambda c: c.miles)
+        assert sh8.segment_ids == (1, 2, 4, 5, 6)
+        stub = [j for j in sh8.joins if j["kind"] == "stub_junction"]
+        assert stub and stub[0]["from"] == 2 and stub[0]["to"] == 4
+        assert stub[0]["mp_leave"] == pytest.approx(1.29)
+        assert stub[0]["mp_return"] == pytest.approx(1.75)
+
+    def test_without_milepost_evidence_the_stub_is_not_left(self):
+        chains = extents.enumerate_mainline_chains(_moscow_sh8(with_mileposts=False),
+                                                   min_miles=0.1)
+        assert all(not (2 in c.segment_ids and 4 in c.segment_ids) for c in chains)
+
+    def test_without_membership_the_walk_is_item_46s(self):
+        net = _moscow_sh8().drop(columns=["itd_routes"])
+        chains = extents.enumerate_mainline_chains(net, min_miles=0.1)
+        assert all(not (2 in c.segment_ids and 5 in c.segment_ids) for c in chains)
+
+    def test_a_route_turning_off_the_link_is_joined_at_the_junction(self):
+        """Payette: US-95 northbound links onto S Main St (off the system); ITD's US-95
+        leaves on 16th St, whose first segment nothing links into."""
+        rows = [
+            _seg_row(10, 11, "95", "US-95", (-116.93, 44.02), (-116.93, 44.03), bearing="N"),
+            _seg_row(11, 90, "95", "US-95", (-116.93, 44.03), (-116.93, 44.04), bearing="N"),
+            _seg_row(90, None, "", "S Main St", (-116.93, 44.04), (-116.93, 44.05), bearing="N"),
+            _seg_row(12, 13, "95", "95 N", (-116.93, 44.04), (-116.92, 44.041), bearing="E",
+                     group=2),
+            _seg_row(13, None, "95", "S 16th St", (-116.92, 44.041), (-116.92, 44.06),
+                     bearing="N", group=2),
+        ]
+        chains = extents.enumerate_mainline_chains(gpd.GeoDataFrame(rows, crs="EPSG:4326"),
+                                                   min_miles=0.1)
+        us95 = max(chains, key=lambda c: c.miles)
+        assert us95.segment_ids == (10, 11, 12, 13)
+        assert us95.joins[0]["kind"] == "junction"
+
+    def test_the_other_carriageway_is_never_a_junction(self):
+        rows = [
+            _seg_row(20, None, "95", "US-95", (-116.93, 44.02), (-116.93, 44.03), bearing="N"),
+            _seg_row(21, None, "95", "US-95", (-116.93, 44.03), (-116.93, 44.02), bearing="S",
+                     group=2),
+        ]
+        chains = extents.enumerate_mainline_chains(gpd.GeoDataFrame(rows, crs="EPSG:4326"),
+                                                   min_miles=0.1)
+        assert sorted(c.segment_ids for c in chains) == [(20,), (21,)]
+
+    def test_a_renumbering_on_one_street_is_one_chain(self):
+        """Yellowstone Hwy: US-91 ends where US-26 begins, same street, straight on."""
+        rows = [
+            _seg_row(30, 31, "91", "S Yellowstone Hwy", (-112.06, 43.44), (-112.06, 43.45),
+                     bearing="N"),
+            _seg_row(31, 32, "91", "S Yellowstone Hwy", (-112.06, 43.45), (-112.06, 43.46),
+                     bearing="N"),
+            _seg_row(32, 33, "15/26", "S Yellowstone Hwy", (-112.06, 43.46), (-112.06, 43.47),
+                     bearing="N", group=2),
+            _seg_row(33, None, "15/26", "N Yellowstone Hwy", (-112.06, 43.47),
+                     (-112.06, 43.48), bearing="N", group=2),
+        ]
+        chains = extents.enumerate_mainline_chains(gpd.GeoDataFrame(rows, crs="EPSG:4326"),
+                                                   min_miles=0.1)
+        long_ = max(chains, key=lambda c: c.miles)
+        assert long_.segment_ids == (30, 31, 32, 33)
+        assert set(long_.routes) >= {"91"} and len(long_.routes) >= 2
+        assert any(j["kind"] == "renumbering" for j in long_.joins)
+
+    def test_a_route_renamed_where_another_starts_is_not_merged(self):
+        """Troy: SH-8 on S Main St becomes "ID-8" where SH-99 starts down S Main St for
+        a few blocks. The street does not run on far enough to be one road."""
+        rows = [
+            _seg_row(40, 41, "8", "ID-8", (-116.80, 46.73), (-116.78, 46.73)),
+            _seg_row(41, 42, "8", "S Main St", (-116.78, 46.73), (-116.77, 46.73)),
+            _seg_row(42, 43, "8", "ID-8", (-116.77, 46.73), (-116.75, 46.735)),
+            _seg_row(43, None, "8", "ID-8", (-116.75, 46.735), (-116.73, 46.735)),
+            _seg_row(50, 51, "99", "S Main St", (-116.77, 46.73), (-116.7695, 46.7297),
+                     bearing="S", group=2),
+            _seg_row(51, None, "99", "ID-99", (-116.7695, 46.7297), (-116.76, 46.70),
+                     bearing="S", group=2),
+        ]
+        chains = extents.enumerate_mainline_chains(gpd.GeoDataFrame(rows, crs="EPSG:4326"),
+                                                   min_miles=0.1)
+        sh8 = next(c for c in chains if 40 in c.segment_ids)
+        assert sh8.segment_ids == (40, 41, 42, 43)
+
+
+class TestRouteJunctionRepairs:
+    def test_a_junction_whose_link_leaves_every_route_is_written(self):
+        rows = [
+            _seg_row(10, 11, "95", "US-95", (-116.93, 44.02), (-116.93, 44.03), bearing="N"),
+            _seg_row(11, 90, "95", "US-95", (-116.93, 44.03), (-116.93, 44.04), bearing="N"),
+            _seg_row(90, None, "", "S Main St", (-116.93, 44.04), (-116.93, 44.05), bearing="N"),
+            _seg_row(12, None, "95", "95 N", (-116.93, 44.04), (-116.92, 44.041), bearing="E",
+                     group=2),
+        ]
+        rep = extents.route_junction_repairs(gpd.GeoDataFrame(rows, crs="EPSG:4326"))
+        assert list(zip(rep["segment"], rep["old_next"], rep["new_next"])) == [(11, 90, 12)]
+        assert set(rep["kind"]) == {extents.ROUTE_JUNCTION}
+
+    def test_a_stub_junction_is_left_to_the_chain_walk(self):
+        """At 3rd & Jackson the link still serves SH-8's own stub on 3rd St."""
+        rep = extents.route_junction_repairs(_moscow_sh8())
+        assert 2 not in set(rep["segment"])
+
+
+def _concurrent_network():
+    """US-20 north (segments 101-106) and US-26, which arrives from the west (201-202),
+    shares 103-104 with US-20, and leaves east (205-206)."""
+    x, y0, d = -112.03, 43.49, 0.007
+    rows = []
+    for i in range(6):
+        routes = "20/26" if i in (2, 3) else "20"
+        rows.append(_seg_row(101 + i, 102 + i if i < 5 else None, routes, "Yellowstone Hwy",
+                             (x, y0 + i * d), (x, y0 + (i + 1) * d), bearing="N"))
+    rows.append(_seg_row(201, 202, "26", "Sunnyside Rd", (x - 2 * d, y0 + 2 * d),
+                         (x - d, y0 + 2 * d), group=2))
+    rows.append(_seg_row(202, 103, "26", "Sunnyside Rd", (x - d, y0 + 2 * d),
+                         (x, y0 + 2 * d), group=2))
+    rows.append(_seg_row(205, 206, "26", "Ririe Hwy", (x, y0 + 4 * d),
+                         (x + d, y0 + 4 * d), group=3))
+    rows.append(_seg_row(206, None, "26", "Ririe Hwy", (x + d, y0 + 4 * d),
+                         (x + 2 * d, y0 + 4 * d), group=3))
+    net = gpd.GeoDataFrame(rows, crs="EPSG:4326")
+    net["urban_area"] = "Idaho Falls, ID"
+    net["urban_share"] = 1.0
+    return net
+
+
+class TestItem51Facilities:
+    def test_a_segment_is_in_one_ranked_core_or_says_it_shares(self):
+        net = _concurrent_network()
+        ids = list(net["XDSegID"])
+        ratios = {102: 3.0, 103: 3.0, 104: 3.0, 105: 3.0,
+                  201: 1.6, 202: 1.6, 205: 1.6, 206: 1.6}
+        cat = extents.generate_catalogue(net, _baseline(ids, ratios), observed=set(ids),
+                                         min_chain_miles=0.5)
+        cores = [g for g in cat["reporting_corridors"] if g["_tier"] == "core"]
+        assert len(cores) == 2
+        us26 = next(g for g in cores if g["_facility_name"].startswith("US-26")
+                    or g["_facility_name"].startswith("SH-26"))
+        assert any(f.startswith("shares ") for f in us26["_flags"])
+
+    def test_a_core_mostly_inside_a_stronger_one_is_absorbed(self):
+        net = _concurrent_network()
+        ids = list(net["XDSegID"])
+        ratios = {102: 3.0, 103: 3.0, 104: 3.0, 105: 3.0, 202: 1.6}
+        cat = extents.generate_catalogue(net, _baseline(ids, ratios), observed=set(ids),
+                                         min_chain_miles=0.5)
+        assert len([g for g in cat["reporting_corridors"] if g["_tier"] == "core"]) == 1
+
+    def test_facilities_are_named_for_street_and_town(self):
+        net = _concurrent_network()
+        ids = list(net["XDSegID"])
+        cat = extents.generate_catalogue(net, _baseline(ids, {102: 3.0, 103: 3.0, 104: 3.0}),
+                                         observed=set(ids), min_chain_miles=0.5)
+        core = next(g for g in cat["reporting_corridors"] if g["_tier"] == "core")
+        assert core["_facility_name"].endswith(": Yellowstone Hwy, Idaho Falls")
+        assert "County" not in core["_facility_name"]
+
+    def test_the_county_names_a_core_outside_every_urban_area(self):
+        net = _concurrent_network()
+        net["urban_share"] = 0.0
+        ids = list(net["XDSegID"])
+        cat = extents.generate_catalogue(net, _baseline(ids, {102: 3.0, 103: 3.0, 104: 3.0}),
+                                         observed=set(ids), min_chain_miles=0.5)
+        core = next(g for g in cat["reporting_corridors"] if g["_tier"] == "core")
+        assert core["_facility_name"].endswith(", Latah County")
+
+    def test_an_entry_names_the_links_the_network_does_not_assert(self):
+        from inrix_tools import corridors
+        net = _moscow_sh8()
+        ids = list(net["XDSegID"])
+        cat = extents.generate_catalogue(net, _baseline(ids, {1: 2.0, 2: 2.0, 4: 2.0, 5: 2.0}),
+                                         observed=set(ids), min_chain_miles=0.5)
+        core = next(e for e in cat["corridors"] if e["_tier"] == "core")
+        assert [2, 4] in core["links"]
+        res = corridors.resolve_catalogue(net, cat["corridors"])
+        assert res["reached_target"].all()
+
+
+class TestFacilityNaming:
+    def _chain(self, ids, route="15", label="I-15"):
+        return extents.MainlineChain(route_number=route, bearing="N", segment_ids=tuple(ids),
+                                     miles=1.0, road_name="", route_label=label,
+                                     localities=(), counties=("Bannock",),
+                                     route_numbers=(route,), route_labels=(label,))
+
+    def _frame(self, names, road_lists=None, urban=None):
+        n = len(names)
+        return pd.DataFrame({"RoadName": names, "RoadList": road_lists or [None] * n,
+                             "Miles": [0.5] * n, "County": ["Bannock"] * n,
+                             "urban_area": [urban] * n,
+                             "urban_share": [1.0 if urban else 0.0] * n},
+                            index=pd.Index(range(1, n + 1), name="XDSegID"))
+
+    def _core(self, ids):
+        return extents.CoreCandidate(start=0, stop=len(ids), segment_ids=tuple(ids), miles=1.0,
+                                     effective_miles=1.0, vhd=100, vhd_per_mile=100,
+                                     delay_per_mile=1, realtime_share=1, peak_ratio=1.3,
+                                     ref_tti=1.3, unknown_miles=0, n_aadt_missing=0,
+                                     baseline_sources=("night",), fails=())
+
+    def test_a_business_loop_says_so(self):
+        net = self._frame(["S 5th Ave"] * 3, ["S 5th Ave|I-15-BL|US-30"] * 3, "Pocatello, ID")
+        band, street, place = extents.facility_naming(self._chain([1, 2, 3]),
+                                                      self._core([1, 2, 3]), net, net)
+        assert (band, street, place) == ("I-15 BL", "5th Ave", "Pocatello")
+
+    def test_a_road_named_only_by_its_route_has_no_street(self):
+        net = self._frame(["US-95", "Highway 95", "95 N"])
+        band, street, place = extents.facility_naming(self._chain([1, 2, 3], "95", "US-95"),
+                                                      self._core([1, 2, 3]), net, net)
+        assert street == "" and place == "Bannock County"
+
+    def test_byway_aliases_are_not_street_names(self):
+        net = self._frame(["US-20"] * 3, ["US-20|Idaho Medal of Honor Hwy"] * 3)
+        _, street, _ = extents.facility_naming(self._chain([1, 2, 3], "20", "US-20"),
+                                               self._core([1, 2, 3]), net, net)
+        assert street == ""

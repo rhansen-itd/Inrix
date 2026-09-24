@@ -678,7 +678,12 @@ def build_chain(source, start_latlon, end_latlon, *, projected_crs=None,
         for e_id, e_ft, e_frac in ends:
             chain, reason = walk_chain(proj, s_id, e_id, max_steps=max_steps)
             reached = reason == "target"
-            key = (not reached, s_ft + e_ft)
+            # Ties on snap distance (a point exactly at a junction) go to the start
+            # segment the point *begins* and the end segment it *finishes*: a start at
+            # the far end of the upstream segment adds that segment with ~0 of it in
+            # the extent. Myrtle St EB began on I-184 once Item 51's route junctions
+            # let the Connector walk onto it.
+            key = (not reached, round(s_ft + e_ft, 1), s_frac + (1.0 - e_frac))
             if best is None or key < best[0]:
                 best = (key, (s_id, s_ft, s_frac), (e_id, e_ft, e_frac), chain, reason)
     _, (s_id, s_ft, s_frac), (e_id, e_ft, e_frac), chain, reason = best
@@ -1104,7 +1109,8 @@ def chain_description(chain: ChainResult, network, fields=_DESCRIBE_FIELDS) -> d
 CATALOGUE_COLLECTION = "corridors"      # the key holding the entry list in the JSON
 REPORTING_COLLECTION = "reporting_corridors"   # the key holding the group list (Item 40)
 _ENTRY_FIELDS = ("id", "name", "start_latlon", "end_latlon", "description")
-_ENTRY_OPTIONAL = ("corridor", "direction")    # the reporting group this entry is one direction of
+_ENTRY_OPTIONAL = ("corridor", "direction",    # the reporting group this entry is one direction of
+                   "links")                    # entry-scoped NextXDSegI patch (Item 51)
 _GROUP_FIELDS = ("id", "name", "description")
 _GROUP_OPTIONAL = ("one_way_couplet",)   # the two directions are different streets
 DEFAULT_MIN_COVERAGE = 0.95             # accepted entries must observe >95% of their miles
@@ -1136,6 +1142,12 @@ class CorridorEntry:
     description: str
     corridor: str | None = None      # the reporting corridor this is one direction of
     direction: str | None = None     # "EB"/"WB"/"NB"/"SB" — the direction it is
+    links: tuple[tuple[int, int], ...] = ()
+    """``(segment, next)`` links this entry walks that ``NextXDSegI`` does not assert —
+    where its route turns off INRIX's link, or only the route number changes along the
+    street (Item 51). Applied to this entry's walk alone, never to the network: at
+    Idaho Falls' Sunnyside Rd the US-26 chain follows the street onto US-91 while the
+    I-15 BL approach keeps the link, and one patch cannot serve both."""
 
 
 @dataclass(frozen=True)
@@ -1227,6 +1239,14 @@ def parse_catalogue(data) -> tuple[CorridorEntry, ...]:
                 f"Catalogue entry {entry_id!r} carries "
                 f"{'corridor' if group else 'direction'} without the other; a reporting "
                 "corridor needs both, so the directions can be told apart inside it.")
+        links: list[tuple[int, int]] = []
+        for pair in row.get("links") or ():
+            try:
+                a, b = (int(v) for v in pair)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Catalogue entry {entry_id!r}: each link must be a "
+                                 f"[segment, next] pair, got {pair!r}") from exc
+            links.append((a, b))
         out.append(
             CorridorEntry(
                 id=entry_id,
@@ -1238,6 +1258,7 @@ def parse_catalogue(data) -> tuple[CorridorEntry, ...]:
                 description=str(row["description"]).strip(),
                 corridor=group,
                 direction=direction,
+                links=tuple(links),
             )
         )
     entries = tuple(out)
@@ -1406,8 +1427,20 @@ def resolve_catalogue(source, catalogue, *, observed=None, value: str | None = N
 
     rows, chains = [], {}
     for entry in entries:
-        chain = build_chain(proj, entry.start_latlon, entry.end_latlon,
-                            projected_crs=proj.crs, repairs=repairs, **build_kwargs)
+        net_e, rep_e = proj, repairs
+        if entry.links:
+            # The entry's own links (Item 51) patch this walk only; they are reported
+            # with the table's repairs in ``n_repaired_links``.
+            own = pd.DataFrame({"segment": [a for a, _ in entry.links],
+                                "new_next": [b for _, b in entry.links]})
+            base = (pd.DataFrame(columns=["segment", "new_next"]) if repairs is None
+                    else pd.DataFrame(list(_repair_map(repairs).items()),
+                                      columns=["segment", "new_next"]))
+            rep_e = pd.concat([base[~base["segment"].isin(own["segment"])], own],
+                              ignore_index=True)
+            net_e = apply_link_repairs(proj, own)
+        chain = build_chain(net_e, entry.start_latlon, entry.end_latlon,
+                            projected_crs=proj.crs, repairs=rep_e, **build_kwargs)
         chains[entry.id] = chain
         summary = chain.summary()
         row = {

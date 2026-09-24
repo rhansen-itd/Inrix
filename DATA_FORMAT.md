@@ -318,7 +318,11 @@ the generated catalogue pass, so they are recorded here rather than rediscovered
   "N"`, because the street curves. Any test of the form "the opposing direction of E
   is W" therefore fails on exactly the cases that matter: it rejected the best-known
   one-way couplet in the state. Compare **geometric** bearings (start of the first
-  segment to end of the last) and test for anti-parallel within a tolerance.
+  segment to end of the last) and test for anti-parallel within a tolerance. A
+  geometric bearing in lon/lat must scale the east-west step by `cos(latitude)`
+  (`geometry._bearing_deg` does since Item 51): at 43° N a degree of longitude is 0.73
+  of a degree of latitude, and the raw-degree reading turned Pocatello's NNW (320°)
+  4th/5th Ave couplet into "WB/EB".
 
 - **`PostalCode` is a ZIP code, not a place name** (`83702`, not `Boise`), and
   **`RoadList` holds the segment's own aliases, not the roads that cross it**
@@ -404,9 +408,16 @@ resolving the District 3 catalogue:
    - **Lewiston, US-12.** Walked on ITD membership, US-12 ends at Main St and the Levee
      Byp is a separate 1.7-mi chain each way; INRIX's link carries on to D St.
 
-   A catalogue entry can't span such a junction. D3's US-95 is two entries (Fruitland,
-   Payette 16th St), and the builder sees Lewiston as two facilities. Joining chains
-   across it is Item 51's job.
+   A catalogue entry couldn't span such a junction, so Item 49 carried D3's US-95 as two
+   entries (Fruitland, Payette 16th St), and the builder saw Lewiston as two facilities.
+   **Resolved in Item 51:** such a junction is a `route_junction` row in the repair
+   table (see *Chains across route-numbering changes*), and D3's US-95 is one entry
+   again, `us95-fruitland-payette`, on the SHS alignment.
+5. **A gap in the network is not a junction** (Item 51). SH-8 eastbound east of Bovill
+   has no XD segments between SHS mp 36.27 and 37.60 in the D2 network; only westbound
+   segments exist there, and the next eastbound segment's `PreviousXD` isn't in the
+   network. The chain breaks there, and nothing joins it, correctly: no rule should
+   invent pavement.
 
 **Consequence for corridor definitions:** a corridor is stated as an endpoint pair
 and resolved, and an extent that will not walk is recorded with its `stop_reason` —
@@ -1609,7 +1620,7 @@ contract. It is the authority for **which road is a state route**.
   | | 3 | **business loop** | Mountain Home's I-84 Business `01020AIN084`, Pocatello's I-15 Business `01360AIN015`, Twin Falls' US-93 Business `02043AUS093` |
   | | 4 | **connector**: short wye, turn and couplet links | `C ST & US-95 SB COUPLET` (Moscow), `SIMPLOT BLVD (SH-19)` |
   | `Travelway` | A | the primary carriageway | 1,110 lines |
-  | | D | **the second carriageway of a divided road**; the route id's letter is `D` too | `01010DIN084` runs all 275 mi of I-84 beside `01010AIN084`; 63 roadway lines, 776 mi |
+  | | D | **the second carriageway of a divided road, or a couplet's second leg**; the route id's letter is `D` too | `01010DIN084` runs all 275 mi of I-84 beside `01010AIN084`; 63 roadway lines, 776 mi. Couplets too (Item 51): Moscow's Jackson St `01540DUS095` beside Washington St `01540AUS095`, Boise's Front St, Nampa's 2nd St S, Pocatello's 4th Ave, Blackfoot's Judicial St, Twin Falls' 2nd Ave |
 
   **Mainline evidence is `RoadType` 4 only.** A spur and a connector *are* their
   route. A business loop is **state highway and belongs to its parent route** (owner,
@@ -1838,6 +1849,130 @@ of 0.43 is real. Look at weekday 16:00–18:30 travel time over the five core se
 A permanent step on one day, affecting daytime and weekends but not nights, looks
 like a daytime work zone rather than recurring commute congestion. It stays in the
 ranking, carrying the `episodic` flag.
+
+## Chains across route-numbering changes (`extents.py`, Item 51)
+
+Until Item 51 a chain was one `RoadNumber` walked along `NextXDSegI`. A road whose number
+changes along its length came out as several short chains, and each one had to clear the
+1-mi minimum and find its own core. Four facts about the data shape the replacement:
+
+- **The SHS records one route per road, so concurrency comes from INRIX.** Moscow's US-95
+  couplet is route 95 alone in the SHS, but SH-8 runs on it, and the couplet segments'
+  `RoadList` names `ID-8`. Membership's `routes` column adds the `RoadList` route only
+  when ITD and INRIX disagree (`concurrent`), so an `agree` segment carries one route.
+  A chain walks a route over its membership routes **plus** the routes its `RoadList`
+  names, for segments on the system (`extents.segment_route_sets`). Ramps are never
+  members.
+- **The link follows INRIX's through movement, not ITD's route** (trap 4). Where a route
+  turns, its walk ends at the junction and resumes on a segment nothing in the route
+  links into. A tail is **joined** to such a head when the head starts on the tail's
+  last segment (within 20 m, past its first half), and the turn is ≤ 120° (a corner,
+  not the other carriageway). Where both lie on one SHS line, the mileposts must agree
+  within 0.25 mi.
+- **The SHS mileposts show the concurrency.** A segment's ends are projected onto its
+  own route id's line and the measure interpolated (`itd_layers.shs_mileposts`). SH-8's
+  line stops at mp 1.92 at 3rd St & Washington St and resumes at 2.35 on Troy Rd; the
+  0.43 mi between is the couplet. Eastbound, SH-8 turns off 3rd St onto Jackson St one
+  block *before* its own line ends. A junction may leave such a **stub** (≤ 0.3 mi of the
+  route's own run) only when the head's run comes back to the tail's line further
+  along, within 2 mi (`stub_junction`, recorded with `mp_leave` / `mp_return`).
+- **A street keeps its name when its number changes.** Yellowstone Hwy in Idaho Falls is
+  US-91, then I-15 BL / US-26, US-20 BR / US-26 on Northgate Mile, then US-26 alone.
+  Chains of different routes are **merged** where the same street runs straight on
+  (≤ 60° turn): tail to head, or where one route arrives onto the street, or turns off
+  it, mid-chain (US-26 arrives from Sunnyside Rd). A merge that cuts a chain needs the
+  street to run on for ≥ 0.5 mi on both sides. At Troy, SH-8 on S Main St is renamed
+  "ID-8" where SH-99 starts down S Main St for 0.04 mi: that is a route changing its
+  name, not a street changing its number. The street's own name decides, not
+  `RoadList`.
+
+**What the walk produces.** SH-8 is one chain each way from the Washington line through
+Moscow (via Jackson St eastbound and Washington St westbound). Yellowstone Hwy is one
+75.6-mi chain each way (US-91 → US-26), and Broadway east of I-15 is part of US-20's.
+A concurrent segment can lie on two chains. A chain wholly inside a longer one is
+dropped. Per district, 37–49 chains (Item 50: 40–62).
+
+**Junctions as repairs.** `corridors.build_chain`, which resolves every catalogue
+entry, walks the link alone. Two mechanisms carry the joins to it:
+
+- `route_junction` rows in `scripts/d<N>_link_repairs.csv`
+  (`scripts/generate_route_junctions.py`, `extents.route_junction_repairs`). A tail
+  junction is written only where the segment's own link is null or leaves **every**
+  route it carries, and all its routes turn onto the same head. 98 statewide: D1 17,
+  D2 14, D3 24, D4 22, D5 13, D6 8, with Payette, Lewiston (Main St ↔ Levee Byp),
+  SH-8 in Moscow and at Bovill among them. They cross `XDGroup`s, unlike Item 38's.
+- A catalogue entry's own `links` (`[[segment, next], …]`, parsed by
+  `corridors.parse_catalogue`). These are the steps a generated extent takes that the
+  network doesn't assert: stub junctions and renumbering merges, which can't be global
+  patches. At Sunnyside Rd the US-26 chain follows the street onto US-91 while the
+  I-15 BL approach keeps the link. `resolve_catalogue` applies them to that entry only
+  and counts them in `n_repaired_links`.
+
+**`build_chain` at a junction point.** When the start point is exactly where one segment
+ends and the next begins, both snap at the same distance. The tie now goes to the
+segment the point *begins* (and, for the end point, the one it *finishes*). Myrtle St
+EB would otherwise have started on I-184 once its route junction let I-184 walk onto
+Myrtle. The same rule dropped a phantom end segment (0.1–0.5% in extent) from D3's
+`myrtle-eb` and `sh69-sb`; their requested miles are unchanged.
+
+**One segment, one ranked core — or a flag.** With chains following concurrency, two
+facilities can hold the same pavement. Cores are claimed across all chains, strongest
+first:
+- a core with ≥ 50% of its miles already in a stronger core, or in its Tier 2, is that
+  queue seen from a concurrent route;
+- what is left of it, re-found with those segments excluded, stands if it still
+  qualifies (Pocatello's I-15 BL up Pocatello Creek Rd / Alameda Rd); otherwise it is
+  absorbed;
+- a core that only *shares* some pavement keeps it and carries a
+  `shares <mi> mi with <facility>` flag. US-95's Moscow core shares 0.91 mi of the
+  couplet with SH-8's.
+
+**The other direction is found on the ground, not by pairing.** A lead core's companion
+is the strongest qualifying core, on **any** chain sharing a route on its pavement, that
+runs beside the lead's Tier 2 (≥ 50% of it within 200 m) and **against** it (its ends
+projected onto the Tier 2 in travel order land backwards). One-to-one `pair_chains` and
+cardinal bearings both failed here:
+- SH-8 eastbound is three chains (a data gap past Bovill);
+- Burley's Overland Ave is a southbound SH-27 chain one way and an eastbound I-84 BL
+  business-loop chain the other.
+
+A mirrored span claims the other direction's ground only where it runs alongside and
+covers ≥ 30% of the footprint. A chain that merely touches it at a junction doesn't
+count: Twin Falls' US-93 on Pole Line Rd ends where US-93 turns onto Blue Lakes Blvd.
+
+**Names say what the road is.** A facility is named `<band>: <street>, <town>`:
+- **band:** the route carrying most of the core's miles, with `BL` / `BR` / `Spur` when
+  the core's `RoadList` says so (`I-15 BL`);
+- **street:** the core's street by `RoadName` miles, with its leading quadrant
+  dropped, plus a second street when it has ≥ 30%. A segment named only by its route
+  (`US-20`, `Highway 95`) gives no street, and its `RoadList` byway aliases
+  ("Idaho Medal of Honor Hwy") are not read;
+- **town:** Item 52's urban area, else "<County> County".
+
+Examples: "US-26: Yellowstone Hwy, Idaho Falls", "SH-8: Pullman Rd, Moscow", "I-90:
+Coeur d'Alene". Couplets read "US-95: Washington St / Jackson St couplet, Moscow", and
+each leg is labelled by its own compass direction.
+
+**Couplets must be one-way pairs** (`couplets.detect_couplets`, with membership applied):
+- both legs must be on the state system, and share a route **under membership**, not
+  `RoadNumber`;
+- `drop_same_line_pairs`: both legs mostly on **one** SHS line (route id *and*
+  travelway) are one two-way road. Shoshone's S Greenwood St / US-93, both on
+  `02220AUS093`, 172 m "apart" only because one runs on from the other;
+- `drop_divided_pairs`: the `A` and `D` lines of one route closer than 50 m are a
+  divided highway (American Falls' ID-39 S / N at 28 m). `D` alone is no evidence: real
+  couplets sit a block apart (Blackfoot 78 m, Moscow 179 m);
+- `trim_leg_overhang`: a leg's end segments are trimmed while they carry both
+  directions of their street or lie > 300 m from the other leg. Pocatello's 5th Ave ran
+  0.65 mi north of 4th Ave and 1 mi south onto two-way pavement: 2.80 → 2.34 mi against
+  the registry's 2.22. Weiser went from 0.79 to 0.57 (registry 0.52).
+
+`out/statewide_screening/couplet_review.csv` lists every detected pair with the test
+that decided it. Chubbuck's Quinn Rd / US-91 and SH-43 / E 105 N fail (two-way legs).
+Moscow, Boise, Nampa, Weiser, Twin Falls, Pocatello and Blackfoot pass. Sandpoint is
+out of `KNOWN_COUPLETS`: a divided highway, not a couplet (owner). For the owner:
+Mountain Home's N Main St / 2nd St E (I-84 BL, 35.5 m) survives; D3's catalogue is
+curated and doesn't carry it.
 
 ## Direction convention & directional map display (Item 20)
 

@@ -5,8 +5,8 @@
       "am",
       "pm"
     ],
-    "n_chains": 58,
-    "n_facilities": 3,
+    "n_chains": 45,
+    "n_facilities": 2,
     "tiers": [
       "core",
       "commuter",
@@ -39,103 +39,68 @@
   },
   "corridors": [
     {
-      "id": "sh-8-w-pullman-rd-latah-core-eb",
-      "name": "SH-8 (W Pullman Rd) EB: Latah County \u2014 Congested Core",
+      "id": "sh-8-pullman-rd-moscow-core-eb",
+      "name": "SH-8 EB: Pullman Rd, Moscow \u2014 Congested Core",
       "start_latlon": [
         46.73245,
         -117.03732
       ],
       "end_latlon": [
-        46.73237,
-        -117.00002
+        46.72614,
+        -117.00009
       ],
-      "description": "Tier 1 (Congested Core) of SH-8 (W Pullman Rd): Latah County, EB. Recurrent congestion core (1.79 mi): peak/baseline 1.26, 190 VHD/mi, 98% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-8-w-pullman-rd-latah-core",
+      "description": "Tier 1 (Congested Core) of SH-8: Pullman Rd, Moscow, EB. Recurrent congestion core (2.14 mi): peak/baseline 1.27, 182 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-8-pullman-rd-moscow-core",
       "direction": "EB",
+      "links": [
+        [
+          1236903538,
+          386047404
+        ]
+      ],
       "_tier": "core",
-      "_facility": "sh-8-w-pullman-rd-latah",
-      "_split_rationale": "Recurrent congestion core (1.79 mi): peak/baseline 1.26, 190 VHD/mi, 98% real-time data",
-      "_generated_miles": 1.794,
+      "_facility": "sh-8-pullman-rd-moscow",
+      "_split_rationale": "Recurrent congestion core (2.14 mi): peak/baseline 1.27, 182 VHD/mi, 100% real-time data",
+      "_generated_miles": 2.143,
       "_segment_ids": [
         461364150,
         461360891,
         461364966,
         1236903538,
-        448932361,
-        448932362
+        386047404,
+        124404144
       ]
     },
     {
-      "id": "sh-8-w-pullman-rd-latah-core-wb",
-      "name": "SH-8 (W Pullman Rd) WB: Latah County \u2014 Congested Core",
+      "id": "sh-8-pullman-rd-moscow-core-wb",
+      "name": "SH-8 WB: Pullman Rd, Moscow \u2014 Congested Core",
       "start_latlon": [
-        46.73235,
-        -117.00275
+        46.71947,
+        -116.98023
       ],
       "end_latlon": [
         46.73245,
         -117.03732
       ],
-      "description": "Tier 1 (Congested Core) of SH-8 (W Pullman Rd): Latah County, WB. Recurrent congestion core (1.67 mi): peak/baseline 1.14, 105 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-8-w-pullman-rd-latah-core",
+      "description": "Tier 1 (Congested Core) of SH-8: Pullman Rd, Moscow, WB. Recurrent congestion core (3.28 mi): peak/baseline 1.17, 99 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-8-pullman-rd-moscow-core",
       "direction": "WB",
+      "links": [
+        [
+          386047415,
+          448932363
+        ]
+      ],
       "_tier": "core",
-      "_facility": "sh-8-w-pullman-rd-latah",
-      "_split_rationale": "Recurrent congestion core (1.67 mi): peak/baseline 1.14, 105 VHD/mi, 100% real-time data",
-      "_generated_miles": 1.665,
+      "_facility": "sh-8-pullman-rd-moscow",
+      "_split_rationale": "Recurrent congestion core (3.28 mi): peak/baseline 1.17, 99 VHD/mi, 99% real-time data",
+      "_generated_miles": 3.277,
       "_segment_ids": [
-        461364149,
-        461360890,
-        385673633,
-        461363338
-      ]
-    },
-    {
-      "id": "sh-8-w-pullman-rd-latah-commuter-eb",
-      "name": "SH-8 (W Pullman Rd) EB: Latah County \u2014 Commuter Corridor",
-      "start_latlon": [
-        46.73245,
-        -117.03732
-      ],
-      "end_latlon": [
-        46.73237,
-        -117.00002
-      ],
-      "description": "Tier 2 (Commuter Corridor) of SH-8 (W Pullman Rd): Latah County, EB. Congested extent grown from the core (1.79 mi, 190 VHD/mi, 100% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-8-w-pullman-rd-latah-commuter",
-      "direction": "EB",
-      "_tier": "commuter",
-      "_facility": "sh-8-w-pullman-rd-latah",
-      "_split_rationale": "Congested extent grown from the core (1.79 mi, 190 VHD/mi, 100% of the core's)",
-      "_generated_miles": 1.794,
-      "_segment_ids": [
-        461364150,
-        461360891,
-        461364966,
-        1236903538,
-        448932361,
-        448932362
-      ]
-    },
-    {
-      "id": "sh-8-w-pullman-rd-latah-commuter-wb",
-      "name": "SH-8 (W Pullman Rd) WB: Latah County \u2014 Commuter Corridor",
-      "start_latlon": [
-        46.73237,
-        -117.00002
-      ],
-      "end_latlon": [
-        46.73245,
-        -117.03732
-      ],
-      "description": "Tier 2 (Commuter Corridor) of SH-8 (W Pullman Rd): Latah County, WB. Congested extent grown from the core (1.79 mi, 102 VHD/mi, 97% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-8-w-pullman-rd-latah-commuter",
-      "direction": "WB",
-      "_tier": "commuter",
-      "_facility": "sh-8-w-pullman-rd-latah",
-      "_split_rationale": "Congested extent grown from the core (1.79 mi, 102 VHD/mi, 97% of the core's)",
-      "_generated_miles": 1.794,
-      "_segment_ids": [
+        440946527,
+        440950649,
+        1236966046,
+        124121437,
+        386047415,
         448932363,
         448932364,
         461364149,
@@ -145,8 +110,113 @@
       ]
     },
     {
-      "id": "us-95-latah-core-nb",
-      "name": "US-95 NB: Latah County \u2014 Congested Core",
+      "id": "sh-8-pullman-rd-moscow-regional-eb",
+      "name": "SH-8 EB: Pullman Rd, Moscow \u2014 Regional Baseline",
+      "start_latlon": [
+        46.73245,
+        -117.03732
+      ],
+      "end_latlon": [
+        46.72614,
+        -117.00009
+      ],
+      "description": "Tier 3 (Regional Baseline) of SH-8: Pullman Rd, Moscow, EB. Context around the congested extent (2.14 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: a highway junction (95 -> 8). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-8-pullman-rd-moscow-regional",
+      "direction": "EB",
+      "links": [
+        [
+          1236903538,
+          386047404
+        ]
+      ],
+      "_tier": "regional",
+      "_facility": "sh-8-pullman-rd-moscow",
+      "_split_rationale": "Context around the congested extent (2.14 mi; reported, not ranked)",
+      "_generated_miles": 2.143,
+      "_segment_ids": [
+        461364150,
+        461360891,
+        461364966,
+        1236903538,
+        386047404,
+        124404144
+      ]
+    },
+    {
+      "id": "sh-8-pullman-rd-moscow-regional-wb",
+      "name": "SH-8 WB: Pullman Rd, Moscow \u2014 Regional Baseline",
+      "start_latlon": [
+        46.72239,
+        -116.95909
+      ],
+      "end_latlon": [
+        46.73245,
+        -117.03732
+      ],
+      "description": "Tier 3 (Regional Baseline) of SH-8: Pullman Rd, Moscow, WB. Context around the congested extent (4.32 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-8-pullman-rd-moscow-regional",
+      "direction": "WB",
+      "links": [
+        [
+          386047415,
+          448932363
+        ]
+      ],
+      "_tier": "regional",
+      "_facility": "sh-8-pullman-rd-moscow",
+      "_split_rationale": "Context around the congested extent (4.32 mi; reported, not ranked)",
+      "_generated_miles": 4.32,
+      "_segment_ids": [
+        1236965916,
+        1236965887,
+        440946527,
+        440950649,
+        1236966046,
+        124121437,
+        386047415,
+        448932363,
+        448932364,
+        461364149,
+        461360890,
+        385673633,
+        461363338
+      ]
+    },
+    {
+      "id": "us-95-main-st-jackson-st-moscow-core-sb",
+      "name": "US-95 SB: Main St / Jackson St, Moscow \u2014 Congested Core",
+      "start_latlon": [
+        46.7437,
+        -117.00151
+      ],
+      "end_latlon": [
+        46.72195,
+        -117.00139
+      ],
+      "description": "Tier 1 (Congested Core) of US-95: Main St / Jackson St, Moscow, SB. Recurrent congestion core (1.60 mi): peak/baseline 1.28, 141 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-95-main-st-jackson-st-moscow-core",
+      "direction": "SB",
+      "links": [
+        [
+          124404144,
+          385666846
+        ]
+      ],
+      "_tier": "core",
+      "_facility": "us-95-main-st-jackson-st-moscow",
+      "_split_rationale": "Recurrent congestion core (1.60 mi): peak/baseline 1.28, 141 VHD/mi, 99% real-time data",
+      "_generated_miles": 1.596,
+      "_segment_ids": [
+        1236973782,
+        386047403,
+        386047404,
+        124404144,
+        385666846
+      ]
+    },
+    {
+      "id": "us-95-main-st-jackson-st-moscow-core-nb",
+      "name": "US-95 NB: Main St / Jackson St, Moscow \u2014 Congested Core",
       "start_latlon": [
         46.72195,
         -117.00139
@@ -155,11 +225,11 @@
         46.74467,
         -117.00152
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Latah County, NB. Recurrent congestion core (1.62 mi): peak/baseline 1.28, 137 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-95-latah-core",
+      "description": "Tier 1 (Congested Core) of US-95: Main St / Jackson St, Moscow, NB. Recurrent congestion core (1.62 mi): peak/baseline 1.28, 137 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-95-main-st-jackson-st-moscow-core",
       "direction": "NB",
       "_tier": "core",
-      "_facility": "us-95-latah",
+      "_facility": "us-95-main-st-jackson-st-moscow",
       "_split_rationale": "Recurrent congestion core (1.62 mi): peak/baseline 1.28, 137 VHD/mi, 99% real-time data",
       "_generated_miles": 1.619,
       "_segment_ids": [
@@ -171,8 +241,41 @@
       ]
     },
     {
-      "id": "us-95-latah-commuter-nb",
-      "name": "US-95 NB: Latah County \u2014 Commuter Corridor",
+      "id": "us-95-main-st-jackson-st-moscow-commuter-sb",
+      "name": "US-95 SB: Main St / Jackson St, Moscow \u2014 Commuter Corridor",
+      "start_latlon": [
+        46.7437,
+        -117.00151
+      ],
+      "end_latlon": [
+        46.71571,
+        -117.00336
+      ],
+      "description": "Tier 2 (Commuter Corridor) of US-95: Main St / Jackson St, Moscow, SB. Congested extent grown from the core (2.04 mi, 117 VHD/mi, 83% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.66 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.62 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-95-main-st-jackson-st-moscow-commuter",
+      "direction": "SB",
+      "links": [
+        [
+          124404144,
+          385666846
+        ]
+      ],
+      "_tier": "commuter",
+      "_facility": "us-95-main-st-jackson-st-moscow",
+      "_split_rationale": "Congested extent grown from the core (2.04 mi, 117 VHD/mi, 83% of the core's)",
+      "_generated_miles": 2.043,
+      "_segment_ids": [
+        1236973782,
+        386047403,
+        386047404,
+        124404144,
+        385666846,
+        1236925460
+      ]
+    },
+    {
+      "id": "us-95-main-st-jackson-st-moscow-commuter-nb",
+      "name": "US-95 NB: Main St / Jackson St, Moscow \u2014 Commuter Corridor",
       "start_latlon": [
         46.71056,
         -117.00383
@@ -181,11 +284,11 @@
         46.74467,
         -117.00152
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-95: Latah County, NB. Congested extent grown from the core (2.43 mi, 99 VHD/mi, 72% of the core's). Upstream boundary: the urban-area boundary (leaving Moscow, ID; ratio 0.98 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.66 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-95-latah-commuter",
+      "description": "Tier 2 (Commuter Corridor) of US-95: Main St / Jackson St, Moscow, NB. Congested extent grown from the core (2.43 mi, 99 VHD/mi, 72% of the core's). Upstream boundary: the urban-area boundary (leaving Moscow, ID; ratio 0.98 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.66 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-95-main-st-jackson-st-moscow-commuter",
       "direction": "NB",
       "_tier": "commuter",
-      "_facility": "us-95-latah",
+      "_facility": "us-95-main-st-jackson-st-moscow",
       "_split_rationale": "Congested extent grown from the core (2.43 mi, 99 VHD/mi, 72% of the core's)",
       "_generated_miles": 2.426,
       "_segment_ids": [
@@ -199,8 +302,43 @@
       ]
     },
     {
-      "id": "us-95-latah-regional-nb",
-      "name": "US-95 NB: Latah County \u2014 Regional Baseline",
+      "id": "us-95-main-st-jackson-st-moscow-regional-sb",
+      "name": "US-95 SB: Main St / Jackson St, Moscow \u2014 Regional Baseline",
+      "start_latlon": [
+        46.75324,
+        -117.00159
+      ],
+      "end_latlon": [
+        46.70705,
+        -117.0017
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-95: Main St / Jackson St, Moscow, SB. Context around the congested extent (3.33 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-95-main-st-jackson-st-moscow-regional",
+      "direction": "SB",
+      "links": [
+        [
+          124404144,
+          385666846
+        ]
+      ],
+      "_tier": "regional",
+      "_facility": "us-95-main-st-jackson-st-moscow",
+      "_split_rationale": "Context around the congested extent (3.33 mi; reported, not ranked)",
+      "_generated_miles": 3.325,
+      "_segment_ids": [
+        1236973754,
+        1236973782,
+        386047403,
+        386047404,
+        124404144,
+        385666846,
+        1236925460,
+        771090120
+      ]
+    },
+    {
+      "id": "us-95-main-st-jackson-st-moscow-regional-nb",
+      "name": "US-95 NB: Main St / Jackson St, Moscow \u2014 Regional Baseline",
       "start_latlon": [
         46.71056,
         -117.00383
@@ -209,11 +347,11 @@
         46.75419,
         -117.00161
       ],
-      "description": "Tier 3 (Regional Baseline) of US-95: Latah County, NB. Context around the congested extent (3.08 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-95-latah-regional",
+      "description": "Tier 3 (Regional Baseline) of US-95: Main St / Jackson St, Moscow, NB. Context around the congested extent (3.08 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-95-main-st-jackson-st-moscow-regional",
       "direction": "NB",
       "_tier": "regional",
-      "_facility": "us-95-latah",
+      "_facility": "us-95-main-st-jackson-st-moscow",
       "_split_rationale": "Context around the congested extent (3.08 mi; reported, not ranked)",
       "_generated_miles": 3.084,
       "_segment_ids": [
@@ -228,59 +366,8 @@
       ]
     },
     {
-      "id": "us-95-latah-moscow-core-sb",
-      "name": "US-95 SB: Latah County (Moscow) \u2014 Congested Core",
-      "start_latlon": [
-        46.7437,
-        -117.00151
-      ],
-      "end_latlon": [
-        46.72614,
-        -117.00009
-      ],
-      "description": "Tier 1 (Congested Core) of US-95: Latah County (Moscow), SB. Recurrent congestion core (1.28 mi): peak/baseline 1.28, 142 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-95-latah-moscow-core",
-      "direction": "SB",
-      "_tier": "core",
-      "_facility": "us-95-latah-moscow",
-      "_split_rationale": "Recurrent congestion core (1.28 mi): peak/baseline 1.28, 142 VHD/mi, 99% real-time data",
-      "_generated_miles": 1.283,
-      "_segment_ids": [
-        1236973782,
-        386047403,
-        386047404,
-        124404144
-      ]
-    },
-    {
-      "id": "us-95-latah-moscow-regional-sb",
-      "name": "US-95 SB: Latah County (Moscow) \u2014 Regional Baseline",
-      "start_latlon": [
-        46.75324,
-        -117.00159
-      ],
-      "end_latlon": [
-        46.72614,
-        -117.00009
-      ],
-      "description": "Tier 3 (Regional Baseline) of US-95: Latah County (Moscow), SB. Context around the congested extent (1.94 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-95-latah-moscow-regional",
-      "direction": "SB",
-      "_tier": "regional",
-      "_facility": "us-95-latah-moscow",
-      "_split_rationale": "Context around the congested extent (1.94 mi; reported, not ranked)",
-      "_generated_miles": 1.942,
-      "_segment_ids": [
-        1236973754,
-        1236973782,
-        386047403,
-        386047404,
-        124404144
-      ]
-    },
-    {
       "id": "couplet-95-washington-st-jackson-st-nb",
-      "name": "US-95 NB: Latah County (Washington St)",
+      "name": "US-95 NB: Washington St couplet leg, Moscow",
       "start_latlon": [
         46.72614,
         -117.00009
@@ -289,13 +376,13 @@
         46.73515,
         -117.00144
       ],
-      "description": "One-way couplet leg on Washington St (NB) carrying US-95 through Latah County, 3 segments; the opposing leg runs on Jackson St 179 m away.",
+      "description": "One-way couplet leg on Washington St (NB) carrying US-95 through Moscow, 3 segments; the opposing leg runs on Jackson St 179 m away.",
       "corridor": "couplet-95-washington-st-jackson-st",
       "direction": "NB"
     },
     {
       "id": "couplet-95-washington-st-jackson-st-sb",
-      "name": "US-95 SB: Latah County (Jackson St)",
+      "name": "US-95 SB: Jackson St couplet leg, Moscow",
       "start_latlon": [
         46.73458,
         -117.00281
@@ -304,33 +391,33 @@
         46.72614,
         -117.00009
       ],
-      "description": "One-way couplet leg on Jackson St (SB) carrying US-95 through Latah County, 3 segments; the opposing leg runs on Washington St 179 m away.",
+      "description": "One-way couplet leg on Jackson St (SB) carrying US-95 through Moscow, 3 segments; the opposing leg runs on Washington St 179 m away.",
       "corridor": "couplet-95-washington-st-jackson-st",
       "direction": "SB"
     }
   ],
   "reporting_corridors": [
     {
-      "id": "sh-8-w-pullman-rd-latah-core",
-      "name": "SH-8 (W Pullman Rd): Latah County \u2014 Tier 1 Congested Core (Warbonnet Dr to Jackson St (Us-95))",
-      "description": "Tier 1 (Congested Core) of SH-8 (W Pullman Rd): Latah County, EB. Recurrent congestion core (1.79 mi): peak/baseline 1.26, 190 VHD/mi, 98% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "sh-8-pullman-rd-moscow-core",
+      "name": "SH-8: Pullman Rd, Moscow \u2014 Tier 1 Congested Core (Warbonnet Dr to Jackson St @ College St)",
+      "description": "Tier 1 (Congested Core) of SH-8: Pullman Rd, Moscow, EB. Recurrent congestion core (2.14 mi): peak/baseline 1.27, 182 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Warbonnet Dr to Jackson St (Us-95))",
-      "_facility": "sh-8-w-pullman-rd-latah",
-      "_facility_name": "SH-8 (W Pullman Rd): Latah County",
-      "_miles": 1.794,
+      "_tier_label": "Tier 1 Congested Core (Warbonnet Dr to Jackson St @ College St)",
+      "_facility": "sh-8-pullman-rd-moscow",
+      "_facility_name": "SH-8: Pullman Rd, Moscow",
+      "_miles": 2.143,
       "_n_segments": 6,
       "_ranked": true,
       "_core": {
-        "miles": 1.794,
-        "effective_miles": 1.575,
-        "vhd": 340.1,
-        "vhd_per_mile": 189.5,
-        "delay_per_mile": 0.594,
-        "realtime_share": 0.978,
-        "peak_ratio": 1.264,
-        "ref_tti": 1.247,
+        "miles": 2.143,
+        "effective_miles": 1.942,
+        "vhd": 390.3,
+        "vhd_per_mile": 182.1,
+        "delay_per_mile": 0.611,
+        "realtime_share": 0.996,
+        "peak_ratio": 1.274,
+        "ref_tti": 1.224,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -344,37 +431,37 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 386.0,
-        "2026-02": 513.0,
-        "2026-03": 431.6,
-        "2026-04": 636.6,
-        "2026-05": 548.9,
-        "2026-06": 400.8,
-        "2026-07": 490.3,
-        "2026-08": 730.3
+        "2026-01": 553.1,
+        "2026-02": 711.4,
+        "2026-03": 628.8,
+        "2026-04": 861.4,
+        "2026-05": 783.9,
+        "2026-06": 582.1,
+        "2026-07": 687.2,
+        "2026-08": 958.7
       }
     },
     {
-      "id": "sh-8-w-pullman-rd-latah-commuter",
-      "name": "SH-8 (W Pullman Rd): Latah County \u2014 Tier 2 Commuter Corridor (Warbonnet Dr to Jackson St (Us-95))",
-      "description": "Tier 2 (Commuter Corridor) of SH-8 (W Pullman Rd): Latah County, EB. Congested extent grown from the core (1.79 mi, 190 VHD/mi, 100% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "commuter",
-      "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Warbonnet Dr to Jackson St (Us-95))",
-      "_facility": "sh-8-w-pullman-rd-latah",
-      "_facility_name": "SH-8 (W Pullman Rd): Latah County",
-      "_miles": 1.794,
+      "id": "sh-8-pullman-rd-moscow-regional",
+      "name": "SH-8: Pullman Rd, Moscow \u2014 Tier 3 Regional Baseline (Warbonnet Dr to Jackson St @ College St)",
+      "description": "Tier 3 (Regional Baseline) of SH-8: Pullman Rd, Moscow, EB. Context around the congested extent (2.14 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: a highway junction (95 -> 8). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Warbonnet Dr to Jackson St @ College St)",
+      "_facility": "sh-8-pullman-rd-moscow",
+      "_facility_name": "SH-8: Pullman Rd, Moscow",
+      "_miles": 2.143,
       "_n_segments": 6,
       "_ranked": false,
       "_core": {
-        "miles": 1.794,
-        "effective_miles": 1.575,
-        "vhd": 340.1,
-        "vhd_per_mile": 189.5,
-        "delay_per_mile": 0.594,
-        "realtime_share": 0.978,
-        "peak_ratio": 1.264,
-        "ref_tti": 1.247,
+        "miles": 2.143,
+        "effective_miles": 1.942,
+        "vhd": 390.3,
+        "vhd_per_mile": 182.1,
+        "delay_per_mile": 0.611,
+        "realtime_share": 0.996,
+        "peak_ratio": 1.274,
+        "ref_tti": 1.224,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -388,37 +475,37 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 386.0,
-        "2026-02": 513.0,
-        "2026-03": 431.6,
-        "2026-04": 636.6,
-        "2026-05": 548.9,
-        "2026-06": 400.8,
-        "2026-07": 490.3,
-        "2026-08": 730.3
+        "2026-01": 553.1,
+        "2026-02": 711.4,
+        "2026-03": 628.8,
+        "2026-04": 861.4,
+        "2026-05": 783.9,
+        "2026-06": 582.1,
+        "2026-07": 687.2,
+        "2026-08": 958.7
       }
     },
     {
-      "id": "us-95-latah-core",
-      "name": "US-95: Latah County \u2014 Tier 1 Congested Core (Styner Ave/Lauder Ave to D St)",
-      "description": "Tier 1 (Congested Core) of US-95: Latah County, NB. Recurrent congestion core (1.62 mi): peak/baseline 1.28, 137 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "us-95-main-st-jackson-st-moscow-core",
+      "name": "US-95: Main St / Jackson St, Moscow \u2014 Tier 1 Congested Core (D St to Styner Ave/Lauder Ave)",
+      "description": "Tier 1 (Congested Core) of US-95: Main St / Jackson St, Moscow, SB. Recurrent congestion core (1.60 mi): peak/baseline 1.28, 141 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Styner Ave/Lauder Ave to D St)",
-      "_facility": "us-95-latah",
-      "_facility_name": "US-95: Latah County",
-      "_miles": 1.619,
+      "_tier_label": "Tier 1 Congested Core (D St to Styner Ave/Lauder Ave)",
+      "_facility": "us-95-main-st-jackson-st-moscow",
+      "_facility_name": "US-95: Main St / Jackson St, Moscow",
+      "_miles": 1.596,
       "_n_segments": 5,
       "_ranked": true,
       "_core": {
-        "miles": 1.619,
-        "effective_miles": 1.347,
-        "vhd": 222.5,
-        "vhd_per_mile": 137.4,
-        "delay_per_mile": 0.642,
-        "realtime_share": 0.992,
-        "peak_ratio": 1.283,
-        "ref_tti": 1.269,
+        "miles": 1.596,
+        "effective_miles": 1.444,
+        "vhd": 224.8,
+        "vhd_per_mile": 140.8,
+        "delay_per_mile": 0.655,
+        "realtime_share": 0.995,
+        "peak_ratio": 1.275,
+        "ref_tti": 1.312,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -427,42 +514,44 @@
         "fails": []
       },
       "_directions": [
+        "SB",
         "NB"
       ],
-      "_flags": [],
+      "_flags": [
+        "shares 0.91 mi with sh-8-pullman-rd-moscow"
+      ],
       "_monthly_vhd": {
-        "2026-01": 184.1,
-        "2026-02": 212.6,
-        "2026-03": 205.9,
-        "2026-04": 239.8,
-        "2026-05": 238.1,
-        "2026-06": 214.6,
-        "2026-07": 233.3,
-        "2026-08": 272.6
-      },
-      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 0.99, 0 VHD/mi over the mirrored span)"
+        "2026-01": 394.4,
+        "2026-02": 448.0,
+        "2026-03": 429.6,
+        "2026-04": 494.7,
+        "2026-05": 479.4,
+        "2026-06": 417.4,
+        "2026-07": 457.7,
+        "2026-08": 504.9
+      }
     },
     {
-      "id": "us-95-latah-commuter",
-      "name": "US-95: Latah County \u2014 Tier 2 Commuter Corridor (Eid Rd to D St)",
-      "description": "Tier 2 (Commuter Corridor) of US-95: Latah County, NB. Congested extent grown from the core (2.43 mi, 99 VHD/mi, 72% of the core's). Upstream boundary: the urban-area boundary (leaving Moscow, ID; ratio 0.98 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.66 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "us-95-main-st-jackson-st-moscow-commuter",
+      "name": "US-95: Main St / Jackson St, Moscow \u2014 Tier 2 Commuter Corridor (D St to Palouse River Dr)",
+      "description": "Tier 2 (Commuter Corridor) of US-95: Main St / Jackson St, Moscow, SB. Congested extent grown from the core (2.04 mi, 117 VHD/mi, 83% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.66 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.62 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Eid Rd to D St)",
-      "_facility": "us-95-latah",
-      "_facility_name": "US-95: Latah County",
-      "_miles": 2.426,
-      "_n_segments": 7,
+      "_tier_label": "Tier 2 Commuter Corridor (D St to Palouse River Dr)",
+      "_facility": "us-95-main-st-jackson-st-moscow",
+      "_facility_name": "US-95: Main St / Jackson St, Moscow",
+      "_miles": 2.043,
+      "_n_segments": 6,
       "_ranked": false,
       "_core": {
-        "miles": 1.619,
-        "effective_miles": 1.347,
-        "vhd": 222.5,
-        "vhd_per_mile": 137.4,
-        "delay_per_mile": 0.642,
-        "realtime_share": 0.992,
-        "peak_ratio": 1.283,
-        "ref_tti": 1.269,
+        "miles": 1.596,
+        "effective_miles": 1.444,
+        "vhd": 224.8,
+        "vhd_per_mile": 140.8,
+        "delay_per_mile": 0.655,
+        "realtime_share": 0.995,
+        "peak_ratio": 1.275,
+        "ref_tti": 1.312,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -471,42 +560,44 @@
         "fails": []
       },
       "_directions": [
+        "SB",
         "NB"
       ],
-      "_flags": [],
+      "_flags": [
+        "shares 0.91 mi with sh-8-pullman-rd-moscow"
+      ],
       "_monthly_vhd": {
-        "2026-01": 184.1,
-        "2026-02": 212.6,
-        "2026-03": 205.9,
-        "2026-04": 239.8,
-        "2026-05": 238.1,
-        "2026-06": 214.6,
-        "2026-07": 233.3,
-        "2026-08": 272.6
-      },
-      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 0.99, 0 VHD/mi over the mirrored span)"
+        "2026-01": 394.4,
+        "2026-02": 448.0,
+        "2026-03": 429.6,
+        "2026-04": 494.7,
+        "2026-05": 479.4,
+        "2026-06": 417.4,
+        "2026-07": 457.7,
+        "2026-08": 504.9
+      }
     },
     {
-      "id": "us-95-latah-regional",
-      "name": "US-95: Latah County \u2014 Tier 3 Regional Baseline (Eid Rd to Brent Dr (N End))",
-      "description": "Tier 3 (Regional Baseline) of US-95: Latah County, NB. Context around the congested extent (3.08 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "us-95-main-st-jackson-st-moscow-regional",
+      "name": "US-95: Main St / Jackson St, Moscow \u2014 Tier 3 Regional Baseline (Brent Dr (N End) to Eid Rd)",
+      "description": "Tier 3 (Regional Baseline) of US-95: Main St / Jackson St, Moscow, SB. Context around the congested extent (3.33 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Eid Rd to Brent Dr (N End))",
-      "_facility": "us-95-latah",
-      "_facility_name": "US-95: Latah County",
-      "_miles": 3.084,
+      "_tier_label": "Tier 3 Regional Baseline (Brent Dr (N End) to Eid Rd)",
+      "_facility": "us-95-main-st-jackson-st-moscow",
+      "_facility_name": "US-95: Main St / Jackson St, Moscow",
+      "_miles": 3.325,
       "_n_segments": 8,
       "_ranked": false,
       "_core": {
-        "miles": 1.619,
-        "effective_miles": 1.347,
-        "vhd": 222.5,
-        "vhd_per_mile": 137.4,
-        "delay_per_mile": 0.642,
-        "realtime_share": 0.992,
-        "peak_ratio": 1.283,
-        "ref_tti": 1.269,
+        "miles": 1.596,
+        "effective_miles": 1.444,
+        "vhd": 224.8,
+        "vhd_per_mile": 140.8,
+        "delay_per_mile": 0.655,
+        "realtime_share": 0.995,
+        "peak_ratio": 1.275,
+        "ref_tti": 1.312,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -515,111 +606,27 @@
         "fails": []
       },
       "_directions": [
+        "SB",
         "NB"
       ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 184.1,
-        "2026-02": 212.6,
-        "2026-03": 205.9,
-        "2026-04": 239.8,
-        "2026-05": 238.1,
-        "2026-06": 214.6,
-        "2026-07": 233.3,
-        "2026-08": 272.6
-      },
-      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 0.99, 0 VHD/mi over the mirrored span)"
-    },
-    {
-      "id": "us-95-latah-moscow-core",
-      "name": "US-95: Latah County (Moscow) \u2014 Tier 1 Congested Core (D St to Jackson St @ College St)",
-      "description": "Tier 1 (Congested Core) of US-95: Latah County (Moscow), SB. Recurrent congestion core (1.28 mi): peak/baseline 1.28, 142 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "core",
-      "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (D St to Jackson St @ College St)",
-      "_facility": "us-95-latah-moscow",
-      "_facility_name": "US-95: Latah County (Moscow)",
-      "_miles": 1.283,
-      "_n_segments": 4,
-      "_ranked": true,
-      "_core": {
-        "miles": 1.283,
-        "effective_miles": 1.131,
-        "vhd": 182.3,
-        "vhd_per_mile": 142.0,
-        "delay_per_mile": 0.672,
-        "realtime_share": 0.995,
-        "peak_ratio": 1.281,
-        "ref_tti": 1.282,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "SB"
+      "_flags": [
+        "shares 0.91 mi with sh-8-pullman-rd-moscow"
       ],
-      "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 170.5,
-        "2026-02": 193.2,
-        "2026-03": 184.4,
-        "2026-04": 205.5,
-        "2026-05": 199.1,
-        "2026-06": 161.8,
-        "2026-07": 183.8,
-        "2026-08": 183.9
-      }
-    },
-    {
-      "id": "us-95-latah-moscow-regional",
-      "name": "US-95: Latah County (Moscow) \u2014 Tier 3 Regional Baseline (Brent Dr (N End) to Jackson St @ College St)",
-      "description": "Tier 3 (Regional Baseline) of US-95: Latah County (Moscow), SB. Context around the congested extent (1.94 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "regional",
-      "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Brent Dr (N End) to Jackson St @ College St)",
-      "_facility": "us-95-latah-moscow",
-      "_facility_name": "US-95: Latah County (Moscow)",
-      "_miles": 1.942,
-      "_n_segments": 5,
-      "_ranked": false,
-      "_core": {
-        "miles": 1.283,
-        "effective_miles": 1.131,
-        "vhd": 182.3,
-        "vhd_per_mile": 142.0,
-        "delay_per_mile": 0.672,
-        "realtime_share": 0.995,
-        "peak_ratio": 1.281,
-        "ref_tti": 1.282,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "SB"
-      ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 170.5,
-        "2026-02": 193.2,
-        "2026-03": 184.4,
-        "2026-04": 205.5,
-        "2026-05": 199.1,
-        "2026-06": 161.8,
-        "2026-07": 183.8,
-        "2026-08": 183.9
+        "2026-01": 394.4,
+        "2026-02": 448.0,
+        "2026-03": 429.6,
+        "2026-04": 494.7,
+        "2026-05": 479.4,
+        "2026-06": 417.4,
+        "2026-07": 457.7,
+        "2026-08": 504.9
       }
     },
     {
       "id": "couplet-95-washington-st-jackson-st",
-      "name": "US-95: Latah County Couplet (Washington St/Jackson St)",
-      "description": "One-way couplet carrying US-95 across Washington St (NB) and Jackson St (SB) in Latah County (ZIP 83843); 0.64 mi per leg, mean lateral separation 179 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
+      "name": "US-95: Washington St / Jackson St couplet, Moscow",
+      "description": "One-way couplet carrying US-95 across Washington St (NB) and Jackson St (SB) in Moscow (ZIP 83843); 0.64 mi per leg, mean lateral separation 179 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,
       "_mean_lateral_sep_m": 179.2

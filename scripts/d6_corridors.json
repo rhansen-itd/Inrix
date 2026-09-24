@@ -5,8 +5,8 @@
       "am",
       "pm"
     ],
-    "n_chains": 58,
-    "n_facilities": 7,
+    "n_chains": 49,
+    "n_facilities": 5,
     "tiers": [
       "core",
       "commuter",
@@ -39,24 +39,27 @@
   },
   "corridors": [
     {
-      "id": "sh-33-madison-core-wb",
-      "name": "SH-33 WB: Madison County \u2014 Congested Core",
+      "id": "sh-33-main-st-2nd-st-e-rexburg-core-wb",
+      "name": "SH-33 WB: Main St / 2nd St E, Rexburg \u2014 Congested Core",
       "start_latlon": [
-        43.82607,
-        -111.77807
+        43.84154,
+        -111.77822
       ],
       "end_latlon": [
         43.82608,
         -111.81797
       ],
-      "description": "Tier 1 (Congested Core) of SH-33: Madison County, WB. Recurrent congestion core (1.99 mi): peak/baseline 1.29, 222 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-madison-core",
+      "description": "Tier 1 (Congested Core) of SH-33: Main St / 2nd St E, Rexburg, WB. Recurrent congestion core (3.07 mi): peak/baseline 1.33, 245 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-2nd-st-e-rexburg-core",
       "direction": "WB",
       "_tier": "core",
-      "_facility": "sh-33-madison",
-      "_split_rationale": "Recurrent congestion core (1.99 mi): peak/baseline 1.29, 222 VHD/mi, 99% real-time data",
-      "_generated_miles": 1.994,
+      "_facility": "sh-33-main-st-2nd-st-e-rexburg",
+      "_split_rationale": "Recurrent congestion core (3.07 mi): peak/baseline 1.33, 245 VHD/mi, 99% real-time data",
+      "_generated_miles": 3.068,
       "_segment_ids": [
+        461321047,
+        461321048,
+        461321049,
         461321036,
         461321037,
         461321038,
@@ -74,23 +77,23 @@
       ]
     },
     {
-      "id": "sh-33-madison-core-eb",
-      "name": "SH-33 EB: Madison County \u2014 Congested Core",
+      "id": "sh-33-main-st-2nd-st-e-rexburg-core-eb",
+      "name": "SH-33 EB: Main St / 2nd St E, Rexburg \u2014 Congested Core",
       "start_latlon": [
         43.82608,
         -111.81797
       ],
       "end_latlon": [
-        43.82607,
-        -111.77807
+        43.84154,
+        -111.77822
       ],
-      "description": "Tier 1 (Congested Core) of SH-33: Madison County, EB. Recurrent congestion core (1.99 mi): peak/baseline 1.25, 189 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-madison-core",
+      "description": "Tier 1 (Congested Core) of SH-33: Main St / 2nd St E, Rexburg, EB. Recurrent congestion core (3.07 mi): peak/baseline 1.28, 202 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-2nd-st-e-rexburg-core",
       "direction": "EB",
       "_tier": "core",
-      "_facility": "sh-33-madison",
-      "_split_rationale": "Recurrent congestion core (1.99 mi): peak/baseline 1.25, 189 VHD/mi, 99% real-time data",
-      "_generated_miles": 1.994,
+      "_facility": "sh-33-main-st-2nd-st-e-rexburg",
+      "_split_rationale": "Recurrent congestion core (3.07 mi): peak/baseline 1.28, 202 VHD/mi, 99% real-time data",
+      "_generated_miles": 3.067,
       "_segment_ids": [
         461319759,
         771015988,
@@ -105,28 +108,34 @@
         461321040,
         461321041,
         461321042,
-        461321043
+        461321043,
+        461321044,
+        461321045,
+        461321046
       ]
     },
     {
-      "id": "sh-33-madison-regional-wb",
-      "name": "SH-33 WB: Madison County \u2014 Regional Baseline",
+      "id": "sh-33-main-st-2nd-st-e-rexburg-regional-wb",
+      "name": "SH-33 WB: Main St / 2nd St E, Rexburg \u2014 Regional Baseline",
       "start_latlon": [
-        43.82607,
-        -111.77807
+        43.84154,
+        -111.77822
       ],
       "end_latlon": [
         43.82294,
         -111.83554
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33: Madison County, WB. Context around the congested extent (2.93 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-madison-regional",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Main St / 2nd St E, Rexburg, WB. Context around the congested extent (4.00 mi; reported, not ranked). Upstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-2nd-st-e-rexburg-regional",
       "direction": "WB",
       "_tier": "regional",
-      "_facility": "sh-33-madison",
-      "_split_rationale": "Context around the congested extent (2.93 mi; reported, not ranked)",
-      "_generated_miles": 2.926,
+      "_facility": "sh-33-main-st-2nd-st-e-rexburg",
+      "_split_rationale": "Context around the congested extent (4.00 mi; reported, not ranked)",
+      "_generated_miles": 3.999,
       "_segment_ids": [
+        461321047,
+        461321048,
+        461321049,
         461321036,
         461321037,
         461321038,
@@ -145,23 +154,23 @@
       ]
     },
     {
-      "id": "sh-33-madison-regional-eb",
-      "name": "SH-33 EB: Madison County \u2014 Regional Baseline",
+      "id": "sh-33-main-st-2nd-st-e-rexburg-regional-eb",
+      "name": "SH-33 EB: Main St / 2nd St E, Rexburg \u2014 Regional Baseline",
       "start_latlon": [
         43.82297,
         -111.83643
       ],
       "end_latlon": [
-        43.82607,
-        -111.77807
+        43.84154,
+        -111.77822
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33: Madison County, EB. Context around the congested extent (2.97 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-madison-regional",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Main St / 2nd St E, Rexburg, EB. Context around the congested extent (4.04 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: an AADT step-change (18,500 -> 5,200 vpd, 72%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-2nd-st-e-rexburg-regional",
       "direction": "EB",
       "_tier": "regional",
-      "_facility": "sh-33-madison",
-      "_split_rationale": "Context around the congested extent (2.97 mi; reported, not ranked)",
-      "_generated_miles": 2.97,
+      "_facility": "sh-33-main-st-2nd-st-e-rexburg",
+      "_split_rationale": "Context around the congested extent (4.04 mi; reported, not ranked)",
+      "_generated_miles": 4.043,
       "_segment_ids": [
         461319758,
         461319759,
@@ -177,60 +186,187 @@
         461321040,
         461321041,
         461321042,
-        461321043
-      ]
-    },
-    {
-      "id": "sh-33-n-2nd-st-madison-core-sb",
-      "name": "SH-33 (N 2nd St) SB: Madison County \u2014 Congested Core",
-      "start_latlon": [
-        43.84154,
-        -111.77822
-      ],
-      "end_latlon": [
-        43.82607,
-        -111.77807
-      ],
-      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County, SB. Recurrent congestion core (1.07 mi): peak/baseline 1.42, 287 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-n-2nd-st-madison-core",
-      "direction": "SB",
-      "_tier": "core",
-      "_facility": "sh-33-n-2nd-st-madison",
-      "_split_rationale": "Recurrent congestion core (1.07 mi): peak/baseline 1.42, 287 VHD/mi, 98% real-time data",
-      "_generated_miles": 1.073,
-      "_segment_ids": [
-        461321047,
-        461321048,
-        461321049
-      ]
-    },
-    {
-      "id": "sh-33-n-2nd-st-madison-core-nb",
-      "name": "SH-33 (N 2nd St) NB: Madison County \u2014 Congested Core",
-      "start_latlon": [
-        43.82607,
-        -111.77807
-      ],
-      "end_latlon": [
-        43.84154,
-        -111.77822
-      ],
-      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County, NB. Recurrent congestion core (1.07 mi): peak/baseline 1.33, 224 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-n-2nd-st-madison-core",
-      "direction": "NB",
-      "_tier": "core",
-      "_facility": "sh-33-n-2nd-st-madison",
-      "_split_rationale": "Recurrent congestion core (1.07 mi): peak/baseline 1.33, 224 VHD/mi, 99% real-time data",
-      "_generated_miles": 1.073,
-      "_segment_ids": [
+        461321043,
         461321044,
         461321045,
         461321046
       ]
     },
     {
-      "id": "sh-33-teton-core-wb",
-      "name": "SH-33 WB: Teton County \u2014 Congested Core",
+      "id": "us-20-broadway-st-idaho-falls-core-wb",
+      "name": "US-20 WB: Broadway St, Idaho Falls \u2014 Congested Core",
+      "start_latlon": [
+        43.49085,
+        -112.03914
+      ],
+      "end_latlon": [
+        43.49673,
+        -112.09265
+      ],
+      "description": "Tier 1 (Congested Core) of US-20: Broadway St, Idaho Falls, WB. Recurrent congestion core (2.79 mi): peak/baseline 1.22, 100 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-20-broadway-st-idaho-falls-core",
+      "direction": "WB",
+      "_tier": "core",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_split_rationale": "Recurrent congestion core (2.79 mi): peak/baseline 1.22, 100 VHD/mi, 99% real-time data",
+      "_generated_miles": 2.789,
+      "_segment_ids": [
+        1187590721,
+        1187603211,
+        1187509658,
+        428957597,
+        428957599,
+        1187509730,
+        1187509698,
+        1187511905
+      ]
+    },
+    {
+      "id": "us-20-broadway-st-idaho-falls-core-eb",
+      "name": "US-20 EB: Broadway St, Idaho Falls \u2014 Congested Core",
+      "start_latlon": [
+        43.49677,
+        -112.06332
+      ],
+      "end_latlon": [
+        43.49085,
+        -112.03914
+      ],
+      "description": "Tier 1 (Congested Core) of US-20: Broadway St, Idaho Falls, EB. Recurrent congestion core (1.31 mi): peak/baseline 1.24, 152 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-20-broadway-st-idaho-falls-core",
+      "direction": "EB",
+      "_tier": "core",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_split_rationale": "Recurrent congestion core (1.31 mi): peak/baseline 1.24, 152 VHD/mi, 100% real-time data",
+      "_generated_miles": 1.314,
+      "_segment_ids": [
+        1187509672,
+        428957598,
+        428957602,
+        1187380581,
+        1187522749
+      ]
+    },
+    {
+      "id": "us-20-broadway-st-idaho-falls-commuter-wb",
+      "name": "US-20 WB: Broadway St, Idaho Falls \u2014 Commuter Corridor",
+      "start_latlon": [
+        43.49085,
+        -112.03914
+      ],
+      "end_latlon": [
+        43.49659,
+        -112.10276
+      ],
+      "description": "Tier 2 (Commuter Corridor) of US-20: Broadway St, Idaho Falls, WB. Congested extent grown from the core (3.29 mi, 86 VHD/mi, 86% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (leaving Idaho Falls, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-20-broadway-st-idaho-falls-commuter",
+      "direction": "WB",
+      "_tier": "commuter",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_split_rationale": "Congested extent grown from the core (3.29 mi, 86 VHD/mi, 86% of the core's)",
+      "_generated_miles": 3.295,
+      "_segment_ids": [
+        1187590721,
+        1187603211,
+        1187509658,
+        428957597,
+        428957599,
+        1187509730,
+        1187509698,
+        1187511905,
+        1187511960
+      ]
+    },
+    {
+      "id": "us-20-broadway-st-idaho-falls-commuter-eb",
+      "name": "US-20 EB: Broadway St, Idaho Falls \u2014 Commuter Corridor",
+      "start_latlon": [
+        43.49673,
+        -112.09265
+      ],
+      "end_latlon": [
+        43.49085,
+        -112.03914
+      ],
+      "description": "Tier 2 (Commuter Corridor) of US-20: Broadway St, Idaho Falls, EB. Congested extent grown from the core (2.79 mi, 90 VHD/mi, 59% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.51 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-20-broadway-st-idaho-falls-commuter",
+      "direction": "EB",
+      "_tier": "commuter",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_split_rationale": "Congested extent grown from the core (2.79 mi, 90 VHD/mi, 59% of the core's)",
+      "_generated_miles": 2.787,
+      "_segment_ids": [
+        1187511897,
+        1187509638,
+        1187509672,
+        428957598,
+        428957602,
+        1187380581,
+        1187522749
+      ]
+    },
+    {
+      "id": "us-20-broadway-st-idaho-falls-regional-wb",
+      "name": "US-20 WB: Broadway St, Idaho Falls \u2014 Regional Baseline",
+      "start_latlon": [
+        43.49085,
+        -112.03914
+      ],
+      "end_latlon": [
+        43.49659,
+        -112.10276
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-20: Broadway St, Idaho Falls, WB. Context around the congested extent (3.29 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-20-broadway-st-idaho-falls-regional",
+      "direction": "WB",
+      "_tier": "regional",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_split_rationale": "Context around the congested extent (3.29 mi; reported, not ranked)",
+      "_generated_miles": 3.295,
+      "_segment_ids": [
+        1187590721,
+        1187603211,
+        1187509658,
+        428957597,
+        428957599,
+        1187509730,
+        1187509698,
+        1187511905,
+        1187511960
+      ]
+    },
+    {
+      "id": "us-20-broadway-st-idaho-falls-regional-eb",
+      "name": "US-20 EB: Broadway St, Idaho Falls \u2014 Regional Baseline",
+      "start_latlon": [
+        43.49659,
+        -112.10276
+      ],
+      "end_latlon": [
+        43.49085,
+        -112.03914
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-20: Broadway St, Idaho Falls, EB. Context around the congested extent (3.29 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-20-broadway-st-idaho-falls-regional",
+      "direction": "EB",
+      "_tier": "regional",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_split_rationale": "Context around the congested extent (3.29 mi; reported, not ranked)",
+      "_generated_miles": 3.293,
+      "_segment_ids": [
+        1187511941,
+        1187511897,
+        1187509638,
+        1187509672,
+        428957598,
+        428957602,
+        1187380581,
+        1187522749
+      ]
+    },
+    {
+      "id": "sh-33-main-st-teton-county-core-wb",
+      "name": "SH-33 WB: Main St, Teton County \u2014 Congested Core",
       "start_latlon": [
         43.7053,
         -111.11037
@@ -239,11 +375,11 @@
         43.73746,
         -111.111
       ],
-      "description": "Tier 1 (Congested Core) of SH-33: Teton County, WB. Recurrent congestion core (2.22 mi): peak/baseline 1.37, 109 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-core",
+      "description": "Tier 1 (Congested Core) of SH-33: Main St, Teton County, WB. Recurrent congestion core (2.22 mi): peak/baseline 1.37, 109 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-teton-county-core",
       "direction": "WB",
       "_tier": "core",
-      "_facility": "sh-33-teton",
+      "_facility": "sh-33-main-st-teton-county",
       "_split_rationale": "Recurrent congestion core (2.22 mi): peak/baseline 1.37, 109 VHD/mi, 100% real-time data",
       "_generated_miles": 2.225,
       "_segment_ids": [
@@ -253,8 +389,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-core-eb",
-      "name": "SH-33 EB: Teton County \u2014 Congested Core",
+      "id": "sh-33-main-st-teton-county-core-eb",
+      "name": "SH-33 EB: Main St, Teton County \u2014 Congested Core",
       "start_latlon": [
         43.7333,
         -111.111
@@ -263,11 +399,11 @@
         43.7053,
         -111.11037
       ],
-      "description": "Tier 1 (Congested Core) of SH-33: Teton County, EB. Recurrent congestion core (1.94 mi): peak/baseline 1.23, 65 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-core",
+      "description": "Tier 1 (Congested Core) of SH-33: Main St, Teton County, EB. Recurrent congestion core (1.94 mi): peak/baseline 1.23, 65 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-teton-county-core",
       "direction": "EB",
       "_tier": "core",
-      "_facility": "sh-33-teton",
+      "_facility": "sh-33-main-st-teton-county",
       "_split_rationale": "Recurrent congestion core (1.94 mi): peak/baseline 1.23, 65 VHD/mi, 99% real-time data",
       "_generated_miles": 1.937,
       "_segment_ids": [
@@ -277,8 +413,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-commuter-wb",
-      "name": "SH-33 WB: Teton County \u2014 Commuter Corridor",
+      "id": "sh-33-main-st-teton-county-commuter-wb",
+      "name": "SH-33 WB: Main St, Teton County \u2014 Commuter Corridor",
       "start_latlon": [
         43.69595,
         -111.11041
@@ -287,11 +423,11 @@
         43.73746,
         -111.111
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County, WB. Congested extent grown from the core (2.87 mi, 88 VHD/mi, 81% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.94 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-commuter",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Main St, Teton County, WB. Congested extent grown from the core (2.87 mi, 88 VHD/mi, 81% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.94 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-teton-county-commuter",
       "direction": "WB",
       "_tier": "commuter",
-      "_facility": "sh-33-teton",
+      "_facility": "sh-33-main-st-teton-county",
       "_split_rationale": "Congested extent grown from the core (2.87 mi, 88 VHD/mi, 81% of the core's)",
       "_generated_miles": 2.87,
       "_segment_ids": [
@@ -302,8 +438,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-commuter-eb",
-      "name": "SH-33 EB: Teton County \u2014 Commuter Corridor",
+      "id": "sh-33-main-st-teton-county-commuter-eb",
+      "name": "SH-33 EB: Main St, Teton County \u2014 Commuter Corridor",
       "start_latlon": [
         43.74265,
         -111.11097
@@ -312,11 +448,11 @@
         43.7053,
         -111.11037
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County, EB. Congested extent grown from the core (2.58 mi, 53 VHD/mi, 81% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-commuter",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Main St, Teton County, EB. Congested extent grown from the core (2.58 mi, 53 VHD/mi, 81% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-teton-county-commuter",
       "direction": "EB",
       "_tier": "commuter",
-      "_facility": "sh-33-teton",
+      "_facility": "sh-33-main-st-teton-county",
       "_split_rationale": "Congested extent grown from the core (2.58 mi, 53 VHD/mi, 81% of the core's)",
       "_generated_miles": 2.583,
       "_segment_ids": [
@@ -327,8 +463,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-regional-wb",
-      "name": "SH-33 WB: Teton County \u2014 Regional Baseline",
+      "id": "sh-33-main-st-teton-county-regional-wb",
+      "name": "SH-33 WB: Main St, Teton County \u2014 Regional Baseline",
       "start_latlon": [
         43.65857,
         -111.11056
@@ -337,11 +473,11 @@
         43.77737,
         -111.11078
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County, WB. Context around the congested extent (8.21 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-regional",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Main St, Teton County, WB. Context around the congested extent (8.21 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-teton-county-regional",
       "direction": "WB",
       "_tier": "regional",
-      "_facility": "sh-33-teton",
+      "_facility": "sh-33-main-st-teton-county",
       "_split_rationale": "Context around the congested extent (8.21 mi; reported, not ranked)",
       "_generated_miles": 8.211,
       "_segment_ids": [
@@ -359,8 +495,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-regional-eb",
-      "name": "SH-33 EB: Teton County \u2014 Regional Baseline",
+      "id": "sh-33-main-st-teton-county-regional-eb",
+      "name": "SH-33 EB: Main St, Teton County \u2014 Regional Baseline",
       "start_latlon": [
         43.78004,
         -111.11078
@@ -369,11 +505,11 @@
         43.66791,
         -111.11052
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County, EB. Context around the congested extent (7.75 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-regional",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Main St, Teton County, EB. Context around the congested extent (7.75 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-main-st-teton-county-regional",
       "direction": "EB",
       "_tier": "regional",
-      "_facility": "sh-33-teton",
+      "_facility": "sh-33-main-st-teton-county",
       "_split_rationale": "Context around the congested extent (7.75 mi; reported, not ranked)",
       "_generated_miles": 7.75,
       "_segment_ids": [
@@ -392,118 +528,224 @@
       ]
     },
     {
-      "id": "us-20-bonneville-core-nb",
-      "name": "US-20 NB: Bonneville County \u2014 Congested Core",
+      "id": "us-26-yellowstone-hwy-idaho-falls-core-eb",
+      "name": "US-26 EB: Yellowstone Hwy, Idaho Falls \u2014 Congested Core",
       "start_latlon": [
-        43.49085,
-        -112.03914
+        43.47764,
+        -112.04923
       ],
       "end_latlon": [
-        43.51139,
-        -112.02395
+        43.51131,
+        -112.01581
       ],
-      "description": "Tier 1 (Congested Core) of US-20: Bonneville County, NB. Recurrent congestion core (1.69 mi): peak/baseline 1.16, 100 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-20-bonneville-core",
-      "direction": "NB",
+      "description": "Tier 1 (Congested Core) of US-26: Yellowstone Hwy, Idaho Falls, EB. Recurrent congestion core (2.91 mi): peak/baseline 1.14, 80 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-26-yellowstone-hwy-idaho-falls-core",
+      "direction": "EB",
+      "links": [
+        [
+          1187656570,
+          1187658729
+        ]
+      ],
       "_tier": "core",
-      "_facility": "us-20-bonneville",
-      "_split_rationale": "Recurrent congestion core (1.69 mi): peak/baseline 1.16, 100 VHD/mi, 100% real-time data",
-      "_generated_miles": 1.689,
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_split_rationale": "Recurrent congestion core (2.91 mi): peak/baseline 1.14, 80 VHD/mi, 100% real-time data",
+      "_generated_miles": 2.909,
       "_segment_ids": [
+        1187587872,
+        428958553,
+        1187359575,
+        448732310,
         450150255,
         384133653,
         384133652,
         1187656570,
-        440871258,
-        119258996
+        1187658729
       ]
     },
     {
-      "id": "us-20-bonneville-core-sb",
-      "name": "US-20 SB: Bonneville County \u2014 Congested Core",
+      "id": "us-26-yellowstone-hwy-idaho-falls-core-wb",
+      "name": "US-26 WB: Yellowstone Hwy, Idaho Falls \u2014 Congested Core",
       "start_latlon": [
-        43.51139,
-        -112.02395
+        43.51131,
+        -112.01581
       ],
       "end_latlon": [
-        43.49085,
-        -112.03914
+        43.48898,
+        -112.04051
       ],
-      "description": "Tier 1 (Congested Core) of US-20: Bonneville County, SB. Recurrent congestion core (1.69 mi): peak/baseline 1.26, 67 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-20-bonneville-core",
-      "direction": "SB",
+      "description": "Tier 1 (Congested Core) of US-26: Yellowstone Hwy, Idaho Falls, WB. Recurrent congestion core (2.01 mi): peak/baseline 1.23, 61 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-26-yellowstone-hwy-idaho-falls-core",
+      "direction": "WB",
       "_tier": "core",
-      "_facility": "us-20-bonneville",
-      "_split_rationale": "Recurrent congestion core (1.69 mi): peak/baseline 1.26, 67 VHD/mi, 100% real-time data",
-      "_generated_miles": 1.691,
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_split_rationale": "Recurrent congestion core (2.01 mi): peak/baseline 1.23, 61 VHD/mi, 100% real-time data",
+      "_generated_miles": 2.01,
       "_segment_ids": [
-        119327254,
-        440895371,
+        1187658731,
         1187576573,
-        450157291
+        450157291,
+        448732309
       ]
     },
     {
-      "id": "us-20-bonneville-regional-nb",
-      "name": "US-20 NB: Bonneville County \u2014 Regional Baseline",
+      "id": "us-26-yellowstone-hwy-idaho-falls-commuter-eb",
+      "name": "US-26 EB: Yellowstone Hwy, Idaho Falls \u2014 Commuter Corridor",
       "start_latlon": [
-        43.49085,
-        -112.03914
+        43.47764,
+        -112.04923
       ],
       "end_latlon": [
-        43.52787,
-        -112.02362
+        43.51844,
+        -112.00238
       ],
-      "description": "Tier 3 (Regional Baseline) of US-20: Bonneville County, NB. Context around the congested extent (2.83 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-20-bonneville-regional",
-      "direction": "NB",
-      "_tier": "regional",
-      "_facility": "us-20-bonneville",
-      "_split_rationale": "Context around the congested extent (2.83 mi; reported, not ranked)",
-      "_generated_miles": 2.832,
+      "description": "Tier 2 (Commuter Corridor) of US-26: Yellowstone Hwy, Idaho Falls, EB. Congested extent grown from the core (3.75 mi, 69 VHD/mi, 86% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.74 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.84 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-26-yellowstone-hwy-idaho-falls-commuter",
+      "direction": "EB",
+      "links": [
+        [
+          1187656570,
+          1187658729
+        ]
+      ],
+      "_tier": "commuter",
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_split_rationale": "Congested extent grown from the core (3.75 mi, 69 VHD/mi, 86% of the core's)",
+      "_generated_miles": 3.747,
       "_segment_ids": [
+        1187587872,
+        428958553,
+        1187359575,
+        448732310,
         450150255,
         384133653,
         384133652,
         1187656570,
-        440871258,
-        119258996,
-        440885120,
-        440871259,
-        1187404770
+        1187658729,
+        1187658733
       ]
     },
     {
-      "id": "us-20-bonneville-regional-sb",
-      "name": "US-20 SB: Bonneville County \u2014 Regional Baseline",
+      "id": "us-26-yellowstone-hwy-idaho-falls-commuter-wb",
+      "name": "US-26 WB: Yellowstone Hwy, Idaho Falls \u2014 Commuter Corridor",
       "start_latlon": [
-        43.52787,
-        -112.02362
+        43.5343,
+        -111.97538
       ],
       "end_latlon": [
-        43.49085,
-        -112.03914
+        43.48329,
+        -112.04494
       ],
-      "description": "Tier 3 (Regional Baseline) of US-20: Bonneville County, SB. Context around the congested extent (2.83 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-20-bonneville-regional",
-      "direction": "SB",
-      "_tier": "regional",
-      "_facility": "us-20-bonneville",
-      "_split_rationale": "Context around the congested extent (2.83 mi; reported, not ranked)",
-      "_generated_miles": 2.833,
+      "description": "Tier 2 (Commuter Corridor) of US-26: Yellowstone Hwy, Idaho Falls, WB. Congested extent grown from the core (5.05 mi, 46 VHD/mi, 74% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.58 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.18 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-26-yellowstone-hwy-idaho-falls-commuter",
+      "direction": "WB",
+      "_tier": "commuter",
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_split_rationale": "Congested extent grown from the core (5.05 mi, 46 VHD/mi, 74% of the core's)",
+      "_generated_miles": 5.049,
       "_segment_ids": [
-        1187404788,
-        440871260,
-        440885121,
-        119327254,
-        440895371,
+        1187498962,
+        1187498916,
+        1187650816,
+        1187658734,
+        1187658731,
         1187576573,
-        450157291
+        450157291,
+        448732309,
+        1187455984,
+        428958554
       ]
     },
     {
-      "id": "sh-33-teton-2-core-eb",
-      "name": "SH-33 EB: Teton County (2) \u2014 Congested Core",
+      "id": "us-26-yellowstone-hwy-idaho-falls-regional-eb",
+      "name": "US-26 EB: Yellowstone Hwy, Idaho Falls \u2014 Regional Baseline",
+      "start_latlon": [
+        43.46827,
+        -112.05644
+      ],
+      "end_latlon": [
+        43.54105,
+        -111.96428
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-26: Yellowstone Hwy, Idaho Falls, EB. Context around the congested extent (6.96 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 91); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-26-yellowstone-hwy-idaho-falls-regional",
+      "direction": "EB",
+      "links": [
+        [
+          1187656570,
+          1187658729
+        ]
+      ],
+      "_tier": "regional",
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_split_rationale": "Context around the congested extent (6.96 mi; reported, not ranked)",
+      "_generated_miles": 6.955,
+      "_segment_ids": [
+        1187587920,
+        1187587872,
+        428958553,
+        1187359575,
+        448732310,
+        450150255,
+        384133653,
+        384133652,
+        1187656570,
+        1187658729,
+        1187658733,
+        1187650755,
+        1187498852,
+        1187498898,
+        1187498940,
+        384139568
+      ]
+    },
+    {
+      "id": "us-26-yellowstone-hwy-idaho-falls-regional-wb",
+      "name": "US-26 WB: Yellowstone Hwy, Idaho Falls \u2014 Regional Baseline",
+      "start_latlon": [
+        43.54105,
+        -111.96428
+      ],
+      "end_latlon": [
+        43.45216,
+        -112.06889
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-26: Yellowstone Hwy, Idaho Falls, WB. Context around the congested extent (8.24 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-26-yellowstone-hwy-idaho-falls-regional",
+      "direction": "WB",
+      "links": [
+        [
+          1187587853,
+          1187627579
+        ]
+      ],
+      "_tier": "regional",
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_split_rationale": "Context around the congested extent (8.24 mi; reported, not ranked)",
+      "_generated_miles": 8.235,
+      "_segment_ids": [
+        1187381441,
+        1187499003,
+        1187498962,
+        1187498916,
+        1187650816,
+        1187658734,
+        1187658731,
+        1187576573,
+        450157291,
+        448732309,
+        1187455984,
+        428958554,
+        1187587810,
+        1187587853,
+        1187627579,
+        1187627537,
+        1187627505
+      ]
+    },
+    {
+      "id": "sh-33-teton-county-core-eb",
+      "name": "SH-33 EB: Teton County \u2014 Congested Core",
       "start_latlon": [
         43.62117,
         -111.1107
@@ -512,11 +754,11 @@
         43.5943,
         -111.10754
       ],
-      "description": "Tier 1 (Congested Core) of SH-33: Teton County (2), EB. Recurrent congestion core (1.93 mi): peak/baseline 1.25, 75 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-2-core",
+      "description": "Tier 1 (Congested Core) of SH-33: Teton County, EB. Recurrent congestion core (1.93 mi): peak/baseline 1.25, 75 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-teton-county-core",
       "direction": "EB",
       "_tier": "core",
-      "_facility": "sh-33-teton-2",
+      "_facility": "sh-33-teton-county",
       "_split_rationale": "Recurrent congestion core (1.93 mi): peak/baseline 1.25, 75 VHD/mi, 100% real-time data",
       "_generated_miles": 1.926,
       "_segment_ids": [
@@ -526,8 +768,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-2-core-wb",
-      "name": "SH-33 WB: Teton County (2) \u2014 Congested Core",
+      "id": "sh-33-teton-county-core-wb",
+      "name": "SH-33 WB: Teton County \u2014 Congested Core",
       "start_latlon": [
         43.59433,
         -111.10757
@@ -536,11 +778,11 @@
         43.61182,
         -111.11073
       ],
-      "description": "Tier 1 (Congested Core) of SH-33: Teton County (2), WB. Recurrent congestion core (1.28 mi): peak/baseline 1.31, 101 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-2-core",
+      "description": "Tier 1 (Congested Core) of SH-33: Teton County, WB. Recurrent congestion core (1.28 mi): peak/baseline 1.31, 101 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-teton-county-core",
       "direction": "WB",
       "_tier": "core",
-      "_facility": "sh-33-teton-2",
+      "_facility": "sh-33-teton-county",
       "_split_rationale": "Recurrent congestion core (1.28 mi): peak/baseline 1.31, 101 VHD/mi, 100% real-time data",
       "_generated_miles": 1.278,
       "_segment_ids": [
@@ -549,8 +791,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-2-commuter-eb",
-      "name": "SH-33 EB: Teton County (2) \u2014 Commuter Corridor",
+      "id": "sh-33-teton-county-commuter-eb",
+      "name": "SH-33 EB: Teton County \u2014 Commuter Corridor",
       "start_latlon": [
         43.62117,
         -111.1107
@@ -559,11 +801,11 @@
         43.5943,
         -111.10754
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County (2), EB. Congested extent grown from the core (1.93 mi, 75 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-2-commuter",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County, EB. Congested extent grown from the core (1.93 mi, 75 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-teton-county-commuter",
       "direction": "EB",
       "_tier": "commuter",
-      "_facility": "sh-33-teton-2",
+      "_facility": "sh-33-teton-county",
       "_split_rationale": "Congested extent grown from the core (1.93 mi, 75 VHD/mi, 100% of the core's)",
       "_generated_miles": 1.926,
       "_segment_ids": [
@@ -573,8 +815,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-2-commuter-wb",
-      "name": "SH-33 WB: Teton County (2) \u2014 Commuter Corridor",
+      "id": "sh-33-teton-county-commuter-wb",
+      "name": "SH-33 WB: Teton County \u2014 Commuter Corridor",
       "start_latlon": [
         43.58796,
         -111.09833
@@ -583,11 +825,11 @@
         43.61182,
         -111.11073
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County (2), WB. Congested extent grown from the core (1.92 mi, 71 VHD/mi, 69% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-2-commuter",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County, WB. Congested extent grown from the core (1.92 mi, 71 VHD/mi, 69% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-teton-county-commuter",
       "direction": "WB",
       "_tier": "commuter",
-      "_facility": "sh-33-teton-2",
+      "_facility": "sh-33-teton-county",
       "_split_rationale": "Congested extent grown from the core (1.92 mi, 71 VHD/mi, 69% of the core's)",
       "_generated_miles": 1.916,
       "_segment_ids": [
@@ -597,8 +839,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-2-regional-eb",
-      "name": "SH-33 EB: Teton County (2) \u2014 Regional Baseline",
+      "id": "sh-33-teton-county-regional-eb",
+      "name": "SH-33 EB: Teton County \u2014 Regional Baseline",
       "start_latlon": [
         43.65857,
         -111.11056
@@ -607,11 +849,11 @@
         43.56829,
         -111.07144
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County (2), EB. Context around the congested extent (7.06 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-2-regional",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County, EB. Context around the congested extent (7.06 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-teton-county-regional",
       "direction": "EB",
       "_tier": "regional",
-      "_facility": "sh-33-teton-2",
+      "_facility": "sh-33-teton-county",
       "_split_rationale": "Context around the congested extent (7.06 mi; reported, not ranked)",
       "_generated_miles": 7.063,
       "_segment_ids": [
@@ -629,8 +871,8 @@
       ]
     },
     {
-      "id": "sh-33-teton-2-regional-wb",
-      "name": "SH-33 WB: Teton County (2) \u2014 Regional Baseline",
+      "id": "sh-33-teton-county-regional-wb",
+      "name": "SH-33 WB: Teton County \u2014 Regional Baseline",
       "start_latlon": [
         43.55954,
         -111.06766
@@ -639,11 +881,11 @@
         43.64922,
         -111.11059
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County (2), WB. Context around the congested extent (7.05 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "sh-33-teton-2-regional",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County, WB. Context around the congested extent (7.05 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "sh-33-teton-county-regional",
       "direction": "WB",
       "_tier": "regional",
-      "_facility": "sh-33-teton-2",
+      "_facility": "sh-33-teton-county",
       "_split_rationale": "Context around the congested extent (7.05 mi; reported, not ranked)",
       "_generated_miles": 7.053,
       "_segment_ids": [
@@ -659,158 +901,30 @@
         119123810,
         1187551090
       ]
-    },
-    {
-      "id": "us-20-bonneville-idaho-falls-core-wb",
-      "name": "US-20 WB: Bonneville County (Idaho Falls) \u2014 Congested Core",
-      "start_latlon": [
-        43.49674,
-        -112.05535
-      ],
-      "end_latlon": [
-        43.49673,
-        -112.09265
-      ],
-      "description": "Tier 1 (Congested Core) of US-20: Bonneville County (Idaho Falls), WB. Recurrent congestion core (1.87 mi): peak/baseline 1.18, 65 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-20-bonneville-idaho-falls-core",
-      "direction": "WB",
-      "_tier": "core",
-      "_facility": "us-20-bonneville-idaho-falls",
-      "_split_rationale": "Recurrent congestion core (1.87 mi): peak/baseline 1.18, 65 VHD/mi, 99% real-time data",
-      "_generated_miles": 1.871,
-      "_segment_ids": [
-        428957599,
-        1187509730,
-        1187509698,
-        1187511905
-      ]
-    },
-    {
-      "id": "us-20-bonneville-idaho-falls-commuter-wb",
-      "name": "US-20 WB: Bonneville County (Idaho Falls) \u2014 Commuter Corridor",
-      "start_latlon": [
-        43.49674,
-        -112.05535
-      ],
-      "end_latlon": [
-        43.49659,
-        -112.10276
-      ],
-      "description": "Tier 2 (Commuter Corridor) of US-20: Bonneville County (Idaho Falls), WB. Congested extent grown from the core (2.38 mi, 53 VHD/mi, 81% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (leaving Idaho Falls, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-20-bonneville-idaho-falls-commuter",
-      "direction": "WB",
-      "_tier": "commuter",
-      "_facility": "us-20-bonneville-idaho-falls",
-      "_split_rationale": "Congested extent grown from the core (2.38 mi, 53 VHD/mi, 81% of the core's)",
-      "_generated_miles": 2.377,
-      "_segment_ids": [
-        428957599,
-        1187509730,
-        1187509698,
-        1187511905,
-        1187511960
-      ]
-    },
-    {
-      "id": "us-26-bonneville-core-wb",
-      "name": "US-26 WB: Bonneville County \u2014 Congested Core",
-      "start_latlon": [
-        43.5343,
-        -111.97538
-      ],
-      "end_latlon": [
-        43.52588,
-        -111.98903
-      ],
-      "description": "Tier 1 (Congested Core) of US-26: Bonneville County, WB. Recurrent congestion core (0.90 mi): peak/baseline 1.21, 55 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-26-bonneville-core",
-      "direction": "WB",
-      "_tier": "core",
-      "_facility": "us-26-bonneville",
-      "_split_rationale": "Recurrent congestion core (0.90 mi): peak/baseline 1.21, 55 VHD/mi, 100% real-time data",
-      "_generated_miles": 0.899,
-      "_segment_ids": [
-        1187498962,
-        1187498916
-      ]
-    },
-    {
-      "id": "us-26-bonneville-commuter-wb",
-      "name": "US-26 WB: Bonneville County \u2014 Commuter Corridor",
-      "start_latlon": [
-        43.5343,
-        -111.97538
-      ],
-      "end_latlon": [
-        43.50629,
-        -112.0238
-      ],
-      "description": "Tier 2 (Commuter Corridor) of US-26: Bonneville County, WB. Congested extent grown from the core (3.11 mi, 40 VHD/mi, 73% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.58 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-26-bonneville-commuter",
-      "direction": "WB",
-      "_tier": "commuter",
-      "_facility": "us-26-bonneville",
-      "_split_rationale": "Congested extent grown from the core (3.11 mi, 40 VHD/mi, 73% of the core's)",
-      "_generated_miles": 3.108,
-      "_segment_ids": [
-        1187498962,
-        1187498916,
-        1187650816,
-        1187658734,
-        1187658731
-      ]
-    },
-    {
-      "id": "us-26-bonneville-regional-wb",
-      "name": "US-26 WB: Bonneville County \u2014 Regional Baseline",
-      "start_latlon": [
-        43.54105,
-        -111.96428
-      ],
-      "end_latlon": [
-        43.50629,
-        -112.0238
-      ],
-      "description": "Tier 3 (Regional Baseline) of US-26: Bonneville County, WB. Context around the congested extent (3.83 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-26-bonneville-regional",
-      "direction": "WB",
-      "_tier": "regional",
-      "_facility": "us-26-bonneville",
-      "_split_rationale": "Context around the congested extent (3.83 mi; reported, not ranked)",
-      "_generated_miles": 3.834,
-      "_segment_ids": [
-        1187381441,
-        1187499003,
-        1187498962,
-        1187498916,
-        1187650816,
-        1187658734,
-        1187658731
-      ]
     }
   ],
   "reporting_corridors": [
     {
-      "id": "sh-33-madison-core",
-      "name": "SH-33: Madison County \u2014 Tier 1 Congested Core (Main St @ 2Nd W St to 12Th W St, Rexburg)",
-      "description": "Tier 1 (Congested Core) of SH-33: Madison County, WB. Recurrent congestion core (1.99 mi): peak/baseline 1.29, 222 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "sh-33-main-st-2nd-st-e-rexburg-core",
+      "name": "SH-33: Main St / 2nd St E, Rexburg \u2014 Tier 1 Congested Core (E 4Th N St to 12Th W St, Rexburg)",
+      "description": "Tier 1 (Congested Core) of SH-33: Main St / 2nd St E, Rexburg, WB. Recurrent congestion core (3.07 mi): peak/baseline 1.33, 245 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Main St @ 2Nd W St to 12Th W St, Rexburg)",
-      "_facility": "sh-33-madison",
-      "_facility_name": "SH-33: Madison County",
-      "_miles": 1.994,
-      "_n_segments": 14,
+      "_tier_label": "Tier 1 Congested Core (E 4Th N St to 12Th W St, Rexburg)",
+      "_facility": "sh-33-main-st-2nd-st-e-rexburg",
+      "_facility_name": "SH-33: Main St / 2nd St E, Rexburg",
+      "_miles": 3.068,
+      "_n_segments": 17,
       "_ranked": true,
       "_core": {
-        "miles": 1.994,
-        "effective_miles": 1.889,
-        "vhd": 443.4,
-        "vhd_per_mile": 222.3,
-        "delay_per_mile": 0.654,
-        "realtime_share": 0.994,
-        "peak_ratio": 1.289,
-        "ref_tti": 1.302,
+        "miles": 3.068,
+        "effective_miles": 2.681,
+        "vhd": 751.0,
+        "vhd_per_mile": 244.8,
+        "delay_per_mile": 0.735,
+        "realtime_share": 0.991,
+        "peak_ratio": 1.333,
+        "ref_tti": 1.306,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -824,37 +938,37 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 748.4,
-        "2026-02": 772.3,
-        "2026-03": 786.6,
-        "2026-04": 827.3,
-        "2026-05": 763.3,
-        "2026-06": 879.5,
-        "2026-07": 980.7,
-        "2026-08": 810.9
+        "2026-01": 1339.7,
+        "2026-02": 1309.0,
+        "2026-03": 1344.8,
+        "2026-04": 1362.1,
+        "2026-05": 1305.4,
+        "2026-06": 1408.7,
+        "2026-07": 1574.5,
+        "2026-08": 1319.3
       }
     },
     {
-      "id": "sh-33-madison-regional",
-      "name": "SH-33: Madison County \u2014 Tier 3 Regional Baseline (Main St @ 2Nd W St to Orange Bridge Rd(3000W))",
-      "description": "Tier 3 (Regional Baseline) of SH-33: Madison County, WB. Context around the congested extent (2.93 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "sh-33-main-st-2nd-st-e-rexburg-regional",
+      "name": "SH-33: Main St / 2nd St E, Rexburg \u2014 Tier 3 Regional Baseline (E 4Th N St to Orange Bridge Rd(3000W))",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Main St / 2nd St E, Rexburg, WB. Context around the congested extent (4.00 mi; reported, not ranked). Upstream boundary: an AADT step-change (5,200 -> 18,500 vpd, 72%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Main St @ 2Nd W St to Orange Bridge Rd(3000W))",
-      "_facility": "sh-33-madison",
-      "_facility_name": "SH-33: Madison County",
-      "_miles": 2.926,
-      "_n_segments": 15,
+      "_tier_label": "Tier 3 Regional Baseline (E 4Th N St to Orange Bridge Rd(3000W))",
+      "_facility": "sh-33-main-st-2nd-st-e-rexburg",
+      "_facility_name": "SH-33: Main St / 2nd St E, Rexburg",
+      "_miles": 3.999,
+      "_n_segments": 18,
       "_ranked": false,
       "_core": {
-        "miles": 1.994,
-        "effective_miles": 1.889,
-        "vhd": 443.4,
-        "vhd_per_mile": 222.3,
-        "delay_per_mile": 0.654,
-        "realtime_share": 0.994,
-        "peak_ratio": 1.289,
-        "ref_tti": 1.302,
+        "miles": 3.068,
+        "effective_miles": 2.681,
+        "vhd": 751.0,
+        "vhd_per_mile": 244.8,
+        "delay_per_mile": 0.735,
+        "realtime_share": 0.991,
+        "peak_ratio": 1.333,
+        "ref_tti": 1.306,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -868,37 +982,37 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 748.4,
-        "2026-02": 772.3,
-        "2026-03": 786.6,
-        "2026-04": 827.3,
-        "2026-05": 763.3,
-        "2026-06": 879.5,
-        "2026-07": 980.7,
-        "2026-08": 810.9
+        "2026-01": 1339.7,
+        "2026-02": 1309.0,
+        "2026-03": 1344.8,
+        "2026-04": 1362.1,
+        "2026-05": 1305.4,
+        "2026-06": 1408.7,
+        "2026-07": 1574.5,
+        "2026-08": 1319.3
       }
     },
     {
-      "id": "sh-33-n-2nd-st-madison-core",
-      "name": "SH-33 (N 2nd St): Madison County \u2014 Tier 1 Congested Core (E 4Th N St to Main St @ 2Nd W St)",
-      "description": "Tier 1 (Congested Core) of SH-33 (N 2nd St): Madison County, SB. Recurrent congestion core (1.07 mi): peak/baseline 1.42, 287 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "us-20-broadway-st-idaho-falls-core",
+      "name": "US-20: Broadway St, Idaho Falls \u2014 Tier 1 Congested Core (Broadway St/Elm St to Old Butte Rd (26Th W))",
+      "description": "Tier 1 (Congested Core) of US-20: Broadway St, Idaho Falls, WB. Recurrent congestion core (2.79 mi): peak/baseline 1.22, 100 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (E 4Th N St to Main St @ 2Nd W St)",
-      "_facility": "sh-33-n-2nd-st-madison",
-      "_facility_name": "SH-33 (N 2nd St): Madison County",
-      "_miles": 1.073,
-      "_n_segments": 3,
+      "_tier_label": "Tier 1 Congested Core (Broadway St/Elm St to Old Butte Rd (26Th W))",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_facility_name": "US-20: Broadway St, Idaho Falls",
+      "_miles": 2.789,
+      "_n_segments": 8,
       "_ranked": true,
       "_core": {
-        "miles": 1.073,
-        "effective_miles": 0.792,
-        "vhd": 307.6,
-        "vhd_per_mile": 286.6,
-        "delay_per_mile": 0.885,
-        "realtime_share": 0.985,
-        "peak_ratio": 1.423,
-        "ref_tti": 1.314,
+        "miles": 2.789,
+        "effective_miles": 1.968,
+        "vhd": 278.7,
+        "vhd_per_mile": 99.9,
+        "delay_per_mile": 0.431,
+        "realtime_share": 0.995,
+        "peak_ratio": 1.217,
+        "ref_tti": 1.163,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -907,30 +1021,118 @@
         "fails": []
       },
       "_directions": [
-        "SB",
-        "NB"
+        "WB",
+        "EB"
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 591.2,
-        "2026-02": 536.7,
-        "2026-03": 558.2,
-        "2026-04": 534.8,
-        "2026-05": 542.1,
-        "2026-06": 529.3,
-        "2026-07": 593.8,
-        "2026-08": 508.4
+        "2026-01": 420.8,
+        "2026-02": 479.1,
+        "2026-03": 442.8,
+        "2026-04": 472.1,
+        "2026-05": 497.9,
+        "2026-06": 455.2,
+        "2026-07": 532.4,
+        "2026-08": 532.0
       }
     },
     {
-      "id": "sh-33-teton-core",
-      "name": "SH-33: Teton County \u2014 Tier 1 Congested Core (500 S Rd to Harper Ave)",
-      "description": "Tier 1 (Congested Core) of SH-33: Teton County, WB. Recurrent congestion core (2.22 mi): peak/baseline 1.37, 109 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "us-20-broadway-st-idaho-falls-commuter",
+      "name": "US-20: Broadway St, Idaho Falls \u2014 Tier 2 Commuter Corridor (Broadway St/Elm St to 35Th W(New Sweden Schl))",
+      "description": "Tier 2 (Commuter Corridor) of US-20: Broadway St, Idaho Falls, WB. Congested extent grown from the core (3.29 mi, 86 VHD/mi, 86% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (leaving Idaho Falls, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "commuter",
+      "_tier_number": 2,
+      "_tier_label": "Tier 2 Commuter Corridor (Broadway St/Elm St to 35Th W(New Sweden Schl))",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_facility_name": "US-20: Broadway St, Idaho Falls",
+      "_miles": 3.295,
+      "_n_segments": 9,
+      "_ranked": false,
+      "_core": {
+        "miles": 2.789,
+        "effective_miles": 1.968,
+        "vhd": 278.7,
+        "vhd_per_mile": 99.9,
+        "delay_per_mile": 0.431,
+        "realtime_share": 0.995,
+        "peak_ratio": 1.217,
+        "ref_tti": 1.163,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB",
+        "EB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 420.8,
+        "2026-02": 479.1,
+        "2026-03": 442.8,
+        "2026-04": 472.1,
+        "2026-05": 497.9,
+        "2026-06": 455.2,
+        "2026-07": 532.4,
+        "2026-08": 532.0
+      }
+    },
+    {
+      "id": "us-20-broadway-st-idaho-falls-regional",
+      "name": "US-20: Broadway St, Idaho Falls \u2014 Tier 3 Regional Baseline (Broadway St/Elm St to 35Th W(New Sweden Schl))",
+      "description": "Tier 3 (Regional Baseline) of US-20: Broadway St, Idaho Falls, WB. Context around the congested extent (3.29 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Broadway St/Elm St to 35Th W(New Sweden Schl))",
+      "_facility": "us-20-broadway-st-idaho-falls",
+      "_facility_name": "US-20: Broadway St, Idaho Falls",
+      "_miles": 3.295,
+      "_n_segments": 9,
+      "_ranked": false,
+      "_core": {
+        "miles": 2.789,
+        "effective_miles": 1.968,
+        "vhd": 278.7,
+        "vhd_per_mile": 99.9,
+        "delay_per_mile": 0.431,
+        "realtime_share": 0.995,
+        "peak_ratio": 1.217,
+        "ref_tti": 1.163,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB",
+        "EB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 420.8,
+        "2026-02": 479.1,
+        "2026-03": 442.8,
+        "2026-04": 472.1,
+        "2026-05": 497.9,
+        "2026-06": 455.2,
+        "2026-07": 532.4,
+        "2026-08": 532.0
+      }
+    },
+    {
+      "id": "sh-33-main-st-teton-county-core",
+      "name": "SH-33: Main St, Teton County \u2014 Tier 1 Congested Core (500 S Rd to Harper Ave)",
+      "description": "Tier 1 (Congested Core) of SH-33: Main St, Teton County, WB. Recurrent congestion core (2.22 mi): peak/baseline 1.37, 109 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (500 S Rd to Harper Ave)",
-      "_facility": "sh-33-teton",
-      "_facility_name": "SH-33: Teton County",
+      "_facility": "sh-33-main-st-teton-county",
+      "_facility_name": "SH-33: Main St, Teton County",
       "_miles": 2.225,
       "_n_segments": 3,
       "_ranked": true,
@@ -967,14 +1169,14 @@
       }
     },
     {
-      "id": "sh-33-teton-commuter",
-      "name": "SH-33: Teton County \u2014 Tier 2 Commuter Corridor (500 S Rd to Harper Ave)",
-      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County, WB. Congested extent grown from the core (2.87 mi, 88 VHD/mi, 81% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.94 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "sh-33-main-st-teton-county-commuter",
+      "name": "SH-33: Main St, Teton County \u2014 Tier 2 Commuter Corridor (500 S Rd to Harper Ave)",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Main St, Teton County, WB. Congested extent grown from the core (2.87 mi, 88 VHD/mi, 81% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.94 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (500 S Rd to Harper Ave)",
-      "_facility": "sh-33-teton",
-      "_facility_name": "SH-33: Teton County",
+      "_facility": "sh-33-main-st-teton-county",
+      "_facility_name": "SH-33: Main St, Teton County",
       "_miles": 2.87,
       "_n_segments": 4,
       "_ranked": false,
@@ -1011,14 +1213,14 @@
       }
     },
     {
-      "id": "sh-33-teton-regional",
-      "name": "SH-33: Teton County \u2014 Tier 3 Regional Baseline (3000 S Rd(Darby Canyon) to 4000 N (Packsaddle Rd))",
-      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County, WB. Context around the congested extent (8.21 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "sh-33-main-st-teton-county-regional",
+      "name": "SH-33: Main St, Teton County \u2014 Tier 3 Regional Baseline (3000 S Rd(Darby Canyon) to 4000 N (Packsaddle Rd))",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Main St, Teton County, WB. Context around the congested extent (8.21 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (3000 S Rd(Darby Canyon) to 4000 N (Packsaddle Rd))",
-      "_facility": "sh-33-teton",
-      "_facility_name": "SH-33: Teton County",
+      "_facility": "sh-33-main-st-teton-county",
+      "_facility_name": "SH-33: Main St, Teton County",
       "_miles": 8.211,
       "_n_segments": 11,
       "_ranked": false,
@@ -1055,26 +1257,26 @@
       }
     },
     {
-      "id": "us-20-bonneville-core",
-      "name": "US-20: Bonneville County \u2014 Tier 1 Congested Core (A St to Northgate Mile (Us-26))",
-      "description": "Tier 1 (Congested Core) of US-20: Bonneville County, NB. Recurrent congestion core (1.69 mi): peak/baseline 1.16, 100 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "us-26-yellowstone-hwy-idaho-falls-core",
+      "name": "US-26: Yellowstone Hwy, Idaho Falls \u2014 Tier 1 Congested Core (W 23Rd St/Gallatin Ave to N Holmes Ave/Us-20 Bus)",
+      "description": "Tier 1 (Congested Core) of US-26: Yellowstone Hwy, Idaho Falls, EB. Recurrent congestion core (2.91 mi): peak/baseline 1.14, 80 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (A St to Northgate Mile (Us-26))",
-      "_facility": "us-20-bonneville",
-      "_facility_name": "US-20: Bonneville County",
-      "_miles": 1.689,
-      "_n_segments": 6,
+      "_tier_label": "Tier 1 Congested Core (W 23Rd St/Gallatin Ave to N Holmes Ave/Us-20 Bus)",
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_facility_name": "US-26: Yellowstone Hwy, Idaho Falls",
+      "_miles": 2.909,
+      "_n_segments": 9,
       "_ranked": true,
       "_core": {
-        "miles": 1.689,
-        "effective_miles": 0.968,
-        "vhd": 168.5,
-        "vhd_per_mile": 99.7,
-        "delay_per_mile": 0.359,
-        "realtime_share": 0.998,
-        "peak_ratio": 1.164,
-        "ref_tti": 1.153,
+        "miles": 2.909,
+        "effective_miles": 1.533,
+        "vhd": 233.4,
+        "vhd_per_mile": 80.2,
+        "delay_per_mile": 0.304,
+        "realtime_share": 0.997,
+        "peak_ratio": 1.145,
+        "ref_tti": 1.092,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -1083,42 +1285,42 @@
         "fails": []
       },
       "_directions": [
-        "NB",
-        "SB"
+        "EB",
+        "WB"
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 266.6,
-        "2026-02": 269.7,
-        "2026-03": 247.7,
-        "2026-04": 294.7,
-        "2026-05": 306.8,
-        "2026-06": 262.5,
-        "2026-07": 297.0,
-        "2026-08": 337.5
+        "2026-01": 348.0,
+        "2026-02": 341.9,
+        "2026-03": 311.2,
+        "2026-04": 365.4,
+        "2026-05": 371.8,
+        "2026-06": 342.9,
+        "2026-07": 374.7,
+        "2026-08": 432.0
       }
     },
     {
-      "id": "us-20-bonneville-regional",
-      "name": "US-20: Bonneville County \u2014 Tier 3 Regional Baseline (A St to Us-20 Eb Ramps Ic No. 310)",
-      "description": "Tier 3 (Regional Baseline) of US-20: Bonneville County, NB. Context around the congested extent (2.83 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "regional",
-      "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (A St to Us-20 Eb Ramps Ic No. 310)",
-      "_facility": "us-20-bonneville",
-      "_facility_name": "US-20: Bonneville County",
-      "_miles": 2.832,
-      "_n_segments": 9,
+      "id": "us-26-yellowstone-hwy-idaho-falls-commuter",
+      "name": "US-26: Yellowstone Hwy, Idaho Falls \u2014 Tier 2 Commuter Corridor (W 23Rd St/Gallatin Ave to Lincoln Rd/Anderson St)",
+      "description": "Tier 2 (Commuter Corridor) of US-26: Yellowstone Hwy, Idaho Falls, EB. Congested extent grown from the core (3.75 mi, 69 VHD/mi, 86% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.74 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.84 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "commuter",
+      "_tier_number": 2,
+      "_tier_label": "Tier 2 Commuter Corridor (W 23Rd St/Gallatin Ave to Lincoln Rd/Anderson St)",
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_facility_name": "US-26: Yellowstone Hwy, Idaho Falls",
+      "_miles": 3.747,
+      "_n_segments": 10,
       "_ranked": false,
       "_core": {
-        "miles": 1.689,
-        "effective_miles": 0.968,
-        "vhd": 168.5,
-        "vhd_per_mile": 99.7,
-        "delay_per_mile": 0.359,
-        "realtime_share": 0.998,
-        "peak_ratio": 1.164,
-        "ref_tti": 1.153,
+        "miles": 2.909,
+        "effective_miles": 1.533,
+        "vhd": 233.4,
+        "vhd_per_mile": 80.2,
+        "delay_per_mile": 0.304,
+        "realtime_share": 0.997,
+        "peak_ratio": 1.145,
+        "ref_tti": 1.092,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
@@ -1127,30 +1329,74 @@
         "fails": []
       },
       "_directions": [
-        "NB",
-        "SB"
+        "EB",
+        "WB"
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 266.6,
-        "2026-02": 269.7,
-        "2026-03": 247.7,
-        "2026-04": 294.7,
-        "2026-05": 306.8,
-        "2026-06": 262.5,
-        "2026-07": 297.0,
-        "2026-08": 337.5
+        "2026-01": 348.0,
+        "2026-02": 341.9,
+        "2026-03": 311.2,
+        "2026-04": 365.4,
+        "2026-05": 371.8,
+        "2026-06": 342.9,
+        "2026-07": 374.7,
+        "2026-08": 432.0
       }
     },
     {
-      "id": "sh-33-teton-2-core",
-      "name": "SH-33: Teton County (2) \u2014 Tier 1 Congested Core (3000 S Rd(Darby Canyon) to Center St(Sh-31),Victor)",
-      "description": "Tier 1 (Congested Core) of SH-33: Teton County (2), EB. Recurrent congestion core (1.93 mi): peak/baseline 1.25, 75 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "us-26-yellowstone-hwy-idaho-falls-regional",
+      "name": "US-26: Yellowstone Hwy, Idaho Falls \u2014 Tier 3 Regional Baseline (Sunnyside Rd to 49Th N Rd (Telford Rd))",
+      "description": "Tier 3 (Regional Baseline) of US-26: Yellowstone Hwy, Idaho Falls, EB. Context around the congested extent (6.96 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 91); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Sunnyside Rd to 49Th N Rd (Telford Rd))",
+      "_facility": "us-26-yellowstone-hwy-idaho-falls",
+      "_facility_name": "US-26: Yellowstone Hwy, Idaho Falls",
+      "_miles": 6.955,
+      "_n_segments": 16,
+      "_ranked": false,
+      "_core": {
+        "miles": 2.909,
+        "effective_miles": 1.533,
+        "vhd": 233.4,
+        "vhd_per_mile": 80.2,
+        "delay_per_mile": 0.304,
+        "realtime_share": 0.997,
+        "peak_ratio": 1.145,
+        "ref_tti": 1.092,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "EB",
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 348.0,
+        "2026-02": 341.9,
+        "2026-03": 311.2,
+        "2026-04": 365.4,
+        "2026-05": 371.8,
+        "2026-06": 342.9,
+        "2026-07": 374.7,
+        "2026-08": 432.0
+      }
+    },
+    {
+      "id": "sh-33-teton-county-core",
+      "name": "SH-33: Teton County \u2014 Tier 1 Congested Core (3000 S Rd(Darby Canyon) to Center St(Sh-31),Victor)",
+      "description": "Tier 1 (Congested Core) of SH-33: Teton County, EB. Recurrent congestion core (1.93 mi): peak/baseline 1.25, 75 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (3000 S Rd(Darby Canyon) to Center St(Sh-31),Victor)",
-      "_facility": "sh-33-teton-2",
-      "_facility_name": "SH-33: Teton County (2)",
+      "_facility": "sh-33-teton-county",
+      "_facility_name": "SH-33: Teton County",
       "_miles": 1.926,
       "_n_segments": 3,
       "_ranked": true,
@@ -1189,14 +1435,14 @@
       }
     },
     {
-      "id": "sh-33-teton-2-commuter",
-      "name": "SH-33: Teton County (2) \u2014 Tier 2 Commuter Corridor (3000 S Rd(Darby Canyon) to Center St(Sh-31),Victor)",
-      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County (2), EB. Congested extent grown from the core (1.93 mi, 75 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "sh-33-teton-county-commuter",
+      "name": "SH-33: Teton County \u2014 Tier 2 Commuter Corridor (3000 S Rd(Darby Canyon) to Center St(Sh-31),Victor)",
+      "description": "Tier 2 (Commuter Corridor) of SH-33: Teton County, EB. Congested extent grown from the core (1.93 mi, 75 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (3000 S Rd(Darby Canyon) to Center St(Sh-31),Victor)",
-      "_facility": "sh-33-teton-2",
-      "_facility_name": "SH-33: Teton County (2)",
+      "_facility": "sh-33-teton-county",
+      "_facility_name": "SH-33: Teton County",
       "_miles": 1.926,
       "_n_segments": 3,
       "_ranked": false,
@@ -1235,14 +1481,14 @@
       }
     },
     {
-      "id": "sh-33-teton-2-regional",
-      "name": "SH-33: Teton County (2) \u2014 Tier 3 Regional Baseline (3000 S Rd(Darby Canyon) to S 500 W Rd)",
-      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County (2), EB. Context around the congested extent (7.06 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "sh-33-teton-county-regional",
+      "name": "SH-33: Teton County \u2014 Tier 3 Regional Baseline (3000 S Rd(Darby Canyon) to S 500 W Rd)",
+      "description": "Tier 3 (Regional Baseline) of SH-33: Teton County, EB. Context around the congested extent (7.06 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (3000 S Rd(Darby Canyon) to S 500 W Rd)",
-      "_facility": "sh-33-teton-2",
-      "_facility_name": "SH-33: Teton County (2)",
+      "_facility": "sh-33-teton-county",
+      "_facility_name": "SH-33: Teton County",
       "_miles": 7.063,
       "_n_segments": 11,
       "_ranked": false,
@@ -1279,226 +1525,6 @@
         "2026-07": 523.1,
         "2026-08": 434.3
       }
-    },
-    {
-      "id": "us-20-bonneville-idaho-falls-core",
-      "name": "US-20: Bonneville County (Idaho Falls) \u2014 Tier 1 Congested Core (Hansen Ave to Old Butte Rd (26Th W))",
-      "description": "Tier 1 (Congested Core) of US-20: Bonneville County (Idaho Falls), WB. Recurrent congestion core (1.87 mi): peak/baseline 1.18, 65 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "core",
-      "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Hansen Ave to Old Butte Rd (26Th W))",
-      "_facility": "us-20-bonneville-idaho-falls",
-      "_facility_name": "US-20: Bonneville County (Idaho Falls)",
-      "_miles": 1.871,
-      "_n_segments": 4,
-      "_ranked": true,
-      "_core": {
-        "miles": 1.871,
-        "effective_miles": 1.08,
-        "vhd": 121.6,
-        "vhd_per_mile": 65.0,
-        "delay_per_mile": 0.313,
-        "realtime_share": 0.994,
-        "peak_ratio": 1.183,
-        "ref_tti": 1.176,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "WB"
-      ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 120.9,
-        "2026-02": 128.5,
-        "2026-03": 116.8,
-        "2026-04": 130.9,
-        "2026-05": 130.1,
-        "2026-06": 110.0,
-        "2026-07": 121.4,
-        "2026-08": 115.2
-      },
-      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.10, 30 VHD/mi over the mirrored span)"
-    },
-    {
-      "id": "us-20-bonneville-idaho-falls-commuter",
-      "name": "US-20: Bonneville County (Idaho Falls) \u2014 Tier 2 Commuter Corridor (Hansen Ave to 35Th W(New Sweden Schl))",
-      "description": "Tier 2 (Commuter Corridor) of US-20: Bonneville County (Idaho Falls), WB. Congested extent grown from the core (2.38 mi, 53 VHD/mi, 81% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (leaving Idaho Falls, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "commuter",
-      "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Hansen Ave to 35Th W(New Sweden Schl))",
-      "_facility": "us-20-bonneville-idaho-falls",
-      "_facility_name": "US-20: Bonneville County (Idaho Falls)",
-      "_miles": 2.377,
-      "_n_segments": 5,
-      "_ranked": false,
-      "_core": {
-        "miles": 1.871,
-        "effective_miles": 1.08,
-        "vhd": 121.6,
-        "vhd_per_mile": 65.0,
-        "delay_per_mile": 0.313,
-        "realtime_share": 0.994,
-        "peak_ratio": 1.183,
-        "ref_tti": 1.176,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "WB"
-      ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 120.9,
-        "2026-02": 128.5,
-        "2026-03": 116.8,
-        "2026-04": 130.9,
-        "2026-05": 130.1,
-        "2026-06": 110.0,
-        "2026-07": 121.4,
-        "2026-08": 115.2
-      },
-      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.10, 30 VHD/mi over the mirrored span)"
-    },
-    {
-      "id": "us-26-bonneville-core",
-      "name": "US-26: Bonneville County \u2014 Tier 1 Congested Core (25Th E Rd (Hitt Rd) to E Iona Rd)",
-      "description": "Tier 1 (Congested Core) of US-26: Bonneville County, WB. Recurrent congestion core (0.90 mi): peak/baseline 1.21, 55 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "core",
-      "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (25Th E Rd (Hitt Rd) to E Iona Rd)",
-      "_facility": "us-26-bonneville",
-      "_facility_name": "US-26: Bonneville County",
-      "_miles": 0.899,
-      "_n_segments": 2,
-      "_ranked": true,
-      "_core": {
-        "miles": 0.899,
-        "effective_miles": 0.841,
-        "vhd": 49.0,
-        "vhd_per_mile": 54.5,
-        "delay_per_mile": 0.263,
-        "realtime_share": 0.995,
-        "peak_ratio": 1.207,
-        "ref_tti": 1.157,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "WB"
-      ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 46.9,
-        "2026-02": 46.5,
-        "2026-03": 42.8,
-        "2026-04": 51.9,
-        "2026-05": 51.7,
-        "2026-06": 52.3,
-        "2026-07": 50.5,
-        "2026-08": 49.4
-      },
-      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.09, 31 VHD/mi over the mirrored span)"
-    },
-    {
-      "id": "us-26-bonneville-commuter",
-      "name": "US-26: Bonneville County \u2014 Tier 2 Commuter Corridor (25Th E Rd (Hitt Rd) to N Holmes Ave/Us-20 Bus)",
-      "description": "Tier 2 (Commuter Corridor) of US-26: Bonneville County, WB. Congested extent grown from the core (3.11 mi, 40 VHD/mi, 73% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.58 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "commuter",
-      "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (25Th E Rd (Hitt Rd) to N Holmes Ave/Us-20 Bus)",
-      "_facility": "us-26-bonneville",
-      "_facility_name": "US-26: Bonneville County",
-      "_miles": 3.108,
-      "_n_segments": 5,
-      "_ranked": false,
-      "_core": {
-        "miles": 0.899,
-        "effective_miles": 0.841,
-        "vhd": 49.0,
-        "vhd_per_mile": 54.5,
-        "delay_per_mile": 0.263,
-        "realtime_share": 0.995,
-        "peak_ratio": 1.207,
-        "ref_tti": 1.157,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "WB"
-      ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 46.9,
-        "2026-02": 46.5,
-        "2026-03": 42.8,
-        "2026-04": 51.9,
-        "2026-05": 51.7,
-        "2026-06": 52.3,
-        "2026-07": 50.5,
-        "2026-08": 49.4
-      },
-      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.09, 31 VHD/mi over the mirrored span)"
-    },
-    {
-      "id": "us-26-bonneville-regional",
-      "name": "US-26: Bonneville County \u2014 Tier 3 Regional Baseline (49Th N Rd (Telford Rd) to N Holmes Ave/Us-20 Bus)",
-      "description": "Tier 3 (Regional Baseline) of US-26: Bonneville County, WB. Context around the congested extent (3.83 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "regional",
-      "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (49Th N Rd (Telford Rd) to N Holmes Ave/Us-20 Bus)",
-      "_facility": "us-26-bonneville",
-      "_facility_name": "US-26: Bonneville County",
-      "_miles": 3.834,
-      "_n_segments": 7,
-      "_ranked": false,
-      "_core": {
-        "miles": 0.899,
-        "effective_miles": 0.841,
-        "vhd": 49.0,
-        "vhd_per_mile": 54.5,
-        "delay_per_mile": 0.263,
-        "realtime_share": 0.995,
-        "peak_ratio": 1.207,
-        "ref_tti": 1.157,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "WB"
-      ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 46.9,
-        "2026-02": 46.5,
-        "2026-03": 42.8,
-        "2026-04": 51.9,
-        "2026-05": 51.7,
-        "2026-06": 52.3,
-        "2026-07": 50.5,
-        "2026-08": 49.4
-      },
-      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.09, 31 VHD/mi over the mirrored span)"
     }
   ]
 }

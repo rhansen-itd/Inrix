@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from inrix_tools import aadt as aadt_mod          # noqa: E402
 from inrix_tools import corridors, couplets, extents  # noqa: E402
-from inrix_tools import routes, screen, store  # noqa: E402
+from inrix_tools import itd_layers, routes, screen, store  # noqa: E402
 
 MEMBERSHIP = "out/highways/route_membership/d{district}_route_membership.csv"
 
@@ -49,8 +49,17 @@ def apply_membership(net: gpd.GeoDataFrame, district: int) -> gpd.GeoDataFrame:
     return routes.apply_route_membership(net, routes.read_membership(path))
 
 DEFAULT_DISTRICTS = [1, 2, 4, 5, 6]
-"""District 3's catalogue is the Item 44 empirical rebuild
-(``scripts/rebuild_d3_catalogue.py``) and is not regenerated here."""
+"""District 3's primary catalogue is the curated Item 44 rebuild
+(``scripts/d3_corridors.json``, ``scripts/rebuild_d3_catalogue.py``) and is never
+overwritten here. ``--districts 3`` generates D3 the same way as every other district
+into :data:`GENERATED_D3` instead, for comparison and as the automatic alternative."""
+
+GENERATED_D3 = "d3_corridors_generated.json"
+
+
+def catalogue_name(district: int) -> str:
+    """The file a district's generated catalogue is written to."""
+    return GENERATED_D3 if district == 3 else f"d{district}_corridors.json"
 
 
 def load_district(district: int, *, aadt_source: str | None,
@@ -60,6 +69,14 @@ def load_district(district: int, *, aadt_source: str | None,
     repairs = corridors.load_link_repairs(f"scripts/d{district}_link_repairs.csv")
     net = corridors.apply_link_repairs(net, repairs)
     net = apply_membership(net, district)
+    if shs is not None:
+        # SHS mileposts order each route's pieces; the chain walk reads them to
+        # accept a junction join only where the milepost gap shows it (Item 51).
+        layer = itd_layers._shs_frame_from(shs)
+        idx = net.set_index("XDSegID", drop=False)
+        mp = itd_layers.shs_mileposts(idx, layer, idx[routes.ITD_ROUTE_ID_COL])
+        for col in mp.columns:
+            net[col] = net["XDSegID"].map(mp[col]).to_numpy()
 
     if aadt_source:
         layer = aadt_mod.load_aadt(aadt_source, year=aadt_year,
@@ -146,14 +163,27 @@ def load_monthly(district: int, screening_dir: Path, *, refresh: bool = False,
 
 
 def couplet_block(net: gpd.GeoDataFrame, district: int,
-                  observed: set[int] | None = None) -> tuple[list[dict], list[dict], list]:
+                  observed: set[int] | None = None,
+                  review: list | None = None) -> tuple[list[dict], list[dict], list]:
     """Detected couplets for one district, in catalogue shape.
 
     A couplet whose legs are not in the export is dropped: it resolves on the
-    network but has nothing to screen, and would rank as a blank row.
+    network but has nothing to screen, and would rank as a blank row. ``review``
+    collects every detected pair, kept or rejected, with the one-way test that
+    decided (Item 51).
     """
+    rejected: list = []
     detected = couplets.detect_couplets(
-        net, counties=couplets.DISTRICT_COUNTIES.get(district))
+        net, counties=couplets.DISTRICT_COUNTIES.get(district), rejected=rejected)
+    if review is not None:
+        for pair, verdict in [(p, "kept") for p in detected] + rejected:
+            review.append({"district": district, "county": pair.county,
+                           "street1": pair.dir1_street, "dir1": pair.dir1_bearing,
+                           "street2": pair.dir2_street, "dir2": pair.dir2_bearing,
+                           "routes": "/".join(pair.route_numbers),
+                           "miles": pair.total_miles,
+                           "mean_lateral_sep_m": pair.mean_lateral_sep_m,
+                           "verdict": verdict})
     pairs = detected
     if observed is not None:
         pairs = [p for p in detected
@@ -222,6 +252,7 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     report_dir = Path(args.report_dir)
     all_pairs, all_ok = [], True
+    couplet_review: list[dict] = []
 
     for d in args.districts:
         print(f"\n{'=' * 70}\n  DISTRICT {d}\n{'=' * 70}")
@@ -258,7 +289,7 @@ def main() -> int:
               f"{len(cat['reporting_corridors'])} reporting corridors")
 
         if not args.no_couplets:
-            c_entries, c_groups, pairs = couplet_block(net, d, observed)
+            c_entries, c_groups, pairs = couplet_block(net, d, observed, couplet_review)
             all_pairs.extend(pairs)
             cat = merge_blocks(cat, c_entries, c_groups)
             print(f"  + {len(pairs)} couplets detected, "
@@ -269,7 +300,7 @@ def main() -> int:
         passed = bool(res["reached_target"].all())
         all_ok &= passed
 
-        out_path = out_dir / f"d{d}_corridors.json"
+        out_path = out_dir / catalogue_name(d)
         if args.dry_run:
             print(f"  --dry-run: not writing {out_path}")
         elif passed:
@@ -295,6 +326,9 @@ def main() -> int:
                 other, counties=couplets.DISTRICT_COUNTIES.get(d)))
 
         report_dir.mkdir(parents=True, exist_ok=True)
+        review_path = report_dir / "couplet_review.csv"
+        pd.DataFrame(couplet_review).to_csv(review_path, index=False)
+        print(f"Couplet review (kept and rejected pairs) -> {review_path}")
         table = couplets.match_known_couplets(all_pairs)
         path = report_dir / "couplet_registry_validation.csv"
         table.to_csv(path, index=False)
