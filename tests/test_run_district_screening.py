@@ -325,11 +325,12 @@ def test_maps_flag_generates_interactive_map_with_corridor_underlay(district):
     assert '"termini"' in content          # polygon triangles, redrawn on zoom
     assert '"fillcolor"' in content        # ... that the theme buttons recolour
     assert "plotly_relayout" in content
-    assert "Terminus" in content
-    assert "All Outlines" in content
-    assert "Hide Outlines" in content
+    assert "Terminus" not in content      # termini carry no hover text
+    assert "All Corridors" in content
+    assert "Hide Corridors" in content
     assert "open-street-map" not in content  # OSM tiles are usage-policy blocked
-    assert "Ranked Corridors (Outlines)" in content
+    assert "Ranked Corridors" in content and "(Outlines)" not in content
+    assert "Light (Clean)" not in content and "\"Light\"" in content
     assert "Free Flow" in content
     assert "🟢" not in content  # No GOYR emoji dots in legend
     assert "legendonly" in content  # Corridors default to OFF
@@ -541,3 +542,22 @@ def test_long_corridor_labels_wrap_to_the_sidebar_width():
     assert len(lines) > 1
     assert all(len(ln) <= rds._LEGEND_WRAP_CHARS for ln in lines)
     assert rds._wrap_legend_label("#1 I-84") == "#1 I-84"
+
+
+def test_corridor_hover_shows_the_full_description_wrapped():
+    """Hover text isn't truncated; long lines wrap so the tooltip stays on screen."""
+    wrapped = rds._wrap_html("word " * 60, rds._HOVER_WRAP_CHARS)
+    assert "..." not in wrapped
+    assert all(len(ln) <= rds._HOVER_WRAP_CHARS for ln in wrapped.split("<br>"))
+
+
+def test_hover_description_drops_tool_provenance():
+    extent = ("Tier 1 (Congested Core) of US-95, NB. Upstream boundary: x. "
+              "Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).")
+    couplet = ("One-way couplet in Moscow; 0.80 mi per leg. Detected by "
+               "inrix_tools.couplets.detect_couplets (ROADMAP Item 46).")
+    assert "ROADMAP" not in rds._hover_description(extent)
+    assert rds._hover_description(extent).endswith("Upstream boundary: x.")
+    assert rds._hover_description(couplet).endswith("0.80 mi per leg.")
+    hand = "Split off per ROADMAP Item 44 by hand."
+    assert rds._hover_description(hand) == hand

@@ -225,7 +225,7 @@ def generate_statewide_map(
                         {"map.style": "carto-positron"},
                         all_corridor_indices,
                     ],
-                    label="Light (Clean)",
+                    label="Light",
                     method="update",
                 ),
                 dict(
@@ -256,12 +256,12 @@ def generate_statewide_map(
                 buttons=[
                     dict(
                         args=[{"visible": [True] * len(all_corridor_indices)}, all_corridor_indices],
-                        label="All Outlines",
+                        label="All Corridors",
                         method="restyle",
                     ),
                     dict(
                         args=[{"visible": ["legendonly"] * len(all_corridor_indices)}, all_corridor_indices],
-                        label="Hide Outlines",
+                        label="Hide Corridors",
                         method="restyle",
                     ),
                 ],

@@ -6131,3 +6131,16 @@ sidebar, or for the two legends to be stacked.
 - The **Street Map** (`open-street-map`) theme button is removed from both map
   generators. OSM's tile servers were returning "blocked: usage policy" tiles, and
   Light (carto-positron) plus Dark (carto-darkmatter) cover what we need.
+- Follow-up tweaks (owner):
+  - The corridor tooltip now shows the full catalogue description. It had been
+    cut to 120 characters and shown as one line, so the box ran off the map.
+    The name and description wrap at 70 characters (`_wrap_html`).
+  - The termini triangles no longer have a tooltip (`hoverinfo="skip"`); the
+    corridor line's tooltip already covers it.
+  - Labels: "Light (Clean)" → "Light", "All/Hide Outlines" → "All/Hide
+    Corridors", and the legend title "Ranked Corridors (Outlines)" → "Ranked
+    Corridors".
+  - The tooltip drops the tool-provenance sentence that the generators append
+    to descriptions ("Generated from the XD topology by inrix_tools.extents
+    (ROADMAP Items 46, 50)." and the couplet "Detected by …detect_couplets"
+    version), via `_hover_description`. The catalogue JSON keeps it.

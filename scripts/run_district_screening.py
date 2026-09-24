@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -551,11 +552,32 @@ _LEGEND_WRAP_CHARS = 48
 _CORRIDOR_LEGEND_MAXHEIGHT = 0.72   # ratio of the figure height; scrolls beyond
 
 
-def _wrap_legend_label(label: str, width: int = _LEGEND_WRAP_CHARS) -> str:
-    """Wrap a long legend label onto ``<br>``-joined lines of at most ``width`` chars."""
+_HOVER_WRAP_CHARS = 70
+
+# Tool-provenance tail the generators append to catalogue descriptions
+# ("Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+# "Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46)."): useful in
+# the JSON, noise in a map tooltip.
+_PROVENANCE_RE = re.compile(
+    r"\s*(?:Generated from|Detected by)\b[^.]*?\binrix_tools\.[\w.]+ \(ROADMAP[^)]*\)\.")
+
+
+def _hover_description(description: str) -> str:
+    """A catalogue description for a map tooltip: provenance stripped, wrapped."""
+    return _wrap_html(_PROVENANCE_RE.sub("", description).strip(), _HOVER_WRAP_CHARS)
+
+
+def _wrap_html(text: str, width: int, indent: str = "") -> str:
+    """Wrap ``text`` onto ``<br>``-joined lines of at most ``width`` chars
+    (Plotly legends and hover labels never wrap on their own)."""
     import textwrap
 
-    return "<br>".join(textwrap.wrap(label, width=width, subsequent_indent="   ")) or label
+    return "<br>".join(textwrap.wrap(text, width=width, subsequent_indent=indent)) or text
+
+
+def _wrap_legend_label(label: str, width: int = _LEGEND_WRAP_CHARS) -> str:
+    """Wrap a long legend label to the sidebar width, indenting continuations."""
+    return _wrap_html(label, width, indent="   ")
 
 
 def _legend_sidebar_layout(seg_legend_title: str) -> dict:
@@ -577,7 +599,7 @@ def _legend_sidebar_layout(seg_legend_title: str) -> dict:
             **common, y=1.0, yanchor="top",
             font=dict(size=10, color="#2d3748"),
             maxheight=_CORRIDOR_LEGEND_MAXHEIGHT,
-            title=dict(text="<b>Ranked Corridors (Outlines)</b>",
+            title=dict(text="<b>Ranked Corridors</b>",
                        font=dict(size=11, color="#1a202c")),
             itemdoubleclick="toggle"),
     )
@@ -736,7 +758,7 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
         rank_str = f"#{int(rank)}" if (pd.notna(rank) and rank != "—") else "—"
 
         c_lats, c_lons, c_texts = [], [], []
-        m_lats, m_lons, m_angles, m_texts = [], [], [], []
+        m_lats, m_lons, m_angles = [], [], []
 
         for entry in entries_by_group[gid]:
             ch = chains[entry.id]
@@ -744,12 +766,12 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
             total_vhd = ri.get("vhd", 0.0)
             tti = ri.get("tti", 0.0)
             tip = (
-                f"<b>RANK {rank_str}: {entry.name}</b><br>"
+                f"<b>{_wrap_html(f'RANK {rank_str}: {entry.name}', _HOVER_WRAP_CHARS)}</b><br>"
                 f"<b>Direction:</b> {entry.direction} | "
                 f"<b>Length:</b> {ch.chain_miles:.2f} mi<br>"
                 f"<b>TTI:</b> {tti:.2f} | <b>VHD/mi:</b> {vhd_rate:,.1f}<br>"
                 f"<b>{delay_label}:</b> {total_vhd:,.0f} veh-hrs<br>"
-                f"<i>{entry.description[:120]}...</i>"
+                f"<i>{_hover_description(entry.description)}</i>"
             )
 
             coords = []
@@ -776,13 +798,6 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
 
                 m_lats.append(p0[0]); m_lons.append(p0[1])
                 m_angles.append(round(angle_start, 1))
-                m_texts.append(
-                    f"<b>▲ Terminus: {entry.name}</b><br>"
-                    f"<b>Rank:</b> {rank_str} ({gid})<br>"
-                    f"<b>Direction:</b> {entry.direction} | "
-                    f"<b>Extent:</b> {ch.chain_miles:.2f} mi<br>"
-                    f"<b>Coordinates:</b> ({p0[0]:.4f}, {p0[1]:.4f})"
-                )
 
                 # End terminus: points inward along corridor back from coords[-1]
                 pN = coords[-1]
@@ -791,13 +806,6 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
 
                 m_lats.append(pN[0]); m_lons.append(pN[1])
                 m_angles.append(round(angle_end, 1))
-                m_texts.append(
-                    f"<b>▲ Terminus: {entry.name}</b><br>"
-                    f"<b>Rank:</b> {rank_str} ({gid})<br>"
-                    f"<b>Direction:</b> {entry.direction} | "
-                    f"<b>Extent:</b> {ch.chain_miles:.2f} mi<br>"
-                    f"<b>Coordinates:</b> ({pN[0]:.4f}, {pN[1]:.4f})"
-                )
 
         trace_label = f"{rank_str} {gname}" if rank_str != "—" else gname
         line_traces.append(
@@ -809,11 +817,11 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
                           visible="legendonly",
                           text=c_texts, **kw)
         )
-        t_lats, t_lons, t_texts = [], [], []
-        for lat, lon, ang, tip in zip(m_lats, m_lons, m_angles, m_texts):
+        t_lats, t_lons = [], []
+        for lat, lon, ang in zip(m_lats, m_lons, m_angles):
             for p in _triangle_ring(lat, lon, ang, zoom):
-                t_lats.append(p[0]); t_lons.append(p[1]); t_texts.append(tip)
-            t_lats.append(None); t_lons.append(None); t_texts.append(None)
+                t_lats.append(p[0]); t_lons.append(p[1])
+            t_lats.append(None); t_lons.append(None)
         marker_traces.append(
             go.Scattermap(lat=t_lats, lon=t_lons, mode="lines", fill="toself",
                           fillcolor=_CORRIDOR_OUTLINE_LIGHT,
@@ -823,7 +831,7 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
                           visible="legendonly",
                           meta={"termini": [[la, lo, a] for la, lo, a in
                                             zip(m_lats, m_lons, m_angles)]},
-                          text=t_texts, **kw)
+                          hoverinfo="skip")
         )
 
     return line_traces, marker_traces
@@ -878,7 +886,7 @@ def _assemble_map(seg_traces, corridor_traces, termini_traces=None, ends_trace=N
                         {"map.style": "carto-positron"},
                         all_corridor_indices
                      ],
-                     label="Light (Clean)", method="update"),
+                     label="Light", method="update"),
                 dict(args=[
                         {"line.color": _CORRIDOR_OUTLINE_DARK, "fillcolor": _CORRIDOR_OUTLINE_DARK},
                         {"map.style": "carto-darkmatter"},
@@ -897,9 +905,9 @@ def _assemble_map(seg_traces, corridor_traces, termini_traces=None, ends_trace=N
                 showactive=True,
                 buttons=[
                     dict(args=[{"visible": [True] * len(all_corridor_indices)}, all_corridor_indices],
-                         label="All Outlines", method="restyle"),
+                         label="All Corridors", method="restyle"),
                     dict(args=[{"visible": ["legendonly"] * len(all_corridor_indices)}, all_corridor_indices],
-                         label="Hide Outlines", method="restyle"),
+                         label="Hide Corridors", method="restyle"),
                 ],
                 bgcolor="rgba(255,255,255,0.9)",
                 bordercolor="#cbd5e0", font=dict(size=11, color="#2d3748"))
