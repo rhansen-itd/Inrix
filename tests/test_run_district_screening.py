@@ -605,13 +605,16 @@ def test_segment_tiers_split_by_direction_but_list_once_in_the_legend():
 
     import plotly.graph_objects as go
     menu = rds._direction_menu(go.Figure(traces))
-    assert rds._direction_menu(go.Figure(all_traces))["buttons"][2]["args"][1] == [
-        i for i, t in enumerate(all_traces) if t.meta and t.meta["dir"] != "other"]
+    holders = [i for i, t in enumerate(all_traces) if t.showlegend]
+    for b in rds._direction_menu(go.Figure(all_traces))["buttons"]:
+        assert not set(b["args"][1]) & set(holders)   # legend entries never hidden
     labels = [b["label"] for b in menu["buttons"]]
-    assert labels == ["Both Directions", "NB / EB", "SB / WB"]
+    assert labels == ["Both Directions", "NB / EB", "SB / WB", "Hide"]
     other = next(i for i, t in enumerate(traces) if t.meta["dir"] == "other")
-    for b in menu["buttons"]:
-        assert other not in b["args"][1]      # direction-less segments never hidden
+    for b in menu["buttons"]:                 # direction-less segments: only Hide hides
+        vis = dict(zip(b["args"][1], b["args"][0]["visible"]))
+        assert vis[other] is (b["label"] != "Hide")
+    assert not any(menu["buttons"][3]["args"][0]["visible"])
     nb_only = dict(zip(menu["buttons"][1]["args"][1], menu["buttons"][1]["args"][0]["visible"]))
     assert [nb_only[i] for i, t in enumerate(traces) if t.meta["dir"] != "other"] == \
         [t.meta["dir"] == "pos" for t in traces if t.meta["dir"] != "other"]
@@ -637,3 +640,14 @@ def test_corridor_tooltip_lists_each_direction_beside_the_combined_figures():
     single = rds._corridor_figures_html({"vhd": 5.0, "vhd_per_mile": 1.0,
                                          "delay_min": 1.0, "tti": 1.1}, "Total Peak Delay")
     assert "Combined" not in single and "5 veh-hrs" in single
+
+
+def test_legends_cannot_toggle_each_other_s_traces():
+    """The segment legend is a key (no clicks); corridor triangles live in the
+    corridor legend, so no title/double-click there or here can split a corridor's
+    triangles from its outline."""
+    lay = rds._legend_sidebar_layout("TTI")
+    for k in ("itemclick", "itemdoubleclick", "titleclick", "titledoubleclick"):
+        assert lay["legend"][k] is False
+    assert lay["legend2"]["titleclick"] is False and lay["legend2"]["titledoubleclick"] is False
+    assert lay["legend2"].get("itemclick", "toggle") == "toggle"   # corridors stay toggleable

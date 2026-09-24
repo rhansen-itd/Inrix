@@ -6194,3 +6194,24 @@ sidebar, or for the two legends to be stacked.
     basis is unchanged.
   - Owner confirmed: the ranking stays on AM + PM for both directions; the
     tooltip's split is enough.
+- **Legend and button bugs (owner report): the triangles got out of step with
+  their corridor lines.** Reproduced in headless Chromium, driving the DevTools
+  protocol from node (`--experimental-websocket`). After "All Corridors",
+  clicking the *Segment Delay* legend title hid all 65 triangles while their lines
+  stayed on.
+  - Cause: the triangle traces set no `legend`, so Plotly put them in the default
+    (segment) legend. Its title click and item double-click act on every trace in
+    that legend, which included the triangles. A title double-click on the
+    corridor legend likewise reached into the segment traces.
+  - Fix:
+    - The triangles set `legend="legend2"`. They still have no entry of their
+      own, but now share their outline's legend.
+    - The segment legend is a key only (`itemclick`, `itemdoubleclick`,
+      `titleclick`, `titledoubleclick` all False). The direction row gained a
+      **Hide** button and is now the only control over segment visibility.
+    - The corridor legend keeps item toggling, but its title clicks are off;
+      All/Hide Corridors does that job.
+  - Verified in the browser over buttons, legend clicks, legend double-clicks, a
+    theme switch and zooms (the triangle redraw). Each corridor's line and
+    triangles stayed in the same visibility state at every step, and the segment
+    legend kept all its entries under SB/WB and Hide.

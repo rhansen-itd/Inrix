@@ -567,11 +567,12 @@ def _build_segment_traces(merged, window_label="Peak"):
 
 
 def _direction_menu(fig, *, x=0.98, y=0.85) -> dict | None:
-    """Buttons that show both directions, NB/EB only, or SB/WB only.
+    """Buttons that show both directions, NB/EB only, SB/WB only, or no segments.
 
     They restyle ``visible`` on the segment traces by their ``meta["dir"]``;
-    direction-less segments (``other``) stay on. ``None`` when the figure has no
-    directional segment traces to switch.
+    direction-less segments (``other``) stay on except under Hide. ``None`` when
+    the figure has no directional segment traces to switch. The segment legend is
+    not clickable, so these are the only control over segment visibility.
     """
     idx = {c: [] for c in (_DIR_POSITIVE, _DIR_NEGATIVE, _DIR_OTHER)}
     for i, tr in enumerate(fig.data):
@@ -580,11 +581,11 @@ def _direction_menu(fig, *, x=0.98, y=0.85) -> dict | None:
             idx[meta["dir"]].append(i)
     if not (idx[_DIR_POSITIVE] or idx[_DIR_NEGATIVE]):
         return None
-    targets = idx[_DIR_POSITIVE] + idx[_DIR_NEGATIVE]
-    npos = len(idx[_DIR_POSITIVE])
+    targets = idx[_DIR_POSITIVE] + idx[_DIR_NEGATIVE] + idx[_DIR_OTHER]
+    npos, nneg, noth = (len(idx[c]) for c in (_DIR_POSITIVE, _DIR_NEGATIVE, _DIR_OTHER))
 
-    def show(pos: bool, neg: bool) -> list:
-        return [{"visible": [pos] * npos + [neg] * (len(targets) - npos)}, targets]
+    def show(pos: bool, neg: bool, other: bool = True) -> list:
+        return [{"visible": [pos] * npos + [neg] * nneg + [other] * noth}, targets]
 
     return dict(
         type="buttons", direction="left", x=x, xanchor="right", y=y,
@@ -593,6 +594,7 @@ def _direction_menu(fig, *, x=0.98, y=0.85) -> dict | None:
             dict(args=show(True, True), label="Both Directions", method="restyle"),
             dict(args=show(True, False), label="NB / EB", method="restyle"),
             dict(args=show(False, True), label="SB / WB", method="restyle"),
+            dict(args=show(False, False, False), label="Hide", method="restyle"),
         ],
         bgcolor="rgba(255,255,255,0.9)",
         bordercolor="#cbd5e0", font=dict(size=11, color="#2d3748"))
@@ -660,6 +662,10 @@ def _legend_sidebar_layout(seg_legend_title: str) -> dict:
         legend=dict(
             **common, y=0.0, yanchor="bottom",
             tracegroupgap=0,   # each tier is a legendgroup of direction traces
+            # A key, not a control: the direction buttons own segment visibility,
+            # and legend clicks here fought them.
+            itemclick=False, itemdoubleclick=False,
+            titleclick=False, titledoubleclick=False,
             title=dict(text=f"<b>Segment Delay ({seg_legend_title})</b>",
                        font=dict(size=11, color="#1a202c")),
             font=dict(size=11, color="#2d3748")),
@@ -669,7 +675,11 @@ def _legend_sidebar_layout(seg_legend_title: str) -> dict:
             maxheight=_CORRIDOR_LEGEND_MAXHEIGHT,
             title=dict(text="<b>Ranked Corridors</b>",
                        font=dict(size=11, color="#1a202c")),
-            itemdoubleclick="toggle"),
+            itemdoubleclick="toggle",
+            # A title click toggles every trace in the legend, and a title
+            # double-click the traces of the *other* legend too; All/Hide Corridors
+            # does the first without the second.
+            titleclick=False, titledoubleclick=False),
     )
 
 
@@ -954,6 +964,11 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
                           fillcolor=_CORRIDOR_OUTLINE_LIGHT,
                           line=dict(color=_CORRIDOR_OUTLINE_LIGHT, width=1),
                           legendgroup=gid,
+                          # Same legend as the outline, though it has no entry of its
+                          # own: Plotly's title- and double-click toggles act on every
+                          # trace *in a legend*, and left in the default legend the
+                          # triangles were toggled by the segment legend instead.
+                          legend="legend2",
                           showlegend=False,
                           visible="legendonly",
                           meta={"termini": [[la, lo, a] for la, lo, a in
