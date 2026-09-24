@@ -450,18 +450,64 @@ def test_real_chain_reproduces_the_franklin_asymmetry():
 
 
 @pytest.mark.skipif(not XD_ZIP.exists(), reason="XD shapefile not available")
-def test_real_chain_reproduces_the_vsl_overshoot():
-    """VSL NB AM: 3.635 mi of chain against a ~3.00 mi request (+21%), with the
-    overshoot localised to 0.63 mi on the downstream end."""
+def test_real_chain_vsl_end_is_a_junction_tie_not_an_overshoot():
+    """VSL NB AM. Session 33 measured 3.635 mi of chain against a ~3.00 mi request
+    (+21%), all of it one 0.63-mi end segment. That segment was a snap artefact
+    (Item 53): the end point sits on a node, 37.6 ft from the start of the downstream
+    segment and 39.6 ft from the end of the last one the extent covers, and the
+    nearer snap took the downstream segment with 0.4% of it in the extent. The two
+    are a junction tie (``JUNCTION_TIE_FEET``), and the tie goes to the segment the
+    point finishes, so the chain is the request."""
     net = geometry.load_xd_network(XD_ZIP, bbox=(-116.40, 43.59, -116.30, 43.69))
     ch = corridors.build_chain(net, (43.619530891287404, -116.35444430487458),
                                (43.663024006704134, -116.35452382550932))
-    assert ch.reached_target and ch.n_segments == 7
-    assert ch.chain_miles == pytest.approx(3.635, abs=0.01)
+    assert ch.reached_target and ch.n_segments == 6
+    assert ch.segment_ids[-1] == 448725599
+    assert ch.chain_miles == pytest.approx(3.007, abs=0.01)
     assert ch.requested_miles == pytest.approx(3.006, abs=0.01)
-    assert ch.length_ratio == pytest.approx(1.21, abs=0.01)
-    assert ch.trim_end_miles == pytest.approx(0.626, abs=0.01)
+    assert ch.trim_end_miles == pytest.approx(0.0, abs=0.01)
     assert ch.snap_start_feet < 100 and ch.snap_end_feet < 100
+
+
+def test_junction_tie_goes_to_the_segment_the_point_begins():
+    """A start point on the node between two segments, a foot nearer the upstream
+    one's end (a catalogue's 5-decimal rounding, Moscow's south junction in Item 53),
+    starts on the downstream segment: the upstream one would join the chain with
+    none of it in the extent."""
+    net = _chain_network(4)
+    lat, lon = _at(0.0, 1)                       # the node between 1000 and 1001
+    start = (lat - 0.000003, lon)                # ~1 ft back onto 1000
+    ch = corridors.build_chain(net, start, _at(0.5, 3))
+    assert ch.segment_ids == (1001, 1002, 1003)
+
+
+def test_junction_tie_does_not_override_a_clearly_nearer_snap():
+    """Two snaps more than ``JUNCTION_TIE_FEET`` apart are not a tie: 30 ft back
+    along the upstream segment is where the extent starts."""
+    net = _chain_network(4)
+    lat, lon = _at(0.0, 1)
+    start = (lat - 0.00009, lon)                 # ~33 ft back onto 1000
+    ch = corridors.build_chain(net, start, _at(0.5, 3))
+    assert ch.segment_ids[0] == 1000
+
+
+def test_couplet_segments_are_the_couplet_legs_chains():
+    def _e(eid, corridor):
+        return corridors.CorridorEntry(id=eid, name=eid, start_latlon=(43.6, -116.2),
+                                       end_latlon=(43.61, -116.2), description="",
+                                       corridor=corridor)
+
+    entries = (_e("a-nb", "cpl"), _e("b-sb", "cpl"), _e("c-eb", "road"))
+    groups = (corridors.ReportingCorridor(id="cpl", name="Couplet", description="",
+                                          one_way_couplet=True),
+              corridors.ReportingCorridor(id="road", name="Road", description=""))
+
+    class _Ch:
+        def __init__(self, ids):
+            self.segment_ids = ids
+
+    chains = {"a-nb": _Ch((1, 2)), "b-sb": _Ch((3,)), "c-eb": _Ch((9,))}
+    assert corridors.couplet_segments(entries, groups, chains) == {1, 2, 3}
 
 
 def test_max_snap_feet_guard_prefers_the_true_snap_over_a_far_connection():

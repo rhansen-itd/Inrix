@@ -78,7 +78,9 @@ BIN_COL = "bin_minutes"              # time-bin partition column on the obs tabl
 # Columns the AADT join contributes to the cached geo layer (Item 18; the record
 # identity ones — kind / description / RouteID — are Item 34).
 _AADT_JOIN_COLS = ("AADT", "aadt_source", "aadt_dist_m", "aadt_record_kind",
-                   "aadt_desc", "RouteID", "Route", "Commercial")
+                   "aadt_desc", "RouteID", "Route", "Commercial",
+                   # Item 53: the published count and the basis AADT was put on.
+                   "aadt_layer", "aadt_basis", "aadt_basis_reason")
 
 
 # ---------------------------------------------------------------------------

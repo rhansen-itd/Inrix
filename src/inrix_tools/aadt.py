@@ -726,7 +726,7 @@ def _segment_kinds(geo) -> dict:
 
 
 def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
-              prefer_mainline=True):
+              prefer_mainline=True, two_way_basis=True):
     """Attach an ``AADT`` value to each segment by spatial match to the AADT layer.
 
     The AADT layer has no segment id, so the join is spatial: candidates are the AADT
@@ -798,6 +798,12 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
         bearing_tol_deg: max undirected bearing difference for a match (≈45°
             cleanly separates same-road / opposing from a cross-street).
         prefer_mainline: apply step 2. ``False`` reverts to route-then-distance.
+        two_way_basis: put ``AADT`` on the two-way-equivalent basis
+            (:func:`apply_two_way_basis`, Item 53) from the layer's own evidence. A
+            couplet leg's one-way count is doubled here; the couplet-membership
+            fallback needs the catalogue, so a caller that has one calls
+            :func:`apply_two_way_basis` again with it. ``False`` leaves the layer's
+            counts as published (and adds no basis columns).
 
     Returns:
         A copy of ``geo`` with added columns:
@@ -822,6 +828,11 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
         * ``RouteID`` / ``Route`` — carried from the chosen line (also for
           ``nearest``, as a diagnostic) / ``Commercial`` — carried only for a match.
 
+        With ``two_way_basis`` (the default), also ``aadt_layer`` (the published
+        count), ``aadt_basis`` / ``aadt_basis_reason`` and ``aadt_record_basis`` (the
+        chosen record's :func:`classify_aadt_basis` evidence); ``AADT`` is then the
+        two-way-equivalent volume.
+
         ``attrs['aadt_join']`` records the resolved policy and the source counts.
     """
     from shapely import STRtree
@@ -830,7 +841,8 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
     blank = {AADT_COL: float("nan"), AADT_SOURCE_COL: "missing",
              AADT_DIST_COL: float("nan"), AADT_COVER_COL: float("nan"),
              AADT_KIND_COL: None, AADT_DESC_COL: None, AADT_ROUTE_NUM_COL: None,
-             "RouteID": None, "Route": None, "Commercial": pd.NA}
+             "RouteID": None, "Route": None, "Commercial": pd.NA,
+             AADT_RECORD_BASIS_COL: None}
 
     valid_geo = out[out.geometry.notna() & ~out.geometry.is_empty]
     if len(valid_geo) == 0 or len(aadt) == 0:
@@ -838,10 +850,13 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
             out[col] = val
         out.attrs["aadt_join"] = _join_policy(
             max_distance_m, bearing_tol_deg, prefer_mainline, out[AADT_SOURCE_COL])
-        return out
+        return apply_two_way_basis(out) if two_way_basis else \
+            out.drop(columns=[AADT_RECORD_BASIS_COL])
 
     if RECORD_KIND_COL not in aadt.columns:
         aadt = classify_aadt_records(aadt)
+    if two_way_basis and BASIS_EVIDENCE_COL not in aadt.columns:
+        aadt = classify_aadt_basis(aadt)
 
     # Distances/buffers need a metric CRS; estimate a UTM zone from the segments.
     from shapely.ops import nearest_points
@@ -875,6 +890,7 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
     aadt_route_id = _col_or_none(aadt, "RouteID")
     aadt_desc = _col_or_none(aadt, "Descriptio")
     aadt_comm = _col_or_none(aadt, "Commercial")
+    aadt_ev = _col_or_none(aadt, BASIS_EVIDENCE_COL)
 
     seg_routes = _segment_route_numbers(valid_geo)
     seg_kinds = _segment_kinds(valid_geo)
@@ -934,6 +950,7 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
                 "RouteID": _take(aadt_route_id, i),
                 "Route": _take(aadt_route, i),
                 "Commercial": _take(aadt_comm, i, pd.NA),
+                AADT_RECORD_BASIS_COL: _take(aadt_ev, i),
             }
         else:
             # Identify the geometrically nearest line so a failed join is
@@ -953,6 +970,7 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
                 "RouteID": _take(aadt_route_id, i),
                 "Route": _take(aadt_route, i),
                 "Commercial": pd.NA,
+                AADT_RECORD_BASIS_COL: None,
             }
 
     for col in blank:
@@ -961,7 +979,9 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
     out.attrs = dict(geo.attrs)
     out.attrs["aadt_join"] = _join_policy(
         max_distance_m, bearing_tol_deg, prefer_mainline, out[AADT_SOURCE_COL])
-    return out
+    if not two_way_basis:
+        return out.drop(columns=[AADT_RECORD_BASIS_COL])
+    return apply_two_way_basis(out)
 
 
 def _join_policy(max_distance_m, bearing_tol_deg, prefer_mainline, source) -> dict:
@@ -979,6 +999,331 @@ def _join_policy(max_distance_m, bearing_tol_deg, prefer_mainline, source) -> di
                        "over an unnumbered one"),
         "counts": {k: int(v) for k, v in counts.items()},
     }
+
+
+# ---------------------------------------------------------------------------
+# One volume basis: couplet legs' one-way counts to two-way  (Item 53)
+# ---------------------------------------------------------------------------
+# Every XD segment is one direction of travel, and VHD is ``delay/60 × AADT`` per
+# segment, so what the AADT *means* has to be the same on every segment. On the ITD
+# layer it is not. A two-way road and a divided highway carry one centreline and a
+# **two-way** count, which both directions take. A one-way couplet carries each leg as
+# its own record, and that count is **one-way**: ``01360AIN015`` (Pocatello's I-15 BL)
+# is 15,000 at the south end, then 7,500 on the ``A`` leg and 7,700 on the ``D`` leg.
+# Left alone, a couplet leg scores about half the VHD the same delay scores anywhere
+# else. The basis kept is the **two-way-equivalent** one the rest of the network
+# already uses, and the one the noise floors were tuned on: a one-way count × 2.
+AADT_LAYER_COL = "aadt_layer"            # the count as the layer publishes it
+AADT_BASIS_COL = "aadt_basis"            # two_way / one_way_x2 / ramp (<NA>: no AADT)
+AADT_BASIS_REASON_COL = "aadt_basis_reason"
+AADT_RECORD_BASIS_COL = "aadt_record_basis"   # the chosen record's basis evidence
+BASIS_EVIDENCE_COL = "basis_evidence"    # on the AADT layer (classify_aadt_basis)
+
+TWO_WAY, ONE_WAY_X2, RAMP_MOVEMENT = "two_way", "one_way_x2", "ramp"
+# Record evidence (classify_aadt_basis). The one-way kinds are what can double a
+# count; the two-way kinds are what stop the couplet-leg fallback from doing it.
+EV_ONE_WAY_WORDS, EV_ONE_WAY_PAIR = "one_way_words", "one_way_pair"
+EV_TWO_WAY_WORDS, EV_DUPLICATED = "two_way_words", "duplicated"
+_EV_ONE_WAY = {EV_ONE_WAY_WORDS, EV_ONE_WAY_PAIR}
+_EV_TWO_WAY = {EV_TWO_WAY_WORDS, EV_DUPLICATED}
+
+# ITD marks where a one-way section starts and ends, in a record's "from" point
+# (``Descriptio``) or its "to" point (``Descript_1``). ``BEG 1-WAY`` / ``END 2-WAY``
+# open a one-way section; ``END 1-WAY`` / ``BEG 2-WAY`` close it. A record *starting*
+# where one opens, or *ending* where one closes, lies inside it:
+# ``BEG 1-WAY/RESTLAWN DR -> E HUMBOLT ST`` and ``N BROADWAY ST -> JUNIPER ST (END
+# 1-WAY)`` are one-way, ``END 1-WAY @ ELM ST -> CEDAR ST`` (21,500) is two-way.
+# ``COUPLET`` / ``CPLT`` are not read: they name a junction with a couplet
+# (``JCT SB COUPLET(002052)``), and Nampa's ``D`` leg starts at ``CALDWELL BLVD(END
+# CPLT)``, the same point where its ``A`` leg reads ``CANYON ST (BEG 1-WAY)``.
+_OPENS_ONE_WAY_RE = re.compile(r"\bBEG(?:IN)?\s+1[\s-]?WAY\b|\bEND\s+2[\s-]?WAY\b")
+_CLOSES_ONE_WAY_RE = re.compile(
+    r"\bEND\s+(?:OF\s+)?1[\s-]?WAY\b|\bBEG(?:IN)?\s+2[\s-]?WAY\b")
+_ROUNDABOUT_RE = re.compile(r"\bROUNDABOUT\b|\bRNDABOUT\b")
+
+PAIR_MAX_SEP_M = 350.0
+"""An ``A`` and a ``D`` record of one route are a pair (each leg carrying its own
+direction) when one runs within this distance of the other over at least half its
+length. The couplets sit a block or two apart (Blackfoot 78 m, Moscow 179 m, Twin
+Falls 232 m). The layer's route measures cannot be used instead: Moscow's ``D`` leg
+and Twin Falls' are measured differently from their ``A`` legs, so the measure
+ranges overlap records a kilometre away."""
+
+TWO_WAY_TWIN_TOL_M = 15.0
+"""An XD segment is one carriageway of a two-way road when an opposing segment of the
+same street lies within this distance along its whole length (the same test as
+:data:`inrix_tools.couplets.TWO_WAY_TOL_M`)."""
+
+
+def _words_evidence(frm, to) -> str | None:
+    frm = frm.upper() if isinstance(frm, str) else ""
+    to = to.upper() if isinstance(to, str) else ""
+    one = bool(_OPENS_ONE_WAY_RE.search(frm) or _CLOSES_ONE_WAY_RE.search(to))
+    two = bool(_CLOSES_ONE_WAY_RE.search(frm) or _OPENS_ONE_WAY_RE.search(to))
+    if one and not two:
+        return EV_ONE_WAY_WORDS
+    if two and not one:
+        return EV_TWO_WAY_WORDS
+    return None                          # no marker, or both ends say "one-way ends"
+
+
+def _beside_fraction(line, other, other_ends, max_sep: float, n: int = 11,
+                     end_tol: float = 15.0) -> float:
+    """Share of ``line`` that runs *beside* ``other``: within ``max_sep`` of it, and
+    nearest to a point along it rather than one of its ends. The second half is what
+    tells a couplet leg from the two-way road it merges into: a point on the road past
+    the couplet is also within a block of the other leg, but of its **end**."""
+    from shapely.ops import nearest_points
+
+    if n < 2 or line.length == 0:
+        return 0.0
+    step = line.length / (n - 1)
+    hits = 0
+    for k in range(n):
+        p = line.interpolate(k * step)
+        if other.distance(p) > max_sep:
+            continue
+        q = nearest_points(other, p)[0]
+        if all(q.distance(e) > end_tol for e in other_ends):
+            hits += 1
+    return hits / n
+
+
+def classify_aadt_basis(aadt, *, pair_max_sep_m: float = PAIR_MAX_SEP_M):
+    """Label each AADT record with what the layer says about its count's basis.
+
+    ``basis_evidence`` is one of:
+
+    * ``one_way_words`` — the record lies inside a section ITD marks one-way (see
+      ``_OPENS_ONE_WAY_RE``);
+    * ``two_way_words`` — it starts where a one-way section ends, or ends where one
+      starts;
+    * ``duplicated`` — an ``A`` and a ``D`` record on the same measures carry the
+      **same** count: the layer drew a divided highway's two carriageways and gave
+      both the two-way count (Sandpoint's 5th Ave, 13,000 each, against 11,500 and
+      16,000 either side);
+    * ``one_way_pair`` — an ``A`` and a ``D`` record of one route run beside each other
+      (:data:`PAIR_MAX_SEP_M`): each carries its own direction's count. *Beside*
+      means at least half the record lies within that distance of the other leg's
+      line and nearest to a point **along** it, not to one of its ends
+      (:func:`_beside_fraction`). The two-way road just past a couplet is within a
+      block of both legs, but only of where they end;
+    * ``<NA>`` — no evidence either way (most of the layer).
+
+    Words decide before the pairing, because the pairing reaches past a couplet's end:
+    Pocatello's ``END 1-WAY E OF US-91 -> WARREN DR`` (19,000) lies beside the ``D``
+    leg's last record and is two-way. Ramps, connectors and roundabouts get no
+    evidence: their count is one movement, not one direction of a road.
+
+    Args:
+        aadt: a :func:`load_aadt` frame. Classified with :func:`classify_aadt_records`
+            first if it has no ``record_kind``.
+        pair_max_sep_m: see :data:`PAIR_MAX_SEP_M`.
+
+    Returns:
+        A copy with ``basis_evidence`` added.
+    """
+    out = aadt if RECORD_KIND_COL in aadt.columns else classify_aadt_records(aadt)
+    out = out.copy()
+    n = len(out)
+    frm = out["Descriptio"] if "Descriptio" in out.columns else pd.Series([None] * n,
+                                                                        index=out.index)
+    to = out["Descript_1"] if "Descript_1" in out.columns else pd.Series([None] * n,
+                                                                       index=out.index)
+    kind = out[RECORD_KIND_COL]
+    text = (frm.fillna("").astype(str) + " " + to.fillna("").astype(str)).str.upper()
+    eligible = ~kind.isin([RAMP, CONNECTOR]) & ~text.str.contains(_ROUNDABOUT_RE)
+    ev = pd.Series([_words_evidence(f, t) for f, t in zip(frm, to)],
+                   index=out.index, dtype=object).where(eligible, None)
+
+    if "RouteID" in out.columns and n and "geometry" in out.columns:
+        rid = out["RouteID"].fillna("").astype(str)
+        parsed = rid.str.match(_ROUTE_ID_RE.pattern)
+        suffix = rid.str[5].where(parsed, "")
+        base = (rid.str[:5] + rid.str[6:]).where(parsed, "")
+        paired = eligible & suffix.isin(["A", "D"]) & ~ev.notna()
+        # Only routes that carry a D line can pair; the rest of the layer is skipped.
+        d_bases = set(base[eligible & suffix.eq("D")])
+        cand = out.index[paired & base.isin(d_bases)]
+        if len(cand):
+            from shapely.geometry import Point
+            from shapely.ops import linemerge, unary_union
+
+            sub = out.loc[out.index[eligible & base.isin(d_bases)]]
+            metric = sub.to_crs(sub.estimate_utm_crs()) if hasattr(sub, "to_crs") else sub
+            geom = metric.geometry
+            aadt_v = pd.to_numeric(sub[AADT_COL], errors="coerce")
+            nan = pd.Series(float("nan"), index=sub.index)
+            f_m = pd.to_numeric(sub.get("FromMeasur", nan), errors="coerce")
+            t_m = pd.to_numeric(sub.get("ToMeasure", nan), errors="coerce")
+            sfx, bse = suffix[sub.index], base[sub.index]
+            legs = {}                 # (base, suffix) -> (merged line, its end points)
+            for key, idx in sub.groupby([bse, sfx]).groups.items():
+                parts = [g for g in geom[idx] if g is not None and not g.is_empty]
+                if not parts:
+                    continue
+                merged = unary_union(parts)
+                if merged.geom_type == "MultiLineString":
+                    merged = linemerge(merged)
+                lines = [ln for ln in getattr(merged, "geoms", [merged])
+                         if ln.geom_type == "LineString"]
+                ends = [Point(c) for ln in lines for c in (ln.coords[0], ln.coords[-1])]
+                legs[key] = (merged, ends)
+            for i in cand:
+                g = geom[i]
+                if g is None or g.is_empty:
+                    continue
+                other_sfx = "D" if suffix[i] == "A" else "A"
+                partners = sub.index[(bse == base[i]) & (sfx == other_sfx)]
+                verdict = None
+                for j in partners:
+                    if (abs(f_m[i] - f_m[j]) < 0.005 and abs(t_m[i] - t_m[j]) < 0.005
+                            and aadt_v[i] == aadt_v[j]):
+                        verdict = EV_DUPLICATED
+                        break
+                if verdict is None and (base[i], other_sfx) in legs:
+                    other, ends = legs[(base[i], other_sfx)]
+                    if _beside_fraction(g, other, ends, pair_max_sep_m) >= 0.5:
+                        verdict = EV_ONE_WAY_PAIR
+                if verdict is not None:
+                    ev[i] = verdict
+
+    out[BASIS_EVIDENCE_COL] = ev
+    return out
+
+
+def two_way_twins(geo, segment_ids, *, tol_m: float = TWO_WAY_TWIN_TOL_M,
+                  metric_crs=None) -> set:
+    """The ``segment_ids`` that are one carriageway of a two-way road.
+
+    A segment is two-way when an opposing segment (bearings more than 120° apart) of
+    the same street (:func:`inrix_tools.couplets.street_key`) lies within ``tol_m``
+    at 10%, 50% and 90% of its length. A couplet leg has no such twin: the other leg
+    is a different street, at least 25 m away. Without a ``RoadName`` column the
+    street is not compared, only the geometry.
+    """
+    from .couplets import street_key
+    from .geometry import _bearing_deg
+
+    ids = [s for s in segment_ids if s in geo.index]
+    if not ids:
+        return set()
+    valid = geo[geo.geometry.notna() & ~geo.geometry.is_empty]
+    crs = metric_crs or valid.estimate_utm_crs()
+    geom_m = valid.geometry.to_crs(crs)
+    has_names = "RoadName" in valid.columns
+    names = (valid["RoadName"].fillna("").map(lambda s: street_key(str(s)).lower())
+             if has_names else None)
+    from shapely import STRtree
+    keys = list(geom_m.index)
+    tree = STRtree(list(geom_m.values))
+    bearings: dict = {}
+
+    def _b(sid):
+        if sid not in bearings:
+            try:
+                bearings[sid] = _bearing_deg(valid.geometry[sid])
+            except (NotImplementedError, AttributeError):     # MultiLineString
+                bearings[sid] = None
+        return bearings[sid]
+
+    out = set()
+    for sid in ids:
+        if sid not in geom_m.index:
+            continue
+        g = geom_m[sid]
+        pts = [g.interpolate(f, normalized=True) for f in (0.1, 0.5, 0.9)]
+        for k in tree.query(g.buffer(tol_m)):
+            cid = keys[int(k)]
+            if cid == sid or (has_names and names[cid] != names[sid]):
+                continue
+            b1, b2 = _b(sid), _b(cid)
+            if b1 is None or b2 is None or abs((b1 - b2 + 180.0) % 360.0 - 180.0) <= 120.0:
+                continue
+            cg = geom_m[cid]
+            if all(cg.distance(p) <= tol_m for p in pts):
+                out.add(sid)
+                break
+    return out
+
+
+def apply_two_way_basis(joined, *, couplet_segments=(), network=None):
+    """Put every segment's ``AADT`` on the two-way-equivalent basis (Item 53).
+
+    Idempotent: it starts from ``aadt_layer`` (the count the layer publishes, written
+    on the first call) each time, so a second call with a couplet membership only
+    adds to the first. Per segment:
+
+    * a ramp or connector record (``aadt_source == "matched_ramp"``) keeps its count,
+      basis ``ramp``;
+    * the count is doubled (``one_way_x2``) when the record is one-way by the layer's
+      own evidence (``one_way_words`` / ``one_way_pair``, :func:`classify_aadt_basis`)
+      **or** the segment is in ``couplet_segments`` and the layer does not say the
+      record is two-way — **and** the segment itself is not one carriageway of a
+      two-way road (:func:`two_way_twins`). That last test is what keeps a two-way
+      street that happens to reach a one-way record at its original count: Moscow's SH-8 Troy Rd,
+      Blackfoot's Bridge St past Juniper, Boise's Broad St under Front St's ``D``
+      record;
+    * everything else is ``two_way``.
+
+    Args:
+        joined: a :func:`join_aadt` frame, indexed by segment id.
+        couplet_segments: segment ids on a one-way couplet leg (a catalogue's
+            ``one_way_couplet`` corridors): the fallback where the layer has no
+            evidence.
+        network: the frame the two-way test searches for an opposing twin; default
+            ``joined`` itself, which is the whole network wherever the join is.
+
+    Returns:
+        A copy with ``AADT`` rebased and ``aadt_layer`` / ``aadt_basis`` /
+        ``aadt_basis_reason`` set. ``attrs['aadt_basis']`` counts the bases and
+        reasons.
+    """
+    out = joined.copy()
+    if AADT_LAYER_COL not in out.columns:
+        out[AADT_LAYER_COL] = pd.to_numeric(out[AADT_COL], errors="coerce") \
+            if AADT_COL in out.columns else float("nan")
+    layer = pd.to_numeric(out[AADT_LAYER_COL], errors="coerce")
+    source = out[AADT_SOURCE_COL] if AADT_SOURCE_COL in out.columns else \
+        pd.Series("matched", index=out.index)
+    rec = out[AADT_RECORD_BASIS_COL] if AADT_RECORD_BASIS_COL in out.columns else \
+        pd.Series([None] * len(out), index=out.index, dtype=object)
+    couplet = set(couplet_segments or ())
+
+    has = layer.notna()
+    ramp = has & source.eq("matched_ramp")
+    layer_one = has & ~ramp & rec.isin(_EV_ONE_WAY)
+    leg_one = (has & ~ramp & ~layer_one & out.index.isin(couplet)
+               & ~rec.isin(_EV_TWO_WAY))
+    cand = out.index[layer_one | leg_one]
+    twins = two_way_twins(network if network is not None else out, cand) \
+        if len(cand) else set()
+    is_twin = out.index.isin(twins)
+    doubled = (layer_one | leg_one) & ~is_twin
+
+    basis = pd.Series(pd.NA, index=out.index, dtype=object)
+    basis[has] = TWO_WAY
+    basis[ramp] = RAMP_MOVEMENT
+    basis[doubled] = ONE_WAY_X2
+    reason = pd.Series(pd.NA, index=out.index, dtype=object)
+    reason[has] = "default"
+    reason[has & rec.isin(_EV_TWO_WAY)] = rec[has & rec.isin(_EV_TWO_WAY)]
+    reason[ramp] = "ramp_movement"
+    reason[(layer_one | leg_one) & is_twin] = "two_way_street"
+    reason[layer_one & ~is_twin] = rec[layer_one & ~is_twin]
+    reason[leg_one & ~is_twin] = "couplet_leg"
+
+    out[AADT_COL] = layer.where(~doubled, layer * 2.0)
+    out[AADT_BASIS_COL] = basis
+    out[AADT_BASIS_REASON_COL] = reason
+    out.attrs = dict(joined.attrs)
+    out.attrs["aadt_basis"] = {
+        "basis": "two-way equivalent (a one-way count x 2)",
+        "counts": {k: int(v) for k, v in basis.value_counts().items()},
+        "reasons": {k: int(v) for k, v in reason.value_counts().items()},
+        "n_couplet_segments": len(couplet),
+    }
+    return out
 
 
 # ---------------------------------------------------------------------------

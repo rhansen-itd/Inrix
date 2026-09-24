@@ -1337,15 +1337,51 @@ of delay, AADT-weighted corridor speed).
     leg's traffic alone. Where the road splits the layer halves it: 15,000 two-way
     at "END 1-WAY N OF RAMPS", then 7,500 (A) and 7,700 (D). So a divided highway's
     one centreline carries a **two-way** count that both carriageways inherit
-    through the join, but a couplet leg carries a **one-way** count. VHD on couplet
-    legs is therefore about half as large, on the same delay, as on every other
-    road. This is not corrected yet: ROADMAP Item 53.
+    through the join, but a couplet leg carries a **one-way** count. Uncorrected, VHD
+    on couplet legs is about half as large, on the same delay, as on every other road.
+    **Corrected in Item 53 (Session 72):** `join_aadt` puts `AADT` on the
+    two-way-equivalent basis, doubling a one-way count, and keeps the published count
+    as `aadt_layer`, with `aadt_basis` / `aadt_basis_reason` per segment. How the layer
+    shows a one-way count (`aadt.classify_aadt_basis`):
+    - **Words.** `BEG 1-WAY` / `END 2-WAY` open a one-way section, and `END 1-WAY` /
+      `END OF 1-WAY` / `BEG 2-WAY` close it. The marker can be in the "from" point
+      (`Descriptio`) or the "to" point (`Descript_1`). A record starting where a section
+      opens, or ending where one closes, is inside it. The reverse is the two-way road
+      beside it: `END 1-WAY @ ELM ST → CEDAR ST` is 21,500. `COUPLET` / `CPLT` name
+      junctions, not sections. Nampa's `D` leg starts at `CALDWELL BLVD(END CPLT)`,
+      the same point where the `A` leg reads `CANYON ST (BEG 1-WAY)`.
+    - **An `A`/`D` pair beside each other** (within 350 m, over at least half the
+      record, nearest to a point *along* the other leg rather than one of its ends).
+      **The route measures can't be used for this.** Moscow's and Twin Falls' `D`
+      legs are measured differently from their `A` legs, so measure overlap pairs
+      records a kilometre apart.
+    - **Not every `D` record is a couplet leg.** Of the layer's 100 `D` records, about
+      30 are roundabouts, ramps, or the second structure at an interchange crossing.
+      Two-way roads cross those (Tank Farm Rd, Hawkins Rd, W Broad St in Boise). So a
+      count is doubled only on an XD segment that has **no opposing twin** on its own
+      street.
+    - **The same count on both carriageways is a duplicated two-way count.**
+      Sandpoint's 5th Ave has `A` = `D` = 13,000 on identical measures, with 11,500
+      and 16,000 either side.
+    - **The Boise legs check out.** I-184 ends at 58,500 two-way. The US-20 Spur's
+      `A` + `D` are 29,000 + 27,000, which fits. Myrtle and Front legs add to
+      49,000–61,500, against Broadway's 29,500 at the east end: traffic disperses
+      downtown.
+    - **Divided highways drawn as `A`/`D` pairs with their own counts are doubled
+      too** (SH-1 at the border: 220 + 210, against 440 two-way). That is the same
+      basis.
     **The legs need not sum to the two-way road on either side.** Moscow's US-95 couplet
     also carries SH-8 between 3rd St (SH-8 west) and the south junction (Troy Rd, SH-8
     east). There the legs are 12,500 NB + 12,000 SB, against 14,000 two-way on US-95
     south. North of 3rd, where only US-95 uses it, they are 6,800–10,500 NB + 9,600 SB,
     against 16,000 two-way. Both are one-way counts; a concurrent route joining inside a
     couplet raises the sum (owner, Session 71).
+    **Moscow's south-junction segments were not a bad join (Session 72).**
+    Segments `1236966046` / `1236966035` are SH-8 Troy Rd itself: `RoadName` `ID-8`,
+    two-way, 0.51 mi. So Troy Rd's 13,000 is the right count for them. They entered
+    the couplet legs through the catalogue endpoint. It was written to 5 decimals,
+    which put it 1 ft nearer Troy Rd's end than Washington St's start at the node.
+    The fix is in `corridors.build_chain`: `JUNCTION_TIE_FEET`.
 - **No `XDSegID`.** There is no INRIX join key, so the join to our `Segment ID` is
   necessarily **spatial**: `aadt.join_aadt` matches each Item 8 segment polyline to a
   candidate AADT line within `max_distance_m` (default **60 m**), gated by a

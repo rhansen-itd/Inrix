@@ -934,3 +934,169 @@ def test_a_degenerate_bbox_reads_as_no_restriction(layer_shp, tmp_path):
     layer = aadt.load_aadt(layer_shp, year=2024, bbox=nan_bbox, cache_path=cache)
     assert len(layer) == 4
     assert aadt.read_cache_meta(cache)["bbox"] is None
+
+
+# ---------------------------------------------------------------------------
+# One volume basis: a couplet leg's one-way count × 2  (Item 53)
+# ---------------------------------------------------------------------------
+_LON_A, _LON_D = -116.20, -116.198        # the two legs, ~160 m apart
+_LAT_S, _LAT_N = 43.605, 43.620           # where the road splits and rejoins
+
+
+def _record(route_id, frm, to, count, coords, desc, desc_1):
+    return {"RouteID": route_id, "FromMeasur": frm, "ToMeasure": to, "AADT": count,
+            "Descriptio": desc, "Descript_1": desc_1, "Year": 2025,
+            "geometry": LineString(coords)}
+
+
+def _couplet_layer(*, words=False):
+    """ITD's picture of a couplet (Pocatello's I-15 BL, ``01360AIN015``): a two-way
+    record south of the split (15,000), the ``A`` leg (7,500) and the ``D`` leg (7,700)
+    a block apart, and a two-way record north of where they rejoin (15,000). Plus a
+    divided highway drawn as an ``A``/``D`` pair with the **same** count, the way the
+    layer draws Sandpoint's 5th Ave (duplicated two-way count)."""
+    # ends where the one-way section begins: the two-way road before it
+    south = "BEG 1-WAY/RESTLAWN DR" if words else "RESTLAWN DR"
+    rows = [
+        _record("01360AIN015", 0.0, 0.35, 15000,
+                [(_LON_A, 43.600), (_LON_A, _LAT_S)], "RAMPS IC #67", south),
+        _record("01360AIN015", 0.35, 1.35, 7500,
+                [(_LON_A, _LAT_S), (_LON_A, _LAT_N)], "RESTLAWN DR", "E CENTER ST"),
+        _record("01360DIN015", 0.36, 1.40, 7700,
+                [(_LON_D, _LAT_S), (_LON_D, _LAT_N)], "RESTLAWN DR", "E CENTER ST"),
+        _record("01360AIN015", 1.35, 1.70, 15000,
+                [(_LON_A, _LAT_N), (_LON_A, 43.625)], "E CENTER ST", "CEDAR ST"),
+        # a divided highway, both carriageways given the two-way count
+        _record("01590AUS002", 28.38, 28.59, 13000,
+                [(-116.30, 43.60), (-116.30, 43.61)], "5TH AVE @PINE ST", "CEDAR ST"),
+        _record("01590DUS002", 28.38, 28.59, 13000,
+                [(-116.2998, 43.60), (-116.2998, 43.61)], "5TH AVE @PINE ST", "CEDAR ST"),
+    ]
+    return gpd.GeoDataFrame(rows, crs="EPSG:4326")
+
+
+def test_classify_aadt_basis_reads_the_one_way_markers():
+    """``BEG 1-WAY`` / ``END 2-WAY`` open a one-way section, ``END 1-WAY`` /
+    ``BEG 2-WAY`` close it. A record starting where one opens or ending where one
+    closes lies inside it; the reverse is the two-way road beside it. ``END CPLT`` is
+    not read (Nampa's ``D`` leg starts at it), nor is a ramp."""
+    cases = [
+        ("BEG 1-WAY/RESTLAWN DR", "BARTON RD", aadt.EV_ONE_WAY_WORDS),
+        ("OAK ST (US-30)", "END 1-WAY @ ELM ST", aadt.EV_ONE_WAY_WORDS),
+        ("BEG 1 WAY SB CENTENNIAL", "SIMPLOT BLVD", aadt.EV_ONE_WAY_WORDS),
+        ("S 3RD W ST", "MAIN ST (END 2-WAY)", aadt.EV_TWO_WAY_WORDS),
+        ("END 1-WAY @ ELM ST", "CEDAR ST", aadt.EV_TWO_WAY_WORDS),
+        ("RAMPS IC #1 WEISER", "IDAHO ST (BEG 1-WAY)", aadt.EV_TWO_WAY_WORDS),
+        ("END 1-WAY EOF JEFFERSON", "BEG 1-WAY W OF RAMPS", aadt.EV_TWO_WAY_WORDS),
+        ("CALDWELL BLVD(END CPLT)", "NORTHSIDE BLVD", None),
+        ("WB ON COTTERELL IC #222", "END 1-WAY", None),        # a ramp: no evidence
+    ]
+    layer = gpd.GeoDataFrame(
+        [_record(f"0{i:04d}AOH000", 0.0, 1.0, 5000,
+                 [(-116.0 - i * 0.1, 43.6), (-116.0 - i * 0.1, 43.61)], f, t)
+         for i, (f, t, _) in enumerate(cases)], crs="EPSG:4326")
+    ev = aadt.classify_aadt_basis(layer)[aadt.BASIS_EVIDENCE_COL].tolist()
+    assert ev == [c[2] for c in cases]
+
+
+def test_classify_aadt_basis_pairs_the_legs_not_the_two_way_ends():
+    """The two legs run beside each other and are ``one_way_pair``. The two-way
+    records past each end lie within a block of the ``D`` leg too — but of its **end**,
+    which is what the beside test rejects. A same-measures, same-count pair is a
+    duplicated two-way count."""
+    ev = aadt.classify_aadt_basis(_couplet_layer())[aadt.BASIS_EVIDENCE_COL].tolist()
+    assert ev == [None, aadt.EV_ONE_WAY_PAIR, aadt.EV_ONE_WAY_PAIR, None,
+                  aadt.EV_DUPLICATED, aadt.EV_DUPLICATED]
+
+
+def _couplet_segments():
+    """XD segments on the couplet: the NB leg on the ``A`` line, the SB leg on the ``D``
+    line, a two-way street (both directions, one name) south of the split, and a
+    two-way street that happens to lie on the ``D`` leg's record at its south end
+    (Moscow's SH-8 Troy Rd, which reached the US-95 couplet's records)."""
+    lat_s2 = _LAT_S + 0.002
+    rows = [
+        (1, "S 5th Ave", [(_LON_A, _LAT_S + 0.001), (_LON_A, _LAT_N - 0.001)]),
+        (2, "S 4th Ave", [(_LON_D, _LAT_N - 0.001), (_LON_D, _LAT_S + 0.004)]),
+        (3, "Yellowstone Ave", [(_LON_A, 43.601), (_LON_A, _LAT_S - 0.001)]),
+        (4, "Yellowstone Ave", [(_LON_A + 0.00005, _LAT_S - 0.001),
+                                (_LON_A + 0.00005, 43.601)]),
+        (5, "Troy Rd", [(_LON_D + 0.00005, _LAT_S), (_LON_D + 0.00005, lat_s2)]),
+        (6, "Troy Rd", [(_LON_D + 0.0001, lat_s2), (_LON_D + 0.0001, _LAT_S)]),
+    ]
+    return gpd.GeoDataFrame(
+        {"RoadName": [r[1] for r in rows], "geometry": [LineString(r[2]) for r in rows]},
+        index=pd.Index([r[0] for r in rows], name=SEGMENT_COL), crs="EPSG:4326")
+
+
+def test_join_doubles_a_couplet_legs_one_way_count():
+    """The legs carry 7,500 and 7,700 one-way; on the two-way-equivalent basis the
+    rest of the network is on they are 15,000 and 15,400 — the two-way road either side
+    carries 15,000. The published count is kept as ``aadt_layer``."""
+    j = aadt.join_aadt(_couplet_segments(), _couplet_layer())
+    assert j.loc[1, "AADT"] == 15000.0 and j.loc[1, aadt.AADT_LAYER_COL] == 7500.0
+    assert j.loc[2, "AADT"] == 15400.0 and j.loc[2, aadt.AADT_LAYER_COL] == 7700.0
+    assert j.loc[[1, 2], aadt.AADT_BASIS_COL].tolist() == [aadt.ONE_WAY_X2] * 2
+    assert j.loc[[1, 2], aadt.AADT_BASIS_REASON_COL].tolist() == [aadt.EV_ONE_WAY_PAIR] * 2
+    # the two-way road south of the split is untouched
+    assert j.loc[[3, 4], "AADT"].tolist() == [15000.0, 15000.0]
+    assert j.loc[[3, 4], aadt.AADT_BASIS_COL].tolist() == [aadt.TWO_WAY] * 2
+    assert j.attrs["aadt_basis"]["counts"][aadt.ONE_WAY_X2] == 2
+
+
+def test_two_way_street_on_a_one_way_record_keeps_its_count():
+    """Troy Rd's two directions both reach the ``D`` leg's record. A segment with an
+    opposing twin of its own street is one carriageway of a two-way road, and its
+    count is not doubled, whatever the record it reached."""
+    j = aadt.join_aadt(_couplet_segments(), _couplet_layer())
+    assert j.loc[[5, 6], aadt.AADT_LAYER_COL].tolist() == [7700.0, 7700.0]
+    assert j.loc[[5, 6], "AADT"].tolist() == [7700.0, 7700.0]
+    assert j.loc[[5, 6], aadt.AADT_BASIS_REASON_COL].tolist() == ["two_way_street"] * 2
+    assert aadt.two_way_twins(_couplet_segments(), [1, 2, 3, 5]) == {3, 5}
+
+
+def test_couplet_membership_is_the_fallback_where_the_layer_is_silent():
+    """With no ``D`` leg in the layer, the ``A`` leg's record carries no evidence: a
+    couplet-leg segment is doubled only once the catalogue says it is one, and a
+    record the layer marks two-way is never doubled."""
+    layer = _couplet_layer().drop(index=[2]).reset_index(drop=True)   # no D leg
+    segs = _couplet_segments().loc[[1, 3, 4]]
+    j = aadt.join_aadt(segs, layer)
+    assert j.loc[1, "AADT"] == 7500.0 and j.loc[1, aadt.AADT_BASIS_COL] == aadt.TWO_WAY
+    k = aadt.apply_two_way_basis(j, couplet_segments={1})
+    assert k.loc[1, "AADT"] == 15000.0
+    assert k.loc[1, aadt.AADT_BASIS_REASON_COL] == "couplet_leg"
+    # idempotent: a second pass starts from the published count, not from 15,000
+    again = aadt.apply_two_way_basis(k, couplet_segments={1})
+    assert again.loc[1, "AADT"] == 15000.0
+    # a record ITD marks two-way is not doubled on membership alone
+    worded = _couplet_layer(words=True).drop(index=[1, 2]).reset_index(drop=True)
+    seg = _couplet_segments().loc[[3]]
+    w = aadt.apply_two_way_basis(aadt.join_aadt(seg, worded), couplet_segments={3})
+    assert w.loc[3, "AADT"] == 15000.0
+    assert w.loc[3, aadt.AADT_BASIS_REASON_COL] == aadt.EV_TWO_WAY_WORDS
+
+
+def test_two_way_basis_off_and_ramps():
+    """``two_way_basis=False`` returns the layer's counts as published, with no basis
+    columns. A ramp record's count is one movement and is never doubled."""
+    raw = aadt.join_aadt(_couplet_segments(), _couplet_layer(), two_way_basis=False)
+    assert raw.loc[1, "AADT"] == 7500.0
+    assert aadt.AADT_BASIS_COL not in raw.columns
+    assert aadt.AADT_RECORD_BASIS_COL not in raw.columns
+    j = aadt.join_aadt(_carriageway(road_name="Eagle Rd off-ramp", frc=6),
+                       _divided_highway_layer())
+    row = j.iloc[0]
+    assert row[aadt.AADT_SOURCE_COL] == "matched_ramp"
+    assert row[aadt.AADT_BASIS_COL] == aadt.RAMP_MOVEMENT
+    assert row["AADT"] == row[aadt.AADT_LAYER_COL] == 18000.0
+
+
+def test_vhd_follows_the_two_way_basis():
+    """VHD reads ``AADT``, so a couplet leg's delay now scores what the same delay
+    scores on the two-way road beside it."""
+    j = aadt.join_aadt(_couplet_segments(), _couplet_layer())
+    delay = pd.Series({1: 0.6, 3: 0.6})
+    vhd = aadt.vehicle_hours_of_delay(delay, j)
+    col = [c for c in vhd.columns if "vhd" in c.lower() or "hours" in c.lower()][0]
+    assert vhd.loc[1, col] == pytest.approx(vhd.loc[3, col])

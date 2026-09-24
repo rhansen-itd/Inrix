@@ -320,6 +320,11 @@ REPAIR_COLUMNS = ("segment", "old_next", "new_next", "kind", "gap_m",
                   "bearing_delta_deg", "xdgroup", "road_name", "lanes")
 FILL = "fill"           # the link was null; the network asserted nothing
 OVERRIDE = "override"   # the link pointed out of its own XDGroup
+JUNCTION_TIE_FEET = 5.0
+"""Two snaps closer than this are a tie, broken toward the segment the query point
+begins (start) or finishes (end). A catalogue's 5-decimal endpoints move a point by
+at most ~2 ft each, so a start and an end together stay under it (Item 53)."""
+
 DEFAULT_REPAIR_RADIUS_M = 25.0
 DEFAULT_MAX_BEARING_DELTA_DEG = 90.0
 _BEARING_PROBE_M = 30.0   # how much of each end to measure the junction bearing over
@@ -673,20 +678,31 @@ def build_chain(source, start_latlon, end_latlon, *, projected_crs=None,
         starts = [c for c in starts if c[1] <= max_snap_feet] or starts[:1]
         ends = [c for c in ends if c[1] <= max_snap_feet] or ends[:1]
 
-    best = None  # (reached, total_snap_ft, start_cand, end_cand, chain, reason)
+    combos = []   # (reached, total snap ft, junction score, start cand, end cand, chain, reason)
     for s_id, s_ft, s_frac in starts:
         for e_id, e_ft, e_frac in ends:
             chain, reason = walk_chain(proj, s_id, e_id, max_steps=max_steps)
-            reached = reason == "target"
-            # Ties on snap distance (a point exactly at a junction) go to the start
-            # segment the point *begins* and the end segment it *finishes*: a start at
-            # the far end of the upstream segment adds that segment with ~0 of it in
-            # the extent. Myrtle St EB began on I-184 once Item 51's route junctions
-            # let the Connector walk onto it.
-            key = (not reached, round(s_ft + e_ft, 1), s_frac + (1.0 - e_frac))
-            if best is None or key < best[0]:
-                best = (key, (s_id, s_ft, s_frac), (e_id, e_ft, e_frac), chain, reason)
-    _, (s_id, s_ft, s_frac), (e_id, e_ft, e_frac), chain, reason = best
+            combos.append((reason == "target", s_ft + e_ft, s_frac + (1.0 - e_frac),
+                           (s_id, s_ft, s_frac), (e_id, e_ft, e_frac), chain, reason))
+    # Ties on snap distance (a point exactly at a junction) go to the start segment
+    # the point *begins* and the end segment it *finishes*: a start at the far end of
+    # the upstream segment adds that segment with ~0 of it in the extent. Myrtle St EB
+    # began on I-184 once Item 51's route junctions let the Connector walk onto it.
+    # "Tied" means within JUNCTION_TIE_FEET, not equal to 0.1 ft: a catalogue writes
+    # its endpoints to 5 decimals, which moves a junction node by up to ~2 ft, and at
+    # Moscow's south junction that made SH-8 Troy Rd's last segment 1 ft nearer than
+    # Washington St's first (Item 53) — both couplet legs then took 0.51 mi of
+    # two-way Troy Rd.
+    # Only a junction tie is broken this way: the nearer snap gives way only to one a
+    # whole segment "better" (the point at the far end of the upstream segment
+    # against the start of the next), never to a cross-street a few feet off.
+    pool = [c for c in combos if c[0]] or combos
+    best = min(pool, key=lambda c: (round(c[1], 1), c[2]))
+    at_node = [c for c in pool if c[1] <= best[1] + JUNCTION_TIE_FEET
+               and c[2] <= best[2] - 0.9]
+    if at_node:
+        best = min(at_node, key=lambda c: (c[2], c[1]))
+    _, _, _, (s_id, s_ft, s_frac), (e_id, e_ft, e_frac), chain, reason = best
     reached = reason == "target"
 
     indexed = proj.set_index("XDSegID")
@@ -1339,6 +1355,25 @@ def parse_reporting_corridors(data) -> tuple[ReportingCorridor, ...]:
                 f"Reporting corridor(s) {unused} are declared but no entry belongs to "
                 "them — a corridor declared and unused is one missing from the report.")
     return tuple(out)
+
+
+def couplet_segments(entries, groups, chains) -> set[int]:
+    """Every segment on a one-way couplet leg: the resolved chains of the entries whose
+    reporting corridor is ``one_way_couplet``. What
+    :func:`inrix_tools.aadt.apply_two_way_basis` falls back on where the AADT layer
+    itself does not say a leg's record is one-way (Item 53).
+
+    Args:
+        entries: catalogue entries (:func:`load_catalogue`).
+        groups: reporting corridors (:func:`load_reporting_corridors`).
+        chains: ``{entry id: ChainResult}``, e.g. ``resolve_catalogue(...).attrs["chains"]``.
+    """
+    couplet_groups = {g.id for g in groups if g.one_way_couplet}
+    out: set[int] = set()
+    for e in entries:
+        if e.corridor in couplet_groups and e.id in chains:
+            out.update(int(s) for s in chains[e.id].segment_ids)
+    return out
 
 
 def load_catalogue(path) -> tuple[CorridorEntry, ...]:

@@ -171,9 +171,13 @@ def shs_source(path=DEFAULT_SHS):
 
 
 def join_volumes(geo, aadt_source, *, year, cache_path, max_distance_m, bbox_margin,
-                 shs=None):
+                 shs=None, couplet_segments=(), network=None):
     """Mainline-preferred AADT for the corridor members (Item 34); record kinds from the
-    State Highway System where it is unambiguous (Item 52)."""
+    State Highway System where it is unambiguous (Item 52). On the two-way-equivalent
+    basis (Item 53): a couplet leg's one-way count is doubled, from the layer's own
+    evidence and, where it has none, from ``couplet_segments`` (the catalogue's
+    ``one_way_couplet`` legs). ``network`` is where the two-way-street test looks for
+    an opposing twin; pass the whole network when ``geo`` is only the corridors."""
     if aadt_source is None:
         return None
     bounds = geo["geometry"].dropna().total_bounds
@@ -182,7 +186,14 @@ def join_volumes(geo, aadt_source, *, year, cache_path, max_distance_m, bbox_mar
     layer = aadt_mod.load_aadt(aadt_source, year=year, bbox=bbox, cache_path=cache_path,
                                shs=shs)
     unique = geo.drop_duplicates(subset="Segment ID").set_index("Segment ID")
-    return aadt_mod.join_aadt(unique, layer, max_distance_m=max_distance_m)
+    joined = aadt_mod.join_aadt(unique, layer, max_distance_m=max_distance_m)
+    if couplet_segments or network is not None:
+        if network is not None and network.index.name != "Segment ID":
+            key = "Segment ID" if "Segment ID" in network.columns else "XDSegID"
+            network = network.drop_duplicates(subset=key).set_index(key)
+        joined = aadt_mod.apply_two_way_basis(joined, couplet_segments=couplet_segments,
+                                              network=network)
+    return joined
 
 
 def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> dict:
@@ -226,6 +237,7 @@ def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> 
             "source": str(args.aadt), "year": args.aadt_year,
             "policy": {k: v for k, v in joined.items() if k != "caveat"},
             "caveat": joined.get("caveat"),
+            "basis": aadt.attrs.get("aadt_basis"),
         }
     return out
 
@@ -1156,10 +1168,14 @@ def run(args) -> dict:
         net_geo = apply_membership(net, args.membership)
         net_geo["Segment ID"] = net_geo["XDSegID"]
         aadt_cache = args.aadt_cache or (f"geometry_cache/d{args.district}_aadt.parquet" if args.district else None)
+        groups = corridors.load_reporting_corridors(args.catalogue)
+        couplet_ids = corridors.couplet_segments(
+            corridors.load_catalogue(args.catalogue), groups, accepted)
         aadt = join_volumes(net_geo, args.aadt, year=args.aadt_year,
                             cache_path=aadt_cache,
                             max_distance_m=args.aadt_max_distance_m,
-                            bbox_margin=BBOX_MARGIN_DEG, shs=shs_source(args.shs))
+                            bbox_margin=BBOX_MARGIN_DEG, shs=shs_source(args.shs),
+                            couplet_segments=couplet_ids)
 
         # Keyed on the catalogue **id**, not the name: ids are short and unique,
         # where two names can share their first 20 characters ("SH-44 (State St)
@@ -1172,7 +1188,6 @@ def run(args) -> dict:
         # Both directions of one road are one *reporting* corridor (Item 40). The
         # directional table above is not replaced by it — a district reads the road,
         # then asks which direction and which peak, and both need to be on the page.
-        groups = corridors.load_reporting_corridors(args.catalogue)
         grouped = totals = breakout = None
         if groups:
             membership = resolution.loc[resolution["accepted"],

@@ -2674,7 +2674,7 @@ changes and require couplets to be real one-way pairs."
 
 ---
 
-## 53 — Couplet legs carry one-way AADT; everything else carries two-way
+## 53 — Couplet legs carry one-way AADT; everything else carries two-way ✅ (Session 72)
 
 **Target: one session. Independent of the other open items**, but it changes VHD, so
 run it before the next statewide re-run, not after. A prerequisite for the Future
@@ -2717,12 +2717,14 @@ record win.
 
 Scope:
 
-- [ ] **Decide the basis.** Recommended: keep the **two-way-equivalent** basis the
+- [x] **Decide the basis.** Recommended: keep the **two-way-equivalent** basis the
       rest of the network already uses (that is what the noise floors,
       `MIN_CORE_VHD[_PER_MILE]`, were tuned on). Give a couplet leg its one-way count
       × 2. A true one-way VHD would halve every other segment instead, and every floor
       would need re-tuning. Record the decision in DESIGN_HISTORY.
-- [ ] **Decide per record, not per corridor.** Use the layer's own evidence where you
+      *Done: two-way-equivalent, as recommended. `AADT` is the two-way-equivalent
+      volume, and the published count stays alongside as `aadt_layer`.*
+- [x] **Decide per record, not per corridor.** Use the layer's own evidence where you
       can: an `A`/`D` pair on the same measures, or a "BEG/END 1-WAY" boundary where
       the count halves. Fall back to couplet-leg membership (`one_way_couplet`). Give
       each segment an `aadt_basis` column (`two_way` / `one_way_x2`) so the per-segment
@@ -2730,14 +2732,50 @@ Scope:
       `join_aadt` (`run_district_screening.join_volumes`,
       `build_statewide_catalogues`, `generate_statewide_maps`). Do not add it at each
       place VHD is used.
-- [ ] Fix the Moscow south-junction segments that join to SH-8's Troy Rd record
+      *Done (`aadt.classify_aadt_basis`, `aadt.apply_two_way_basis`, applied inside
+      `join_aadt`; `join_volumes` re-applies it with the catalogue's couplet legs,
+      `corridors.couplet_segments`).*
+      - *The layer evidence is the 1-WAY/2-WAY words, read by which end of the record
+        they sit at.*
+      - *Or an `A`/`D` pair running **beside** each other. "The same measures" could
+        not be used: Moscow's and Twin Falls' `D` legs are measured differently from
+        their `A` legs.*
+      - *A count is doubled only on a segment with no opposing twin on its own
+        street. The layer's `D` records include interchange crossings and roundabouts
+        that two-way roads cross.*
+      - *`aadt_basis` is `two_way` / `one_way_x2` / `ramp` (a ramp's count is one
+        movement), with `aadt_basis_reason`.*
+      - *Statewide, 164 segments are doubled, and 51 two-way streets reaching a
+        one-way record are left alone.*
+- [x] Fix the Moscow south-junction segments that join to SH-8's Troy Rd record
       (above). Check the Boise couplet's legs against I-184 and the two-way ends. Any
       check that "the legs add up to the two-way road" has to allow for a concurrent
       route joining inside the couplet, as Moscow's does.
-- [ ] pytest (the factor, the flag, and an `A`/`D` split fixture); re-run the screening;
+      *Done, but it was not a join defect.*
+      - *Those segments are Troy Rd itself (`ID-8`, two-way, 0.51 mi), and 13,000 is
+        right for them.*
+      - *They were in the legs because the catalogue endpoint, rounded to 5 decimals,
+        snapped 1 ft nearer Troy Rd's end than Washington St's start.
+        `corridors.build_chain` now treats snaps within `JUNCTION_TIE_FEET` (5 ft) as
+        a tie, broken toward the segment the point begins or ends. That changes 150
+        of 339 resolved chains by an end segment with ~0% inside the extent. Rankings
+        prorate by extent fraction, so metrics move by ≤ 2.5%.*
+      - *The same artefact was Session 33's "VSL +21% overshoot": that chain is now
+        3.007 mi against 3.006 requested. Franklin's asymmetry is real and is
+        unchanged.*
+      - *Boise checks out: I-184 58,500 two-way; the US-20 Spur `A` + `D` = 29,000 +
+        27,000; Myrtle + Front 49,000–61,500 against Broadway's 29,500.*
+- [x] pytest (the factor, the flag, and an `A`/`D` split fixture); re-run the screening;
       report how the couplet rankings move; DATA_FORMAT + DESIGN_HISTORY.
+      *Session 72. 7 new tests in `test_aadt.py`, 3 in `test_corridors.py`, and the
+      VSL test is rewritten. The screening is re-run with maps.*
+      - *Every couplet's VHD/mi doubles, and it is ranked on the same basis as
+        everything else.*
+      - *Peak moves: Boise #4 → #2, Moscow #20 → #9, Twin Falls #50 → #27 and #54 →
+        #33, Pocatello #51 → #29, Nampa #55 → #36, Blackfoot #60 → #57.*
+      - *Tables: `out/statewide_screening/item53_{peak,7day}_ranking_changes.csv`.*
 
-*Suggested prompt:* "Do Item 53 of ROADMAP.md — put couplet legs' AADT on the same
+*Suggested prompt (done):* "Do Item 53 of ROADMAP.md — put couplet legs' AADT on the same
 two-way basis as the rest of the network before VHD is computed."
 
 ---

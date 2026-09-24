@@ -82,13 +82,17 @@ def main():
     net_geo["Segment ID"] = net_geo["XDSegID"]
     aadt_all = join_volumes(net_geo, AADT_ZIP, year=aadt_mod.DEFAULT_YEAR, shs=shs_source(),
                             cache_path="geometry_cache/d3_aadt.parquet",
-                            max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG)
+                            max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG,
+                            couplet_segments=corridors.couplet_segments(
+                                cat_entries, groups, accepted))
 
     # AADT for the corridor members (shared by ranking and map traces)
     geo = corridor_geometry(net, res, chains)
+    couplet_ids = corridors.couplet_segments(cat_entries, groups, accepted)
     aadt = join_volumes(geo, AADT_ZIP, year=aadt_mod.DEFAULT_YEAR, shs=shs_source(),
                         cache_path="geometry_cache/d3_aadt.parquet",
-                        max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG)
+                        max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG,
+                        couplet_segments=couplet_ids, network=net_geo)
 
     map_files = []
 

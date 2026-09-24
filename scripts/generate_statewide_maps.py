@@ -76,16 +76,6 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
         net_d = gpd.read_parquet(net_cache)
         net_parts.append(net_d)
 
-        if aadt_source is not None:
-            net_geo = net_d.copy()
-            net_geo["Segment ID"] = net_geo["XDSegID"]
-            joined = join_volumes(
-                net_geo, aadt_source, year=aadt_year,
-                cache_path=f"geometry_cache/d{d}_aadt.parquet",
-                max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG, shs=shs_source())
-            if joined is not None:
-                aadt_parts.append(joined)
-
         cat_path = Path((catalogue_overrides or {}).get(d) or f"scripts/d{d}_corridors.json")
         repairs_path = Path(f"scripts/d{d}_link_repairs.csv")
         if cat_path.exists():
@@ -101,6 +91,23 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
             res = corridors.resolve_catalogue(net_d, entries, repairs=repairs)
             for cid, ch in res.attrs["chains"].items():
                 all_chains[cid] = ch
+            couplet_ids = corridors.couplet_segments(
+                entries, corridors.load_reporting_corridors(cat_path), res.attrs["chains"])
+        else:
+            couplet_ids = set()
+
+        if aadt_source is not None:
+            # After the catalogue: a couplet leg's one-way count is doubled onto the
+            # two-way-equivalent basis the rest of the map is on (Item 53).
+            net_geo = net_d.copy()
+            net_geo["Segment ID"] = net_geo["XDSegID"]
+            joined = join_volumes(
+                net_geo, aadt_source, year=aadt_year,
+                cache_path=f"geometry_cache/d{d}_aadt.parquet",
+                max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG, shs=shs_source(),
+                couplet_segments=couplet_ids)
+            if joined is not None:
+                aadt_parts.append(joined)
 
         # Screen parquet files
         p_peak = base_dir / f"d{d}" / "segment_peak_screen.parquet"

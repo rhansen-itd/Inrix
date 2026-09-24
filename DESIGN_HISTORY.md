@@ -5974,3 +5974,138 @@ new geometry/scaling test, and the map test now asserts the polygon form. Maps a
 generated output, so regenerate them (`scripts/generate_statewide_maps.py`, or
 `run_district_screening.py --maps`) to see the change.
 
+
+## Session 72 — Item 53: couplet legs' AADT on the two-way-equivalent basis (2026-09-24)
+
+### 1. The basis: two-way equivalent
+
+`AADT` now means the **two-way-equivalent** volume on every segment. A couplet leg's
+one-way count is doubled. The alternative, true one-way VHD, would halve every other
+segment and need every noise floor (`MIN_CORE_VHD[_PER_MILE]`) re-tuned. The layer's
+count as published is kept as `aadt_layer`. Each segment carries `aadt_basis`:
+`two_way`, `one_way_x2`, or `ramp` (a ramp count is one movement and is never
+doubled). It also carries `aadt_basis_reason`. `join_aadt` applies the basis itself
+(`two_way_basis=True`), so the GUI, the catalogue builder, the screening and the maps
+all get the same number. `join_volumes` re-applies it with the catalogue's couplet
+legs. `apply_two_way_basis` is idempotent because it always starts from
+`aadt_layer`.
+
+### 2. The per-record rule, and what did not work
+
+`aadt.classify_aadt_basis` labels each layer record:
+- **Words.** `BEG 1-WAY` / `END 2-WAY` open a one-way section and `END 1-WAY` /
+  `BEG 2-WAY` close it, and which end of the record the marker sits at matters. 32
+  records are inside a one-way section and 21 are the two-way road beside one. `CPLT`
+  and `COUPLET` are not read: Nampa's `D` leg starts at `CALDWELL BLVD(END CPLT)`.
+- **`A`/`D` pairs.** The ROADMAP's "same measures" test fails. Moscow's and Twin
+  Falls' `D` legs are measured differently from their `A` legs, so measure overlap
+  pairs Moscow's `D ST → MORTON ST` (two-way, 14,500) with the Jackson St leg. A
+  purely geometric "within 350 m of the other leg" test paired 122 records, and many
+  were the two-way road just past a couplet end (Pocatello's Cedar St 23,000, Nampa's
+  20,500 and 23,000, Boise's Broadway 29,500). The rule that works is **beside**: at
+  least half the record is within 350 m of the other leg, *and* nearest to a point
+  along it rather than one of its ends. That gives 78 records, all couplet legs,
+  separated carriageways or the US-20 Spur.
+- **Duplicates.** An `A` and a `D` record on identical measures with the same count
+  are a duplicated two-way count: Sandpoint's 5th Ave 13,000 / 13,000, and W Hill Rd.
+
+The segment rule adds one gate the layer can't give. A count is doubled only where
+the XD segment has **no opposing twin on its own street** (`aadt.two_way_twins`,
+15 m, the same test `couplets.drop_two_way_legs` uses). About 30 of the layer's 100
+`D` records are roundabouts, ramps or interchange crossings that two-way roads reach
+(Tank Farm Rd, Hawkins Rd, W Broad St under Front St's record, Moscow's Troy Rd).
+Statewide: 164 segments doubled (104 on pairs, 60 on words), 51 two-way streets left
+alone, 9 duplicates. The couplet-leg fallback (`corridors.couplet_segments`) doubles
+nothing on the current catalogues: every catalogued leg segment already has layer
+evidence. It is there for a leg whose record the layer doesn't mark.
+
+Divided highways drawn as `A`/`D` pairs with their own counts are doubled too. That
+is the same basis (SH-1 at the border: 220 + 210 against 440 two-way; the US-20 Spur
+29,000 + 27,000 against I-184's 58,500).
+
+### 3. Moscow's south junction was a snap, not a join
+
+Session 71 read the first segment of each Moscow leg as a bad join to SH-8's Troy Rd
+record. It isn't. `1236966046` / `1236966035` are Troy Rd (`RoadName` `ID-8`, the two
+directions of one two-way road, 0.51 mi), and 13,000 is their count. They were in
+the legs because the couplet entry's endpoint, written to 5 decimals, sat 1 ft
+nearer Troy Rd's end than Washington St's start. `build_chain`'s junction tie-break
+compared snaps at 0.1 ft, so the 1 ft decided it.
+
+`corridors.JUNCTION_TIE_FEET = 5`: snaps within 5 ft whose junction scores differ by
+a whole segment are a tie, broken toward the segment the point begins or ends. A
+clearly nearer snap still wins (tested). Re-resolving all 339 chains, 150 lose an
+end segment with ~0% of it inside the extent. The screening prorates by
+`chain.weights()`, so this changes membership but not the metrics: VHD/mi moves by
+≤ 2.5% (Pocatello Creek Rd core −2.5%; everything else within ±0.2%).
+
+**One recorded finding changes.** Session 33's "VSL NB AM +21% overshoot" (3.635 mi
+against 3.006) was this artefact. The end point sits on a node, 37.6 ft from the
+downstream segment's start and 39.6 ft from the covered segment's end. The chain is
+now 3.007 mi. Franklin WB's 0.568-mi start overshoot is real and unchanged. The
+validation report's travel times were already prorated, so they don't move, but its
+VSL "overshoot" note disappears on regeneration.
+
+### 4. What moved
+
+Peak, statewide: 65 ranked rows before and after. Tables:
+`out/statewide_screening/item53_{peak,7day}_ranking_changes.csv`. The peak table
+splits each change into the junction-tie and AADT-basis parts, re-ranked on the same
+screen. The pre-run tables are in `pre_item53/`.
+
+| couplet | peak rank | VHD/mi |
+|---|---|---|
+| Boise Myrtle/Front | #4 → **#2** | 576 → 1,152 |
+| Moscow Washington/Jackson | #20 → #9 | 189 → 377 |
+| Twin Falls 2nd Ave N/W | #50 → #27 | 79 → 157 |
+| Pocatello 5th/4th Ave | #51 → #29 | 78 → 155 |
+| Twin Falls 2nd Ave E/S | #54 → #33 | 69 → 139 |
+| Nampa 2nd/3rd St S | #55 → #36 | 67 → 134 |
+| Blackfoot Bridge/Judicial | #60 → #57 | 26 → 52 |
+
+- **Non-couplet corridors running onto one-way pavement:**
+  - Moscow US-95 Main St core +27.5%, #14 → #10;
+  - SH-8 Pullman Rd +25.7%, #30 → #25;
+  - Pocatello Yellowstone Ave +20.6%, #24 → #22;
+  - Twin Falls Kimberly Rd +19.1%, #23 → #21;
+  - Pocatello Creek Rd +10.7%;
+  - I-184 +4.8% (the Spur carriageways);
+  - Caldwell Blvd +3.8% (the Nampa couplet's west end).
+
+  Each doubled segment was checked: every one is a leg or a signed one-way section.
+- **Everything else is unchanged**; corridors shift down only as the couplets pass
+  them. The Boise couplet now outranks the I-84 full valley.
+- **7-day:** the same pattern. Moscow's couplet #22 → #6, Pocatello #45 → #25, Nampa
+  #52 → #40.
+
+### 5. Catalogues: not regenerated, and why
+
+`build_statewide_catalogues.py` into a scratch dir under the new basis: all entries
+verify, and every Tier 1 core endpoint is unchanged in D1/D2/D4/D5/D6. The
+differences:
+- **D2:** the Moscow US-95 facility is renamed "Main St / Jackson St" → "Main St /
+  Washington St", which changes its ids. The tier labels now run Styner → D St.
+- **D5:** three new Tier 2/3 context entries (Blackfoot commuter EB/WB, Pocatello
+  Creek Rd regional NB) and three moved Tier 2/3 extents.
+- **Everywhere:** the embedded `_core` / `_monthly_vhd` stats.
+
+None of this is ranked, so the committed catalogues are kept, and their embedded
+`_core` VHD is on the old basis. Regenerate them when the next catalogue pass is
+due. The D3-generated side run (`out/statewide_screening_d3generated/`) was not
+re-run and is on the old basis.
+
+### 6. Code and tests
+
+- `aadt.py`: `classify_aadt_basis`, `_beside_fraction`, `two_way_twins`,
+  `apply_two_way_basis`; `join_aadt(two_way_basis=True)` carries
+  `aadt_record_basis`.
+- `corridors.py`: `JUNCTION_TIE_FEET` and the tie-break in `build_chain`;
+  `couplet_segments`.
+- `store._AADT_JOIN_COLS` caches the three new columns.
+- Scripts: `join_volumes` takes `couplet_segments` / `network`;
+  `run_district_screening`, `generate_screening_maps` and `generate_statewide_maps`
+  pass the couplet legs; the provenance JSON records `aadt.basis`.
+- Tests: `test_aadt.py` +7 (words, the `A`/`D` split fixture with two-way ends and a
+  duplicate, the ×2, the two-way-street gate, the fallback and idempotence, basis off
+  and ramps, VHD parity). `test_corridors.py`: the VSL test rewritten, plus junction
+  tie, no false tie, and `couplet_segments`.
