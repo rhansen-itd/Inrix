@@ -1331,6 +1331,21 @@ of delay, AADT-weighted corridor speed).
     has 1 record against 59 on the A side; I-15/I-90/I-86 have none). So Item 34's
     divided-highway problem is unchanged. The SHS `D` lines give a future join a
     carriageway geometry to map the counts onto by route id and measure.
+  - **A couplet's counts are one-way (Session 71).** ITD records each one-way leg of
+    a couplet under its own route ID, `A` for one leg and `D` for the other
+    (`01360AIN015` / `01360DIN015`, Pocatello's I-15 BL). The count on each is that
+    leg's traffic alone. Where the road splits the layer halves it: 15,000 two-way
+    at "END 1-WAY N OF RAMPS", then 7,500 (A) and 7,700 (D). So a divided highway's
+    one centreline carries a **two-way** count that both carriageways inherit
+    through the join, but a couplet leg carries a **one-way** count. VHD on couplet
+    legs is therefore about half as large, on the same delay, as on every other
+    road. This is not corrected yet: ROADMAP Item 53.
+    **The legs need not sum to the two-way road on either side.** Moscow's US-95 couplet
+    also carries SH-8 between 3rd St (SH-8 west) and the south junction (Troy Rd, SH-8
+    east). There the legs are 12,500 NB + 12,000 SB, against 14,000 two-way on US-95
+    south. North of 3rd, where only US-95 uses it, they are 6,800–10,500 NB + 9,600 SB,
+    against 16,000 two-way. Both are one-way counts; a concurrent route joining inside a
+    couplet raises the sum (owner, Session 71).
 - **No `XDSegID`.** There is no INRIX join key, so the join to our `Segment ID` is
   necessarily **spatial**: `aadt.join_aadt` matches each Item 8 segment polyline to a
   candidate AADT line within `max_distance_m` (default **60 m**), gated by a

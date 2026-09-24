@@ -546,15 +546,110 @@ def _bearing_deg(p1: tuple[float, float], p2: tuple[float, float]) -> float:
     return math.degrees(math.atan2(d_lon, d_lat)) % 360.0
 
 
+# Termini triangles are drawn as filled polygons, not ``symbol="triangle"`` markers.
+# A Scattermap non-circle symbol is an icon from the basemap's sprite sheet, and those
+# icons are not SDF, so ``marker.color`` never reaches them: the theme buttons
+# recoloured the outlines but the triangles stayed the sprite's own colour. A polygon's
+# ``fillcolor`` restyles like the outline does. The polygon is sized in screen pixels
+# for the current zoom — the Python side draws it for the initial zoom and
+# :data:`_TERMINI_ZOOM_JS` redraws it on every zoom — so it grows as you zoom in
+# without ever covering a short corridor at street level.
+_TERMINUS_PX_MIN = 4.0      # triangle height at zoom <= _TERMINUS_ZOOM_LO
+_TERMINUS_PX_MAX = 16.0     # ... and the cap at street zoom
+_TERMINUS_ZOOM_LO = 7.0
+_TERMINUS_PX_PER_ZOOM = 1.6  # ~8 px at a district's zoom 9.5 (half the old 13-px icon)
+_MAP_TILE_PX = 512           # MapLibre's zoom convention
+
+
+def _terminus_px(zoom: float) -> float:
+    """Triangle height in screen pixels at map ``zoom`` (clamped linear)."""
+    px = _TERMINUS_PX_MIN + (zoom - _TERMINUS_ZOOM_LO) * _TERMINUS_PX_PER_ZOOM
+    return min(max(px, _TERMINUS_PX_MIN), _TERMINUS_PX_MAX)
+
+
+def _triangle_ring(lat: float, lon: float, bearing: float, zoom: float) -> list[tuple[float, float]]:
+    """Closed ``(lat, lon)`` ring of a triangle whose apex sits **on** ``(lat, lon)``
+    and points along ``bearing`` (degrees clockwise from North), sized for ``zoom``.
+    The body lies beyond the end of the corridor: centred on the terminus, a triangle
+    this small disappears under the 8.5-px outline casing of its own colour.
+    Mirrors :data:`_TERMINI_ZOOM_JS` — keep the two in step."""
+    import math
+
+    m_per_px = 40075016.686 * math.cos(math.radians(lat)) / (_MAP_TILE_PX * 2 ** zoom)
+    h = _terminus_px(zoom) * m_per_px
+    b = math.radians(bearing)
+    fwd = (math.cos(b), math.sin(b))          # (north, east) unit vector
+    side = (-fwd[1], fwd[0])
+    m_lat = 111320.0
+    m_lon = 111320.0 * math.cos(math.radians(lat))
+
+    def pt(f, s):
+        n = fwd[0] * f + side[0] * s
+        e = fwd[1] * f + side[1] * s
+        return (lat + n / m_lat, lon + e / m_lon)
+
+    apex = pt(0.0, 0.0)
+    return [apex, pt(-h, 0.6 * h), pt(-h, -0.6 * h), apex]
+
+
+_TERMINI_ZOOM_JS = """
+(function () {
+  var gd = document.getElementById('{plot_id}');
+  if (!gd) { return; }
+  function px(z) {
+    return Math.min(Math.max(%(lo)s + (z - %(zlo)s) * %(slope)s, %(lo)s), %(hi)s);
+  }
+  function ring(t, z) {
+    var lat = t[0], lon = t[1], b = t[2] * Math.PI / 180;
+    var h = px(z) * 40075016.686 * Math.cos(lat * Math.PI / 180) / (%(tile)s * Math.pow(2, z));
+    var fn = Math.cos(b), fe = Math.sin(b), sn = -fe, se = fn;
+    var mlat = 111320.0, mlon = 111320.0 * Math.cos(lat * Math.PI / 180);
+    function pt(f, s) { return [lat + (fn * f + sn * s) / mlat, lon + (fe * f + se * s) / mlon]; }
+    var a = pt(0, 0), l = pt(-h, 0.6 * h), r = pt(-h, -0.6 * h);
+    return [a, l, r, a];
+  }
+  var lastZoom = null;
+  function redraw() {
+    var m = gd._fullLayout && gd._fullLayout.map;
+    if (!m) { return; }
+    var z = Math.round(m.zoom * 4) / 4;
+    if (z === lastZoom) { return; }
+    lastZoom = z;
+    var idx = [], lats = [], lons = [];
+    gd.data.forEach(function (tr, i) {
+      if (!tr.meta || !tr.meta.termini) { return; }
+      var la = [], lo = [];
+      tr.meta.termini.forEach(function (t) {
+        ring(t, z).forEach(function (p) { la.push(p[0]); lo.push(p[1]); });
+        la.push(null); lo.push(null);
+      });
+      idx.push(i); lats.push(la); lons.push(lo);
+    });
+    if (idx.length) { Plotly.restyle(gd, {lat: lats, lon: lons}, idx); }
+  }
+  gd.on('plotly_relayout', function (ev) {
+    if (ev && (ev['map.zoom'] !== undefined || ev['map'] !== undefined)) { redraw(); }
+  });
+  redraw();
+})();
+""" % {"lo": _TERMINUS_PX_MIN, "hi": _TERMINUS_PX_MAX, "zlo": _TERMINUS_ZOOM_LO,
+       "slope": _TERMINUS_PX_PER_ZOOM, "tile": _MAP_TILE_PX}
+"""``post_script`` for ``write_html``: redraws the termini triangles at the new zoom.
+Plotly substitutes ``{plot_id}``; the triangles' centres and bearings travel in each
+termini trace's ``meta["termini"]``."""
+
+
 def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
-                            delay_label="Total Peak Delay"):
+                            delay_label="Total Peak Delay", zoom=9.5):
     """Build Plotly traces for ranked corridor centerlines and termini markers.
 
     Returns ``(line_traces, marker_traces)``. Each corridor group produces:
     1. A Scattermap line trace on ``legend2`` (defaulting to ``visible='legendonly'``),
        styled in a crisp casing wider than the segments so it renders as an underlay.
-    2. A Scattermap marker trace with inward-pointing triangles (``>-<``) at each
-       extent terminus, linked to the same ``legendgroup`` with ``showlegend=False``.
+    2. A Scattermap filled-polygon trace of inward-pointing triangles (``>-<``) at
+       each extent terminus, linked to the same ``legendgroup`` with
+       ``showlegend=False``. They are drawn for ``zoom`` (the map's initial zoom) and
+       carry ``meta["termini"]`` so :data:`_TERMINI_ZOOM_JS` can redraw them.
     """
     import plotly.graph_objects as go
 
@@ -664,14 +759,21 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
                           visible="legendonly",
                           text=c_texts, **kw)
         )
+        t_lats, t_lons, t_texts = [], [], []
+        for lat, lon, ang, tip in zip(m_lats, m_lons, m_angles, m_texts):
+            for p in _triangle_ring(lat, lon, ang, zoom):
+                t_lats.append(p[0]); t_lons.append(p[1]); t_texts.append(tip)
+            t_lats.append(None); t_lons.append(None); t_texts.append(None)
         marker_traces.append(
-            go.Scattermap(lat=m_lats, lon=m_lons, mode="markers",
-                          marker=dict(symbol="triangle", size=13, angle=m_angles,
-                                      color=_CORRIDOR_OUTLINE_LIGHT, allowoverlap=True),
+            go.Scattermap(lat=t_lats, lon=t_lons, mode="lines", fill="toself",
+                          fillcolor=_CORRIDOR_OUTLINE_LIGHT,
+                          line=dict(color=_CORRIDOR_OUTLINE_LIGHT, width=1),
                           legendgroup=gid,
                           showlegend=False,
                           visible="legendonly",
-                          text=m_texts, **kw)
+                          meta={"termini": [[la, lo, a] for la, lo, a in
+                                            zip(m_lats, m_lons, m_angles)]},
+                          text=t_texts, **kw)
         )
 
     return line_traces, marker_traces
@@ -722,19 +824,19 @@ def _assemble_map(seg_traces, corridor_traces, termini_traces=None, ends_trace=N
             type="buttons", direction="left", x=0.98, xanchor="right", y=0.97, showactive=True,
             buttons=[
                 dict(args=[
-                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "marker.color": _CORRIDOR_OUTLINE_LIGHT},
+                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "fillcolor": _CORRIDOR_OUTLINE_LIGHT},
                         {"map.style": "carto-positron"},
                         all_corridor_indices
                      ],
                      label="Light (Clean)", method="update"),
                 dict(args=[
-                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "marker.color": _CORRIDOR_OUTLINE_LIGHT},
+                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "fillcolor": _CORRIDOR_OUTLINE_LIGHT},
                         {"map.style": "open-street-map"},
                         all_corridor_indices
                      ],
                      label="Street Map", method="update"),
                 dict(args=[
-                        {"line.color": _CORRIDOR_OUTLINE_DARK, "marker.color": _CORRIDOR_OUTLINE_DARK},
+                        {"line.color": _CORRIDOR_OUTLINE_DARK, "fillcolor": _CORRIDOR_OUTLINE_DARK},
                         {"map.style": "carto-darkmatter"},
                         all_corridor_indices
                      ],
@@ -914,7 +1016,8 @@ def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
         seg_legend_title=seg_legend_title)
 
     path = out_dir / map_filename
-    fig.write_html(str(path), include_plotlyjs="cdn", full_html=True)
+    fig.write_html(str(path), include_plotlyjs="cdn", full_html=True,
+                   post_script=_TERMINI_ZOOM_JS)
     return path
 
 

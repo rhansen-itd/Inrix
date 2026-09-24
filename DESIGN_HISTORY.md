@@ -5923,3 +5923,54 @@ and as an archive.
   - after #67: 51 → 26 (only two small couplets below).
 
   Plot: `out/statewide_screening_d3generated/vhd_per_mile_by_rank.html`.
+
+## Session 71 — Couplet AADT basis checked (scoped as Item 53); termini triangles restyled (2026-09-24)
+
+Two small owner requests, unrelated to each other.
+
+### 1. Is couplet AADT on the same basis as everything else? No.
+
+The owner's hypothesis holds. Every XD segment is one direction of travel. On a two-way
+road, and on a divided highway (AADT 2025 has one centreline per divided highway), both
+directions join to the same record and get its **two-way** count. A couplet leg joins
+to its own `A` or `D` record, and that count is **one-way**. The evidence:
+- The layer's own splits: I-15 BL in Pocatello goes from 15,000 → 7,500 (A) / 7,700 (D)
+  at "BEG 1-WAY".
+- The joined values on the resolved couplet chains: legs carry 6,500–12,000, against
+  13,000–21,500 on the two-way road just past each end (Pocatello, Blackfoot, Twin
+  Falls).
+
+Nothing corrects for it (`couplets.py` never touches AADT), so a couplet's VHD is about
+half of what the same delay scores elsewhere. At first Moscow looked like it didn't fit
+(12,000 / 13,000 against 14,500–16,000 two-way). The owner explained it: between 3rd St
+and the south junction the couplet carries SH-8 as well as US-95. With SH-8 included,
+the legs are one-way counts (12,500 + 12,000 on the concurrent section, 6,800–10,500 +
+9,600 north of 3rd; see DATA_FORMAT). The one real problem there is that the first
+segment of each leg at the south junction joins to SH-8's two-way Troy Rd record. That
+is recorded in Item 53. The fix needs a decision on the basis
+(two-way-equivalent recommended, to keep the tuned noise floors), a per-record rule,
+and a statewide re-run. That is more than a tweak, so it is **ROADMAP Item 53**, not
+done here. The finding is in DATA_FORMAT under the AADT layer.
+
+### 2. Termini triangles: half size, zoom-scaled, and they follow the theme
+
+The theme buttons recoloured the outlines but not the termini. The reason: a
+Scattermap `symbol="triangle"` is an icon from the basemap's sprite sheet. Those icons
+are not SDF, so `marker.color` (which plotly passes on as `icon-color`) never reaches
+them. The triangles are now **filled polygons** (`fill="toself"`), and the theme
+buttons restyle their `fillcolor` along with the outline's `line.color`. Size is set in
+screen pixels for the zoom: 4 px at zoom ≤ 7, rising 1.6 px per zoom level (about 8 px
+at a district's 9.5, half the old 13-px icon), capped at 16 px.
+- `_triangle_ring` draws each triangle for the figure's initial zoom.
+- `_TERMINI_ZOOM_JS`, a `write_html` `post_script` on both the district and statewide
+  maps, redraws them on each zoom from the centres and bearings in the trace's
+  `meta["termini"]`.
+
+The apex now sits **on** the terminus, with the body beyond the corridor end. Centred
+on the end as before, a triangle this small was hidden under the 8.5-px outline casing
+of its own colour. The result was checked in headless Chromium: the triangles redraw at
+zooms 8, 11 and 13 and turn white under "Dark". `test_run_district_screening.py` has a
+new geometry/scaling test, and the map test now asserts the polygon form. Maps are
+generated output, so regenerate them (`scripts/generate_statewide_maps.py`, or
+`run_district_screening.py --maps`) to see the change.
+

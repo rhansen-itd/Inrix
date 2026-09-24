@@ -43,6 +43,7 @@ from scripts.run_district_screening import (  # noqa: E402
     _segment_tti_frame,
     _CORRIDOR_OUTLINE_LIGHT,
     _CORRIDOR_OUTLINE_DARK,
+    _TERMINI_ZOOM_JS,
 )
 
 
@@ -183,7 +184,8 @@ def generate_statewide_map(
 
     # Corridor outlines and termini markers
     line_list, m_list = _build_corridor_overlay(
-        cat_entries, chains, corridor_ranks, net_indexed, delay_label=delay_label
+        cat_entries, chains, corridor_ranks, net_indexed, delay_label=delay_label,
+        zoom=zoom,
     )
     n_corridors = len(line_list)
     n_markers = len(m_list)
@@ -211,7 +213,7 @@ def generate_statewide_map(
             buttons=[
                 dict(
                     args=[
-                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "marker.color": _CORRIDOR_OUTLINE_LIGHT},
+                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "fillcolor": _CORRIDOR_OUTLINE_LIGHT},
                         {"map.style": "carto-positron"},
                         all_corridor_indices,
                     ],
@@ -220,7 +222,7 @@ def generate_statewide_map(
                 ),
                 dict(
                     args=[
-                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "marker.color": _CORRIDOR_OUTLINE_LIGHT},
+                        {"line.color": _CORRIDOR_OUTLINE_LIGHT, "fillcolor": _CORRIDOR_OUTLINE_LIGHT},
                         {"map.style": "open-street-map"},
                         all_corridor_indices,
                     ],
@@ -229,7 +231,7 @@ def generate_statewide_map(
                 ),
                 dict(
                     args=[
-                        {"line.color": _CORRIDOR_OUTLINE_DARK, "marker.color": _CORRIDOR_OUTLINE_DARK},
+                        {"line.color": _CORRIDOR_OUTLINE_DARK, "fillcolor": _CORRIDOR_OUTLINE_DARK},
                         {"map.style": "carto-darkmatter"},
                         all_corridor_indices,
                     ],
@@ -315,6 +317,7 @@ def generate_statewide_map(
         include_plotlyjs=True,
         full_html=True,
         config={"responsive": True, "displayModeBar": True},
+        post_script=_TERMINI_ZOOM_JS,
     )
     return map_path
 

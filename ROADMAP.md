@@ -2674,6 +2674,74 @@ changes and require couplets to be real one-way pairs."
 
 ---
 
+## 53 — Couplet legs carry one-way AADT; everything else carries two-way
+
+**Target: one session. Independent of the other open items**, but it changes VHD, so
+run it before the next statewide re-run, not after. A prerequisite for the Future
+"Directional AADT" bullet: that split needs every segment on one volume basis first.
+Scoped 2026-09-24 (Session 71) from the owner's question.
+
+**The defect (verified Session 71, not yet fixed).** Every XD segment is one direction
+of travel, and VHD is `delay/60 × AADT` per segment (`extents.segment_congestion`,
+`aadt.vehicle_hours_of_delay`). What AADT a segment gets depends on the road:
+- **Two-way road:** both directions match the one centreline and get its **two-way**
+  count.
+- **Divided highway:** AADT 2025 has one centreline per divided highway (the `D` routes
+  are mostly absent). `join_aadt` reaches it from both carriageways (60 m), so both
+  directions get the **two-way** count.
+- **Couplet:** ITD carries each leg as its own record (`A` and `D` route IDs, e.g.
+  `01360AIN015`/`01360DIN015` for Pocatello's I-15 BL), and that count is **one-way**.
+  Where the road splits, the layer halves it: `01360AIN015` goes from 15,000
+  (two-way, "END 1-WAY N OF RAMPS") to 7,500 on the A leg and 7,700 on the D leg.
+  After the join, couplet legs carry 6,500–12,000. The two-way road just past each
+  end carries 13,000–21,500 (Pocatello, Blackfoot, Twin Falls).
+
+So each couplet leg's VHD and VHD/mi is **about half** of what the same delay scores on
+any other road. Nothing corrects for it today: `couplets.py` and the screening never
+touch AADT. The Boise Myrtle/Front couplet (D3 curated) is affected the same way.
+**Moscow fits once SH-8 is included** (owner, Session 71). Between 3rd St and the
+south junction the couplet carries US-95 *and* SH-8: SH-8 comes in from the west on 3rd St
+and leaves to the east on Troy Rd. So that section adds up two routes' traffic, not one. The layer
+agrees:
+- **Concurrent section** (3rd St → south junction): 12,500 on the NB leg (Washington) plus
+  12,000 on the SB leg (Jackson) = 24,500. Compare 14,000 two-way on US-95 south of the
+  couplet, 13,000 on SH-8 Troy Rd east, and 11,000–17,000 on SH-8 3rd St west.
+- **US-95-only section** north of 3rd: 6,800–10,500 NB plus 9,600 SB, against 16,000
+  two-way at "END 1-WAY N OF C ST".
+
+Both legs carry one-way counts, as in every other couplet. One join detail to check:
+the first segment of each leg at the south junction joins to SH-8's
+`WASHINGTON ST (US-95) → BLAINE ST` record (13,000, two-way Troy Rd), not the leg's
+own. With 8 and 95 both in its `RoadList`, the route-number preference lets the SH-8
+record win.
+
+Scope:
+
+- [ ] **Decide the basis.** Recommended: keep the **two-way-equivalent** basis the
+      rest of the network already uses (that is what the noise floors,
+      `MIN_CORE_VHD[_PER_MILE]`, were tuned on). Give a couplet leg its one-way count
+      × 2. A true one-way VHD would halve every other segment instead, and every floor
+      would need re-tuning. Record the decision in DESIGN_HISTORY.
+- [ ] **Decide per record, not per corridor.** Use the layer's own evidence where you
+      can: an `A`/`D` pair on the same measures, or a "BEG/END 1-WAY" boundary where
+      the count halves. Fall back to couplet-leg membership (`one_way_couplet`). Give
+      each segment an `aadt_basis` column (`two_way` / `one_way_x2`) so the per-segment
+      VHD maps agree with the corridor rankings. Apply it once, right after
+      `join_aadt` (`run_district_screening.join_volumes`,
+      `build_statewide_catalogues`, `generate_statewide_maps`). Do not add it at each
+      place VHD is used.
+- [ ] Fix the Moscow south-junction segments that join to SH-8's Troy Rd record
+      (above). Check the Boise couplet's legs against I-184 and the two-way ends. Any
+      check that "the legs add up to the two-way road" has to allow for a concurrent
+      route joining inside the couplet, as Moscow's does.
+- [ ] pytest (the factor, the flag, and an `A`/`D` split fixture); re-run the screening;
+      report how the couplet rankings move; DATA_FORMAT + DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 53 of ROADMAP.md — put couplet legs' AADT on the same
+two-way basis as the rest of the network before VHD is computed."
+
+---
+
 ## Future (not yet scoped — need a planning pass before they're actionable)
 
 - **Directional AADT (direction-aware *volume* + a time-of-day directional

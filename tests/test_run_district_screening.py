@@ -322,7 +322,9 @@ def test_maps_flag_generates_interactive_map_with_corridor_underlay(district):
     assert "legend2" in content
     assert rds._CORRIDOR_OUTLINE_LIGHT in content
     assert rds._CORRIDOR_OUTLINE_DARK in content
-    assert "triangle" in content
+    assert '"termini"' in content          # polygon triangles, redrawn on zoom
+    assert '"fillcolor"' in content        # ... that the theme buttons recolour
+    assert "plotly_relayout" in content
     assert "Terminus" in content
     assert "All Outlines" in content
     assert "Hide Outlines" in content
@@ -330,6 +332,28 @@ def test_maps_flag_generates_interactive_map_with_corridor_underlay(district):
     assert "Free Flow" in content
     assert "🟢" not in content  # No GOYR emoji dots in legend
     assert "legendonly" in content  # Corridors default to OFF
+
+
+def test_terminus_triangle_points_along_bearing_and_scales_with_zoom():
+    """A terminus is a closed triangle with its apex on the point, pointing along the
+    bearing (its body beyond the corridor end), sized in pixels for the zoom."""
+    import math
+    lat, lon = 43.6, -116.2
+    ring = rds._triangle_ring(lat, lon, 90.0, 9.5)       # pointing east
+    assert len(ring) == 4 and ring[0] == ring[-1]
+    assert ring[0] == (lat, lon)
+    assert all(p[1] < lon for p in ring[1:3])            # body lies west, behind it
+    assert math.isclose(ring[1][0] - lat, lat - ring[2][0], rel_tol=1e-9)   # symmetric
+
+    def height_m(z):
+        r = rds._triangle_ring(lat, lon, 0.0, z)
+        return (r[0][0] - r[1][0]) * 111320.0
+    # ~8 px at the district zoom; clamped at both ends
+    m_per_px = 40075016.686 * math.cos(math.radians(lat)) / (512 * 2 ** 9.5)
+    assert math.isclose(height_m(9.5), 8.0 * m_per_px, rel_tol=1e-6)
+    assert rds._terminus_px(3) == rds._TERMINUS_PX_MIN
+    assert rds._terminus_px(20) == rds._TERMINUS_PX_MAX
+    assert height_m(12) < height_m(11)       # smaller on the ground as you zoom in
 
 
 def test_day_7d_window_screens_and_ranks(district):
