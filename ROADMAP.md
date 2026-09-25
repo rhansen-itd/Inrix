@@ -2986,9 +2986,11 @@ Scope:
       58's pre-run baseline). I-84 EB, I-184 EB, Chinden EB and US-20/26
       Star–Middleton EB infer AM-inbound. In D4, SH-75 infers NB-AM into Ketchum.
       The signalised Boise arterials fall through to the rule. D1/D2/D5/D6 infer
-      nothing (below the floor or both-peaks). Open for the owner: the Boise UA
-      polygon centroid is 7.5 km west of downtown, and moving it changes the rule
-      curve on 4,503 of 8,192 Boise-area segments (DESIGN_HISTORY Session 76).*
+      nothing (below the floor or both-peaks). The Boise UA polygon centroid is
+      7.5 km west of downtown. The owner chose an economic-centre table
+      (`scripts/urban_centres.csv`): Boise at downtown is the owner's decision, and
+      the other six commute-sized areas' downtown rows are *proposed*, awaiting
+      review (DESIGN_HISTORY Session 76 §7).*
 
 *Suggested prompt (done):* "Do Item 56 of ROADMAP.md — assign a volume-profile curve to every
 XD segment from inferred chain orientation, the urban in/out rule, and an override CSV."

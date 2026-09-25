@@ -15,7 +15,9 @@ gives every XD segment one ``curve_id`` from it, by the first of these that deci
    orientation cannot flip along a road. A bottleneck congested at both peaks, or in
    one direction only, is not evidence and falls through.
 3. **urban_rule** — from the segment's urban context (``itd_layers.urban_context``)
-   and the bearing toward its urban area's centroid (:func:`segment_context`):
+   and the bearing toward its urban area's centre (:func:`segment_context`): the
+   owner-reviewed economic centre where ``scripts/urban_centres.csv`` has one
+   (:func:`apply_urban_centres`), else the polygon centroid:
    interstate → ``interstate_through``; in a commute-sized urban area (or its
    approach), inbound → ``am_commute_urban``, outbound → ``pm_commute_urban``;
    inside an urban area with no clear radial → ``balanced_urban``; otherwise
@@ -98,9 +100,9 @@ URBAN_APPROACH_M = 5_000.0
 reaches. The boundary guides, it does not cut: Boise's and Nampa's commute crosses
 the rural gap between them."""
 URBAN_CORE_RADIUS_M = 1_500.0
-"""Within this distance of the centroid the bearing to it means nothing (no radial)."""
+"""Within this distance of the centre the bearing to it means nothing (no radial)."""
 RADIAL_TOL_DEG = 45.0
-"""Travel within this many degrees of the bearing to the centroid is inbound; within
+"""Travel within this many degrees of the bearing to the centre is inbound; within
 this many of the bearing away from it, outbound; anything between is tangential."""
 
 INBOUND, OUTBOUND, TANGENTIAL = "in", "out", "tangential"
@@ -163,15 +165,17 @@ def segment_context(network: pd.DataFrame, membership: pd.DataFrame | None = Non
         urban: the ``d{N}_urban_context.csv`` frame (``itd_layers.urban_context``),
             indexed by ``XDSegID``; ``None`` = no urban context.
         centroids: ``itd_layers.urban_centroids`` — ``UACE``-indexed
-            ``centroid_lat``, ``centroid_lon``, ``population``; ``None`` = no radial.
+            ``centroid_lat``, ``centroid_lon``, ``population`` (after
+            :func:`apply_urban_centres`, the centre it reads); ``None`` = no radial.
 
     Returns:
         Indexed by ``XDSegID``: ``miles``, ``route`` (str or None), ``interstate``
-        (never a business loop), ``itd_route_id``, ``ramp``, ``dir_sign`` (+1 N/E, −1 S/W, 0 unknown), ``travel_bearing``,
+        (never a business loop), ``itd_route_id``, ``ramp``, ``dir_sign`` (+1 N/E,
+        −1 S/W, 0 unknown), ``travel_bearing``,
         ``urban_uace``, ``urban_area``, ``zone`` (``urban`` / ``approach`` /
         ``rural``, None without context), ``commute_area`` (the area is commute-sized),
         ``radial`` (``in`` / ``out`` / ``tangential``, None when not judged),
-        ``radial_angle`` (degrees between travel and the bearing to the centroid).
+        ``radial_angle`` (degrees between travel and the bearing to the centre).
     """
     net = network.copy()
     if "XDSegID" in net.columns:
@@ -256,6 +260,68 @@ def segment_context(network: pd.DataFrame, membership: pd.DataFrame | None = Non
     return out
 
 
+URBAN_CENTRE_COLUMNS = ("uace", "urban_area", "centre_lat", "centre_lon", "note")
+
+
+def load_urban_centres(path) -> pd.DataFrame:
+    """The owner-reviewed urban-centre table (``#`` lines are comments).
+
+    Columns :data:`URBAN_CENTRE_COLUMNS`. Each row puts an urban area's radial centre
+    at its **economic** centre (where the jobs are, usually downtown) instead of the
+    polygon centroid: Boise City's centroid is 7.5 km west of downtown because the
+    polygon takes in Meridian, and the in/out rule reverses between the two.
+
+    Returns:
+        Indexed by ``UACE`` (5-digit string): ``urban_area``, ``centre_lat``,
+        ``centre_lon``, ``note``.
+
+    Raises:
+        ValueError: a missing column, a UACE that is not 5 digits or repeats, a
+            lat/lon out of range, or a row without a note.
+    """
+    frame = pd.read_csv(path, dtype=str, comment="#").fillna("")
+    missing = [c for c in URBAN_CENTRE_COLUMNS if c not in frame.columns]
+    if missing:
+        raise ValueError(f"{path}: urban-centre table lacks columns {missing}")
+    for col in URBAN_CENTRE_COLUMNS:
+        frame[col] = frame[col].str.strip()
+    frame["uace"] = frame["uace"].str.zfill(5)
+    if (~frame["uace"].str.fullmatch(r"\d{5}")).any():
+        raise ValueError(f"{path}: uace must be a 5-digit Census code")
+    if frame["uace"].duplicated().any():
+        raise ValueError(f"{path}: a uace appears twice: "
+                         f"{sorted(frame.loc[frame['uace'].duplicated(), 'uace'])}")
+    lat = pd.to_numeric(frame["centre_lat"], errors="coerce")
+    lon = pd.to_numeric(frame["centre_lon"], errors="coerce")
+    if (~lat.between(-90, 90) | ~lon.between(-180, 180)).any():
+        raise ValueError(f"{path}: centre_lat/centre_lon missing or out of range "
+                         "(the order is lat, lon)")
+    if (frame["note"] == "").any():
+        raise ValueError(f"{path}: every centre needs a note saying why")
+    return pd.DataFrame({"urban_area": frame["urban_area"].to_numpy(),
+                         "centre_lat": lat.to_numpy(), "centre_lon": lon.to_numpy(),
+                         "note": frame["note"].to_numpy()},
+                        index=pd.Index(frame["uace"], name="UACE"))
+
+
+def apply_urban_centres(centroids: pd.DataFrame, centres: pd.DataFrame | None
+                        ) -> pd.DataFrame:
+    """``centroids`` (``itd_layers.urban_centroids``) with each area in ``centres``
+    (:func:`load_urban_centres`) moved to its table centre. ``centre_source`` says
+    which: ``table`` or ``centroid``. A table row for an area absent from
+    ``centroids`` is ignored (it belongs to another state's layer)."""
+    out = centroids.copy()
+    out.index = out.index.map(lambda u: str(u).zfill(5))
+    out["centre_source"] = "centroid"
+    if centres is None or not len(centres):
+        return out
+    hit = centres.index.intersection(out.index)
+    out.loc[hit, "centroid_lat"] = centres.loc[hit, "centre_lat"].to_numpy()
+    out.loc[hit, "centroid_lon"] = centres.loc[hit, "centre_lon"].to_numpy()
+    out.loc[hit, "centre_source"] = "table"
+    return out
+
+
 def urban_rule(context: pd.DataFrame) -> pd.DataFrame:
     """The urban in/out rule on :func:`segment_context`: ``curve_id`` and ``reason``
     per segment, ``curve_id`` None where the context says nothing (→ default)."""
@@ -271,11 +337,11 @@ def urban_rule(context: pd.DataFrame) -> pd.DataFrame:
         elif r.radial == INBOUND:
             curve.append(AM_CURVE)
             reason.append(f"inbound to {area} ({r.zone}, {r.radial_angle:.0f}° off "
-                          "the centroid)")
+                          "the centre)")
         elif r.radial == OUTBOUND:
             curve.append(PM_CURVE)
             reason.append(f"outbound from {area} ({r.zone}, {r.radial_angle:.0f}° off "
-                          "the centroid)")
+                          "the centre)")
         elif r.zone == URBAN:
             curve.append(BALANCED_CURVE)
             why = ("tangential" if r.radial == TANGENTIAL

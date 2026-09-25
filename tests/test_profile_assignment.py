@@ -321,3 +321,53 @@ def test_urban_centroids():
     assert cen.at["00001", "centroid_lat"] == pytest.approx(43.6, abs=1e-3)
     assert cen.at["00001", "centroid_lon"] == pytest.approx(-116.2, abs=1e-3)
     assert cen.at["00001", "population"] == 60000
+
+
+# ---------------------------------------------------------------------------
+# Urban centres
+# ---------------------------------------------------------------------------
+def _write_centres(tmp_path, body):
+    p = tmp_path / "centres.csv"
+    p.write_text("# comment\nuace,urban_area,centre_lat,centre_lon,note\n" + body)
+    return p
+
+
+def test_a_centre_row_moves_the_radial():
+    # Move the centre far west of the road: EB (was inbound) now heads away from it.
+    ctx = _context()
+    assert pa.urban_rule(ctx).at[201, "curve_id"] == pa.AM_CURVE
+    centres = pd.DataFrame({"urban_area": ["Boise City, ID"], "centre_lat": [CEN_LAT],
+                            "centre_lon": [CEN_LON - 0.5], "note": ["x"]},
+                           index=pd.Index([UACE], name="UACE"))
+    moved = pa.apply_urban_centres(_centroids(), centres)
+    assert moved.at[UACE, "centre_source"] == "table"
+    assert moved.at[UACE, "centroid_lon"] == pytest.approx(CEN_LON - 0.5)
+    rule = pa.urban_rule(_context(centroids=moved))
+    assert rule.at[201, "curve_id"] == pa.PM_CURVE
+    assert rule.at[101, "curve_id"] == pa.AM_CURVE
+
+
+def test_no_centre_rows_leave_the_centroid():
+    out = pa.apply_urban_centres(_centroids(), None)
+    assert out.at[UACE, "centre_source"] == "centroid"
+    assert out.at[UACE, "centroid_lon"] == CEN_LON
+
+
+def test_urban_centre_table_is_validated(tmp_path):
+    t = pa.load_urban_centres(_write_centres(tmp_path, "8785,Boise,43.6,-116.2,downtown\n"))
+    assert list(t.index) == ["08785"]                      # zero-padded
+    with pytest.raises(ValueError, match="range"):
+        pa.load_urban_centres(_write_centres(tmp_path, "08785,B,-116.2,43.6,x\n"))
+    with pytest.raises(ValueError, match="twice"):
+        pa.load_urban_centres(_write_centres(tmp_path, "08785,B,43.6,-116.2,x\n"
+                                                       "08785,B,43.6,-116.2,y\n"))
+    with pytest.raises(ValueError, match="note"):
+        pa.load_urban_centres(_write_centres(tmp_path, "08785,B,43.6,-116.2,\n"))
+
+
+def test_the_shipped_urban_centre_table_loads():
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "scripts" / "urban_centres.csv"
+    t = pa.load_urban_centres(path)
+    assert "08785" in t.index                              # Boise: owner, 2026-09-25
+    assert t.at["08785", "centre_lon"] == pytest.approx(-116.2023)

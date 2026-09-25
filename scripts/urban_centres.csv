@@ -1,0 +1,16 @@
+# Economic centres for the volume-profile in/out rule (ROADMAP Item 56; inrix_tools.profile_assignment).
+# The rule reads "inbound" as travel toward an urban area's centre. Without a row here that
+# centre is the Census polygon centroid, which is a geometric point, not where the jobs are:
+# Boise City's is 7.5 km west of downtown because the polygon takes in Meridian. A row moves
+# the area's centre to its economic (employment) centre. One row per urban area; uace is the
+# Census 2020 code (Urban_Area.zip UACE). Every row needs a note saying why and who decided.
+# Rows marked "proposed" apply the owner's Boise reasoning to the other commute-sized areas
+# (>= 50,000 people) at their downtown main street; centroid offset in brackets. Confirm or edit.
+uace,urban_area,centre_lat,centre_lon,note
+08785,"Boise City, ID",43.6150,-116.2023,"Downtown Boise. Owner, 2026-09-25: the employment centre is downtown even though the polygon centroid is 7.5 km west"
+60976,"Nampa, ID",43.5807,-116.5625,"Downtown Nampa. Proposed (Session 76), owner to confirm [centroid 4.5 km NW]"
+18451,"Coeur d'Alene, ID",47.6735,-116.7812,"Downtown Coeur d'Alene. Proposed (Session 76), owner to confirm [centroid 8.1 km NW, pulled by Post Falls/Hayden]"
+40996,"Idaho Falls, ID",43.4917,-112.0339,"Downtown Idaho Falls. Proposed (Session 76), owner to confirm [centroid 1.7 km E]"
+70426,"Pocatello, ID",42.8621,-112.4506,"Old Town Pocatello. Proposed (Session 76), owner to confirm [centroid 2.7 km N]"
+89245,"Twin Falls, ID",42.5596,-114.4608,"Downtown Twin Falls. Proposed (Session 76), owner to confirm [centroid 1.0 km SE]"
+49312,"Lewiston, ID--WA",46.4165,-117.0177,"Downtown Lewiston. Proposed (Session 76), owner to confirm [centroid 3.0 km SE]"

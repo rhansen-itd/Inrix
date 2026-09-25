@@ -1852,17 +1852,19 @@ decides wins, and `curve_source` records which:
    - The inference sets orientation only, never volume. So the circularity with
      delay is harmless.
 3. **`urban_rule`**, from `d<N>_urban_context.csv`, plus the bearing from the
-   segment's midpoint to its urban area's polygon centroid
-   (`itd_layers.urban_centroids`):
+   segment's midpoint to its urban area's **centre**. That is the economic
+   (employment) centre in `scripts/urban_centres.csv` where the area has a row
+   (`profile_assignment.load_urban_centres` / `apply_urban_centres`), else the
+   polygon centroid (`itd_layers.urban_centroids`):
    - an **interstate** (the ITD route id is `…IN…`, or with no id the number is
      15/84/86/90/184) → `interstate_through`. A **business loop** is never an
      interstate, even though it carries the interstate's ITD id (I-84 BL on Garrity
      and Caldwell Blvds is `02042AIN084`);
    - the **commute zone** is inside an urban area of ≥ 50,000 people, or outside it
      within 5 km of its boundary (the `approach` zone). There, travel within 45° of
-     the bearing to the centroid is **inbound** → `am_commute_urban`, within 45° of
+     the bearing to the centre is **inbound** → `am_commute_urban`, within 45° of
      the bearing away is **outbound** → `pm_commute_urban`, and anything between (or
-     within 1.5 km of the centroid) is **tangential**;
+     within 1.5 km of the centre) is **tangential**;
    - inside any urban area without a clear radial (tangential, or a town under
      50,000) → `balanced_urban`;
    - everything else → `rural_through`.
@@ -1881,16 +1883,17 @@ by source, and records them in the provenance JSON.
 - A `day_7d` run screens `am`/`pm` for the inference, so both runs of a district
   write the same file (checked byte-identical on D3).
 
-**What it assigns (2025 AADT, the export period, Session 76):**
+**What it assigns (2025 AADT, the export period, with the urban-centre table,
+Session 76):**
 
 | | segments | inferred | chains inferred | am / pm commute | balanced | rural | interstate |
 |---|---|---|---|---|---|---|---|
-| D1 | 5,007 | 0 | 0 / 145 | 468 / 520 | 1,021 | 2,734 | 264 |
-| D2 | 3,499 | 0 | 0 / 68 | 151 / 152 | 525 | 2,671 | 0 |
-| D3 | 16,105 | 235 | 22 / 234 | 2,561 / 2,593 | 5,736 | 4,889 | 326 |
-| D4 | 6,087 | 56 | 14 / 169 | 346 / 358 | 1,193 | 3,705 | 485 |
-| D5 | 4,386 | 0 | 0 / 114 | 212 / 227 | 600 | 2,784 | 563 |
-| D6 | 6,686 | 0 | 0 / 138 | 351 / 344 | 934 | 4,780 | 277 |
+| D1 | 5,007 | 0 | 0 / 141 | 410 / 426 | 1,190 | 2,717 | 264 |
+| D2 | 3,499 | 0 | 0 / 65 | 140 / 146 | 544 | 2,669 | 0 |
+| D3 | 16,105 | 269 | 22 / 225 | 2,499 / 2,518 | 5,887 | 4,876 | 325 |
+| D4 | 6,087 | 56 | 14 / 170 | 353 / 339 | 1,207 | 3,703 | 485 |
+| D5 | 4,386 | 0 | 0 / 116 | 221 / 226 | 581 | 2,795 | 563 |
+| D6 | 6,686 | 0 | 0 / 136 | 348 / 340 | 936 | 4,785 | 277 |
 
 - Every chain that infers orients the textbook way. In the Treasure Valley: I-84 EB,
   I-184 EB (0.91 / 0.02), Chinden EB (0.66 / 0.15), US-20/26 Star–Middleton EB
@@ -1903,15 +1906,24 @@ by source, and records them in the provenance JSON.
 - The signalised Boise arterials (State St, Eagle Rd, SH-69, Broadway) are
   both-peaks or both PM-heavy, not opposed, and fall to the urban rule.
 
-**The polygon centroid is not the city centre.** The Boise City urban area's centroid
-is at (43.615, −116.295), about 7.5 km west of downtown Boise (−116.202), because the
-polygon takes in Meridian. Between the two, the radial reverses:
-- I-184 EB reads "outbound", and Front St WB gets `am_commute_urban` from the rule
-  although its am_share is 0.20.
-- Moving Boise's centre to downtown would change the rule's curve on 4,503 of the
-  8,192 segments nearest Boise City.
-- The inference overrides the rule on the chains that clearly oppose. Elsewhere the
-  rule stands as specified.
+**The polygon centroid is not the city centre, so the rule reads an economic centre
+(`scripts/urban_centres.csv`).** The Boise City urban area's centroid is at
+(43.615, −116.295), 7.5 km west of downtown Boise (−116.202), because the polygon
+takes in Meridian. Between the two, the radial reverses: on the centroid, I-184 EB
+read "outbound", and Front St WB got `am_commute_urban` although its am_share is 0.20.
+- Owner, 2026-09-25: the employment centre is downtown, so Boise's row is downtown.
+- The other six commute-sized areas have **proposed** downtown rows, awaiting the
+  owner. Their centroid offsets: Coeur d'Alene 8.1 km (pulled by Post Falls/Hayden),
+  Nampa 4.5, Lewiston 3.0, Pocatello 2.7, Idaho Falls 1.7, Twin Falls 1.0.
+- Columns `uace, urban_area, centre_lat, centre_lon, note`, with `#` comments. A
+  row needs a note; a UACE may appear once; a row for an area absent from the layer
+  is ignored.
+- Against the centroid run, the table changes the curve on 5,126 D3 segments and
+  164–757 in each other district. Front St WB and Myrtle EB are now within 1.5 km
+  of downtown (`balanced_urban`). State St runs EB → AM and WB → PM, matching its
+  data (0.60 / 0.19). D3's inferred segments rise 235 → 269, because the route runs
+  now split at the real centre.
+- `--urban-centres ''` reverts to the polygon centroids.
 
 ## ITD State Highway System (`SHS_Primary.zip`, Item 52)
 
@@ -2066,7 +2078,8 @@ a rural/urban transition when an extent ends (Item 50), not where it must stop.
 
 `itd_layers.urban_centroids` gives each area's polygon centroid (computed in UTM) and
 population, for the Item 56 radial rule. A centroid is not a city centre: Boise
-City's lies ~7.5 km west of downtown (see *Curve assignment*).
+City's lies ~7.5 km west of downtown. `scripts/urban_centres.csv` supplies the
+economic centre instead (see *Curve assignment*).
 
 ## Corridor cores from recurring congestion (`extents.py`, Item 50)
 

@@ -204,11 +204,12 @@ def join_volumes(geo, aadt_source, *, year, cache_path, max_distance_m, bbox_mar
 URBAN_CONTEXT = "out/highways/route_membership/d{district}_urban_context.csv"
 DEFAULT_URBAN = "Urban_Area.zip"
 DEFAULT_PROFILE_OVERRIDES = "scripts/volume_profile_overrides.csv"
+DEFAULT_URBAN_CENTRES = "scripts/urban_centres.csv"
 
 
 def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
                            urban_context_path, urban_source, overrides_path,
-                           district=None, peak_screen=None):
+                           centres_path=None, district=None, peak_screen=None):
     """A volume-profile curve for every segment of the district network (Item 56).
 
     Wiring only — :mod:`inrix_tools.profile_assignment` decides. The inference reads
@@ -226,6 +227,10 @@ def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
     centroids = None
     if urban_source and Path(urban_source).exists():
         centroids = itd_layers.urban_centroids(itd_layers.load_urban_areas(urban_source))
+    centres = (profiles_mod.load_urban_centres(centres_path)
+               if centres_path and Path(centres_path).exists() else None)
+    if centroids is not None:
+        centroids = profiles_mod.apply_urban_centres(centroids, centres)
     context = profiles_mod.segment_context(table, membership, urban, centroids)
 
     peak = scr if all(f"{w}_travel_time" in scr.columns
@@ -251,6 +256,8 @@ def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
         "route_membership": str(membership_path) if membership_path else None,
         "urban_context": str(urban_context_path) if urban is not None else None,
         "urban_areas": str(urban_source) if centroids is not None else None,
+        "urban_centres": (str(centres_path)
+                          if centres is not None and centroids is not None else None),
         "overrides": str(overrides_path) if overrides is not None else None,
         "inference": delay is not None,
     }
@@ -1458,7 +1465,8 @@ def run(args) -> dict:
         assignment = assign_volume_profiles(
             net, scr, args.catalogue, accepted, membership_path=args.membership,
             urban_context_path=args.urban_context, urban_source=args.urban,
-            overrides_path=args.profile_overrides, district=args.district,
+            overrides_path=args.profile_overrides, centres_path=args.urban_centres,
+            district=args.district,
             peak_screen=lambda: screen_segments(
                 con, area_key, windows=peak_windows,
                 cvalue_threshold=args.cvalue_threshold, bin_minutes=args.bin_minutes,
@@ -1601,6 +1609,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--urban", default=DEFAULT_URBAN,
                    help="Census urban areas, for the bearing toward each area's centroid "
                         "(Item 56); '' skips the radial rule")
+    p.add_argument("--urban-centres", default=DEFAULT_URBAN_CENTRES,
+                   help="economic centres replacing the urban-area centroids for the "
+                        "in/out rule (Item 56); '' = polygon centroids")
     p.add_argument("--profile-overrides", default=DEFAULT_PROFILE_OVERRIDES,
                    help="volume-profile override CSV (Item 56); '' = none")
     p.add_argument("--aadt-max-distance-m", type=float, default=60.0)

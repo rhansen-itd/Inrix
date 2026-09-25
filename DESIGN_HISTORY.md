@@ -6549,7 +6549,7 @@ have called those towns balanced/rural. D1, D2, D5 and D6 infer nothing: most ch
 are below the floor, and the rest (US-2 in Sandpoint, Pocatello's 4th/5th Ave
 couplet, Blackfoot's I-15 BL) are congested at both peaks.
 
-### 5. Open for the owner: the Boise centroid
+### 5. The Boise centroid (resolved in §7)
 
 The scope says "the bearing toward the urban area's centroid". Boise City's polygon
 centroid is at (43.615, −116.295), 7.5 km west of downtown (the polygon takes in
@@ -6577,3 +6577,32 @@ single centre is right, and the inference is the real answer where it speaks.
 - Real runs of all six districts went to `out/item56_volume_profiles/d<N>/`, so
   `out/statewide_screening` stays as Item 58's pre-run baseline. Rankings and VHD
   are unchanged: nothing consumes the curves until Item 57.
+
+### 7. Follow-up: the urban-centre table (owner, same day)
+
+The owner chose the centre table: "even though the centroid of boise is west, the
+'economic' centroid (employment) is in downtown for sure."
+
+- **`scripts/urban_centres.csv`** (`uace, urban_area, centre_lat, centre_lon, note`),
+  read by `profile_assignment.load_urban_centres` and substituted into the centroid
+  frame by `apply_urban_centres` (`centre_source` = `table` / `centroid`). The runner
+  gains `--urban-centres` (default the shipped file; `''` = the polygon centroids),
+  and the provenance records it.
+- **Rows.** Boise's is the owner's decision (downtown, 43.6150, −116.2023). I added
+  the other six commute-sized areas at their downtown main street and marked them
+  **proposed**, because the owner's reasoning applies to them but they have not
+  looked at them. Centroid offsets: Coeur d'Alene 8.1 km, Nampa 4.5, Lewiston 3.0,
+  Pocatello 2.7, Idaho Falls 1.7, Twin Falls 1.0. The coordinates are approximate
+  (to a few hundred metres), well inside the 1.5 km core radius.
+- **Effect, against the centroid run.** Curves change on D1 757, D2 337, D3 5,126,
+  D4 164, D5 407 and D6 227 segments. Most changes are balanced ↔ commute near the
+  moved centres; a few hundred in D3 swap AM ↔ PM. In Boise:
+  - Front St WB and Myrtle EB now sit inside downtown's 1.5 km core, so they get
+    `balanced_urban` (their am_share is 0.20 / 0.46);
+  - State St EB → AM and WB → PM, matching its data (0.60 / 0.19);
+  - I-184 EB still infers AM.
+  - D3's inferred segments rise 235 → 269, because the route runs now split at the
+    real centre.
+- 4 more tests (29 in `test_profile_assignment.py`, 885 in all): the centre moves
+  the radial, no row keeps the centroid, table validation, and the shipped table
+  loads with Boise's row.
