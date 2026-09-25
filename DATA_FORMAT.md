@@ -1139,7 +1139,9 @@ weekdays therefore anchor at **1,384 AM observations per segment**, which 3,902 
 reports `delay_min`, `tti`, `delay_per_mile`, `vhd`, `vhd_per_mile` and `worst_peak`
 per corridor × window, computed through `speed.segment_delay` and
 `aadt.vehicle_hours_of_delay` — so the AADT caveat above travels with the number
-instead of being restated as "veh-hrs/day". Three definitions, all recorded on `attrs`:
+instead of being restated as "veh-hrs/day". (Item 57: given `bins=` and `curves=`,
+`vhd` is curve-weighted instead, and the index stays as `vhd_index`; see
+"Curve-weighted VHD".) Three definitions, all recorded on `attrs`:
 
 - **Delay is floored once, at the segment** (`attrs['delay_floor'] == 'segment'`). A
   segment faster than its free-flow reference contributes 0 and can never pay for a
@@ -1706,7 +1708,8 @@ layer's fallback (next section).
 
 VHD up to Item 54 multiplies a window's mean delay by the **whole day's** directional
 AADT. The curve library supplies the time-of-day and day-of-week factors that turn a
-daily count into a volume per 5-minute bin (Item 57 does the multiplying):
+daily count into a volume per 5-minute bin (Item 57 does the multiplying; see
+"Curve-weighted VHD" below):
 
 ```
 vol(bin) = dirAADT × madt_ratio_MM(month of bin's date) × bin_volume_factor(curve, bin)
@@ -1924,6 +1927,75 @@ read "outbound", and Front St WB got `am_commute_urban` although its am_share is
   data (0.60 / 0.19). D3's inferred segments rise 235 → 269, because the route runs
   now split at the real centre.
 - `--urban-centres ''` reverts to the polygon centroids.
+
+## Curve-weighted VHD (`aadt.curve_vehicle_hours_of_delay`, Item 57)
+
+The headline VHD is now **vehicle-hours of delay on an average calendar day of the
+data period**. For segment `s` on curve `c`, window `W`, over the period's `N` local
+calendar days:
+
+```
+VHD(s, W) = (1/N) Σ_cells  max(tt(cell) − ref_tt(s), 0) × dirAADT × madt_ratio_m × volume_days(c, W, cell) / 60
+volume_days(c, W, cell) = Σ over the period's days d in the cell and in W  bin_volume_factor(c, bin on d)
+```
+
+- A **cell** is month × day type (`weekday` / `sat` / `sun`) × bin of the day.
+  `screen.segment_bin_screen` gives its mean travel time over the CValue-gated rows
+  (DuckDB, local wall clock, rows inside any of the named windows).
+- **The delay floor is per cell**, not per window mean: a bin that runs faster than the
+  reference cannot pay for a congested one. `ref_tt` is the caller's: `Miles /
+  Ref Speed × 60` for ranking, the segment's own baseline for the extents.
+- `volume_days` (`volume_profiles.window_volume_weights`) sums the curve's bin factor
+  over each real day of the cell, so each day carries its own DOW factor and day-type
+  shape, and the DST days their 23/25 hours. The cell's mean delay stands for every
+  day of the cell. Within the weekday type the delay is pooled over Mon–Fri; a window
+  gated to part of a day type gets the type's pooled delay with only its own days'
+  volume.
+- **`N` counts every day of the period**, including the days a window's gate skips.
+  The weekday AM on a weekend day is 0, so windows are **additive**: AM + PM is the VHD
+  of their union, a weekday window + its weekend twin is the ungated window, and
+  `vhd_annual = vhd × 365`. The period is the area's first to last local date
+  (`screen.data_period`), the same for every segment.
+- **A missing cell** (no gated row for that segment, month, day type and bin) takes
+  the segment's same day type × bin pooled over all months, weighted by observations.
+  A cell with no data in any month contributes nothing. `coverage` = the share of the
+  window's volume with a delay after the fill; `observed_share` = from the cell's own
+  month.
+- `by_month=True` gives each month's VHD per average day **of that month**, from that
+  month's own cells only (no fill). `extents.monthly_delay_profile` reads it, so
+  `_monthly_vhd` is real per-month volume at `MADT_m`.
+- **Flat-curve check.** With a flat curve (every hour 1/24, DOW 1, MADT 1), `VHD =
+  index × window hours / 24 × (days in the gate / N)`. The index is Item 54's
+  `vhd_index` (window mean delay × daily dirAADT / 60), which differs from the flat
+  curve only in the floor (per window mean vs per cell). Tested on toy data.
+
+**Where it is used (Item 57: opt-in; Item 58 switches the consumers).**
+`screen.rank_corridors(..., bins=, curves=)`, `extents.segment_congestion(..., bins=,
+curves=)` (the VHD read in the segment's `peak_window`) and `generate_catalogue(...,
+bins=, curves=)` (its monthly profile too). Without `bins`, `vhd` is still the index,
+so the floors (`MIN_CORE_VHD*`) and map tiers keep their Item 54 calibration until
+Item 58 rescales them. Every output carries `vhd_index` and `attrs['vhd_basis']`
+(`curve` / `index`). `attrs['aadt_caveat']` changes from "relative index" to "average
+day of the period, generic curves". `screen.segment_curve_vhd` runs the whole thing
+off the store in segment chunks that share one period.
+
+**On D3 (Session 77).** The 2026 export (1 Jan – 31 Aug, 15-minute bins), for the
+1,913 segments with an Item 56 curve and a reference speed, with AADT = 1 and MADT = 1
+so only the time shape shows. The whole district runs in about 30 s.
+
+- **Per-cell floor vs window-mean floor**, summed delay: AM +4.6 %, PM +2.5 %,
+  `day_7d` +9.4 %. Where a segment's window delay is material (> 0.05 min) the median
+  ratio is 1.00 (AM, PM) and 1.01 (`day_7d`). The difference is in the free-flowing
+  segments: 316 / 321 / 387 segments (of about 1,900) have no window-mean delay but a
+  few congested cells.
+- **Curve VHD / index**, median per segment (the ratio Item 58 rescales the floors
+  by): AM 0.083 (a flat curve would give 2/24 × 5/7 = 0.060), PM 0.135 (flat: 0.074),
+  `day_7d` 0.94 (flat: 15/24 = 0.63). The commute windows carry more than their hours'
+  share of the day, and 06:00–21:00 carries about 90 % of it. By curve at PM:
+  `pm_commute_urban` 0.154, `rural_through` 0.135, `am_commute_urban` 0.123,
+  `balanced_urban` 0.118.
+- Coverage: the median segment's window volume is 100 % covered, and 99.9 % from its
+  own month's cells.
 
 ## ITD State Highway System (`SHS_Primary.zip`, Item 52)
 

@@ -6606,3 +6606,87 @@ The owner chose the centre table: "even though the centroid of boise is west, th
 - 4 more tests (29 in `test_profile_assignment.py`, 885 in all): the centre moves
   the radial, no row keeps the centroid, table validation, and the shipped table
   loads with Boise's row.
+
+## Session 77 — Item 57: curve-weighted VHD in the compute core (2026-09-25)
+
+### 1. What was built
+
+- **`screen.segment_bin_screen`**: DuckDB mean travel time per segment × local month ×
+  day type × bin of the day, over the CValue-gated rows inside any named window.
+  `screen.data_period` gives the area's first and last local dates, and
+  `screen.bin_weights` builds the weights for a bin screen. `screen.segment_curve_vhd`
+  runs the whole calculation off the store in segment chunks that share one period.
+- **`volume_profiles.window_volume_weights`**: per curve × window × cell, the sum of
+  `bin_volume_factor` over the period's real days in that cell. So each day brings its
+  own DOW factor, day-type shape and DST length. Window membership follows
+  `PeakWindow.filter` (duck-typed, so this module still does not import `screen`).
+- **`aadt.curve_vehicle_hours_of_delay`**: `(1/N) Σ_cells max(tt − ref, 0) × dirAADT ×
+  madt_ratio_m × volume_days / 60`. It returns `vhd`, `vhd_annual`, `coverage` and
+  `observed_share` per segment × window (or × month). `vehicle_hours_of_delay` is kept
+  as the index.
+- **Callers, opt-in.** `rank_corridors(bins=, curves=, profiles=)`,
+  `extents.segment_congestion(...)` (VHD against the segment's baseline, in its
+  `peak_window`) and `generate_catalogue(...)`, which also builds the by-month frame
+  for `monthly_delay_profile`. Every output gains `vhd_index`, plus `vhd_annual` /
+  `vhd_coverage` on the ranking and `vhd_coverage` on the congestion frame.
+  `attrs['vhd_basis']` is `curve` or `index`, and the curve caveat replaces the index
+  caveat.
+
+### 2. Decisions
+
+- **"Average day of the data period" counts every calendar day.** A weekday window
+  contributes 0 on weekends, not "per weekday". This is the literal reading of the
+  owner's decision, and it is the one under which *all* windows are additive: weekday
+  AM + weekend AM = the ungated AM, and `vhd_annual = vhd × 365` without per-window day
+  counts. The ROADMAP's flat-curve check (`index × window_hours / 24`) holds exactly
+  for an ungated window; a weekday window has the extra 5/7, and the test says so.
+- **Delay is floored per cell** (month × day type × bin), the grain the ROADMAP
+  named. Rows within a cell are averaged first, so probe noise inside a bin does not
+  inflate delay.
+- **Missing cells are filled from the same day type × bin pooled over the months**
+  (observation-weighted), then contribute nothing if still missing. I rejected scaling
+  the window by its coverage: that makes a cell's contribution depend on the window
+  and breaks additivity. The fill is per cell, so additivity holds. The by-month
+  frame does **not** fill, because a month must be its own data or the episodic flag
+  is diluted.
+- **Opt-in, not switched.** Curve VHD for the AM window is about 8 % of the index. The
+  core floors (`MIN_CORE_VHD*`) and the map tiers are on the index scale, so switching
+  here would have silently emptied the catalogue. Item 58 flips the consumers and
+  rescales in one change. With no `bins`, every existing output is unchanged, and all
+  885 prior tests pass untouched.
+- **Weekday delay is pooled Mon–Fri** within a month. The DOW factors still weight
+  each weekday's volume. A window gated to part of a day type gets the type's pooled
+  delay.
+- `peak_window` in `segment_congestion` is still the worse window by travel time; the
+  curve VHD is read there. Choosing it by VHD instead, or summing AM + PM now that
+  they are additive, is a question for Item 58's ranking comparison.
+
+### 3. Real data (D3, 1 Jan – 31 Aug 2026, 15-minute bins)
+
+On the 1,913 segments with an Item 56 curve and a reference speed, with AADT = MADT = 1.
+The whole district runs in about 30 s.
+- Per-cell vs window-mean floor: summed delay +4.6 % AM, +2.5 % PM, +9.4 % `day_7d`.
+  Segments with material delay are unchanged (median ratio 1.00 / 1.00 / 1.01). The
+  difference is 316–387 free-flowing segments that pick up a few congested cells.
+- Curve / index, median per segment: AM 0.083, PM 0.135, `day_7d` 0.94. Flat curves
+  would give 0.060, 0.074 and 0.63: the commute windows and 06:00–21:00 carry more
+  than their hours' share. This is the ratio Item 58's rescale starts from; MADT was
+  not applied in this check, and it will move the number a little.
+
+### 4. Tests
+
+22 new, 907 pass (2 skipped).
+- `tests/test_curve_vhd.py` (18):
+  - the weights: a full day sums to its DOW factor across both DST changes; gate and
+    clock; overnight wrap; days by month;
+  - the hand-computed peaky-curve VHD;
+  - additivity: AM + mid + PM = the union, weekday + weekend = ungated;
+  - a flat curve reproduces the index, three windows;
+  - MADT weighting, including by month;
+  - the Saturday/Sunday curves;
+  - the per-bin floor; the pooled fill; missing volume or curve; an unknown curve;
+  - the extents callers and the monthly profile.
+- `tests/test_screen.py` (4): the bin screen matches pandas cell by cell on the toy
+  export (including the gated 07:00 hour); the segment subset and period;
+  `rank_corridors` on the curve path (flat and packaged library); chunked ==
+  single-pass.

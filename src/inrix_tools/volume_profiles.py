@@ -240,3 +240,140 @@ def bin_volume_factor(profile: VolumeProfile, local_ts, *, bin_minutes: int = 5)
 
     factor = dow[dayofweek] * hourly[dtype, hour] / s / (60 // bin_minutes)
     return pd.Series(factor, index=index, name="volume_factor")
+
+
+# ---------------------------------------------------------------------------
+# Calendar volume weights over a data period  (Item 57)
+# ---------------------------------------------------------------------------
+WEIGHT_COLUMNS = ("curve_id", "window", "month", "day_type", "tod_min", "volume_days")
+
+
+def _window_spec(w) -> tuple[str, str, frozenset | None]:
+    """``(name, clock range, gated dayofweek set or None)`` from a ``screen.PeakWindow``
+    or its ``to_dict`` form (what a screen's ``attrs['windows']`` holds). Duck-typed so
+    this module does not import ``screen``."""
+    from .timebins import parse_day_of_week
+    if isinstance(w, Mapping):
+        name, clock, days = w["name"], w["window"], w.get("days")
+    else:
+        name, clock, days = w.name, w.window, w.days
+    if days is None:
+        return name, clock, None
+    dows = frozenset(parse_day_of_week(d) for d in days)
+    return name, clock, (None if not dows or dows == frozenset(range(7)) else dows)
+
+
+def _window_mask(ts: pd.DatetimeIndex, clock: str, dows) -> np.ndarray:
+    """``PeakWindow.filter`` semantics on bin-start timestamps: half-open clock range
+    read on the local wall clock (overnight ranges wrap), then the day gate on the
+    bin's own date."""
+    from .timebins import parse_time_bin
+    _, start, end, overnight = parse_time_bin(clock)
+    tod = ts.hour.to_numpy() * 3600 + ts.minute.to_numpy() * 60 + ts.second.to_numpy()
+    if start == end:
+        mask = np.ones(len(ts), dtype=bool)
+    elif overnight:
+        mask = (tod >= start) | (tod < end)
+    else:
+        mask = (tod >= start) & (tod < end)
+    if dows is not None:
+        mask &= np.isin(ts.dayofweek.to_numpy(), sorted(dows))
+    return mask
+
+
+def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
+                          bin_minutes: int = 5) -> pd.DataFrame:
+    """How much of a segment's daily volume each delay cell carries over a data period.
+
+    Curve-weighted VHD (``aadt.curve_vehicle_hours_of_delay``) reads delay per cell,
+    one cell per **month × day type × bin of the day**, pooled over the days of that
+    type in that month. This returns each cell's volume weight: over every local
+    calendar day ``d`` of the period that falls in the cell and passes the window,
+
+        volume_days = Σ_d  bin_volume_factor(profile, bin on d)
+
+    so ``dirAADT × MADT_month/AADT × volume_days`` is the traffic that crossed the
+    segment in that cell during the whole period. Dividing by ``attrs['n_days']``
+    gives it per average day of the period. The DOW factor of each day, the day
+    type's hourly shape and the 23/25-hour DST days are all inside
+    :func:`bin_volume_factor`.
+
+    Args:
+        profiles: ``{curve_id: VolumeProfile}`` (:func:`load_profiles`).
+        windows: ``screen.PeakWindow``s (or their ``to_dict`` form), a mapping of
+            them, or a single one. Membership follows ``PeakWindow.filter``: the bin's
+            start on the local clock, half-open, with the day gate on its own date.
+        period_start / period_end: the first and last **local** calendar dates of the
+            data period, inclusive.
+        tz: the local zone (IANA name) the bins are read in.
+        bin_minutes: the bin width; must divide 60 and match the delay cells.
+
+    Returns:
+        A long frame with :data:`WEIGHT_COLUMNS` — ``curve_id``, ``window``, ``month``
+        (``"YYYY-MM"``), ``day_type`` (:data:`DAY_TYPES`), ``tod_min`` (the bin's start,
+        minutes after local midnight) and ``volume_days``. Only cells a window covers
+        appear. ``attrs`` records ``period_start`` / ``period_end`` (ISO dates),
+        ``n_days``, ``days_by_month`` (``{"YYYY-MM": n}``), ``tz``, ``bin_minutes``
+        and ``windows`` (the specs, as read).
+
+    Raises:
+        ValueError: the period is empty (end before start), or ``bin_minutes`` does
+            not divide 60.
+    """
+    if bin_minutes <= 0 or 60 % bin_minutes:
+        raise ValueError(f"bin_minutes must divide 60, got {bin_minutes}")
+    first = pd.Timestamp(period_start).normalize()
+    last = pd.Timestamp(period_end).normalize()
+    if first.tzinfo is not None or last.tzinfo is not None:
+        raise ValueError("period_start / period_end are local calendar dates; pass them "
+                         "without a zone")
+    if last < first:
+        raise ValueError(f"empty period: {first.date()} .. {last.date()}")
+    if isinstance(windows, Mapping) and "window" not in windows:
+        windows = list(windows.values())
+    elif isinstance(windows, Mapping) or not isinstance(windows, (list, tuple)):
+        windows = [windows]
+    specs = [_window_spec(w) for w in windows]
+
+    # Every bin start of the period on the local wall clock. The range is built in
+    # absolute time, so the spring-forward day has no 02:00 hour and the fall-back day
+    # has its 01:00 hour twice, as the data does.
+    start = first.tz_localize(tz, ambiguous=True, nonexistent="shift_forward")
+    end = (last + pd.Timedelta(1, "D")).tz_localize(tz, ambiguous=True,
+                                                     nonexistent="shift_forward")
+    ts = pd.date_range(start, end, freq=f"{bin_minutes}min", inclusive="left")
+    naive = ts.tz_localize(None)
+    month = naive.strftime("%Y-%m")
+    day_type = np.asarray(DAY_TYPES)[day_type_index(ts.dayofweek)]
+    tod_min = (ts.hour.to_numpy() * 60 + ts.minute.to_numpy()) // bin_minutes * bin_minutes
+
+    frames = []
+    for curve_id, prof in profiles.items():
+        factor = bin_volume_factor(prof, ts, bin_minutes=bin_minutes).to_numpy()
+        for name, clock, dows in specs:
+            mask = _window_mask(ts, clock, dows)
+            if not mask.any():
+                continue
+            part = pd.DataFrame({"month": month[mask], "day_type": day_type[mask],
+                                 "tod_min": tod_min[mask], "volume_days": factor[mask]})
+            part = (part.groupby(["month", "day_type", "tod_min"], sort=True)["volume_days"]
+                    .sum().reset_index())
+            part.insert(0, "window", name)
+            part.insert(0, "curve_id", curve_id)
+            frames.append(part)
+    out = (pd.concat(frames, ignore_index=True) if frames
+           else pd.DataFrame(columns=list(WEIGHT_COLUMNS)))
+    out["tod_min"] = out["tod_min"].astype("int64")
+    days = pd.date_range(first, last, freq="D")
+    out.attrs = {
+        "period_start": first.date().isoformat(),
+        "period_end": last.date().isoformat(),
+        "n_days": len(days),
+        "days_by_month": {k: int(v) for k, v in
+                          pd.Series(days.strftime("%Y-%m")).value_counts().sort_index().items()},
+        "tz": str(tz),
+        "bin_minutes": int(bin_minutes),
+        "windows": {name: {"window": clock, "days": None if dows is None else sorted(dows)}
+                    for name, clock, dows in specs},
+    }
+    return out[list(WEIGHT_COLUMNS)]

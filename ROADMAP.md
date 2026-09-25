@@ -2997,37 +2997,56 @@ XD segment from inferred chain orientation, the urban in/out rule, and an overri
 
 ---
 
-## 57 — Curve-weighted VHD in the compute core
+## 57 — Curve-weighted VHD in the compute core ✅ (Session 77)
 
 **Target: Fable (math-heavy).** Pure core. Depends on 55 and 56.
 
 Scope:
 
-- [ ] **Delay by bin.** `screen` gains a DuckDB aggregation of mean travel time per
+- [x] **Delay by bin.** `screen` gains a DuckDB aggregation of mean travel time per
       segment × month × day type × 5-min-of-day over the `kept` rows. Delay is
       clipped per bin, not per window mean; record the difference this makes.
-- [ ] **Profile-weighted VHD** replaces `aadt.vehicle_hours_of_delay`.
+      *`screen.segment_bin_screen` (+ `data_period`, `segment_curve_vhd`, which runs
+      in segment chunks). On D3 the per-bin floor adds +4.6 % AM, +2.5 % PM and
+      +9.4 % `day_7d` delay; material segments are unchanged (median 1.00). The
+      difference is in the free-flowing segments (DATA_FORMAT).*
+- [x] **Profile-weighted VHD** replaces `aadt.vehicle_hours_of_delay`.
       - `Σ_bins vol × delay / 60`, averaged over the observed days.
       - Each day is weighted by its MADT month and DOW factor (the average day of
         the *data period*).
       - The old formula is kept as `vhd_index`.
       - `vhd_annual` is an extra column.
-- [ ] **Callers.** Used by:
+      *`aadt.curve_vehicle_hours_of_delay`, with the weights from
+      `volume_profiles.window_volume_weights`. The average day counts **every** day
+      of the period (a weekday window is 0 at weekends), so windows are additive and
+      `vhd_annual = vhd × 365`. A missing cell takes its pooled day type × bin;
+      `coverage` / `observed_share` report it. `vehicle_hours_of_delay` stays as the
+      index (the GUI still calls it until Item 58).*
+- [x] **Callers.** Used by:
       - `rank_corridors`;
       - `extents.segment_congestion` (baseline-relative delay, same weighting);
       - `extents.monthly_delay_profile`, which uses `MADT_m` directly, so
         `_monthly_vhd` becomes real per-month volume.
-- [ ] **Caveat.** The `aadt_caveat` attrs change from "relative index" to "average
+      *Opt-in, via `bins=` / `curves=` on `rank_corridors`, `segment_congestion` and
+      `generate_catalogue`; `monthly_delay_profile` accepts the by-month frame.
+      Without `bins` the output is unchanged (`vhd` = index), so the Item 54 floors
+      keep working until Item 58 wires the runner and rescales them. Every output
+      gains `vhd_index` and `attrs['vhd_basis']`.*
+- [x] **Caveat.** The `aadt_caveat` attrs change from "relative index" to "average
       day of the period, generic curves".
-- [ ] **pytest:**
+- [x] **pytest:**
       - hand-computed VHD on a toy segment with a known curve;
       - AM + PM = the VHD of their union;
       - a flat curve reproduces `index × window_hours / 24`;
       - MADT month weighting;
       - weekend days use the Sat/Sun curves.
-- [ ] DATA_FORMAT (the VHD definition); DESIGN_HISTORY.
+      *`tests/test_curve_vhd.py` (18) + 4 store-level tests in `test_screen.py`;
+      907 pass.*
+- [x] DATA_FORMAT (the VHD definition); DESIGN_HISTORY.
+      *D3 preview for Item 58: curve / index median AM 0.083, PM 0.135, `day_7d`
+      0.94 (AADT = MADT = 1).*
 
-*Suggested prompt:* "Do Item 57 of ROADMAP.md — compute VHD as curve-weighted
+*Suggested prompt (done):* "Do Item 57 of ROADMAP.md — compute VHD as curve-weighted
 vehicle-hours per average day of the data period, with MADT and DOW factors."
 
 ---
@@ -3035,6 +3054,13 @@ vehicle-hours per average day of the data period, with MADT and DOW factors."
 ## 58 — Curve-weighted VHD everywhere: consumers, floor rescale, ranking comparison
 
 **Target: Opus.** Scripts + GUI consistency. Depends on 57.
+
+*From Item 57:* the curve path is opt-in. Pass `bins=screen.segment_bin_screen(...)`
+over the ranked windows and `curves=` the Item 56 assignment to `rank_corridors` /
+`generate_catalogue`, and make sure the AADT frame / network carries
+`madt_ratio_01..12` (else 1.0 is used and `attrs['curve_vhd']['madt_ratios']` says
+"absent"). With `bins` given, the core floors see curve VHD, so their rescale must land
+in the same change. D3 preview of the ratio: median AM 0.083, PM 0.135, `day_7d` 0.94.
 
 Scope:
 

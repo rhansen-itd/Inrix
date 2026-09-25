@@ -295,6 +295,105 @@ def test_screen_unknown_area(area):
 
 
 # ---------------------------------------------------------------------------
+# The per-bin screen and curve-weighted VHD (Item 57)
+# ---------------------------------------------------------------------------
+def _flat_library():
+    from inrix_tools import volume_profiles as vp
+    flat = [1 / 24] * 24
+    return vp.load_profiles({"profiles": [
+        {"curve_id": "flat", "hourly": {"weekday": flat, "sat": flat, "sun": flat},
+         "dow": [1.0] * 7}]})
+
+
+def test_bin_screen_matches_pandas(area, export_zip):
+    """The cells are the gated rows inside any window, grouped by local month, day
+    type and bin of the day, exactly as pandas groups the same rows."""
+    con, key = area
+    bins = screen.segment_bin_screen(con, key)
+    assert bins.attrs["period_start"] == "2026-03-09"
+    assert bins.attrs["period_end"] == "2026-03-15"
+    assert bins.attrs["bin_minutes"] == 15
+
+    raw = io.filter_cvalue(io.to_local(io.load_data(export_zip), TZ), 80)
+    parts = [w.filter(raw) for w in screen.PEAK_WINDOWS.values()]
+    rows = pd.concat(parts).drop_duplicates(subset=[SEGMENT_COL, "Date Time"])
+    ts = rows["Date Time"]
+    rows = rows.assign(
+        month=ts.dt.strftime("%Y-%m"),
+        day_type=ts.dt.dayofweek.map(lambda d: "sat" if d == 5 else
+                                     "sun" if d == 6 else "weekday"),
+        tod_min=ts.dt.hour * 60 + ts.dt.minute)
+    ref = (rows.groupby([SEGMENT_COL, "month", "day_type", "tod_min"])
+           ["Travel Time(Minutes)"].agg(["mean", "count"]))
+    got = bins.set_index([SEGMENT_COL, "month", "day_type", "tod_min"]).sort_index()
+    assert len(got) == len(ref)
+    assert got["travel_time"].to_numpy() == pytest.approx(ref["mean"].to_numpy())
+    assert (got["n_obs"].to_numpy() == ref["count"].to_numpy()).all()
+    # the gated 07:00 hour (Mon: CValue 50, Tue: null) leaves 3 weekdays in its cells
+    assert got.loc[(1000, "2026-03", "weekday", 420), "n_obs"] == 3
+    assert got.loc[(1000, "2026-03", "weekday", 480), "n_obs"] == 5
+
+
+def test_bin_screen_segment_subset_and_period(area):
+    con, key = area
+    bins = screen.segment_bin_screen(con, key, ["am"], segment_ids=[1001])
+    assert set(bins[SEGMENT_COL]) == {1001}
+    assert set(bins["day_type"]) == {"weekday"}
+    assert screen.data_period(con, key, tz=TZ) == ("2026-03-09", "2026-03-15")
+    assert screen.data_period(con, key, tz=TZ, date_start="2026-03-10",
+                              date_end="2026-03-11") == ("2026-03-10", "2026-03-11")
+
+
+def test_rank_corridors_curve_vhd(area):
+    """With a flat curve, the curve-weighted VHD is the index × window hours / 24 ×
+    the share of the week's days the window covers (5 of 7 weekdays)."""
+    con, key = area
+    scr = screen.segment_screen(con, key)
+    bins = screen.segment_bin_screen(con, key)
+    curves = pd.Series("flat", index=pd.Index(SEG_IDS, name=SEGMENT_COL))
+    ranked = screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()}, _aadt(), bins=bins,
+                                   curves=curves, profiles=_flat_library())
+    r = ranked.set_index("window")
+    assert r.loc["am", "vhd_index"] == pytest.approx(500.0)
+    assert r.loc["am", "vhd"] == pytest.approx(500.0 * 2 / 24 * 5 / 7)
+    assert r.loc["pm", "vhd_index"] == pytest.approx(1000.0)
+    assert r.loc["pm", "vhd"] == pytest.approx(1000.0 * 2.5 / 24 * 5 / 7)
+    assert r.loc["am", "vhd_per_mile"] == pytest.approx(r.loc["am", "vhd"] / 3.0)
+    assert r.loc["am", "vhd_annual"] == pytest.approx(r.loc["am", "vhd"] * 365)
+    assert r.loc["am", "vhd_coverage"] == pytest.approx(1.0)
+    assert ranked.attrs["vhd_basis"] == "curve"
+    assert "average calendar day" in ranked.attrs["aadt_caveat"]
+
+    # the packaged library runs end to end on the same toy
+    real = screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()}, _aadt(), bins=bins,
+                                 curves=curves.replace("flat", "am_commute_urban"))
+    rv = real.set_index("window")["vhd"]
+    assert (rv[["am", "pm", "midday"]] > 0).all()
+    assert rv["night"] == 0.0                     # night runs at free flow
+
+    # without bins nothing changes: vhd is the index
+    plain = screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()}, _aadt())
+    assert plain.attrs["vhd_basis"] == "index"
+    assert (plain["vhd"] == plain["vhd_index"]).all()
+    assert plain["vhd_annual"].isna().all()
+    with pytest.raises(ValueError, match="curves"):
+        screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()}, _aadt(), bins=bins)
+
+
+def test_segment_curve_vhd_chunks_agree(area):
+    """The store driver's chunks share one period: chunked == one pass."""
+    con, key = area
+    ref = pd.Series(1.0, index=pd.Index(SEG_IDS, name=SEGMENT_COL))
+    curves = pd.Series("flat", index=ref.index)
+    kw = dict(profiles=_flat_library(), tz=TZ)
+    one = screen.segment_curve_vhd(con, key, ref, _aadt(), curves, **kw)
+    chunked = screen.segment_curve_vhd(con, key, ref, _aadt(), curves, chunk_size=1, **kw)
+    pd.testing.assert_frame_equal(one, chunked)
+    am = one[one["window"] == "am"].set_index(SEGMENT_COL)["vhd"]
+    assert am.to_numpy() == pytest.approx([10_000 / 60 * 2 / 24 * 5 / 7] * 3)
+
+
+# ---------------------------------------------------------------------------
 # rank_corridors
 # ---------------------------------------------------------------------------
 def test_rank_corridors_known_delay(area):

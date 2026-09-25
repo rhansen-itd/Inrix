@@ -15,8 +15,10 @@ Two things are kept separate on purpose (see CLAUDE.md / ROADMAP Item 18):
   AADT does **not** re-weight it — summing member travel times is already the
   right physical quantity.
 * Volume weighting applies where a *mean across segments* is summarized:
-  :func:`vehicle_hours_of_delay` (delay × volume, the headline impact number,
-  summable to a corridor/network total) and :func:`aadt_weighted_mean_speed`
+  :func:`curve_vehicle_hours_of_delay` (each bin's delay × that bin's volume from a
+  volume-profile curve, vehicle-hours per average day of the data period — the
+  headline impact number since Item 57, summable across segments *and* windows),
+  :func:`vehicle_hours_of_delay` (the older index: window mean delay × daily volume) and :func:`aadt_weighted_mean_speed`
   (Σ w·x / Σ w, weights = AADT) so a corridor speed reflects where the vehicles
   actually are.
 
@@ -38,6 +40,7 @@ import math
 import re
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from .geometry import WGS84, _resolve_shp_path
@@ -1648,7 +1651,10 @@ def _seg_series(values) -> pd.Series:
 
 
 def vehicle_hours_of_delay(mean_delay_minutes, aadt) -> pd.DataFrame:
-    """Per-segment **vehicle-hours of delay** = mean delay (hours) × AADT.
+    """Per-segment **VHD index** = mean delay (hours) × AADT.  (The ``vhd_index``.)
+
+    Since Item 57 the headline VHD is :func:`curve_vehicle_hours_of_delay`; this is
+    kept for one release as ``vhd_index`` and for the GUI until Item 58 switches it.
 
     The headline volume-aware impact number (Item 17 delay × volume): a segment's
     average delay per vehicle scaled by how many vehicles it carries. Summing the
@@ -1697,6 +1703,226 @@ def vehicle_hours_of_delay(mean_delay_minutes, aadt) -> pd.DataFrame:
         "AADT is a daily total; vehicle_hours is a relative weight at the window's "
         "mean delay, not absolute VMT unless the window is scaled to a full day."
     )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Curve-weighted VHD: vehicle-hours per average day of the data period  (Item 57)
+# ---------------------------------------------------------------------------
+CURVE_COL = "curve_id"
+DAYS_PER_YEAR = 365.0
+
+CURVE_VHD_CAVEAT = (
+    "vhd is vehicle-hours of delay on an average calendar day of the data period "
+    "({start} to {end}, {n} days): each bin's delay (mean travel time per segment x "
+    "month x day type x bin, less the reference, floored at 0 per bin) times that "
+    "bin's volume, dirAADT x MADT_month/AADT x the segment's volume-profile curve "
+    "(hourly shape x day-of-week factor), summed over the window and divided by the "
+    "period's days. Windows are additive. The curves are generic (published research "
+    "profiles, ROADMAP Item 55), not counts; the two directions carry equal daily "
+    "volume. vhd_annual = vhd x 365, the period's average day repeated (not seasonally "
+    "rebalanced). vhd_index is the Item 54 relative index (window mean delay x "
+    "daily dirAADT)."
+)
+
+
+def _curve_series(curves) -> pd.Series:
+    """``Segment ID -> curve_id`` from a Series, or a frame carrying ``curve_id``
+    (e.g. ``profile_assignment.assign_profiles``, indexed by ``XDSegID``; XD ids are
+    the export's Segment IDs)."""
+    if isinstance(curves, pd.Series):
+        s = curves
+    elif CURVE_COL in getattr(curves, "columns", []):
+        s = curves[CURVE_COL]
+        if SEGMENT_COL in curves.columns and curves.index.name != SEGMENT_COL:
+            s = curves.set_index(SEGMENT_COL)[CURVE_COL]
+    else:
+        raise TypeError("curves must be a Segment ID-indexed Series or carry 'curve_id'.")
+    s = s.copy()
+    s.index = pd.Index(s.index.astype("int64"), name=SEGMENT_COL)
+    return s.where(s.notna(), None)
+
+
+def _madt_frame(volume, ids: pd.Index) -> tuple[pd.DataFrame, bool]:
+    """``(Segment ID x month-number 1..12 ratio frame, present)``. Missing columns or
+    values read 1.0 — the same fallback :func:`join_aadt` writes."""
+    frame = volume
+    if not isinstance(frame, pd.DataFrame):
+        return pd.DataFrame(1.0, index=ids, columns=range(1, 13)), False
+    if frame.index.name != SEGMENT_COL and SEGMENT_COL in frame.columns:
+        frame = frame.set_index(SEGMENT_COL)
+    present = all(c in frame.columns for c in MADT_RATIO_COLS)
+    if not present:
+        return pd.DataFrame(1.0, index=ids, columns=range(1, 13)), False
+    m = frame[MADT_RATIO_COLS].apply(pd.to_numeric, errors="coerce")
+    m.index = m.index.astype("int64")
+    m = m[~m.index.duplicated()].reindex(ids)
+    m.columns = range(1, 13)
+    return m.where(np.isfinite(m) & (m > 0), 1.0), True
+
+
+def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, curves,
+                                 weights: pd.DataFrame, *, by_month: bool = False,
+                                 impute: bool = True) -> pd.DataFrame:
+    """Per-segment, per-window **vehicle-hours of delay on an average day of the data
+    period**, with each bin's delay weighted by that bin's volume.  (Item 57)
+
+    For segment ``s`` on curve ``c`` and window ``W``, over the ``N`` calendar days of
+    the period:
+
+        VHD = (1/N) Σ_cells  delay(cell) × dirAADT × MADT_m/AADT × volume_days(c, W, cell) / 60
+
+    - a **cell** is month ``m`` × day type × bin of the day. ``delay(cell)`` is the
+      cell's mean travel time (``screen.segment_bin_screen``) less ``ref_tt[s]``,
+      **floored at 0 per cell**, so a bin running faster than the reference never
+      pays for a congested one;
+    - ``volume_days`` (``volume_profiles.window_volume_weights``) is the curve's share
+      of daily volume summed over the period's days in that cell, each day at its own
+      day-of-week factor and day-type shape. The cell's mean delay stands for every
+      day of the cell;
+    - ``MADT_m/AADT`` is the segment's ``madt_ratio_MM`` (1.0 where absent).
+
+    Days the window does not cover (weekends, for a weekday window) count in ``N``
+    with zero, so windows are **additive**: AM + PM is the VHD of their union, and the
+    windows of a partition of the week sum to the whole-week VHD.
+
+    **Missing cells** (``impute=True``): a cell with no gated observation takes the
+    segment's same day type × bin pooled over every month (observation-weighted). A
+    cell still missing contributes nothing; ``coverage`` says how much of the window's
+    volume had a delay.
+
+    Args:
+        bins: ``screen.segment_bin_screen`` — ``Segment ID``, ``month``, ``day_type``,
+            ``tod_min``, ``travel_time``, ``n_obs``.
+        ref_tt: ``Segment ID -> reference travel time`` (minutes): free flow for
+            ranking, the segment's own baseline for the extents. Its index is the
+            output's segment set.
+        volume: a :func:`join_aadt` frame (``AADT`` per direction and
+            ``madt_ratio_01..12``) or a bare ``Segment ID -> AADT`` Series.
+        curves: ``Segment ID -> curve_id`` (or a frame carrying ``curve_id``, e.g. the
+            ``profile_assignment`` frame).
+        weights: ``volume_profiles.window_volume_weights`` over the same period, zone
+            and bin width as ``bins``.
+        by_month: return one row per segment × window × month instead, each month's
+            VHD per average day **of that month in the period**, from that month's own
+            cells (no pooled fill: a month is its own data).
+        impute: fill a missing cell from its pooled day type × bin (see above).
+
+    Returns:
+        A long frame: ``Segment ID``, ``window`` (``month`` when ``by_month``),
+        ``vhd``, ``vhd_annual`` (``vhd`` × 365; not by month), ``coverage`` (share of
+        the window's volume whose delay is known), ``observed_share`` (share from
+        the cell's own month), ``AADT`` and ``curve_id``. ``vhd`` is NaN where the
+        segment has no volume, no curve, no reference or no delay at all.
+        ``attrs['aadt_caveat']`` states the definition; ``attrs['curve_vhd']``
+        records the period, counts of segments without a curve / volume, and whether
+        MADT ratios were present.
+
+    Raises:
+        ValueError: a curve is not in ``weights``, or ``weights`` and ``bins`` disagree
+            on the bin width.
+    """
+    ids = pd.Index(pd.Series(ref_tt.index).astype("int64").unique(), name=SEGMENT_COL)
+    ref = pd.Series(pd.to_numeric(ref_tt, errors="coerce").to_numpy(),
+                    index=pd.Index(ref_tt.index.astype("int64"), name=SEGMENT_COL))
+    ref = ref[~ref.index.duplicated()].reindex(ids)
+    vol = _aadt_series(volume)
+    vol.index = vol.index.astype("int64")
+    vol = vol[~vol.index.duplicated()].reindex(ids)
+    vol = vol.where(vol > 0)
+    curve = _curve_series(curves)
+    curve = curve[~curve.index.duplicated()].reindex(ids)
+    madt, madt_present = _madt_frame(volume, ids)
+
+    known_curves = set(weights["curve_id"].unique())
+    unknown = sorted({c for c in curve.dropna().unique()} - known_curves)
+    if unknown:
+        raise ValueError(f"curve_id {unknown} has no volume weights; build weights over "
+                         "the whole library (volume_profiles.load_profiles())")
+    wb = weights.attrs.get("bin_minutes")
+    bb = bins.attrs.get("bin_minutes")
+    if wb is not None and bb is not None and int(wb) != int(bb):
+        raise ValueError(f"weights are {wb}-minute bins, the delay cells {bb}-minute")
+    n_days = int(weights.attrs.get("n_days") or 0)
+    days_by_month = weights.attrs.get("days_by_month") or {}
+
+    # The grid every segment owes: its curve's weighted cells, per window.
+    seg = pd.DataFrame({SEGMENT_COL: ids, CURVE_COL: curve.to_numpy()})
+    seg = seg[seg[CURVE_COL].notna()]
+    grid = seg.merge(weights, on=CURVE_COL, how="inner")
+    grid = grid.drop(columns=CURVE_COL)
+    grid["_madt"] = madt.to_numpy()[
+        ids.get_indexer(grid[SEGMENT_COL]),
+        grid["month"].str.slice(5, 7).astype(int).to_numpy() - 1]
+
+    keys = [SEGMENT_COL, "month", "day_type", "tod_min"]
+    cells = bins[keys + ["travel_time", "n_obs"]].copy()
+    cells[SEGMENT_COL] = cells[SEGMENT_COL].astype("int64")
+    cells["tod_min"] = cells["tod_min"].astype("int64")
+    cells = cells[cells[SEGMENT_COL].isin(ids) & cells["travel_time"].notna()]
+    grid = grid.merge(cells[keys + ["travel_time"]], on=keys, how="left")
+    grid["_own"] = grid["travel_time"].notna()
+    if impute and not by_month:
+        pooled = cells.assign(_tn=cells["travel_time"] * cells["n_obs"])
+        pooled = pooled.groupby([SEGMENT_COL, "day_type", "tod_min"], sort=False).agg(
+            _tn=("_tn", "sum"), _n=("n_obs", "sum")).reset_index()
+        pooled["_pooled"] = pooled["_tn"] / pooled["_n"].where(pooled["_n"] > 0)
+        grid = grid.merge(pooled[[SEGMENT_COL, "day_type", "tod_min", "_pooled"]],
+                          on=[SEGMENT_COL, "day_type", "tod_min"], how="left")
+        grid["travel_time"] = grid["travel_time"].fillna(grid["_pooled"])
+
+    ref_g = ref.to_numpy()[ids.get_indexer(grid[SEGMENT_COL])]
+    grid["_delay"] = (grid["travel_time"].to_numpy() - ref_g).clip(min=0.0)
+    grid["_w"] = grid["_madt"] * grid["volume_days"]
+    known = grid["_delay"].notna()
+    grid["_vh"] = (grid["_delay"] * grid["_w"]).where(known, 0.0) / 60.0
+    grid["_wk"] = grid["_w"].where(known, 0.0)
+    grid["_wo"] = grid["_w"].where(grid["_own"], 0.0)
+
+    by = [SEGMENT_COL, "window"] + (["month"] if by_month else [])
+    agg = grid.groupby(by, sort=True).agg(_vh=("_vh", "sum"), _w=("_w", "sum"),
+                                          _wk=("_wk", "sum"), _wo=("_wo", "sum"),
+                                          _nk=("_delay", "count")).reset_index()
+    aadt_g = vol.to_numpy()[ids.get_indexer(agg[SEGMENT_COL])]
+    if by_month:
+        days = agg["month"].map(days_by_month).astype(float).to_numpy()
+    else:
+        days = np.full(len(agg), float(n_days))
+    has = (agg["_nk"] > 0).to_numpy() & np.isfinite(aadt_g) & (days > 0)
+    vhd = np.where(has, agg["_vh"].to_numpy() * aadt_g / np.where(days > 0, days, 1.0),
+                   np.nan)
+    out = agg[by].copy()
+    out["vhd"] = vhd
+    if not by_month:
+        out["vhd_annual"] = vhd * DAYS_PER_YEAR
+    wsum = agg["_w"].where(agg["_w"] > 0)
+    out["coverage"] = (agg["_wk"] / wsum).to_numpy()
+    out["observed_share"] = (agg["_wo"] / wsum).to_numpy()
+    # Every segment x window (x month) is a row, NaN where nothing could be weighed.
+    full_levels = [ids, pd.Index(weights["window"].unique(), name="window")]
+    if by_month:
+        full_levels.append(pd.Index(sorted(weights["month"].unique()), name="month"))
+    out = out.set_index(by).reindex(pd.MultiIndex.from_product(full_levels)).reset_index()
+    out[AADT_COL] = vol.to_numpy()[ids.get_indexer(out[SEGMENT_COL])]
+    out[CURVE_COL] = curve.to_numpy()[ids.get_indexer(out[SEGMENT_COL])]
+
+    attrs = weights.attrs
+    out.attrs["aadt_caveat"] = CURVE_VHD_CAVEAT.format(
+        start=attrs.get("period_start"), end=attrs.get("period_end"), n=n_days)
+    out.attrs["curve_vhd"] = {
+        "period_start": attrs.get("period_start"),
+        "period_end": attrs.get("period_end"),
+        "n_days": n_days,
+        "tz": attrs.get("tz"),
+        "bin_minutes": attrs.get("bin_minutes"),
+        "by_month": bool(by_month),
+        "impute": bool(impute and not by_month),
+        "madt_ratios": "joined" if madt_present else "absent (1.0)",
+        "n_segments": len(ids),
+        "n_no_curve": int(curve.isna().sum()),
+        "n_no_volume": int(vol.isna().sum()),
+        "n_no_reference": int(ref.isna().sum()),
+    }
     return out
 
 

@@ -2195,6 +2195,7 @@ FAIL_UNOBSERVED = "unobserved"
 
 CONGESTION_COLUMNS = ("miles", "aadt", "peak_window", "peak_tt", "baseline_tt",
                       "baseline_source", "ratio", "weight", "delay_min", "vhd",
+                      "vhd_index", "vhd_coverage",
                       "realtime_share", "ref_tti", "urban_share", "urban_area")
 
 
@@ -2205,6 +2206,9 @@ def segment_congestion(
     peak_windows: Sequence[str] = PEAK_WINDOWS,
     min_baseline_obs: int = BASELINE_MIN_OBS,
     fallback_col: str = BASELINE_FALLBACK_COL,
+    bins: pd.DataFrame | None = None,
+    curves=None,
+    profiles=None,
 ) -> pd.DataFrame:
     """Each segment's peak congestion **against its own baseline**, one row per segment.
 
@@ -2215,6 +2219,13 @@ def segment_congestion(
             ``weekday_tt_p15`` fallback.
         network: the XD network, with ``Miles`` and (ideally) ``AADT`` and the
             ``itd_layers.urban_context`` columns joined.
+        bins / curves / profiles: when ``bins`` (a ``screen.segment_bin_screen`` over
+            ``peak_windows``) and ``curves`` (``Segment ID -> curve_id``) are given,
+            ``vhd`` is **curve-weighted** (Item 57): the vehicle-hours per average day
+            of the data period of each bin's delay against the segment's baseline,
+            floored per bin, in the segment's ``peak_window``
+            (``aadt.curve_vehicle_hours_of_delay``; the network's ``madt_ratio_*``
+            columns, 1.0 where absent). Otherwise ``vhd`` is the Item 54 index.
 
     Returns:
         A frame indexed by ``Segment ID`` over the network's segments, with
@@ -2226,8 +2237,10 @@ def segment_congestion(
           has them, else NaN / ``"none"``;
         - ``ratio`` = peak / baseline, ``weight`` = its smooth ramp from
           :data:`RATIO_ONSET` to :data:`RATIO_FULL` (0 where the ratio is unknown);
-        - ``delay_min`` = peak − baseline (floored at 0), ``vhd`` = delay × AADT / 60
-          (NaN without a volume);
+        - ``delay_min`` = peak − baseline (floored at 0); ``vhd_index`` = delay × AADT
+          / 60 (NaN without a volume); ``vhd`` = the curve-weighted VHD with ``bins``,
+          else ``vhd_index``; ``vhd_coverage`` = the curve path's share of the window's
+          volume with a known delay (NaN on the index path);
         - ``realtime_share`` in the peak window; ``ref_tti`` = peak against INRIX's
           reference speed, for comparison with Item 46;
         - ``miles``, ``aadt``, ``urban_share``, ``urban_area`` from the network.
@@ -2273,7 +2286,27 @@ def segment_congestion(
     ramp = (out["ratio"] - RATIO_ONSET) / (RATIO_FULL - RATIO_ONSET)
     out["weight"] = ramp.clip(lower=0.0, upper=1.0).fillna(0.0)
     out["delay_min"] = (out["peak_tt"] - out["baseline_tt"]).clip(lower=0.0)
-    out["vhd"] = (out["delay_min"] / 60.0 * out["aadt"]).where(out["aadt"] > 0)
+    out["vhd_index"] = (out["delay_min"] / 60.0 * out["aadt"]).where(out["aadt"] > 0)
+    out["vhd"] = out["vhd_index"]
+    out["vhd_coverage"] = float("nan")
+    out.attrs["vhd_basis"] = "index"
+    if bins is not None:
+        from . import aadt as _aadt
+        from . import screen as _screen
+        if curves is None:
+            raise ValueError("curve-weighted VHD (bins=...) needs curves.")
+        weights = _screen.bin_weights(bins, profiles, windows=list(peak_windows))
+        volume = net if "AADT" in net.columns else out["aadt"]
+        cv = _aadt.curve_vehicle_hours_of_delay(bins, out["baseline_tt"], volume, curves,
+                                                weights)
+        at = pd.MultiIndex.from_arrays([out.index.astype("int64"),
+                                        out["peak_window"].fillna("")])
+        cv = cv.set_index([_aadt.SEGMENT_COL, "window"])
+        out["vhd"] = cv["vhd"].reindex(at).to_numpy()
+        out["vhd_coverage"] = cv["coverage"].reindex(at).to_numpy()
+        out.attrs["vhd_basis"] = "curve"
+        out.attrs["aadt_caveat"] = cv.attrs["aadt_caveat"]
+        out.attrs["curve_vhd"] = cv.attrs["curve_vhd"]
 
     rt = pd.Series(float("nan"), index=scr.index)
     for w in peak_windows:
@@ -2290,7 +2323,10 @@ def segment_congestion(
     out["urban_share"] = (pd.to_numeric(net["urban_share"], errors="coerce")
                           if "urban_share" in net.columns else float("nan"))
     out["urban_area"] = net["urban_area"] if "urban_area" in net.columns else None
-    return out[list(CONGESTION_COLUMNS)]
+    attrs = dict(out.attrs)
+    out = out[list(CONGESTION_COLUMNS)]
+    out.attrs = attrs
+    return out
 
 
 @dataclass(frozen=True)
@@ -2448,9 +2484,25 @@ def monthly_delay_profile(
     segment's **export-wide** baseline (``seg["baseline_tt"]``), so a month that is
     slow because of a work zone shows as delay rather than moving its own baseline.
     Segments with no baseline or AADT contribute nothing.
+
+    ``monthly`` is either
+
+    - a ``screen.segment_monthly_screen`` (the Item 50 index: the month's window mean
+      delay × daily AADT), or
+    - a **curve-weighted** by-month frame (Item 57,
+      ``aadt.curve_vehicle_hours_of_delay(..., ref_tt=seg["baseline_tt"],
+      by_month=True)``, recognised by its ``vhd`` column): each month's vehicle-hours
+      per average day of that month, at that month's ``MADT_m`` and its own days'
+      DOW factors. The worse peak window is then the one with more vehicle-hours.
     """
     ids = [int(x) for x in segment_ids]
     sub = monthly[monthly["Segment ID"].isin(ids)]
+    if "vhd" in monthly.columns:
+        sub = sub[sub["window"].isin(list(peak_windows))]
+        if sub.empty:
+            return pd.Series(dtype="float64")
+        worst = sub.groupby(["Segment ID", "month"])["vhd"].max(min_count=1)
+        return worst.groupby(level="month").sum(min_count=1).dropna().sort_index()
     cols = [f"{w}_travel_time" for w in peak_windows if f"{w}_travel_time" in sub.columns]
     if sub.empty or not cols:
         return pd.Series(dtype="float64")
@@ -2825,6 +2877,9 @@ def generate_catalogue(
     note: str = "",
     audit: list | None = None,
     monthly: pd.DataFrame | None = None,
+    bins: pd.DataFrame | None = None,
+    curves=None,
+    profiles=None,
 ) -> dict:
     """Build a whole corridor catalogue from a district network (Items 46, 50).
 
@@ -2854,6 +2909,9 @@ def generate_catalogue(
         monthly: ``screen.segment_monthly_screen`` over the peak windows. When given,
             each facility is checked for delay concentrated in a few months
             (:func:`episodic_flag`) and flagged — never dropped — in ``_flags``.
+        bins / curves / profiles: curve-weighted VHD (Item 57), passed to
+            :func:`segment_congestion`. With them, the monthly profile is curve-weighted
+            too (from ``bins``, by month), and ``monthly`` is not needed.
         audit: when given, one row per analysed direction is appended — every chain's
             strongest candidate with its metrics and the floors it failed — so the
             decisions can be checked segment by segment.
@@ -2868,7 +2926,15 @@ def generate_catalogue(
     except Exception:
         metric_crs = "EPSG:3857"
 
-    seg = segment_congestion(baseline, network, peak_windows=peak_windows)
+    seg = segment_congestion(baseline, network, peak_windows=peak_windows, bins=bins,
+                             curves=curves, profiles=profiles)
+    if bins is not None:
+        from . import aadt as _aadt
+        from . import screen as _screen
+        monthly = _aadt.curve_vehicle_hours_of_delay(
+            bins, seg["baseline_tt"], net_idx, curves,
+            _screen.bin_weights(bins, profiles, windows=list(peak_windows)),
+            by_month=True)
     chains = enumerate_mainline_chains(network, min_miles=min_chain_miles)
     route_sets = segment_route_sets(network)
     pairs = pair_chains(chains, network, metric_crs=metric_crs)
@@ -3198,6 +3264,7 @@ def generate_catalogue(
         ),
         "_generated": {
             "peak_windows": list(peak_windows),
+            "vhd_basis": seg.attrs.get("vhd_basis", "index"),
             "n_chains": len(chains),
             "n_facilities": len(facilities),
             "tiers": [t.value for t in tiers],

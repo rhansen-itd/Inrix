@@ -14,6 +14,12 @@ an area, which corridors carry the most congestion — in two steps:
    ``delay_min`` / ``tti`` / ``delay_per_mile`` / ``vhd`` / ``vhd_per_mile`` and each
    corridor's ``worst_peak`` — computed through :func:`speed.segment_delay` and
    :func:`aadt.vehicle_hours_of_delay` rather than restated inline.
+3. (Item 57) :func:`segment_bin_screen` keeps the per-cell means (segment × month ×
+   day type × bin of the day) that a volume-profile curve can weight;
+   ``rank_corridors(bins=...)`` then reports ``vhd`` as vehicle-hours per average day
+   of the data period (:func:`aadt.curve_vehicle_hours_of_delay`), with the old
+   index kept as ``vhd_index``. :func:`segment_curve_vhd` runs it straight off the
+   store in segment chunks.
 
 Three things this fixes against the outside screening pass it was scoped from
 (DESIGN_HISTORY Session 38, ROADMAP Items 34–37):
@@ -469,6 +475,202 @@ def segment_monthly_screen(con, area_key: str, windows=None,
     return out
 
 
+def data_period(con, area_key: str, *, bin_minutes: int | None = None, tz=DEFAULT_TZ,
+                date_start=None, date_end=None) -> tuple[str, str] | None:
+    """The first and last **local** calendar dates an area's rows cover, as ISO strings
+    (``None`` for an empty scan), within the optional inclusive date bounds.  (Item 57)
+
+    Curve-weighted VHD is per average day of this period: every segment of the area
+    is averaged over the same days, whether or not it reported on all of them.
+    """
+    if _store._area_row(con, area_key) is None:
+        raise KeyError(f"No area {area_key!r} in the store.")
+    zone = _validated_tz(tz)
+    bin_minutes = _store._resolve_bin(con, area_key, bin_minutes)
+    obs = _store._obs_table(area_key)
+    where = [f'"{_store.BIN_COL}" = ?']
+    params: list = [bin_minutes]
+    lo, hi = _store._date_bounds_utc(date_start, date_end, zone)
+    if lo is not None:
+        where.append(f'"{DATETIME_COL}" >= ?')
+        params.append(lo)
+    if hi is not None:
+        where.append(f'"{DATETIME_COL}" < ?')
+        params.append(hi)
+    first, last = con.execute(
+        f"SELECT min(\"{DATETIME_COL}\"), max(\"{DATETIME_COL}\") FROM \"{obs}\" "
+        f"WHERE {' AND '.join(where)}", params).fetchone()
+    if first is None:
+        return None
+
+    def _local(ts):
+        return pd.Timestamp(ts).tz_convert(zone).date().isoformat()
+
+    return _local(first), _local(last)
+
+
+DAY_TYPE_SQL = "CASE dow WHEN 6 THEN 'sat' WHEN 7 THEN 'sun' ELSE 'weekday' END"
+"""DuckDB ``isodow`` -> ``volume_profiles.DAY_TYPES``."""
+
+
+def segment_bin_screen(con, area_key: str, windows=PEAK_WINDOWS,
+                       cvalue_threshold: int | float | None = DEFAULT_CVALUE_THRESHOLD, *,
+                       bin_minutes: int | None = None, tz=DEFAULT_TZ,
+                       date_start=None, date_end=None,
+                       segment_ids: Sequence[int] | None = None,
+                       period: tuple[str, str] | None = None) -> pd.DataFrame:
+    """Mean travel time per segment × **month × day type × bin of the day**, over the
+    gated rows inside the named windows, in DuckDB.  (Item 57)
+
+    The delay cells curve-weighted VHD (``aadt.curve_vehicle_hours_of_delay``) reads.
+    :func:`segment_screen` averages a whole window into one number, so a volume curve
+    has nothing to weight; here each cell keeps its own mean, and the delay floor is
+    applied per cell downstream.
+
+    Args:
+        con / area_key / windows / cvalue_threshold / bin_minutes / tz /
+            date_start / date_end: as :func:`segment_screen`. Only rows inside at
+            least one window are aggregated.
+        segment_ids: restrict to these segments (a district is large; callers chunk).
+        period: the data period's ``(first, last)`` local dates, when the caller
+            already has it (:func:`data_period`); computed otherwise. Chunks of one
+            area must share one period.
+
+    Returns:
+        A long frame: ``Segment ID``, ``month`` (``"YYYY-MM"``, local), ``day_type``
+        (``weekday`` / ``sat`` / ``sun``), ``tod_min`` (the bin's start, minutes after
+        local midnight) and ``travel_time`` / ``n_obs`` over the gated rows. A cell
+        with no gated row is absent. ``attrs`` records ``area_key``, ``tz``,
+        ``bin_minutes``, ``cvalue_threshold``, ``windows`` (full specs), ``units``,
+        ``period_start`` / ``period_end`` and the date bounds.
+    """
+    row = _store._area_row(con, area_key)
+    if row is None:
+        raise KeyError(f"No area {area_key!r} in the store.")
+    wins = resolve_windows(windows)
+    zone = _validated_tz(tz)
+    bin_minutes = _store._resolve_bin(con, area_key, bin_minutes)
+    obs = _store._obs_table(area_key)
+    cols = _table_columns(con, obs)
+    m = _metric_columns(cols)
+    if m["travel_time"] is None:
+        raise ValueError(f"Area {area_key!r} carries no 'Travel Time(...)' column.")
+    if cvalue_threshold is not None and CVALUE_COL not in cols:
+        raise ValueError(f"Area {area_key!r} carries no {CVALUE_COL!r} column but a gate "
+                         f"of {cvalue_threshold} was requested.")
+    if period is None:
+        period = data_period(con, area_key, bin_minutes=bin_minutes, tz=zone,
+                             date_start=date_start, date_end=date_end)
+
+    where = [f'"{_store.BIN_COL}" = ?']
+    params: list = [bin_minutes]
+    lo, hi = _store._date_bounds_utc(date_start, date_end, zone)
+    if lo is not None:
+        where.append(f'"{DATETIME_COL}" >= ?')
+        params.append(lo)
+    if hi is not None:
+        where.append(f'"{DATETIME_COL}" < ?')
+        params.append(hi)
+    if segment_ids is not None:
+        where.append(f'"{SEGMENT_COL}" IN (SELECT unnest(?::BIGINT[]))')
+        params.append([int(s) for s in segment_ids])
+    if cvalue_threshold is not None:
+        where.append(f'"{CVALUE_COL}" > {float(cvalue_threshold)}')
+    in_any = " OR ".join(w.sql_predicate() for w in wins.values())
+    sql = (
+        f'WITH src AS (SELECT "{SEGMENT_COL}" AS sid, "{m["travel_time"]}" AS tt, '
+        f"\"{DATETIME_COL}\" AT TIME ZONE '{zone}' AS local_dt "
+        f'FROM "{obs}" WHERE {" AND ".join(where)}), tagged AS (\n'
+        "SELECT sid, tt, local_dt,\n"
+        "  date_part('hour', local_dt) * 3600 + date_part('minute', local_dt) * 60"
+        " + date_part('second', local_dt) AS tod,\n"
+        "  isodow(local_dt) AS dow FROM src)\n"
+        f'SELECT sid AS "{SEGMENT_COL}", strftime(local_dt, \'%Y-%m\') AS month,\n'
+        f"  {DAY_TYPE_SQL} AS day_type,\n"
+        f"  CAST(floor(tod / {60 * bin_minutes}) * {bin_minutes} AS BIGINT) AS tod_min,\n"
+        "  avg(tt) AS travel_time, count(*) AS n_obs\n"
+        f"FROM tagged WHERE tt IS NOT NULL AND ({in_any})\n"
+        "GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4"
+    )
+    out = con.execute(sql, params).df()
+    if len(out):
+        out[SEGMENT_COL] = out[SEGMENT_COL].astype("int64")
+        out["tod_min"] = out["tod_min"].astype("int64")
+        out["n_obs"] = out["n_obs"].astype("int64")
+    out.attrs = {
+        "area_key": area_key,
+        "tz": zone,
+        "bin_minutes": bin_minutes,
+        "cvalue_threshold": cvalue_threshold,
+        "windows": {n: w.to_dict() for n, w in wins.items()},
+        "units": {"speed": row.get("units_speed"),
+                  "travel_time": row.get("units_travel_time")},
+        "period_start": None if period is None else period[0],
+        "period_end": None if period is None else period[1],
+        "date_start": date_start,
+        "date_end": date_end,
+    }
+    return out
+
+
+def bin_weights(bins: pd.DataFrame, profiles=None, windows=None) -> pd.DataFrame:
+    """``volume_profiles.window_volume_weights`` for a :func:`segment_bin_screen`: its
+    windows (or the named subset), period, zone and bin width, over the curve library
+    (the packaged one by default)."""
+    from . import volume_profiles as _vp
+    specs = bins.attrs.get("windows") or {}
+    names = list(specs) if windows is None else list(resolve_windows(windows))
+    missing = [n for n in names if n not in specs]
+    if missing:
+        raise KeyError(f"The bin screen has no window(s) {missing}; it carries {list(specs)}.")
+    if bins.attrs.get("period_start") is None:
+        raise ValueError("The bin screen has no data period (an empty scan).")
+    return _vp.window_volume_weights(
+        profiles if profiles is not None else _vp.load_profiles(),
+        [specs[n] for n in names], bins.attrs["period_start"], bins.attrs["period_end"],
+        bins.attrs["tz"], bin_minutes=int(bins.attrs["bin_minutes"]))
+
+
+def segment_curve_vhd(con, area_key: str, ref_tt: pd.Series, volume, curves,
+                      windows=PEAK_WINDOWS,
+                      cvalue_threshold: int | float | None = DEFAULT_CVALUE_THRESHOLD, *,
+                      profiles=None, bin_minutes: int | None = None, tz=DEFAULT_TZ,
+                      date_start=None, date_end=None, by_month: bool = False,
+                      chunk_size: int = 1000) -> pd.DataFrame:
+    """Curve-weighted VHD for every segment of ``ref_tt``, straight from the store, in
+    chunks of ``chunk_size`` segments so a district's cells never sit in pandas at once.
+    One data period is shared by every chunk. See
+    :func:`aadt.curve_vehicle_hours_of_delay` for the definition and the output."""
+    zone = _validated_tz(tz)
+    bin_minutes = _store._resolve_bin(con, area_key, bin_minutes)
+    period = data_period(con, area_key, bin_minutes=bin_minutes, tz=zone,
+                         date_start=date_start, date_end=date_end)
+    if period is None:
+        raise ValueError(f"Area {area_key!r} has no rows in the requested period.")
+    ids = [int(s) for s in pd.Index(ref_tt.index).unique()]
+    weights = None
+    parts = []
+    for i in range(0, max(len(ids), 1), chunk_size):
+        chunk = ids[i:i + chunk_size]
+        bins = segment_bin_screen(con, area_key, windows, cvalue_threshold,
+                                  bin_minutes=bin_minutes, tz=zone,
+                                  date_start=date_start, date_end=date_end,
+                                  segment_ids=chunk, period=period)
+        if weights is None:
+            weights = bin_weights(bins, profiles)
+        parts.append(_aadt.curve_vehicle_hours_of_delay(
+            bins, ref_tt.loc[ref_tt.index.isin(chunk)], volume, curves, weights,
+            by_month=by_month))
+    out = pd.concat(parts, ignore_index=True)
+    out.attrs = dict(parts[0].attrs)
+    out.attrs["curve_vhd"] = {**parts[0].attrs["curve_vhd"], "n_segments": len(ids),
+                              **{k: int(sum(p.attrs["curve_vhd"][k] for p in parts))
+                                 for k in ("n_no_curve", "n_no_volume", "n_no_reference")},
+                              "cvalue_threshold": cvalue_threshold,
+                              "area_key": area_key}
+    return out
+
+
 def _quantile_name(q: float) -> str:
     """``0.15`` -> ``"tt_p15"``; ``0.025`` -> ``"tt_p2.5"``."""
     pct = round(100.0 * float(q), 6)
@@ -580,7 +782,8 @@ def window_delay(screen: pd.DataFrame, lengths: pd.Series, windows=("am", "pm"),
 
 
 def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
-                   free_flow="ref") -> pd.DataFrame:
+                   free_flow="ref", bins: pd.DataFrame | None = None, curves=None,
+                   profiles=None) -> pd.DataFrame:
     """Rank assembled corridors on a :func:`segment_screen`, one row per corridor ×
     window.
 
@@ -602,6 +805,15 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
             :class:`PeakWindow`s); default is every window the screen carries.
         free_flow: passed to :func:`speed.segment_delay` — ``'ref'`` (the INRIX
             free-flow reference) or a ``('pXX', q)`` percentile spec.
+        bins: a :func:`segment_bin_screen` over (at least) the ranked windows. When
+            given, ``vhd`` is **curve-weighted** (Item 57,
+            :func:`aadt.curve_vehicle_hours_of_delay`): vehicle-hours per average day
+            of the data period, each bin's floored delay against the ``ref``
+            free-flow times its volume. Needs ``aadt`` (with the ``madt_ratio_*``
+            columns, 1.0 where absent) and ``curves``, and ``free_flow='ref'``.
+            Without it ``vhd`` is the Item 54 index, as before.
+        curves: ``Segment ID -> curve_id`` (or the ``profile_assignment`` frame).
+        profiles: the curve library (default: the packaged one).
 
     Returns:
         One row per corridor × window, columns:
@@ -611,8 +823,12 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
         ``miles`` (the **observed** in-extent miles), ``missing_miles``,
         ``miles_covered_fraction``, ``n_obs``, ``min_kept_fraction``,
         ``travel_time_min``, ``free_flow_min``, ``delay_min``, ``tti``,
-        ``delay_per_mile``, ``vhd``, ``vhd_per_mile``, ``n_ramp_weighted``,
-        ``n_aadt_missing``.
+        ``delay_per_mile``, ``vhd``, ``vhd_per_mile``, ``vhd_index`` (the Item 54
+        index: window mean delay × daily dirAADT, kept for one release),
+        ``vhd_annual`` and ``vhd_coverage`` (the curve path only: ``vhd`` × 365, and
+        the extent-mile-weighted share of window volume with a known delay),
+        ``n_ramp_weighted``, ``n_aadt_missing``. ``attrs['vhd_basis']`` is ``'curve'``
+        or ``'index'``.
 
         Rank with e.g. ``out[out['window'] == out['worst_peak']]
         .sort_values('vhd', ascending=False)``.
@@ -660,6 +876,20 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
     tt_unit = (screen.attrs.get("units") or {}).get("travel_time") or "Minutes"
     tt_wide = piv[f"Travel Time({tt_unit})"]
 
+    seg_vhd = None
+    if bins is not None:
+        if aadt is None or curves is None:
+            raise ValueError("curve-weighted VHD (bins=...) needs aadt and curves.")
+        if free_flow != "ref":
+            raise ValueError("curve-weighted VHD floors each bin against the 'ref' "
+                             f"free flow; free_flow={free_flow!r} is not supported.")
+        ref_tt = (lengths / screen["ref_speed"].reindex(lengths.index) * 60.0).where(
+            screen["ref_speed"].reindex(lengths.index) > 0)
+        weights = bin_weights(bins, profiles, windows=names)
+        seg_vhd = _aadt.curve_vehicle_hours_of_delay(bins, ref_tt, aadt, curves, weights)
+        curve_piv = seg_vhd.pivot(index=SEGMENT_COL, columns=WINDOW_COL,
+                                  values=["vhd", "vhd_annual", "coverage"])
+
     aadt_src = _aadt_source_lookup(aadt)
     records = []
     for name, chain in chain_map.items():
@@ -684,15 +914,26 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
             tt_min = float((tt * w)[observed].sum())
             ff_sum = float((ff * w)[observed].sum())
 
-            vhd = float("nan")
+            vhd_index = vhd_annual = vhd_cov = float("nan")
             n_ramp = n_aadt_missing = 0
             if aadt is not None and observed.any():
                 vh = _aadt.vehicle_hours_of_delay(delay_prorated, aadt)
-                vhd = float(vh["vehicle_hours"].sum())
+                vhd_index = float(vh["vehicle_hours"].sum())
                 n_aadt_missing = int((~(vh[_aadt.AADT_COL] > 0)).sum())
                 if aadt_src is not None:
                     n_ramp = int((aadt_src.reindex(delay_prorated.index)
                                   == "matched_ramp").sum())
+            vhd = vhd_index
+            if seg_vhd is not None:
+                sv = curve_piv["vhd"][wname].reindex(ids) * w
+                use = observed & sv.notna()
+                vhd = float(sv[use].sum()) if use.any() else float("nan")
+                vhd_annual = (float((curve_piv["vhd_annual"][wname].reindex(ids) * w)[use]
+                                    .sum()) if use.any() else float("nan"))
+                cov = curve_piv["coverage"][wname].reindex(ids)
+                cw = ext[observed & cov.notna()]
+                vhd_cov = (float((cov[cw.index] * cw).sum() / cw.sum())
+                           if cw.sum() > 0 else float("nan"))
 
             nobs_col = f"{wname}_n_obs"
             keep_col = f"{wname}_kept_fraction"
@@ -720,6 +961,9 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
                 "delay_per_mile": (delay_min / obs_miles) if obs_miles > 0 else float("nan"),
                 "vhd": vhd,
                 "vhd_per_mile": (vhd / obs_miles) if obs_miles > 0 else float("nan"),
+                "vhd_index": vhd_index,
+                "vhd_annual": vhd_annual,
+                "vhd_coverage": vhd_cov,
                 "n_ramp_weighted": n_ramp,
                 "n_aadt_missing": n_aadt_missing,
             }
@@ -737,6 +981,7 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
              "n_observed", "miles", "missing_miles", "miles_covered_fraction",
              "n_obs", "min_kept_fraction", "travel_time_min", "free_flow_min",
              "delay_min", "tti", "delay_per_mile", "vhd", "vhd_per_mile",
+             "vhd_index", "vhd_annual", "vhd_coverage",
              "n_ramp_weighted", "n_aadt_missing"]
     out = out[order]
     out.attrs = {
@@ -749,8 +994,13 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
         "bin_minutes": screen.attrs.get("bin_minutes"),
         "area_key": screen.attrs.get("area_key"),
         "windows": wins,
-        "aadt_caveat": _AADT_CAVEAT if aadt is not None else None,
+        "vhd_basis": ("curve" if seg_vhd is not None
+                      else "index" if aadt is not None else None),
+        "aadt_caveat": (seg_vhd.attrs["aadt_caveat"] if seg_vhd is not None
+                        else _AADT_CAVEAT if aadt is not None else None),
     }
+    if seg_vhd is not None:
+        out.attrs["curve_vhd"] = seg_vhd.attrs["curve_vhd"]
     return out
 
 
@@ -2166,6 +2416,8 @@ __all__ = [
     "GROUP_COL", "DIRECTION_COL", "RANK_METRICS", "DEFAULT_RANK_METRIC",
     "PeakWindow", "PEAK_WINDOWS", "WEEKDAYS", "resolve_windows",
     "segment_screen", "segment_monthly_screen", "rank_corridors",
+    # Item 57 — curve-weighted VHD
+    "data_period", "segment_bin_screen", "bin_weights", "segment_curve_vhd",
     # Item 43 — recurring-congestion corridor extraction
     "segment_recurrence", "CongestionRun", "extract_congestion_runs",
     "tidy_run_endpoints", "pair_directions", "emit_candidates",
