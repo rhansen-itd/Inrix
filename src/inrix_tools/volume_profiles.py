@@ -157,6 +157,50 @@ def profile_sources(source=None) -> dict:
     return dict(_read_library(source).get("sources", {}))
 
 
+SCHEMA_VERSION = 1
+
+
+def profiles_to_library(profiles: Mapping[str, VolumeProfile], *, note: str = "",
+                        sources: Mapping | None = None) -> dict:
+    """``{curve_id: VolumeProfile}`` → the library JSON mapping (the package schema),
+    so :func:`load_profiles` reads it back."""
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "note": note,
+        "sources": dict(sources or {}),
+        "profiles": [{"curve_id": p.curve_id, "description": p.description,
+                      "dow": [round(v, 6) for v in p.dow],
+                      "provenance": p.provenance,
+                      "hourly": {d: list(p.hourly[d]) for d in DAY_TYPES}}
+                     for p in profiles.values()],
+    }
+
+
+def write_profiles(profiles: Mapping[str, VolumeProfile], path, *, note: str = "",
+                   sources: Mapping | None = None) -> Path:
+    """Write a curve library JSON (e.g. the count-fitted curves, Item 59)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(profiles_to_library(profiles, note=note, sources=sources),
+                               indent=1) + "\n")
+    return path
+
+
+def merge_profiles(*libraries: Mapping[str, VolumeProfile]) -> dict[str, VolumeProfile]:
+    """One library from several (e.g. the generic curves + the fitted ones).
+
+    Raises:
+        ValueError: two libraries define the same ``curve_id`` differently.
+    """
+    out: dict[str, VolumeProfile] = {}
+    for lib in libraries:
+        for cid, prof in lib.items():
+            if cid in out and (out[cid].hourly != prof.hourly or out[cid].dow != prof.dow):
+                raise ValueError(f"curve_id {cid!r} is defined twice, differently")
+            out.setdefault(cid, prof)
+    return out
+
+
 def day_type_index(dayofweek) -> np.ndarray:
     """Index into :data:`DAY_TYPES` for each pandas ``dayofweek`` (Mon–Fri → 0,
     Sat → 1, Sun → 2)."""

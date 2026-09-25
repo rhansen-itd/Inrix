@@ -37,7 +37,7 @@ import dash_bootstrap_components as dbc  # noqa: E402
 from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html, no_update  # noqa: E402
 
 from inrix_tools import aadt, beforeafter, changepoint, geometry, io, kml, names, speed, store  # noqa: E402
-from inrix_tools import profile_assignment, screen  # noqa: E402
+from inrix_tools import profile_assignment, screen, volume_profiles  # noqa: E402
 from inrix_tools.io import CORRIDOR_COL, DATETIME_COL, SEGMENT_COL  # noqa: E402
 from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
@@ -159,6 +159,7 @@ class Dataset:
     _compare_cache: dict = field(default_factory=dict)
     _vhd_cache: dict = field(default_factory=dict)   # (window, days) -> curve VHD
     curves: object = None            # Segment ID -> curve_id, resolved on first VHD map
+    profiles: object = None          # the curve library those ids read against (Item 59)
 
     def __post_init__(self):
         if self.full_span is None:
@@ -579,19 +580,26 @@ def _segment_means(ds: Dataset, col: str, window=None, days=None) -> pd.Series:
 
 def _segment_curves(ds: Dataset) -> pd.Series:
     """``Segment ID -> curve_id`` for the loaded segments: the screening runs' saved
-    assignments (:data:`VOLUME_PROFILE_FILES`), else the default curve."""
+    assignments (:data:`VOLUME_PROFILE_FILES`), else the default curve. The library
+    they read against (packaged + each run's count-fitted companion, Item 59) is kept
+    in ``ds.profiles``, trimmed to the fitted curves in use."""
     if ds.curves is None:
         ids = pd.Index(sorted(int(s) for s in ds.df[SEGMENT_COL].unique()), name=SEGMENT_COL)
         curves = pd.Series(profile_assignment.DEFAULT_CURVE, index=ids, dtype=object)
+        library = volume_profiles.load_profiles()
         for path in sorted(_REPO.glob(VOLUME_PROFILE_FILES)):
             try:
                 saved = profile_assignment.read_assignment(path)["curve_id"]
+                lib = profile_assignment.assignment_profiles(path)
             except (OSError, KeyError, ValueError):
                 continue
             saved.index = saved.index.astype("int64")
-            hit = saved[saved.index.isin(ids) & saved.notna()]
+            hit = saved[saved.index.isin(ids) & saved.notna() & saved.isin(list(lib))]
             curves.loc[hit.index] = hit
+            library = volume_profiles.merge_profiles(
+                library, {c: lib[c] for c in set(hit) if c not in library})
         ds.curves = curves
+        ds.profiles = library
     return ds.curves
 
 
@@ -619,7 +627,7 @@ def _segment_vhd(ds: Dataset, window=None, days=None) -> pd.Series:
     volume = (ds.geo if ds.geo is not None and aadt.AADT_COL in getattr(ds.geo, "columns", [])
               else ds.aadt)
     cv = screen.frame_curve_vhd(ds.df, ref_tt, volume, _segment_curves(ds), win,
-                                bin_minutes=_data_bin_minutes(ds))
+                                bin_minutes=_data_bin_minutes(ds), profiles=ds.profiles)
     out = cv.set_index(SEGMENT_COL)["vhd"]
     out.attrs = {"vhd_per": cv.attrs["vhd_per"].get("map"),
                  "aadt_caveat": cv.attrs["aadt_caveat"]}

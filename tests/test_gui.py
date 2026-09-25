@@ -1044,6 +1044,30 @@ def test_segment_curves_read_the_saved_assignments(tmp_path, monkeypatch):
     assert curves.loc[101] == gapp.profile_assignment.DEFAULT_CURVE
 
 
+def test_segment_curves_bring_their_fitted_library(tmp_path, monkeypatch):
+    """Item 59: a saved assignment naming a count-fitted curve carries it in its
+    companion JSON, and the VHD map reads it instead of failing on an unknown id."""
+    from inrix_tools import volume_profiles
+    ds = _aadt_scope_ds()
+    d = tmp_path / "out" / "statewide_screening" / "d3"
+    d.mkdir(parents=True)
+    pa = gapp.profile_assignment
+    lib = volume_profiles.load_profiles()
+    fitted = volume_profiles.VolumeProfile(
+        "fitted_x_EB", lib["rural_through"].hourly, lib["rural_through"].dow,
+        {"basis": "fitted"})
+    saved = pd.DataFrame({c: [None] for c in pa.ASSIGNMENT_COLUMNS},
+                         index=pd.Index([202], name="XDSegID"))
+    saved["curve_id"], saved["curve_source"] = "fitted_x_EB", pa.STATION
+    pa.write_assignment(saved, d / "d3_volume_profiles.csv",
+                        profiles=volume_profiles.merge_profiles(lib, {"fitted_x_EB": fitted}))
+    monkeypatch.setattr(gapp, "_REPO", tmp_path)
+    assert gapp._segment_curves(ds).loc[202] == "fitted_x_EB"
+    assert "fitted_x_EB" in ds.profiles
+    vh = gapp._segment_vhd(ds, None, None)
+    assert vh.loc[202] == pytest.approx(4 / 60 * 9000, rel=0.02)   # a whole day
+
+
 def test_segment_map_hover_shows_aadt():
     """When geo carries AADT + a source flag, the hover surfaces both (a marginal
     'nearest' join is visible, not silent)."""

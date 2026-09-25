@@ -109,6 +109,7 @@ def _args(district, **over):
     argv = ["--db", str(district["db"]), "--network", str(district["network"]),
             "--catalogue", str(district["catalogue"]),
             "--repairs", str(district["repairs"]), "--out-dir", str(district["out"])]
+    over.setdefault("count_profiles", "")        # hermetic: no fitted curves from out/
     for k, v in over.items():
         flag = "--" + k.replace("_", "-")
         argv += [flag] if v is True else [flag, str(v)]
@@ -760,3 +761,50 @@ def test_district_flag_finds_the_urban_context(monkeypatch, tmp_path):
     assert args.urban_context == str(ctx)
     assert args.urban == rds.DEFAULT_URBAN
     assert args.profile_overrides == rds.DEFAULT_PROFILE_OVERRIDES
+
+
+def test_count_fitted_curves_reach_the_assignment(district, tmp_path):
+    """Item 59: a fit_count_profiles.py directory feeds the station rule. The fitted
+    curve is assigned, written beside the assignment, and recorded in the provenance."""
+    from inrix_tools import counts
+    from inrix_tools import profile_assignment as pa
+    from inrix_tools import volume_profiles
+
+    mem = tmp_path / "membership.csv"
+    pd.DataFrame({"XDSegID": SEGS, "inrix_route": 99, "itd_route": 99,
+                  "itd_route_id": "01540ASH099", "verdict": "agree", "routes": "99",
+                  "route_number": "99", "near_routes": "99"}).to_csv(mem, index=False)
+    lib = volume_profiles.load_profiles()
+    fitted = {"fitted_T1_NB": volume_profiles.VolumeProfile(
+        "fitted_T1_NB", lib["rural_through"].hourly, lib["rural_through"].dow,
+        {"basis": "fitted"})}
+    cdir = tmp_path / "count_profiles"
+    volume_profiles.write_profiles(fitted, cdir / rds.FITTED_PROFILES)
+    counts.write_stations(pd.DataFrame([{
+        "station_id": "T1", "direction": "NB", "lat": LAT0 + 1.5 * DLAT, "lon": LON,
+        "route": "99", "source": "atr", "curve_id": "fitted_T1_NB",
+        "nearest_generic": "rural_through", "misplaced_share": 0.0, "usable_days": 30,
+        "borrowed": ""}]), cdir / rds.COUNT_STATIONS)
+
+    # A real XD network carries its end points (geometry._KEEP_COLS); the station
+    # rule reads them for the snap and the direction.
+    import geopandas as gpd
+    net = gpd.read_parquet(district["network"])
+    net["StartLat"] = [g.coords[0][1] for g in net.geometry]
+    net["StartLong"] = [g.coords[0][0] for g in net.geometry]
+    net["EndLat"] = [g.coords[-1][1] for g in net.geometry]
+    net["EndLong"] = [g.coords[-1][0] for g in net.geometry]
+    net.to_parquet(district["network"])
+
+    out = rds.run(_args(district, membership=mem, count_profiles=cdir))
+    back = pa.read_assignment(out["written"]["volume_profiles"])
+    assert back.at[1001, "curve_source"] == pa.STATION
+    assert back.at[1001, "curve_id"] == "fitted_T1_NB"
+    assert "fitted_T1_NB" in pa.assignment_profiles(out["written"]["volume_profiles"])
+    vp = out["provenance"]["volume_profiles"]
+    assert vp["count_profiles"] == str(cdir) and vp["n_stations"] == 1
+    assert vp["by_source"][pa.STATION] >= 1
+    # Without the directory, nothing is claimed.
+    out2 = rds.run(_args(district, membership=mem))
+    assert out2["provenance"]["volume_profiles"]["count_profiles"] is None
+    assert pa.STATION not in out2["provenance"]["volume_profiles"]["by_source"]

@@ -58,6 +58,7 @@ from inrix_tools import aadt as aadt_mod                  # noqa: E402
 from inrix_tools import corridors, geometry, kml, routes, screen, store  # noqa: E402
 from inrix_tools import itd_layers                        # noqa: E402
 from inrix_tools import profile_assignment as profiles_mod  # noqa: E402
+from inrix_tools import counts as counts_mod              # noqa: E402
 from inrix_tools import volume_profiles                   # noqa: E402
 from inrix_tools.io import DEFAULT_TZ                     # noqa: E402
 
@@ -205,18 +206,38 @@ URBAN_CONTEXT = "out/highways/route_membership/d{district}_urban_context.csv"
 DEFAULT_URBAN = "Urban_Area.zip"
 DEFAULT_PROFILE_OVERRIDES = "scripts/volume_profile_overrides.csv"
 DEFAULT_URBAN_CENTRES = "scripts/urban_centres.csv"
+DEFAULT_COUNT_PROFILES = "out/count_profiles"
+"""``scripts/fit_count_profiles.py``'s output (Item 59): ``fitted_profiles.json`` and
+``count_stations.csv``. Used when present."""
+FITTED_PROFILES = "fitted_profiles.json"
+COUNT_STATIONS = "count_stations.csv"
+
+
+def load_count_profiles(count_dir):
+    """``(fitted library, station table)`` from a ``fit_count_profiles.py`` output
+    directory, or ``(None, None)`` when it is absent or incomplete."""
+    if not count_dir:
+        return None, None
+    lib, st = Path(count_dir) / FITTED_PROFILES, Path(count_dir) / COUNT_STATIONS
+    if not (lib.exists() and st.exists()):
+        return None, None
+    return volume_profiles.load_profiles(lib), counts_mod.read_stations(st)
 
 
 def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
                            urban_context_path, urban_source, overrides_path,
-                           centres_path=None, district=None, peak_screen=None):
+                           centres_path=None, district=None, peak_screen=None,
+                           count_profiles=None, station_generic=False):
     """A volume-profile curve for every segment of the district network (Item 56).
 
     Wiring only — :mod:`inrix_tools.profile_assignment` decides. The inference reads
     the ``am`` / ``pm`` delay of ``scr``; a run without those windows (``day_7d``)
     passes ``peak_screen``, a callable returning a screen that has them, so the
     peak and 7-day runs assign the same curves. Any input that is absent is skipped,
-    and the rule falls back as the module says."""
+    and the rule falls back as the module says. ``count_profiles`` is a
+    ``fit_count_profiles.py`` output directory (Item 59): its fitted curves join the
+    library and its stations drive the station rule. The library used is returned in
+    ``attrs['library']``."""
     table = net.drop(columns="geometry", errors="ignore")
     table = table.drop_duplicates(subset="XDSegID")
     membership = routes.read_membership(membership_path) if membership_path else None
@@ -247,11 +268,19 @@ def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
         entries, {cid: c.segment_ids for cid, c in chains.items()})
         + profiles_mod.route_runs(context))
     library = volume_profiles.load_profiles()
+    fitted, stations = load_count_profiles(count_profiles)
+    if fitted is not None:
+        library = volume_profiles.merge_profiles(library, fitted)
     overrides = (profiles_mod.load_overrides(overrides_path, library)
                  if overrides_path and Path(overrides_path).exists() else None)
     assignment = profiles_mod.assign_profiles(
         context, chain_list, delay, overrides=overrides, district=district,
-        profiles=library)
+        profiles=library, stations=stations, station_generic=station_generic)
+    # The VHD weights are built per curve, so carry only the fitted curves in use.
+    used = set(assignment["curve_id"].dropna())
+    assignment.attrs["library"] = volume_profiles.merge_profiles(
+        volume_profiles.load_profiles(),
+        {c: p for c, p in (fitted or {}).items() if c in used})
     assignment.attrs["inputs"] = {
         "route_membership": str(membership_path) if membership_path else None,
         "urban_context": str(urban_context_path) if urban is not None else None,
@@ -259,6 +288,9 @@ def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
         "urban_centres": (str(centres_path)
                           if centres is not None and centroids is not None else None),
         "overrides": str(overrides_path) if overrides is not None else None,
+        "count_profiles": str(count_profiles) if stations is not None else None,
+        "station_curves": ("nearest generic" if station_generic else "fitted")
+                          if stations is not None else None,
         "inference": delay is not None,
     }
     return assignment
@@ -270,7 +302,7 @@ SEGMENT_VHD_7DAY = "segment_7day_curve_vhd.parquet"
 
 
 def segment_vhd(con, area_key, scr, net, aadt, curves, *, windows, cvalue_threshold,
-                bin_minutes, tz, date_start, date_end):
+                bin_minutes, tz, date_start, date_end, profiles=None):
     """Curve-weighted VHD (Item 57) for every screened segment with a reference speed,
     over ``windows``: ``screen.segment_curve_vhd`` against the INRIX reference travel
     time (``Miles / ref_speed``), the free flow the ranking floors against."""
@@ -283,7 +315,7 @@ def segment_vhd(con, area_key, scr, net, aadt, curves, *, windows, cvalue_thresh
     return screen.segment_curve_vhd(
         con, area_key, ref_tt, aadt, curves, windows=windows,
         cvalue_threshold=cvalue_threshold, bin_minutes=bin_minutes, tz=tz,
-        date_start=date_start, date_end=date_end)
+        date_start=date_start, date_end=date_end, profiles=profiles)
 
 
 def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> dict:
@@ -1496,7 +1528,8 @@ def run(args) -> dict:
             net, scr, args.catalogue, accepted, membership_path=args.membership,
             urban_context_path=args.urban_context, urban_source=args.urban,
             overrides_path=args.profile_overrides, centres_path=args.urban_centres,
-            district=args.district,
+            district=args.district, count_profiles=args.count_profiles,
+            station_generic=args.station_generic,
             peak_screen=lambda: screen_segments(
                 con, area_key, windows=peak_windows,
                 cvalue_threshold=args.cvalue_threshold, bin_minutes=args.bin_minutes,
@@ -1509,7 +1542,8 @@ def run(args) -> dict:
             seg_vhd = segment_vhd(con, area_key, scr, net, aadt, assignment,
                                   windows=windows, cvalue_threshold=args.cvalue_threshold,
                                   bin_minutes=args.bin_minutes, tz=args.tz,
-                                  date_start=args.date_start, date_end=args.date_end)
+                                  date_start=args.date_start, date_end=args.date_end,
+                                  profiles=assignment.attrs["library"])
 
         # Keyed on the catalogue **id**, not the name: ids are short and unique,
         # where two names can share their first 20 characters ("SH-44 (State St)
@@ -1565,6 +1599,7 @@ def run(args) -> dict:
                                    "by_curve": pa_attrs["by_curve"],
                                    "n_chains": pa_attrs["n_chains"],
                                    "n_chains_inferred": pa_attrs["n_chains_inferred"],
+                                   "n_stations": pa_attrs["n_stations"],
                                    "thresholds": pa_attrs["thresholds"]}
         dist_tag = f"D{args.district}" if args.district else "district"
         print(f"{dist_tag} volume profiles: {profiles_mod.summary_line(assignment)} "
@@ -1585,7 +1620,8 @@ def run(args) -> dict:
         vp_name = (f"d{args.district}_volume_profiles.csv" if args.district
                    else "volume_profiles.csv")
         written["volume_profiles"] = profiles_mod.write_assignment(
-            assignment, Path(args.out_dir) / vp_name)
+            assignment, Path(args.out_dir) / vp_name,
+            profiles=assignment.attrs["library"])
 
         # Save segment screen results for fast statewide vector map aggregation
         scr_fname = "segment_7day_screen.parquet" if is_7day else "segment_peak_screen.parquet"
@@ -1707,6 +1743,13 @@ def build_parser() -> argparse.ArgumentParser:
                         "in/out rule (Item 56); '' = polygon centroids")
     p.add_argument("--profile-overrides", default=DEFAULT_PROFILE_OVERRIDES,
                    help="volume-profile override CSV (Item 56); '' = none")
+    p.add_argument("--count-profiles", default=DEFAULT_COUNT_PROFILES,
+                   help="fit_count_profiles.py output dir: count-fitted curves and the "
+                        "station rule (Item 59), used when present; '' = generic "
+                        "curves only")
+    p.add_argument("--station-generic", action="store_true",
+                   help="the station rule assigns each station's nearest generic curve "
+                        "instead of its fitted one")
     p.add_argument("--aadt-max-distance-m", type=float, default=60.0)
     p.add_argument("--cvalue-threshold", type=float, default=DEFAULT_CVALUE,
                    help="keep CValue > threshold; 'none' disables the gate")

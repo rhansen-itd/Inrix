@@ -6848,3 +6848,142 @@ The first pass lost five district runs because I edited `run_district_screening.
 while it was running; each district is a fresh subprocess. Those five were re-run
 with identical arguments. Don't edit the scripts while a statewide run is in
 progress.
+
+## Session 79 — Item 59: curves fitted from counts, and the station rule (2026-09-25)
+
+### 1. What changed
+
+- **`src/inrix_tools/counts.py`** (new, pure).
+  - **Schema.** `COUNT_COLUMNS`: `station_id, direction, timestamp, volume, lat, lon,
+    route, source`, one row per station × direction × local hour, with
+    `validate_counts`, `write_counts` and `read_counts`. The ROADMAP's list gained
+    `route`, because "same route" needs it.
+  - **Importers.**
+    - `import_tcds_hourly`: ITD ATRs, TCDS report 87 flattened by
+      `tcds-scraper/tidy.py`.
+    - `import_interval_counts`: tube counts, wide 15-minute layout.
+    - `import_atspm_volumes`: signal approach or detector volumes.
+  - **Fitting and comparison.** `fit_profile`, `nearest_generic`, `cluster_profiles`,
+    and `station_curves` (fit a whole count set and build the station table).
+- **`volume_profiles`**: `profiles_to_library`, `write_profiles` and
+  `merge_profiles`, which refuses a `curve_id` defined twice differently.
+- **`profile_assignment`**:
+  - `station_rule` and the new source `station`;
+  - `segment_context` gains `routes`, `business`, the end points and
+    `next_xd` / `prev_xd`;
+  - `write_assignment(..., profiles=)` writes the non-packaged curves beside the CSV
+    (`dN_volume_profiles_curves.json`), and `assignment_profiles(path)` reads them
+    back.
+- **`scripts/fit_count_profiles.py`** (new). It reads the TCDS CSVs and/or schema
+  CSVs, fits in each district's own zone, and writes `out/count_profiles/`:
+  `fitted_profiles.json`, `count_stations.csv`, `fit_report.csv` and `counts.csv`.
+- **Runner.**
+  - `run_district_screening --count-profiles` defaults to `out/count_profiles` when
+    it exists; `''` switches it off. `--station-generic` assigns the nearest generic
+    ids instead of the fitted curves.
+  - The fitted curves in use join the library that the curve VHD is weighted with.
+    Only the ones in use: the weights are built per curve, and 55 extra curves
+    would slow every district.
+  - The provenance records `count_profiles`, `station_curves` and `n_stations`.
+- **GUI and catalogue builder.** Both read the companion library, so a fitted
+  `curve_id` in a saved assignment resolves instead of raising.
+
+### 2. Decisions
+
+- **Order: override > station > inferred > urban_rule > default.** The ROADMAP asked
+  for the station rule "above the Item 56 urban rule", which both possible places
+  satisfy. It goes above the inference because a count measures the curve, while the
+  inference only chooses which of two generic curves a road gets. The data supports
+  the ordering too (§4): where the two overlap, the counts never contradict the
+  inferred orientation. Swapping them is a one-line change if the owner prefers.
+- **Follow the road, not a radius.** The first version matched every segment on the
+  same route and in the same direction within 1 mile. On D3 that put Broadway's ATR
+  (00213, US-20) onto the Front/Myrtle couplet, and the Connector's (00267/00268)
+  onto Chinden: all US-20, different roads. Now each station snaps to its nearest
+  in-direction segment on the route (≤ 0.25 mi) and walks the XD links both ways, up
+  to 1 mile along the road. On-system segments lack a link only about 3 % of the
+  time (53 % network-wide), and a gap ends the walk.
+- **Direction by bearing.** Stations labelled on the diagonal (NW/SE, NE/SW) match
+  segments within 60° of that compass bearing. Route matching follows the Item 56
+  business-loop rule: an interstate station matches interstate mainline only, and an
+  `84 BL` station matches business-loop segments only.
+- **Fitting.** Shapes are volume-weighted (Σ vol(h) / Σ total). DST changeover days,
+  incomplete days and outage days (< 0.5 × the day type's median) are dropped. DOW
+  factors need ≥ 7 usable days covering all seven weekdays. Borrowed parts come from
+  the generic nearest the fitted shapes.
+- **2-way counts** (00291) are fitted but cover nothing: they cannot orient a
+  direction.
+- **Nearest station, whatever the year.** On Eagle Rd, 00275 (2022) and 00330 (2026)
+  sit 0.2 mi apart and split the road between them. Preferring the newer station
+  is left for the owner.
+
+### 3. The ATR fit
+
+`python scripts/fit_count_profiles.py --tcds-hourly
+data/atr/2026-04/atr_2026-04_hourly.csv data/atr/fallback/atr_fallback_hourly.csv`
+fits **55 curves from 29 stations** (April 2026, plus the fallback months for 5).
+- No April day was dropped as an outage.
+- Nearest generic: `pm_commute_urban` 20, `am_commute_urban` 17, `rural_through` 9,
+  `rural_recreational` 5, `balanced_urban` 4. `interstate_through` is never the
+  nearest.
+- Misplaced share to the nearest: median 0.061 (IQR 0.051–0.081); 00291's 7-day
+  two-way count is the outlier at 0.223.
+- DOW medians: Friday 1.12, Saturday 0.93, Sunday 0.71.
+- Orientation checks:
+  - I-84 EB at Locust Grove, I-184 NE and Chinden EB fit AM-commute, as Item 56
+    inferred.
+  - I-84 1.4 mi SE of Gowen (00002) is the other way round: NW, toward Boise, fits
+    PM-commute. The AM flow there is outbound, toward the Gowen/Micron area.
+
+### 4. Validation of Item 56 against the counts
+
+At the 258 segments the station rule covers statewide, each station's nearest generic
+was compared with the curve Items 56/58 had assigned:
+- **Inferred: 67 / 75 agree, and none is flipped.** The 8 misses are
+  `am_commute_urban` segments whose counts are nearest `balanced_urban`.
+- **Urban rule: 50 / 183 agree.**
+  - When it commits to a side it is mostly right: `am_commute` gives 14 AM vs 5 PM,
+    `pm_commute` 31 PM vs 5 AM.
+  - Many of its segments are not commute-shaped at all: 35 count as
+    `rural_recreational` / `rural_through`, and 34 of its `balanced_urban` segments
+    as a commute shape.
+  - I-90 at Coeur d'Alene (`interstate_through` under the rule) counts nearest
+    `rural_through`.
+
+This suggests the urban rule is the weakest link and the inference is sound. More
+counts (a wider TCDS pull) could calibrate the urban rule itself; not scoped.
+
+### 5. D3 end to end
+
+A peak run with the fitted curves (`--windows am,pm`, the committed run's arguments,
+output to scratch) took 42 s. Assignment: 140 station, 197 inferred, 15,768 urban
+rule. The companion JSON is written.
+- Changed segments: AM VHD +2 % (median ratio 1.10), PM −7 % (median 1.00).
+- District totals: AM 4,384 → 4,403, PM 10,576 → 10,394.
+- Corridor totals against the committed run: Spearman ρ **0.999** over 26 groups,
+  top 10 and 20 unchanged, largest move 1 (Broadway #12 → #11, VHD × 1.09). SH-55
+  Eagle × 1.06, SH-55 Karcher × 0.95, I-184 × 0.96, I-84 × 0.98.
+
+**Not done:** the statewide screening was not re-run, and the committed
+`out/statewide_screening` assignments are still generic. The next statewide run picks
+up `out/count_profiles` by default. That run should get its own ranking comparison
+(`compare_statewide_rankings.py`), as Items 53/54/58 did.
+
+### 6. Tests
+
+965 pass (921 before), 2 skipped.
+- `tests/test_counts.py` (26): the schema round trip and its rejections; direction
+  and route parsing; the TCDS series and the spring-forward hour; tube partial hours
+  and date/time columns; ATSPM detector sums; exact recovery of a known curve; short
+  counts that borrow (nearest donor and explicit fallback); DOW only from a full
+  week; outage and incomplete days; volume weighting; DST days not fitted;
+  clustering; the station table; fitted curves through `window_volume_weights`; the
+  merge conflict.
+- `test_profile_assignment` (+16): the walk, the carriageway, diagonal labels, a link
+  gap, the parallel street of the same route, the no-cover notes, snap distance,
+  interstate vs business loop, concurrent routes, overlapping stations, the generic
+  option, precedence against override and inference, and the companion file.
+- `test_run_district_screening` (+1): the count directory reaches the assignment and
+  the provenance. Its `_args` now passes `--count-profiles ''`, so the tests stay
+  hermetic.
+- `test_gui` (+1): a fitted curve id resolves through the companion and draws VHD.

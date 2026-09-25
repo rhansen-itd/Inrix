@@ -25,6 +25,8 @@ Modules are scaffolded as stubs until built per ROADMAP.md:
     routes      — state-route membership from ITD's layers (Items 48, 52)
     itd_layers  — ITD State Highway System + Census urban areas (Item 52)
     volume_profiles — 24-hour volume curves + DOW factors behind VHD (Item 55)
+    profile_assignment — a volume-profile curve per XD segment (Items 56, 59)
+    counts      — traffic-count schema, importers, curve fitting (Item 59)
 """
 
 __version__ = "0.1.0"

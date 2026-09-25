@@ -3105,29 +3105,233 @@ curve-weighted metric, rescale the floors, and record the ranking comparison."
 
 ---
 
-## 59 — Curves from counts: importers + fitting (count data not yet on hand)
+## 59 — Curves from counts: importers + fitting ✅ (Session 79)
 
 **Target: Opus.** Pure core. Depends on 55; can run any time after it.
 
 Scope:
 
-- [ ] **Count schema.** A documented CSV schema for hourly directional counts:
+- [x] **Count schema.** A documented CSV schema for hourly directional counts:
       station id, lat/lon, direction, local timestamp, volume, source.
-- [ ] **Importers** for ITD ATR continuous hourly counts, 24-hour tube counts, and
+      *`counts.COUNT_COLUMNS` (+ `route`, which the station rule needs),
+      `validate_counts`, `write_counts` / `read_counts`; DATA_FORMAT.*
+- [x] **Importers** for ITD ATR continuous hourly counts, 24-hour tube counts, and
       signal/detector (ATSPM) volumes.
-- [ ] **`fit_profile(counts) → VolumeProfile`.**
+      *`import_tcds_hourly` (TCDS report 87 via `tcds-scraper/tidy.py`, run on the
+      April 2026 pull in `data/atr/`), `import_interval_counts` (tube),
+      `import_atspm_volumes`. No tube or ATSPM files are on hand yet, so those two are
+      tested on synthetic layouts only.*
+- [x] **`fit_profile(counts) → VolumeProfile`.**
       - Normalises weekday/Sat/Sun.
       - DOW factors come only from ≥ 1 week of data.
       - A short count fills the weekday curve and borrows the weekend curves from a
         generic one.
       - Optional clustering of fitted curves back onto the generic ids.
-- [ ] **Station rule.** A nearest-station assignment (same route and direction,
+      *Volume-weighted shapes over usable days (outage, incomplete and DST days
+      dropped). The donor is the generic nearest the fitted part.
+      `nearest_generic` / `cluster_profiles` use the misplaced share.
+      `scripts/fit_count_profiles.py` fits 55 curves from 29 ATRs →
+      `out/count_profiles/`.*
+- [x] **Station rule.** A nearest-station assignment (same route and direction,
       within tolerance) is inserted above the Item 56 urban rule.
-- [ ] pytest on synthetic count fixtures until real files arrive; DATA_FORMAT;
+      *`profile_assignment.station_rule`, source `station`, ordered override >
+      station > inferred > urban_rule. It snaps within 0.25 mi and follows the XD
+      links up to 1 mi along the road; a radius put the Broadway ATR on the Front/Myrtle
+      couplet. It is wired into `run_district_screening` (`--count-profiles`, default
+      `out/count_profiles` when present; `--station-generic`). The fitted curves travel
+      beside the assignment (`dN_volume_profiles_curves.json`) to the GUI and the
+      catalogue builder. 258 segments statewide.*
+- [x] pytest on synthetic count fixtures until real files arrive; DATA_FORMAT;
       DESIGN_HISTORY.
+      *`tests/test_counts.py` (26), plus station-rule tests in
+      `test_profile_assignment` (16), the runner and the GUI; 965 pass.*
 
-*Suggested prompt:* "Do Item 59 of ROADMAP.md — import count data and fit
+*Not done here:* the statewide screening has not been re-run on the fitted curves,
+and there is no ranking comparison. The committed `out/statewide_screening`
+assignments are still generic. See Session 79 for the D3 check.
+
+*Suggested prompt (done):* "Do Item 59 of ROADMAP.md — import count data and fit
 volume-profile curves from it, with a nearest-station assignment rule."
+
+---
+
+# Hard stops and route sections — logical termini for corridors and count stations (Items 60–62, scoped 2026-09-25)
+
+Owner request, 2026-09-25 (after Session 79):
+- **Station coverage.** The Item 59 one-mile walk is too short: several ATRs were
+  pulled for I-84 on the assumption that its profile stays similar along it, and
+  every I-84 segment should get a fitted curve. Replace the radius with a traced
+  path, as routes are traced, that breaks where a break is expected: at a
+  junction with a state route of the **same or higher tier**.
+  - I-84 does not break at the SH-55 interchange.
+  - Eagle Rd (SH-55) does break at Chinden (US-20). The owner counts US and SH routes
+    as one tier. Tiers come from ITD's Highway Tier layer, and I-84 breaks at
+    interstate system interchanges (owner, follow-up).
+- **Hard stops for corridor stitching.** The owner wants manual override hard stops
+  that the corridor chains cannot stitch across. The screening algorithm stays as it
+  is; the change is ingesting the overrides. The aim is logical termini (FHWA NEPA
+  sense), and real context changes that substantially change the driving environment
+  (a downtown couplet vs the two-way road feeding it).
+- **Owner's first stops:**
+  - SH-55 Eagle Rd ends at the SH-44 junction. It does not continue across SH-44 and
+    up SH-55 north.
+  - US-20 in Boise: a stop between Broadway and the Front/Myrtle couplet, and one
+    between Front and the Connector (where it becomes freeway). There is another
+    between the EB Connector and its last segment: that segment is still on the
+    divided facility but queues from the first signal on Myrtle, so it behaves like
+    the couplet.
+  - Moscow: US-95 becomes 95 north | couplet | 95 south. SH-8 becomes SH-8 west (3rd
+    St) | the couplet (a duplicate, the same corridor as US-95's) | SH-8 east (Troy Rd).
+- **Eagle Rd stations, per the owner's intent.**
+  - The ATR north of Chinden covers only Chinden–SH-44.
+  - The one south of Chinden covers Eagle Rd from Chinden south to I-84. The owner is
+    unsure it applies that far south; the generic curve may be better there.
+  - **Correction found while scoping:** both Eagle ATRs pulled so far are *south* of
+    Chinden: 00330 (0.38 mi S of Chinden, 2026) and 00275 (at Sedona St, 2022). The
+    north-of-Chinden station is **00270** ("0.48 mi S of Jct SH-44"), not yet pulled.
+    TCDS lists ~38 I-84 stations; 5 were pulled.
+
+---
+
+## 60 — Manual hard stops for corridor stitching
+
+**Target: Opus.** Pure-core loader + an input to chain assembly; no change to the
+screening math. Independent of 59.
+
+Scope:
+
+- [ ] **`scripts/corridor_hard_stops.csv`** (`#`-comment header, like
+      `route_overrides.csv`), one row per stop:
+      - columns: `district, route, direction` (blank = both), `lat, lon` (a point
+        near the boundary, which is what the owner can author) or `xd_seg_id` +
+        `side` (`before` / `after`), and `note` (required: why it is a terminus);
+      - a stop resolves to the **segment boundary** on that route's chain nearest the
+        point. An unresolved row is an error listing the row, never silently dropped.
+- [ ] **Loader** in the core (`load_hard_stops` → resolved
+      `(route, direction, from_seg, to_seg)` boundaries), validated like the other
+      override tables.
+- [ ] **Applied as input only:**
+      - The Item 51 route chains (`extents`) are cut at each boundary before cores
+        are found, so no core, Tier 2 or Tier 3 crosses one. The stop reason is
+        recorded (`SplitKind.MANUAL` / a `hard_stop` boundary) in the audit and the
+        catalogue entry.
+      - Junction joins and renumbering merges never bridge a stop.
+- [ ] **Duplicate sections.** A way to say that a section of one route is the same
+      corridor as another's (SH-8's Moscow couplet = US-95's). Check first whether the
+      Item 51 shared-pavement absorption already does this once the stops exist; make
+      it explicit only if not.
+- [ ] **Seed rows:** the owner's stops above (Eagle Rd at SH-44; US-20 Broadway |
+      couplet | Connector | the EB Connector's last segment; Moscow US-95 and SH-8).
+      Confirm each stop lands on the intended boundary on the map.
+- [ ] **Curated D3 catalogue** (`d3_corridors.json`, never overwritten): an
+      audit listing the curated entries that cross a stop, for the owner.
+- [ ] Regenerate the generated catalogues to scratch and compare with the committed
+      ones (as Item 58 did: which corridors split or re-cut). Replacing the committed
+      catalogues is the owner's call.
+- [ ] pytest (a stop cuts a chain; joins/merges don't bridge it; both-direction vs
+      one-direction rows; an unresolvable row errors; the seed rows resolve on the
+      real networks); DATA_FORMAT; DESIGN_HISTORY.
+
+Related: Future "Segment-level route overrides (SH-8 in Moscow)". The 3rd St block is
+westbound-only SH-8; the stops may make that item's catalogue half moot, but not its
+membership half.
+
+*Suggested prompt:* "Do Item 60 of ROADMAP.md — ingest manual hard stops for
+corridor stitching, seed them with the owner's Boise and Moscow termini, and audit the
+curated D3 catalogue against them."
+
+---
+
+## 61 — Station coverage by route section (replaces the Item 59 one-mile walk)
+
+**Target: Opus.** Pure core. Depends on 59 and 60 (reuses its stop table).
+
+Scope:
+
+- [ ] **Route sections.** Trace each state route's chain per direction (the Item 51
+      chains / membership, not a radius). Break it at:
+      - a junction with a state route of the **same or higher tier**;
+      - an Item 60 hard stop;
+      - the route's end.
+
+      **Tier: ITD's Highway Tier layer** (`Highway Tier.geojson`, repo root,
+      gitignored; owner, 2026-09-25). The layer uses five tiers, ordered
+      **Interstate > Expressway > State > Regional > District**. The owner confirmed
+      that I-84 breaks at system interchanges with other interstates (I-184, I-86,
+      I-15).
+
+      *What the scoping check found about the layer.* The owner is not fully
+      confident in it: it came as a GeoJSON export from the ITD GIS app, which did not
+      display it correctly.
+      - 1,880 lines in WGS84. Properties: `segcode`, `bmp` / `emp` (mileposts) and
+        `tier`.
+      - `segcode` is the SHS `RouteId`'s first five digits, zero-padded
+        (`001540` ↔ `01540AUS095`).
+      - It covers only 201 of the SHS's 1,061 segcodes (the long mainline ones) and
+        has milepost gaps (SH-55 mp 16.1–47.3, US-20 22.1–24.8 and 52.8–95.3). Even
+        so, **98 % of on-system XD miles lie within 40 m of a tier line** (D5 94.5 %,
+        the lowest).
+      - 15 segcodes change tier along their length (SH-55: State to mp 16.1, Regional
+        from 47.3). There are 3 overlapping pieces and 2 Expressway lines (SH-44 State
+        St, US-95 mp 135).
+      - It matches the owner's intent: Eagle Rd (SH-55) and Chinden (US-20) are both
+        **State**, as are Broadway, Myrtle, SH-44 and US-95 through Moscow. SH-8 is
+        Regional. I-84 is Interstate.
+      - The eastern ~1.9 mi of I-184 (the Connector) reads **State**, which is the
+        owner's "where it becomes freeway" point.
+
+      Join the tier by segcode + milepost (`itd_layers.shs_mileposts`) where the
+      layer has the piece, else by proximity. Report the segments left without a
+      tier. **A change of tier along one route is not a break** unless there is a
+      junction there (owner, 2026-09-25: the tier cut-off is somewhat arbitrary).
+- [ ] **Assignment.** Every segment of a section with a directional station takes the
+      nearest station **along the path**; a section with several stations splits
+      between them. A section without a station falls through to the inference / urban
+      rule, as today. An override can cap or cut a station's reach (e.g. `generic`
+      south of a given stop on Eagle Rd, if the owner prefers the generic curve there).
+- [ ] Remove `STATION_MAX_MILES` and the walk. Keep the snap
+      (`STATION_SNAP_MILES`), the direction-by-bearing match and the
+      interstate/business route rules.
+- [ ] Report per station: its section (from/to junctions or stops), miles covered,
+      and segments won.
+- [ ] pytest (breaks at a same-tier junction but not at a lower one; stops at a hard
+      stop; nearest-along-path split; a stationless section falls through);
+      DATA_FORMAT; DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 61 of ROADMAP.md — give each count station the route
+section it sits on, traced and broken at same-or-higher-tier junctions and hard stops,
+instead of a one-mile walk."
+
+---
+
+## 62 — Statewide ATR pull, refit, and the statewide re-run on fitted curves
+
+**Target: Opus.** Scripts + data; mostly a long background pull. Depends on 61 (and
+60 if its regenerated catalogues are adopted).
+
+Scope:
+
+- [ ] **Pull** April 2026 hourly volumes (report 87; a fallback month where April is
+      missing) for every permanent TCDS station on a state route, with
+      `~/tcds-scraper` (about 40 s per site-month; about an hour at `--workers 3`).
+      Mainline only: drop ramp-count stations (e.g. 00329 "EB On ramp"). Include
+      00270 (Eagle Rd north of Chinden) and every I-84 station.
+- [ ] Refit (`fit_count_profiles.py`) and review `fit_report.csv`: outage days, 2-way
+      stations, curves far from every generic.
+- [ ] **Check the owner's requirement:** every I-84 segment carries a `station` curve.
+      List any that don't, with the reason.
+- [ ] **Statewide re-run** with the fitted curves (`--count-profiles`), with maps.
+      Keep the Item 58 outputs, and record the ranking comparison
+      (`compare_statewide_rankings.py`: Spearman ρ, top-N churn), as Items 53/54/58
+      did. The D3 generated catalogue goes alongside; the curated one is never
+      overwritten.
+- [ ] Revisit Item 56 with the fuller counts. Session 79 found the urban rule
+      agreeing with counts at 50/183 segments (27 %) against 67/75 (89 %) for the
+      inference. Does the rule need recalibrating?
+- [ ] DATA_FORMAT (the statewide count coverage); DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 62 of ROADMAP.md — pull the statewide ATR counts, refit,
+and re-run the statewide screening on the fitted curves with a ranking comparison."
 
 ---
 

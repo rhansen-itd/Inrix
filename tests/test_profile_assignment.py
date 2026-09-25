@@ -371,3 +371,195 @@ def test_the_shipped_urban_centre_table_loads():
     t = pa.load_urban_centres(path)
     assert "08785" in t.index                              # Boise: owner, 2026-09-25
     assert t.at["08785", "centre_lon"] == pytest.approx(-116.2023)
+
+
+# ---------------------------------------------------------------------------
+# Station rule (Item 59)
+# ---------------------------------------------------------------------------
+def _linked_network(gap=None, extra=()):
+    """:func:`_network` with its XD links: WB 101→102→103→104, EB 201→202→203→204.
+    ``gap`` = a (from, to) link to cut."""
+    net = _network()
+    nxt = {101: 102, 102: 103, 103: 104, 201: 202, 202: 203, 203: 204}
+    if gap:
+        nxt.pop(gap[0])
+    prv = {v: k for k, v in nxt.items()}
+    net = pd.concat([net, pd.DataFrame(list(extra))], ignore_index=True)
+    net["NextXDSegI"] = pd.array([nxt.get(s) for s in net["XDSegID"]], dtype="Int64")
+    net["PreviousXD"] = pd.array([prv.get(s) for s in net["XDSegID"]], dtype="Int64")
+    return net
+
+
+def _station_context(membership=None, **kw):
+    return pa.segment_context(_linked_network(**kw), membership if membership is not None
+                              else _membership(), _urban(), _centroids())
+
+
+def _mid(sid):
+    """(lat, lon) of the middle of segment ``sid`` of :func:`_network`."""
+    r = _network().set_index("XDSegID").loc[sid]
+    return (r.StartLat + r.EndLat) / 2, (r.StartLong + r.EndLong) / 2
+
+
+def _stations(*rows):
+    """Station table rows: (station_id, direction, (lat, lon), route[, curve_id])."""
+    out = []
+    for sid, direction, (lat, lon), route, *curve in rows:
+        out.append({"station_id": sid, "direction": direction, "lat": lat, "lon": lon,
+                    "route": route, "source": "atr",
+                    "curve_id": curve[0] if curve else f"fitted_{sid}_{direction}",
+                    "nearest_generic": "rural_through", "misplaced_share": 0.08,
+                    "usable_days": 30, "borrowed": ""})
+    return pd.DataFrame(out)
+
+
+def test_station_covers_its_road_along_the_links():
+    """Snapped to the middle of EB 202, a 1-mile walk reaches 203 (0.5 mi on) and 201
+    (0.5 mi back) but not 204 (1.5 mi); the WB carriageway is the other direction."""
+    r = pa.station_rule(_station_context(), _stations(("00279", "EB", _mid(202), "44")))
+    got = r["curve_id"].dropna()
+    assert sorted(got.index) == [201, 202, 203]
+    assert set(got) == {"fitted_00279_EB"}
+    assert r.at[202, "station_miles"] == 0.0
+    assert r.at[203, "station_miles"] == pytest.approx(0.5, abs=0.01)
+    assert "ATR 00279 EB on route 44" in r.at[201, "reason"]
+    rep = r.attrs["stations"].iloc[0]
+    assert rep["snapped_to"] == 202 and rep["n_segments"] == 3 and rep["n_assigned"] == 3
+
+
+def test_station_direction_picks_the_carriageway():
+    r = pa.station_rule(_station_context(), _stations(("00279", "WB", _mid(102), "44")))
+    assert sorted(r["curve_id"].dropna().index) == [101, 102, 103]
+
+
+def test_diagonal_direction_label_matches_by_bearing():
+    """ITD labels diagonal roads NW/SE; the EB carriageway (bearing 90°) is within
+    60° of SE (135°), the WB one (270°) of NW (315°)."""
+    ctx = _station_context()
+    r = pa.station_rule(ctx, _stations(("00002", "SE", _mid(202), "44"),
+                                       ("00002", "NW", _mid(102), "44")))
+    assert set(r.loc[[201, 202, 203], "station_direction"]) == {"SE"}
+    assert set(r.loc[[101, 102, 103], "station_direction"]) == {"NW"}
+
+
+def test_link_gap_ends_the_walk():
+    r = pa.station_rule(_station_context(gap=(202, 203)),
+                        _stations(("00279", "EB", _mid(202), "44")))
+    assert sorted(r["curve_id"].dropna().index) == [201, 202]
+
+
+def test_a_parallel_street_of_the_same_route_is_not_covered():
+    """The Broadway / Front–Myrtle case: an unlinked EB segment of the same route a
+    block away is within the radius but is a different road."""
+    lat, lon = _mid(202)
+    block = _seg(501, lon - 0.005, lon + 0.005, lat=lat + 0.002)      # ~220 m north
+    mem = pd.concat([_membership(), pd.DataFrame(
+        {"route_number": ["44"], "itd_route_id": ["01540ASH044"], "verdict": ["agree"]},
+        index=pd.Index([501], name="XDSegID"))])
+    ctx = pa.segment_context(_linked_network(extra=[block]), mem, _urban(), _centroids())
+    r = pa.station_rule(ctx, _stations(("00279", "EB", (lat, lon), "44")))
+    assert pd.isna(r.at[501, "curve_id"]) or r.at[501, "curve_id"] is None
+    assert r.at[202, "curve_id"] == "fitted_00279_EB"
+
+
+@pytest.mark.parametrize("route, direction, where, note", [
+    ("55", "EB", 202, "no segment on route 55"),
+    ("", "EB", 202, "no route"),
+    ("44", "2WAY", 202, "two-way"),
+    ("44", "NB", 202, "in its direction within"),
+])
+def test_station_that_covers_nothing_says_why(route, direction, where, note):
+    r = pa.station_rule(_station_context(), _stations(("x", direction, _mid(where), route)))
+    assert r["curve_id"].isna().all()
+    assert note in r.attrs["stations"].iloc[0]["note"]
+
+
+def test_station_too_far_from_any_segment_does_not_snap():
+    lat, lon = _mid(202)
+    r = pa.station_rule(_station_context(), _stations(("x", "EB", (lat + 0.01, lon), "44")))
+    assert r["curve_id"].isna().all()                      # ~0.7 mi off the road
+
+
+def test_interstate_and_business_loop_stations_keep_to_their_own_road():
+    mem = _membership("84", "01540AIN084")
+    mem.loc[[201, 202, 203, 204], "verdict"] = "business"
+    ctx = _station_context(membership=mem)
+    main = pa.station_rule(ctx, _stations(("i", "EB", _mid(202), "84"),
+                                          ("i", "WB", _mid(102), "84")))
+    assert sorted(main["curve_id"].dropna().index) == [101, 102, 103]    # not the BL
+    bl = pa.station_rule(ctx, _stations(("b", "EB", _mid(202), "84 BL"),
+                                        ("b", "WB", _mid(102), "84 BL")))
+    assert sorted(bl["curve_id"].dropna().index) == [201, 202, 203]      # not the I-84
+
+
+def test_concurrent_route_station_matches_either_number():
+    mem = _membership()
+    mem["routes"] = "20/44"
+    r = pa.station_rule(_station_context(membership=mem),
+                        _stations(("c", "EB", _mid(202), "20")))
+    assert r.at[202, "curve_id"] == "fitted_c_EB"
+
+
+def test_overlapping_stations_nearest_along_the_road_wins():
+    r = pa.station_rule(_station_context(), _stations(("a", "EB", _mid(202), "44"),
+                                                      ("b", "EB", _mid(204), "44")))
+    assert r.at[202, "station_id"] == "a" and r.at[204, "station_id"] == "b"
+    assert r.at[203, "station_id"] in {"a", "b"}
+    rep = r.attrs["stations"].set_index("station_id")
+    assert rep["n_assigned"].sum() == r["curve_id"].notna().sum()
+
+
+def test_station_rule_can_assign_the_nearest_generic():
+    r = pa.station_rule(_station_context(), _stations(("00279", "EB", _mid(202), "44")),
+                        use_generic=True)
+    assert r.at[202, "curve_id"] == "rural_through"
+    assert "nearest generic to fitted_00279_EB" in r.at[202, "reason"]
+
+
+def test_station_outranks_inference_and_rule_but_not_override(tmp_path):
+    ctx = _station_context()
+    chains = pa.route_runs(ctx)
+    delay = _delay(0.2, 1.0, 1.0, 0.2)            # EB AM-heavy, WB PM-heavy: infers
+    lib = volume_profiles.load_profiles()
+    fitted = dict(lib)
+    fitted["fitted_00279_EB"] = volume_profiles.VolumeProfile(
+        "fitted_00279_EB", lib["rural_through"].hourly, lib["rural_through"].dow,
+        {"basis": "fitted"})
+    ov = tmp_path / "ov.csv"
+    ov.write_text("xd_seg_id,district,corridor,direction,curve_id,note\n"
+                  "203,,,,balanced_urban,owner says\n")
+    out = pa.assign_profiles(ctx, chains, delay, overrides=pa.load_overrides(ov),
+                             profiles=fitted,
+                             stations=_stations(("00279", "EB", _mid(202), "44")))
+    assert out.at[202, "curve_source"] == pa.STATION
+    assert out.at[202, "curve_id"] == "fitted_00279_EB"
+    assert out.at[203, "curve_source"] == pa.OVERRIDE
+    assert out.at[204, "curve_source"] == pa.INFERRED      # beyond the station's mile
+    assert out.attrs["profile_assignment"]["by_source"][pa.STATION] == 2
+    assert out.attrs["profile_assignment"]["n_stations"] == 1
+    assert pa.STATION in pa.summary_line(out)
+    # Without the fitted curve in the library the assignment is refused.
+    with pytest.raises(ValueError, match="not in the library"):
+        pa.assign_profiles(ctx, chains, delay, profiles=lib,
+                           stations=_stations(("00279", "EB", _mid(202), "44")))
+
+
+def test_assignment_writes_its_fitted_curves_beside_it(tmp_path):
+    lib = volume_profiles.load_profiles()
+    fitted = volume_profiles.VolumeProfile(
+        "fitted_x_EB", lib["rural_through"].hourly, lib["rural_through"].dow,
+        {"basis": "fitted"})
+    full = volume_profiles.merge_profiles(lib, {"fitted_x_EB": fitted})
+    a = pd.DataFrame({c: [None, None] for c in pa.ASSIGNMENT_COLUMNS},
+                     index=pd.Index([1, 2], name="XDSegID"))
+    a["curve_id"] = ["fitted_x_EB", "rural_through"]
+    path = pa.write_assignment(a, tmp_path / "d3_volume_profiles.csv", profiles=full)
+    companion = pa.curves_path(path)
+    assert companion.name == "d3_volume_profiles_curves.json"
+    assert set(volume_profiles.load_profiles(companion)) == {"fitted_x_EB"}
+    assert "fitted_x_EB" in pa.assignment_profiles(path)
+    # A later run with generic curves only removes the stale companion.
+    a["curve_id"] = ["rural_through", "rural_through"]
+    pa.write_assignment(a, path, profiles=full)
+    assert not companion.exists()
+    assert set(pa.assignment_profiles(path)) == set(lib)

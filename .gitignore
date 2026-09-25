@@ -54,3 +54,6 @@ venv/
 *.kml
 /out/
 /scratch/
+
+# ITD Highway Tier layer (GIS app GeoJSON export; source data, like the ITD zips)
+/Highway Tier.geojson

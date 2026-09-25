@@ -1824,6 +1824,9 @@ packaged JSON is exactly what the script builds, so don't hand-edit it.
 Every segment of a district's network gets one `curve_id`. The first of these that
 decides wins, and `curve_source` records which:
 
+*(Item 59 inserts **`station`** between `override` and `inferred`: see "Traffic counts
+and count-fitted curves" below.)*
+
 1. **`override`**: `scripts/volume_profile_overrides.csv` (`#` comments, like
    `route_overrides.csv`). Columns: `xd_seg_id, district, corridor, direction,
    curve_id, note`. A row is keyed on `xd_seg_id` **or** on a catalogue
@@ -2056,6 +2059,161 @@ so only the time shape shows. The whole district runs in about 30 s.
   `balanced_urban` 0.118.
 - Coverage: the median segment's window volume is 100 % covered, and 99.9 % from its
   own month's cells.
+
+## Traffic counts and count-fitted curves (`counts.py`, Item 59)
+
+### The count schema
+
+One row per station × direction × local hour (`counts.COUNT_COLUMNS`). Every importer
+produces it, so the fitting never sees a source's quirks.
+
+| column | meaning |
+|---|---|
+| `station_id` | the source's id, a string (`"00279"`, ATSPM signal id, a tube-count name) |
+| `direction` | direction of **travel**: `NB SB EB WB NE NW SE SW`, or `2WAY` for a total |
+| `timestamp` | the **start** of the hour, tz-aware local time; on disk ISO 8601 with offset (`2026-04-01T07:00:00-06:00`) |
+| `volume` | vehicles in the hour, ≥ 0 |
+| `lat`, `lon` | the station, WGS84 |
+| `route` | the state route it counts: `"84"`, `"55"`; a business loop `"84 BL"`; blank if unknown |
+| `source` | `atr`, `tube` or `atspm` |
+
+`validate_counts` rejects naive or off-the-hour timestamps, unknown directions and
+sources, negative volumes, missing coordinates, and repeated station × direction ×
+hour rows (lanes and detectors are summed before the schema). `write_counts` /
+`read_counts` round-trip it.
+
+### ITD ATRs (TCDS)
+
+ITD's permanent count stations are in the MS2Soft TCDS portal. Report 87, "Volume by
+Hour by Day for Month", is one workbook per station-month. `tcds-scraper/tidy.py`
+flattens it to one long CSV (`series_id, direction, roadbed, district, county,
+community, location, route, collection_type, date, hour, volume, source_file`). What
+Item 59 learned about that export:
+
+- **Series.** Each workbook holds the 2-way total (`00279`), each direction
+  (`00279_EB`, `direction = EB`) and each lane (`00279_1_EB`, `direction = 1`, the
+  lane number). Lanes sum to the direction and directions to the total.
+  `import_tcds_hourly` keeps the direction series. A station with no direction
+  series (00291, a 7-day March 2026 count) keeps its total as `2WAY`.
+- **Hours.** `hour` 0–23 is the hour *starting* then on the station's local wall
+  clock (TCDS's `12-1A` row is 0). The spring-forward day's missing hour is dropped;
+  a fall-back day cannot say which 01:00 a row is.
+- **`route` in the tidy CSV is not the route number** (00002 on I-84 reads `20`). The
+  route is parsed from the station list's `on` field (`INT 84 MAIN`, `US 20 MAIN`,
+  `SH 55 MAIN`, `INT 84 BL` → `84 BL`), else the start of its description (00330's
+  `on` is `N Eagle RD`; its description starts `SH-55`).
+- **Diagonal labels.** Some stations label directions NW/SE (00002, 00236, 00262) or
+  NE/SW (00204, 00266). These are kept as-is; the station rule matches them by
+  bearing.
+- **Coordinates** come from the TCDS map layer, not the report
+  (`data/atr/atr_stations_statewide.csv`, 280 stations).
+- **Zone.** The fitting script reads each district's zone: D1/D2 Pacific, D3–D6
+  Mountain.
+
+On hand (`data/atr/`, gitignored): April 2026 for 24 stations, plus fallback months
+for 5 (00048 2023-04, 00161 2025-04, 00275 and 00300 2022-04, 00291 2026-03). The
+April files have no days dropped as outages. 00002 has 29 days and 00059 28, with
+whole days missing.
+
+### Tube counts and ATSPM
+
+No files are on hand yet. The importers are built against the common layouts and
+tested on synthetic data:
+
+- `import_interval_counts`: one row per interval (15-minute default), a datetime (or a
+  date column plus a clock column), and one volume column per direction.
+- `import_atspm_volumes`: one row per signal × approach direction × bin (ATSPM's
+  approach volumes, or per-detector rows, which are summed). Signal locations and
+  routes come from a separate table. The approach direction is the direction of
+  travel. Stop-bar detectors include turning traffic, and a dead lane detector
+  undercounts.
+
+Both drop an hour that is missing any interval rather than scaling it up. Naive
+timestamps are read on the local wall clock.
+
+### Fitting (`fit_profile`)
+
+For one station-direction:
+
+- **Usable days.** A usable day is a 24-hour local day (not a DST changeover) with
+  all 24 hours. Its total must also be at least **0.5 ×** its day type's median at
+  that station, or it is an outage (`OUTAGE_FRACTION`). Dropped days are listed in
+  the provenance with the reason.
+- **Hourly shape per day type:** `Σ_days vol(h) / Σ_days total`, a volume-weighted
+  mean, so busy days count for more. It is fitted when the type has ≥ 1 usable day.
+- **DOW factors:** each weekday's mean total over the mean of the seven. They are
+  fitted only from ≥ 7 usable days covering every day of the week.
+- **Borrowing.** A day type with no usable day is borrowed, and so are the DOW
+  factors of a short count. They come from the generic curve nearest the fitted
+  shapes, or from an explicit `fallback`. The provenance records `fitted`,
+  `borrowed` and `borrowed_from`.
+- **What the curve represents.** A month of counts gives that month's DOW factors.
+  The curve is not seasonally adjusted, because the layer's MADT ratios carry the
+  month.
+- **Output.** A `VolumeProfile`, `basis: fitted`, `curve_id =
+  fitted_<station>_<direction>`. The provenance adds `station`: id, direction,
+  source, lat/lon, route, period, usable days per type, dropped days, and mean
+  daily volume.
+
+**Comparing curves** (`nearest_generic`, `cluster_profiles`): the **misplaced share**
+is `½ Σ_h |a(h) − b(h)|`, averaged over the day types with week weights (5/7, 1/7,
+1/7). It is the share of a day's volume that sits in a different hour: 0 means the
+same shape, 1 means disjoint.
+
+**The 55 fitted April curves** (29 stations):
+- Nearest generic: `pm_commute_urban` 20, `am_commute_urban` 17, `rural_through` 9,
+  `rural_recreational` 5, `balanced_urban` 4. `interstate_through` is never the
+  nearest.
+- Misplaced share to the nearest: median **0.061** (IQR 0.051–0.081). The maximum,
+  0.223, is 00291's 7-day two-way count.
+- Weekday peak-hour share: median 0.083 per direction (0.042–0.130).
+- DOW: Friday 1.12, Saturday 0.93, Sunday 0.71 (medians).
+
+### The station rule (`profile_assignment.station_rule`)
+
+The new `curve_source` **`station`** sits between `override` and `inferred`, so the
+order is **override > station > inferred > urban_rule > default**. A count measures
+the shape that the inference only orients. For each station-direction:
+
+1. **Snap.** Take the nearest segment that is on the station's route, not a ramp,
+   travelling within **60°** of the direction's compass bearing (NB 0°, NE 45°, …),
+   and within **0.25 mi** (`STATION_SNAP_MILES`).
+   - An interstate number matches interstate mainline only.
+   - `"84 BL"` matches business-loop segments of route 84.
+   - A US/SH number matches any segment whose membership `routes` carries it,
+     concurrencies included.
+2. **Follow the road.** Walk `NextXDSegI` / `PreviousXD` both ways while the segments
+   stay on the route and off ramps, up to **1.0 mi** along the road
+   (`STATION_MAX_MILES`, measured to each segment's near end).
+   - A link gap ends the walk. About 3 % of on-system segments lack a link, against
+     53 % network-wide.
+   - A radius was tried first. It spread Boise's Broadway ATR (US-20) onto the
+     Front/Myrtle couplet and the Connector's onto Chinden, all US-20 and all within
+     a mile.
+3. A segment covered by several stations takes the nearest along the road. `2WAY`
+   and route-less stations cover nothing.
+
+The station's **fitted** curve is assigned, or with `station_generic` its nearest
+generic id. The assignment CSV is unchanged. The curves it uses that are not packaged
+are written beside it as `d<N>_volume_profiles_curves.json`
+(`write_assignment(..., profiles=)`). `assignment_profiles(path)` reads the packaged
+library plus that companion, which is how the GUI and `build_statewide_catalogues.py`
+resolve fitted ids.
+
+**Coverage.** Every directional station snaps. Statewide, **258 segments** get a
+station curve: D1 37, D2 18, D3 140, D4 16, D5 40, D6 7.
+
+**The count check on Item 56**, at those 258 segments, comparing each station's
+nearest generic with the curve Items 56/58 had assigned:
+- **Inferred: 67 / 75 agree.** The inference never flipped an orientation. Its 8
+  misses are AM-commute segments whose counts are closer to `balanced_urban`.
+- **Urban rule: 50 / 183 agree.**
+  - When it commits to a side it is mostly right: `am_commute` → 14 AM vs 5 PM, and
+    `pm_commute` → 31 PM vs 5 AM.
+  - But 35 of its segments count as `rural_recreational` or `rural_through`, and 34 of
+    its `balanced_urban` ones as a commute shape.
+  - I-90 at Coeur d'Alene, `interstate_through` under the rule, counts nearest
+    `rural_through`.
 
 ## ITD State Highway System (`SHS_Primary.zip`, Item 52)
 

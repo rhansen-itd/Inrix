@@ -6,7 +6,11 @@ gives every XD segment one ``curve_id`` from it, by the first of these that deci
 1. **override** — ``scripts/volume_profile_overrides.csv``, keyed on an ``XDSegID`` or
    on a catalogue corridor + direction (:func:`load_overrides`). An override always
    wins; a segment row beats a corridor row.
-2. **inferred** — the *orientation* of a chain, read off its delay. A chain is one
+2. **station** — a curve fitted from counts (Item 59, :mod:`inrix_tools.counts`) at
+   the nearest count station on the same route and in the same direction of travel,
+   within :data:`STATION_MAX_MILES` (:func:`station_rule`). A count measures the
+   shape the inference below only orients, so it outranks the inference.
+3. **inferred** — the *orientation* of a chain, read off its delay. A chain is one
    direction of a road (:class:`Chain`), paired with the chain running the other way.
    When one side's peak delay is clearly AM (``am_share ≥`` :data:`AM_SHARE_COMMUTE`)
    and the opposite side's clearly PM (``≤`` :data:`AM_SHARE_OPPOSITE`), both above
@@ -14,7 +18,7 @@ gives every XD segment one ``curve_id`` from it, by the first of these that deci
    side ``pm_commute_urban``. Every segment of the chain inherits the decision, so the
    orientation cannot flip along a road. A bottleneck congested at both peaks, or in
    one direction only, is not evidence and falls through.
-3. **urban_rule** — from the segment's urban context (``itd_layers.urban_context``)
+4. **urban_rule** — from the segment's urban context (``itd_layers.urban_context``)
    and the bearing toward its urban area's centre (:func:`segment_context`): the
    owner-reviewed economic centre where ``scripts/urban_centres.csv`` has one
    (:func:`apply_urban_centres`), else the polygon centroid:
@@ -22,7 +26,7 @@ gives every XD segment one ``curve_id`` from it, by the first of these that deci
    approach), inbound → ``am_commute_urban``, outbound → ``pm_commute_urban``;
    inside an urban area with no clear radial → ``balanced_urban``; otherwise
    ``rural_through``.
-4. **default** — :data:`DEFAULT_CURVE`, where nothing above can say anything (no
+5. **default** — :data:`DEFAULT_CURVE`, where nothing above can say anything (no
    geometry, no urban context).
 
 The inference picks only **which side** is the AM-commute side, never a volume. That
@@ -42,6 +46,7 @@ Pure: pandas/numpy only. The urban-area centroids come in as a frame
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -64,10 +69,11 @@ DEFAULT_CURVE = BALANCED_CURVE
 """Where nothing is known. The two-peak urban shape commits least to either peak."""
 
 OVERRIDE = "override"
+STATION = "station"
 INFERRED = "inferred"
 URBAN_RULE = "urban_rule"
 DEFAULT = "default"
-CURVE_SOURCES = (OVERRIDE, INFERRED, URBAN_RULE, DEFAULT)
+CURVE_SOURCES = (OVERRIDE, STATION, INFERRED, URBAN_RULE, DEFAULT)
 
 ASSIGNMENT_COLUMNS = ("curve_id", "curve_source", "am_share_self", "am_share_opposite",
                       "chain_id", "reason")
@@ -104,6 +110,23 @@ URBAN_CORE_RADIUS_M = 1_500.0
 RADIAL_TOL_DEG = 45.0
 """Travel within this many degrees of the bearing to the centre is inbound; within
 this many of the bearing away from it, outbound; anything between is tangential."""
+
+# ---------------------------------------------------------------------------
+# Station rule (Item 59)
+# ---------------------------------------------------------------------------
+STATION_MAX_MILES = 1.0
+"""How far along the road from a count station its fitted curve still applies: about
+one interchange spacing on an urban freeway, a few signals on an arterial. The shape
+(not the volume) is what carries, and it changes slowly along a road, but a station
+two interchanges away is counting different trips."""
+STATION_SNAP_MILES = 0.25
+"""How far a station may sit from the segment it snaps to. TCDS points are placed by
+hand and sit up to ~0.2 mi off the carriageway (ATR 00228 on SH-55 in Nampa)."""
+STATION_DIRECTION_TOL_DEG = 60.0
+"""A segment is in the station's direction when its travel bearing is within this
+many degrees of the direction's compass bearing (``counts.DIRECTION_BEARING``): a
+cardinal label covers its diagonal neighbours' half-way line, so a NW/SE-labelled
+station on a diagonal road still matches."""
 
 INBOUND, OUTBOUND, TANGENTIAL = "in", "out", "tangential"
 URBAN, APPROACH, RURAL = "urban", "approach", "rural"
@@ -170,8 +193,11 @@ def segment_context(network: pd.DataFrame, membership: pd.DataFrame | None = Non
 
     Returns:
         Indexed by ``XDSegID``: ``miles``, ``route`` (str or None), ``interstate``
-        (never a business loop), ``itd_route_id``, ``ramp``, ``dir_sign`` (+1 N/E,
-        −1 S/W, 0 unknown), ``travel_bearing``,
+        (never a business loop), ``itd_route_id``, ``ramp``, ``routes`` (every route
+        number it carries, a tuple), ``business`` (on a business loop), ``dir_sign``
+        (+1 N/E, −1 S/W, 0 unknown), ``travel_bearing``, ``start_lat`` / ``start_lon``
+        / ``end_lat`` / ``end_lon``, ``next_xd`` / ``prev_xd`` (the XD links, for
+        the station rule's walk),
         ``urban_uace``, ``urban_area``, ``zone`` (``urban`` / ``approach`` /
         ``rural``, None without context), ``commute_area`` (the area is commute-sized),
         ``radial`` (``in`` / ``out`` / ``tangential``, None when not judged),
@@ -199,11 +225,16 @@ def segment_context(network: pd.DataFrame, membership: pd.DataFrame | None = Non
                              for r, i, v in zip(out["route"], rid, verdict)]
         out["itd_route_id"] = rid.where(rid.notna(), None)
         out["ramp"] = (mem.get("verdict") == "ramp").fillna(False).to_numpy(bool)
+        out["business"] = (mem.get("verdict") == "business").fillna(False).to_numpy(bool)
+        many = mem.get("routes", pd.Series(None, index=out.index))
+        out["routes"] = [_route_set(m, r) for m, r in zip(many, out["route"])]
     else:
         out["route"] = None
         out["interstate"] = False
         out["itd_route_id"] = None
         out["ramp"] = False
+        out["business"] = False
+        out["routes"] = [()] * len(out)
 
     out["dir_sign"] = [direction_sign(b) for b in net.get("Bearing", pd.Series(
         None, index=net.index))]
@@ -211,6 +242,11 @@ def segment_context(network: pd.DataFrame, membership: pd.DataFrame | None = Non
     lat1, lon1, lat2, lon2 = (pd.to_numeric(net.get(c, nan), errors="coerce")
                               for c in ("StartLat", "StartLong", "EndLat", "EndLong"))
     out["travel_bearing"] = initial_bearing(lat1, lon1, lat2, lon2)
+    out["start_lat"], out["start_lon"] = lat1.to_numpy(), lon1.to_numpy()
+    out["end_lat"], out["end_lon"] = lat2.to_numpy(), lon2.to_numpy()
+    for col, src in (("next_xd", "NextXDSegI"), ("prev_xd", "PreviousXD")):
+        out[col] = (pd.array(pd.to_numeric(net[src], errors="coerce"), dtype="Int64")
+                    if src in net.columns else pd.array([pd.NA] * len(net), dtype="Int64"))
     mid_lat, mid_lon = (lat1 + lat2) / 2, (lon1 + lon2) / 2
 
     out["urban_uace"] = None
@@ -258,6 +294,17 @@ def segment_context(network: pd.DataFrame, membership: pd.DataFrame | None = Non
         out["radial"] = pd.Series(radial, index=out.index).where(judged, None)
         out["radial_angle"] = pd.Series(angle, index=out.index).where(judged).round(1)
     return out
+
+
+def _route_set(routes, route) -> tuple[str, ...]:
+    """Membership's ``routes`` (``"30/95"``) as a tuple of route numbers, else the
+    single ``route``."""
+    text = "" if routes is None or (isinstance(routes, float) and math.isnan(routes)) \
+        else str(routes).strip()
+    parts = [p.strip().lstrip("0") for p in re.split(r"[/;,]", text) if p.strip()]
+    if not parts and route is not None:
+        parts = [str(route).lstrip("0")]
+    return tuple(parts)
 
 
 URBAN_CENTRE_COLUMNS = ("uace", "urban_area", "centre_lat", "centre_lon", "note")
@@ -352,6 +399,168 @@ def urban_rule(context: pd.DataFrame) -> pd.DataFrame:
             curve.append(RURAL_CURVE)
             reason.append(f"rural ({r.zone}; nearest urban area {area})")
     return pd.DataFrame({"curve_id": curve, "reason": reason}, index=context.index)
+
+
+# ---------------------------------------------------------------------------
+# Station rule (Item 59)
+# ---------------------------------------------------------------------------
+STATION_RULE_COLUMNS = ("curve_id", "reason", "station_id", "station_direction",
+                        "station_miles")
+
+
+def _point_to_chord(lat, lon, lat1, lon1, lat2, lon2) -> tuple[np.ndarray, np.ndarray]:
+    """``(metres, t)`` from one point to each segment's start→end chord, and where
+    along the chord (0 = start, 1 = end) the nearest point is, on a local
+    equirectangular plane (exact enough within a few miles)."""
+    k = math.cos(math.radians(lat))
+    to_m = math.pi / 180.0 * _EARTH_M
+    ax, ay = (np.asarray(lon1, float) - lon) * k * to_m, (np.asarray(lat1, float) - lat) * to_m
+    bx, by = (np.asarray(lon2, float) - lon) * k * to_m, (np.asarray(lat2, float) - lat) * to_m
+    dx, dy = bx - ax, by - ay
+    den = dx * dx + dy * dy
+    with np.errstate(invalid="ignore", divide="ignore"):
+        t = np.clip(np.where(den > 0, -(ax * dx + ay * dy) / den, 0.0), 0.0, 1.0)
+    return np.hypot(ax + t * dx, ay + t * dy), t
+
+
+def _on_station_route(context: pd.DataFrame, route: str) -> np.ndarray:
+    """Segments on a station's route (``counts.COUNT_COLUMNS``' ``route`` form):
+    an interstate number matches interstate mainline only, a business loop
+    (``"84 BL"``) business-loop segments carrying that number, and a US/SH number any
+    segment carrying it."""
+    from .counts import split_route
+    number, business = split_route(route)
+    if number is None:
+        return np.zeros(len(context), dtype=bool)
+    carries = np.array([number in r for r in context["routes"]], dtype=bool)
+    if business:
+        return carries & context["business"].to_numpy(bool)
+    if number in INTERSTATE_ROUTES:
+        return carries & context["interstate"].to_numpy(bool)
+    return carries
+
+
+def _walk(start, link: pd.Series, allowed: pd.Series, miles: pd.Series, dist: float
+          ) -> list[tuple[int, float]]:
+    """Follow ``link`` (next or previous XD) from ``start``'s neighbour while the
+    segment is ``allowed`` and its near end is within :data:`STATION_MAX_MILES`;
+    ``dist`` is the distance to that first neighbour. Returns ``(segment, miles to
+    its near end)``."""
+    out, seen = [], {start}
+    cur = link.get(start)
+    while (cur is not None and not pd.isna(cur) and int(cur) not in seen
+           and bool(allowed.get(int(cur), False)) and dist <= STATION_MAX_MILES):
+        cur = int(cur)
+        seen.add(cur)
+        out.append((cur, dist))
+        step = miles.get(cur)
+        dist += float(step) if step is not None and not pd.isna(step) else 0.0
+        cur = link.get(cur)
+    return out
+
+
+def station_rule(context: pd.DataFrame, stations: pd.DataFrame | None, *,
+                 use_generic: bool = False) -> pd.DataFrame:
+    """The nearest count station's curve for the road it counts.
+
+    Each station-direction (``counts.station_curves``) **snaps** to the nearest
+    segment that is on its route (:func:`_on_station_route`), not a ramp, travelling
+    within :data:`STATION_DIRECTION_TOL_DEG` of its direction and within
+    :data:`STATION_SNAP_MILES` of it. From there it **follows the road**: the XD
+    ``next_xd`` / ``prev_xd`` links, both ways, for as long as the segments stay on
+    the route and off ramps, up to :data:`STATION_MAX_MILES` along the road. Following
+    links rather than drawing a radius keeps a station off a parallel street of the
+    same route (Boise's Broadway ATR is US-20, and so are the Front/Myrtle couplet
+    and Chinden a few blocks away). A link gap ends the walk. A segment covered by
+    several stations takes the nearest along the road.
+
+    A ``2WAY`` station, or one with no route, covers nothing: it cannot say which
+    direction's shape it measured, or which road.
+
+    Args:
+        context: :func:`segment_context` (with ``next_xd`` / ``prev_xd``; without
+            links a station covers only the segment it snaps to).
+        stations: ``counts.station_curves``' table (``station_id``, ``direction``,
+            ``lat``, ``lon``, ``route``, ``source``, ``curve_id``,
+            ``nearest_generic``, ``misplaced_share``); ``None`` = no stations.
+        use_generic: assign each station's ``nearest_generic`` instead of its fitted
+            curve (the fitted curves mapped back onto the generic ids).
+
+    Returns:
+        Indexed like ``context``, columns :data:`STATION_RULE_COLUMNS`
+        (``station_miles`` is along the road to the segment's near end, 0 for the one
+        the station is on); ``curve_id`` None where no station covers the segment.
+        ``attrs['stations']``: per station-direction, the segment it snapped to, the
+        segments it covers (``n_segments``) and those it won (``n_assigned``), or why
+        none.
+    """
+    from .counts import DIRECTION_BEARING
+    out = pd.DataFrame({"curve_id": None, "reason": None, "station_id": None,
+                        "station_direction": None, "station_miles": np.nan},
+                       index=context.index)
+    report: list[dict] = []
+    if stations is None or not len(stations) or context.empty:
+        out.attrs["stations"] = pd.DataFrame(report)
+        return out
+    ids = context.index.to_numpy()
+    miles = context["miles"]
+    nan_links = pd.Series(pd.NA, index=context.index, dtype="Int64")
+    next_xd = context["next_xd"] if "next_xd" in context.columns else nan_links
+    prev_xd = context["prev_xd"] if "prev_xd" in context.columns else nan_links
+    usable = (~context["ramp"].to_numpy(bool)) & context["travel_bearing"].notna().to_numpy()
+    best = pd.Series(np.inf, index=context.index)
+    for st in stations.itertuples(index=False):
+        row = {"station_id": st.station_id, "direction": st.direction,
+               "route": st.route, "curve_id": st.curve_id, "snapped_to": None,
+               "snap_miles": np.nan, "n_segments": 0, "note": ""}
+        report.append(row)
+        if st.direction not in DIRECTION_BEARING:
+            row["note"] = "two-way count: no direction to match"
+            continue
+        on_route = _on_station_route(context, st.route) & usable
+        if not on_route.any():
+            row["note"] = ("no route" if not str(st.route or "").strip()
+                           else f"no segment on route {st.route}")
+            continue
+        heading = np.asarray(_angle_between(context["travel_bearing"],
+                                            DIRECTION_BEARING[st.direction])
+                             <= STATION_DIRECTION_TOL_DEG)
+        dist_m, t = _point_to_chord(float(st.lat), float(st.lon), context["start_lat"],
+                                    context["start_lon"], context["end_lat"],
+                                    context["end_lon"])
+        snap = np.where(on_route & heading, dist_m / 1609.344, np.inf)
+        k = int(np.argmin(snap))
+        if not snap[k] <= STATION_SNAP_MILES:
+            row["note"] = (f"no segment on route {st.route} in its direction within "
+                           f"{STATION_SNAP_MILES:g} mi")
+            continue
+        anchor = int(ids[k])
+        row["snapped_to"], row["snap_miles"] = anchor, round(float(snap[k]), 3)
+        allowed = pd.Series(on_route, index=context.index)
+        a_miles = float(miles.iloc[k]) if not pd.isna(miles.iloc[k]) else 0.0
+        covered = ([(anchor, 0.0)]
+                   + _walk(anchor, next_xd, allowed, miles, (1 - t[k]) * a_miles)
+                   + _walk(anchor, prev_xd, allowed, miles, t[k] * a_miles))
+        row["n_segments"] = len(covered)
+        curve = st.nearest_generic if use_generic else st.curve_id
+        fitted = ("" if not use_generic
+                  else f", nearest generic to {st.curve_id} ({st.misplaced_share:.0%} of "
+                       "the day's volume misplaced)")
+        for sid, d in covered:
+            if d >= best.at[sid]:
+                continue
+            best.at[sid] = d
+            out.loc[sid, ["curve_id", "station_id", "station_direction", "station_miles",
+                          "reason"]] = [
+                curve, st.station_id, st.direction, round(d, 2),
+                f"{str(st.source).upper()} {st.station_id} {st.direction} on route "
+                f"{st.route}, {d:.2f} mi along the road{fitted}"]
+    rep = pd.DataFrame(report)
+    won = out.groupby(["station_id", "station_direction"]).size()
+    rep["n_assigned"] = [int(won.get((r.station_id, r.direction), 0))
+                         for r in rep.itertuples()]
+    out.attrs["stations"] = rep
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -590,7 +799,9 @@ def _override_map(overrides, chains, district) -> dict[int, tuple[str, str, str 
 def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
                     delay: pd.DataFrame | None = None, *, overrides=None,
                     district: int | None = None,
-                    profiles: Mapping | None = None) -> pd.DataFrame:
+                    profiles: Mapping | None = None,
+                    stations: pd.DataFrame | None = None,
+                    station_generic: bool = False) -> pd.DataFrame:
     """One curve per segment of ``context``.
 
     Args:
@@ -601,7 +812,11 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
         overrides: :func:`load_overrides`.
         district: filters the overrides' ``district`` column.
         profiles: the curve library; when given, every assigned ``curve_id`` must be
-            in it.
+            in it (with ``stations``, that includes the fitted curves).
+        stations: count stations with fitted curves (``counts.station_curves``) for
+            :func:`station_rule`; ``None`` skips it.
+        station_generic: the station rule assigns each station's nearest generic
+            curve instead of its fitted one.
 
     Returns:
         Indexed by ``XDSegID``, columns :data:`ASSIGNMENT_COLUMNS`. ``am_share_self`` /
@@ -623,6 +838,7 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
             seg_chains.setdefault(int(s), []).append(c.chain_id)
 
     rule = urban_rule(context)
+    counted = station_rule(context, stations, use_generic=station_generic)
     forced = _override_map(overrides, chains, district)
 
     rows = []
@@ -644,6 +860,9 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
         if sid in forced:
             curve, why, ocid = forced[sid]
             rows.append((curve, OVERRIDE, am_self, am_opp, ocid or shown, why))
+        elif counted.at[sid, "curve_id"] is not None:
+            rows.append((counted.at[sid, "curve_id"], STATION, am_self, am_opp, shown,
+                         counted.at[sid, "reason"]))
         elif decided is not None:
             rows.append((inference.at[decided, "curve_id"], INFERRED, am_self, am_opp,
                          decided, inference.at[decided, "reason"]))
@@ -667,6 +886,8 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
         "n_chains": len(chains),
         "n_chains_inferred": (0 if inference is None
                               else int(inference["curve_id"].notna().sum())),
+        "n_stations": 0 if stations is None else int(len(stations)),
+        "station_curves": "nearest generic" if station_generic else "fitted",
         "thresholds": {
             "am_share_commute": AM_SHARE_COMMUTE,
             "am_share_opposite": AM_SHARE_OPPOSITE,
@@ -675,9 +896,13 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
             "urban_approach_m": URBAN_APPROACH_M,
             "urban_core_radius_m": URBAN_CORE_RADIUS_M,
             "radial_tol_deg": RADIAL_TOL_DEG,
+            "station_max_miles": STATION_MAX_MILES,
+            "station_snap_miles": STATION_SNAP_MILES,
+            "station_direction_tol_deg": STATION_DIRECTION_TOL_DEG,
         },
     }
     out.attrs["inference"] = inference
+    out.attrs["stations"] = counted.attrs["stations"]
     return out
 
 
@@ -690,12 +915,56 @@ def summary_line(assignment: pd.DataFrame) -> str:
 # ---------------------------------------------------------------------------
 # I/O (the routes.write_membership / read_membership pattern)
 # ---------------------------------------------------------------------------
-def write_assignment(assignment: pd.DataFrame, path) -> Path:
-    """Write an assignment frame as CSV (the index as ``XDSegID``)."""
+CURVES_SUFFIX = "_curves.json"
+"""The companion library beside an assignment CSV: the curves it uses that are not
+packaged (the count-fitted ones, Item 59), so a reader never meets an unknown id."""
+
+
+def curves_path(path) -> Path:
+    """``d3_volume_profiles.csv`` → ``d3_volume_profiles_curves.json``."""
+    path = Path(path)
+    return path.with_name(path.stem + CURVES_SUFFIX)
+
+
+def write_assignment(assignment: pd.DataFrame, path, profiles: Mapping | None = None
+                     ) -> Path:
+    """Write an assignment frame as CSV (the index as ``XDSegID``).
+
+    With ``profiles`` (the library the assignment was made from), the curves it uses
+    that are not in the packaged library are written beside it (:func:`curves_path`);
+    a stale companion from an earlier run is removed when there are none.
+    """
+    from . import volume_profiles
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     assignment.rename_axis("XDSegID").to_csv(path)
+    if profiles is not None:
+        packaged = volume_profiles.load_profiles()
+        extra = {c: profiles.get(c) for c in sorted(set(assignment["curve_id"].dropna()))
+                 if c not in packaged}
+        missing = [c for c in extra if extra[c] is None]
+        if missing:
+            raise ValueError(f"curves {missing} are not in the library given")
+        companion = curves_path(path)
+        if extra:
+            volume_profiles.write_profiles(
+                extra, companion, note=f"The non-packaged curves {path.name} assigns "
+                                       "(ROADMAP Item 59).")
+        elif companion.exists():
+            companion.unlink()
     return path
+
+
+def assignment_profiles(path) -> dict:
+    """The library an assignment CSV reads against: the packaged curves plus its
+    companion (:func:`curves_path`), when there is one."""
+    from . import volume_profiles
+    library = volume_profiles.load_profiles()
+    companion = curves_path(path)
+    if companion.exists():
+        library = volume_profiles.merge_profiles(
+            library, volume_profiles.load_profiles(companion))
+    return library
 
 
 def read_assignment(path) -> pd.DataFrame:
