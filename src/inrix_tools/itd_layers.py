@@ -236,6 +236,22 @@ def load_urban_areas(source):
     return gdf.reset_index(drop=True)
 
 
+def urban_centroids(urban) -> pd.DataFrame:
+    """Each urban area's polygon centroid (computed in a metric CRS, returned in
+    WGS84) and population, indexed by ``UACE`` — what
+    :func:`inrix_tools.profile_assignment.segment_context` reads for the bearing
+    toward the area (Item 56)."""
+    metric = urban.estimate_utm_crs()
+    cen = urban.to_crs(metric).geometry.centroid.to_crs(WGS84)
+    return pd.DataFrame({"UACE": urban["UACE"].astype(str).to_numpy(),
+                         "urban_area": urban["NAME"].to_numpy(),
+                         "centroid_lat": cen.y.to_numpy(),
+                         "centroid_lon": cen.x.to_numpy(),
+                         "population": pd.to_numeric(urban["Population"],
+                                                     errors="coerce").to_numpy()}
+                        ).set_index("UACE")
+
+
 def urban_context(geo, urban) -> pd.DataFrame:
     """Each segment's urban context — a **context column, never a gate**.
 

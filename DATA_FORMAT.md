@@ -1816,6 +1816,103 @@ packaged JSON is exactly what the script builds, so don't hand-edit it.
   as it must be: DHV is K30 and adds the seasonal peak. This is checked in
   `test_volume_profiles`.
 
+## Curve assignment per XD segment (`profile_assignment.py`, Item 56)
+
+Every segment of a district's network gets one `curve_id`. The first of these that
+decides wins, and `curve_source` records which:
+
+1. **`override`**: `scripts/volume_profile_overrides.csv` (`#` comments, like
+   `route_overrides.csv`). Columns: `xd_seg_id, district, corridor, direction,
+   curve_id, note`. A row is keyed on `xd_seg_id` **or** on a catalogue
+   `corridor` + `direction` (`i84,EB`), never both. `district` blank = any district,
+   because corridor ids repeat across districts. A segment row beats a corridor row.
+   `curve_id` must be in the library and every row needs a note. The file ships with
+   no rows. `rural_recreational` is never chosen by the rule, only by an override.
+2. **`inferred`**: the *orientation* of a chain, from its delay.
+   - A chain is one direction of a road. Catalogue entries pair within their
+     reporting `corridor` by opposite direction sign (N/E = +, S/W = −). Route runs
+     are the segments of one ITD route (`route_number`) with one travel sign, one
+     urban area, one zone and one radial sense, paired with the same route, area and
+     zone, the other sign and the mirror radial. Ramps, and segments with no route
+     or no N/E/S/W `Bearing`, are in no run.
+   - Per side: `am_share = Σ am delay / Σ (am + pm delay)`, over the segments
+     observed in both windows. The delay is `screen.window_delay`: the floored mean
+     delay (minutes per vehicle) at the `am` (07:00–09:00) and `pm` (16:00–18:30)
+     weekday means, against INRIX's Ref Speed, the same definition `rank_corridors`
+     sums. A segment's delay already scales with its length, so the sum is
+     length-weighted.
+   - AM-commute when `am_share ≥ 0.65` on this side **and** `≤ 0.35` on the
+     opposite side (the mirror case is PM-commute), with both sides' worse-peak
+     delay ≥ **0.10 min per observed mile**. The AM side gets `am_commute_urban`,
+     the PM side `pm_commute_urban`. Unpaired chains, both-peaks chains, chains
+     that don't oppose, and chains below the floor fall through.
+   - A segment on several chains takes the first decisive one: catalogue before
+     route run, then the shortest (a generated catalogue's `core` tier before its
+     `regional`).
+   - The inference sets orientation only, never volume. So the circularity with
+     delay is harmless.
+3. **`urban_rule`**, from `d<N>_urban_context.csv`, plus the bearing from the
+   segment's midpoint to its urban area's polygon centroid
+   (`itd_layers.urban_centroids`):
+   - an **interstate** (the ITD route id is `…IN…`, or with no id the number is
+     15/84/86/90/184) → `interstate_through`. A **business loop** is never an
+     interstate, even though it carries the interstate's ITD id (I-84 BL on Garrity
+     and Caldwell Blvds is `02042AIN084`);
+   - the **commute zone** is inside an urban area of ≥ 50,000 people, or outside it
+     within 5 km of its boundary (the `approach` zone). There, travel within 45° of
+     the bearing to the centroid is **inbound** → `am_commute_urban`, within 45° of
+     the bearing away is **outbound** → `pm_commute_urban`, and anything between (or
+     within 1.5 km of the centroid) is **tangential**;
+   - inside any urban area without a clear radial (tangential, or a town under
+     50,000) → `balanced_urban`;
+   - everything else → `rural_through`.
+4. **`default`**: `balanced_urban`, where there is no urban context at all.
+
+The thresholds are module constants, and the run's provenance JSON carries them
+(`volume_profiles.thresholds`).
+
+**Output.** `run_district_screening.py` writes `<out-dir>/d<N>_volume_profiles.csv`
+(`XDSegID, curve_id, curve_source, am_share_self, am_share_opposite, chain_id,
+reason`; `profile_assignment.write_assignment` / `read_assignment`), prints the counts
+by source, and records them in the provenance JSON.
+- `am_share_*` and `chain_id` come from the chain that decided. Where the inference
+  fell through, they come from the segment's first chain, and `reason` ends with
+  `(inference: …)` saying why.
+- A `day_7d` run screens `am`/`pm` for the inference, so both runs of a district
+  write the same file (checked byte-identical on D3).
+
+**What it assigns (2025 AADT, the export period, Session 76):**
+
+| | segments | inferred | chains inferred | am / pm commute | balanced | rural | interstate |
+|---|---|---|---|---|---|---|---|
+| D1 | 5,007 | 0 | 0 / 145 | 468 / 520 | 1,021 | 2,734 | 264 |
+| D2 | 3,499 | 0 | 0 / 68 | 151 / 152 | 525 | 2,671 | 0 |
+| D3 | 16,105 | 235 | 22 / 234 | 2,561 / 2,593 | 5,736 | 4,889 | 326 |
+| D4 | 6,087 | 56 | 14 / 169 | 346 / 358 | 1,193 | 3,705 | 485 |
+| D5 | 4,386 | 0 | 0 / 114 | 212 / 227 | 600 | 2,784 | 563 |
+| D6 | 6,686 | 0 | 0 / 138 | 351 / 344 | 934 | 4,780 | 277 |
+
+- Every chain that infers orients the textbook way. In the Treasure Valley: I-84 EB,
+  I-184 EB (0.91 / 0.02), Chinden EB (0.66 / 0.15), US-20/26 Star–Middleton EB
+  (0.89 / 0.28) and SH-44 EB near Star are AM-inbound. So is I-84 EB leaving Nampa
+  (0.87 / 0.07), the Nampa→Boise commute, which the urban rule would have called
+  outbound. In D4, SH-75 NB into Ketchum (0.90 / 0.17) and through Hailey
+  (0.71 / 0.22) is the Wood River Valley's AM worker commute.
+- Nothing infers in D1, D2, D5 or D6. Most chains are below the delay floor, and the
+  rest are congested at both peaks.
+- The signalised Boise arterials (State St, Eagle Rd, SH-69, Broadway) are
+  both-peaks or both PM-heavy, not opposed, and fall to the urban rule.
+
+**The polygon centroid is not the city centre.** The Boise City urban area's centroid
+is at (43.615, −116.295), about 7.5 km west of downtown Boise (−116.202), because the
+polygon takes in Meridian. Between the two, the radial reverses:
+- I-184 EB reads "outbound", and Front St WB gets `am_commute_urban` from the rule
+  although its am_share is 0.20.
+- Moving Boise's centre to downtown would change the rule's curve on 4,503 of the
+  8,192 segments nearest Boise City.
+- The inference overrides the rule on the chains that clearly oppose. Elsewhere the
+  rule stands as specified.
+
 ## ITD State Highway System (`SHS_Primary.zip`, Item 52)
 
 ITD's State Highway System layer, downloaded by the owner from ArcGIS Online
@@ -1966,6 +2063,10 @@ then Nampa (81 mi).
 
 **Context, never a gate** (owner, 2026-09-23). The boundaries show where to look for
 a rural/urban transition when an extent ends (Item 50), not where it must stop.
+
+`itd_layers.urban_centroids` gives each area's polygon centroid (computed in UTM) and
+population, for the Item 56 radial rule. A centroid is not a city centre: Boise
+City's lies ~7.5 km west of downtown (see *Curve assignment*).
 
 ## Corridor cores from recurring congestion (`extents.py`, Item 50)
 

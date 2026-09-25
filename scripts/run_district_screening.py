@@ -12,6 +12,7 @@ The pipeline is the one Items 34-38 built, composed for the first time::
       -> corridors.resolve_catalogue    the corridor extents, walked and accounted
       -> aadt.load_aadt / join_aadt     mainline-preferred volume weights (Item 34)
       -> screen.rank_corridors          one row per corridor x window
+      -> profile_assignment             a volume-profile curve per XD segment (Item 56)
 
 Typical run (paths are this machine's; nothing here assumes them)::
 
@@ -55,6 +56,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from inrix_tools import aadt as aadt_mod                  # noqa: E402
 from inrix_tools import corridors, geometry, kml, routes, screen, store  # noqa: E402
+from inrix_tools import itd_layers                        # noqa: E402
+from inrix_tools import profile_assignment as profiles_mod  # noqa: E402
+from inrix_tools import volume_profiles                   # noqa: E402
 from inrix_tools.io import DEFAULT_TZ                     # noqa: E402
 
 DEFAULT_CVALUE = 80
@@ -195,6 +199,62 @@ def join_volumes(geo, aadt_source, *, year, cache_path, max_distance_m, bbox_mar
         joined = aadt_mod.apply_directional_basis(joined, couplet_segments=couplet_segments,
                                                   network=network)
     return joined
+
+
+URBAN_CONTEXT = "out/highways/route_membership/d{district}_urban_context.csv"
+DEFAULT_URBAN = "Urban_Area.zip"
+DEFAULT_PROFILE_OVERRIDES = "scripts/volume_profile_overrides.csv"
+
+
+def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
+                           urban_context_path, urban_source, overrides_path,
+                           district=None, peak_screen=None):
+    """A volume-profile curve for every segment of the district network (Item 56).
+
+    Wiring only — :mod:`inrix_tools.profile_assignment` decides. The inference reads
+    the ``am`` / ``pm`` delay of ``scr``; a run without those windows (``day_7d``)
+    passes ``peak_screen``, a callable returning a screen that has them, so the
+    peak and 7-day runs assign the same curves. Any input that is absent is skipped,
+    and the rule falls back as the module says."""
+    table = net.drop(columns="geometry", errors="ignore")
+    table = table.drop_duplicates(subset="XDSegID")
+    membership = routes.read_membership(membership_path) if membership_path else None
+    urban = None
+    if urban_context_path and Path(urban_context_path).exists():
+        urban = pd.read_csv(urban_context_path, dtype={"urban_uace": str}
+                            ).set_index("XDSegID")
+    centroids = None
+    if urban_source and Path(urban_source).exists():
+        centroids = itd_layers.urban_centroids(itd_layers.load_urban_areas(urban_source))
+    context = profiles_mod.segment_context(table, membership, urban, centroids)
+
+    peak = scr if all(f"{w}_travel_time" in scr.columns
+                      for w in profiles_mod.PEAK_WINDOWS) else None
+    if peak is None and peak_screen is not None:
+        peak = peak_screen()
+    delay = None
+    if peak is not None:
+        lengths = context["miles"].rename_axis("Segment ID")
+        delay = screen.window_delay(peak, lengths, windows=profiles_mod.PEAK_WINDOWS)
+
+    entries = corridors.load_catalogue(catalogue_path)
+    chain_list = (profiles_mod.catalogue_chains(
+        entries, {cid: c.segment_ids for cid, c in chains.items()})
+        + profiles_mod.route_runs(context))
+    library = volume_profiles.load_profiles()
+    overrides = (profiles_mod.load_overrides(overrides_path, library)
+                 if overrides_path and Path(overrides_path).exists() else None)
+    assignment = profiles_mod.assign_profiles(
+        context, chain_list, delay, overrides=overrides, district=district,
+        profiles=library)
+    assignment.attrs["inputs"] = {
+        "route_membership": str(membership_path) if membership_path else None,
+        "urban_context": str(urban_context_path) if urban is not None else None,
+        "urban_areas": str(urban_source) if centroids is not None else None,
+        "overrides": str(overrides_path) if overrides is not None else None,
+        "inference": delay is not None,
+    }
+    return assignment
 
 
 def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> dict:
@@ -1391,6 +1451,28 @@ def run(args) -> dict:
         is_7day = win_names == ["day_7d"]
 
         prov = provenance(args, area_key, con, scr, resolution, repairs, aadt)
+
+        # A volume-profile curve per segment (Item 56). Nothing consumes it yet; Item 57
+        # weights VHD by it.
+        peak_windows = {w: screen.PEAK_WINDOWS[w] for w in profiles_mod.PEAK_WINDOWS}
+        assignment = assign_volume_profiles(
+            net, scr, args.catalogue, accepted, membership_path=args.membership,
+            urban_context_path=args.urban_context, urban_source=args.urban,
+            overrides_path=args.profile_overrides, district=args.district,
+            peak_screen=lambda: screen_segments(
+                con, area_key, windows=peak_windows,
+                cvalue_threshold=args.cvalue_threshold, bin_minutes=args.bin_minutes,
+                tz=args.tz, date_start=args.date_start, date_end=args.date_end))
+        pa_attrs = assignment.attrs["profile_assignment"]
+        prov["volume_profiles"] = {**assignment.attrs["inputs"],
+                                   "by_source": pa_attrs["by_source"],
+                                   "by_curve": pa_attrs["by_curve"],
+                                   "n_chains": pa_attrs["n_chains"],
+                                   "n_chains_inferred": pa_attrs["n_chains_inferred"],
+                                   "thresholds": pa_attrs["thresholds"]}
+        dist_tag = f"D{args.district}" if args.district else "district"
+        print(f"{dist_tag} volume profiles: {profiles_mod.summary_line(assignment)} "
+              f"({pa_attrs['n_chains_inferred']} of {pa_attrs['n_chains']} chains inferred)")
         if grouped is not None:
             prov["reporting_corridors"] = {
                 "n_groups": int(grouped[screen.GROUP_COL].nunique()),
@@ -1404,6 +1486,10 @@ def run(args) -> dict:
         written = write_outputs(args.out_dir, ranking, resolution, prov, geo,
                                 grouped=grouped, totals=totals, breakout=breakout,
                                 write_kml=not args.no_kml, is_7day=is_7day)
+        vp_name = (f"d{args.district}_volume_profiles.csv" if args.district
+                   else "volume_profiles.csv")
+        written["volume_profiles"] = profiles_mod.write_assignment(
+            assignment, Path(args.out_dir) / vp_name)
 
         # Save segment screen results for fast statewide vector map aggregation
         scr_fname = "segment_7day_screen.parquet" if is_7day else "segment_peak_screen.parquet"
@@ -1473,6 +1559,7 @@ def run(args) -> dict:
 
         return {"ranking": ranking, "grouped": grouped, "totals": totals,
                 "breakout": breakout, "resolution": resolution,
+                "volume_profiles": assignment,
                 "provenance": prov, "written": written, "screen": scr,
                 "net": net}
     finally:
@@ -1507,6 +1594,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="route membership CSV (build_route_membership.py) for the AADT "
                         "join's route preference; default with --district: "
                         + MEMBERSHIP + " when it exists; '' = INRIX RoadNumber")
+    p.add_argument("--urban-context", default=None,
+                   help="urban context CSV (build_route_membership.py) for the volume-"
+                        "profile urban rule; default with --district: "
+                        + URBAN_CONTEXT + " when it exists")
+    p.add_argument("--urban", default=DEFAULT_URBAN,
+                   help="Census urban areas, for the bearing toward each area's centroid "
+                        "(Item 56); '' skips the radial rule")
+    p.add_argument("--profile-overrides", default=DEFAULT_PROFILE_OVERRIDES,
+                   help="volume-profile override CSV (Item 56); '' = none")
     p.add_argument("--aadt-max-distance-m", type=float, default=60.0)
     p.add_argument("--cvalue-threshold", type=float, default=DEFAULT_CVALUE,
                    help="keep CValue > threshold; 'none' disables the gate")
@@ -1564,6 +1660,10 @@ def parse_args(argv=None):
             cand_mem = Path(MEMBERSHIP.format(district=args.district))
             if cand_mem.exists():
                 args.membership = str(cand_mem)
+        if args.urban_context is None:
+            cand_urb = Path(URBAN_CONTEXT.format(district=args.district))
+            if cand_urb.exists():
+                args.urban_context = str(cand_urb)
     elif args.catalogue is None:
         # Fallback to D3 catalogue if present and no district specified
         d3_cat = Path("scripts/d3_corridors.json")

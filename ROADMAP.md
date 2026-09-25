@@ -2928,7 +2928,7 @@ with cited generic curves, and carry the MADT ratios through the AADT join."
 
 ---
 
-## 56 — Assign a curve to every XD segment: inferred orientation, urban rule, override
+## 56 — Assign a curve to every XD segment: inferred orientation, urban rule, override ✅ (Session 76)
 
 **Target: Opus.** Pure core, plus a runner hook. Depends on 55.
 
@@ -2940,41 +2940,57 @@ evidence and falls through.
 
 Scope:
 
-- [ ] **`src/inrix_tools/profile_assignment.py`:** a frame keyed on `XDSegID` with
+- [x] **`src/inrix_tools/profile_assignment.py`:** a frame keyed on `XDSegID` with
       `curve_id, curve_source ∈ {override, inferred, urban_rule, default},
       am_share_self, am_share_opposite, chain_id, reason`.
-- [ ] **Chains, not segments.** Use catalogue corridor directions (`_segment_ids`)
+- [x] **Chains, not segments.** Use catalogue corridor directions (`_segment_ids`)
       where present, else route-membership runs (`routes.read_membership`). Opposing
       chains are paired with the existing direction-sign and twin helpers. A chain
       decides once and its segments inherit, so the orientation cannot flip along a
       road.
-- [ ] **Inference.** Per chain, take the length-weighted share of AM vs PM delay
+      *Catalogue chains are the runner's resolved, accepted chains (for a generated
+      catalogue, the walk of its `_segment_ids`), paired within their reporting
+      `corridor` by `geometry.direction_sign`. Route runs are keyed on route, sign,
+      urban area, zone and radial, so a through-route is not one decision on both
+      sides of a city. The geometric twin helper (`aadt.two_way_twins`) was not
+      needed: both pairings are by key.*
+- [x] **Inference.** Per chain, take the length-weighted share of AM vs PM delay
       (from the `screen.PEAK_WINDOWS` means).
       - AM-commute if `am_share_A ≥ 0.65` **and** `am_share_B ≤ 0.35`, both above a
         minimum-delay floor; the mirror case is PM-commute.
       - The thresholds are module constants.
       - Unpaired chains and non-opposing chains fall through.
-- [ ] **Urban rule**, from `d{N}_urban_context.csv` plus the bearing toward the urban
+- [x] **Urban rule**, from `d{N}_urban_context.csv` plus the bearing toward the urban
       area's centroid:
       - inbound → `am_commute_urban`; outbound → `pm_commute_urban`;
       - inside the urban area with no clear radial → `balanced_urban`;
       - rural → `rural_through`; interstate → `interstate_through`.
-- [ ] **Override** (`scripts/volume_profile_overrides.csv`, with a `#`-comment header
+      *Added: the radial applies to urban areas ≥ 50,000 people, inside or within
+      5 km of the boundary. Business loops are not interstates.*
+- [x] **Override** (`scripts/volume_profile_overrides.csv`, with a `#`-comment header
       like `route_overrides.csv`): keyed on `XDSegID` *or* corridor id + direction,
       with a note column. An override always wins.
-- [ ] **Output and wiring.** Write `d{N}_volume_profiles.csv` (the
+- [x] **Output and wiring.** Write `d{N}_volume_profiles.csv` (the
       `routes.write_membership` / `read_membership` pattern), wire it into
       `run_district_screening`, and log assignment counts by source per district.
-- [ ] **pytest:**
+- [x] **pytest:**
       - a synthetic opposing pair → inferred;
       - a both-peaks bottleneck → falls to the urban rule;
       - chain inheritance, with no flip-flop;
       - an override wins;
       - an unmatched segment → default.
-- [ ] DATA_FORMAT (assignment rules and thresholds); DESIGN_HISTORY. Spot-check that
+- [x] DATA_FORMAT (assignment rules and thresholds); DESIGN_HISTORY. Spot-check that
       the Boise radials infer AM-inbound.
+      *Session 76. 881 tests pass (+25). All six districts assigned
+      (`out/item56_volume_profiles/`; `out/statewide_screening` untouched as Item
+      58's pre-run baseline). I-84 EB, I-184 EB, Chinden EB and US-20/26
+      Star–Middleton EB infer AM-inbound. In D4, SH-75 infers NB-AM into Ketchum.
+      The signalised Boise arterials fall through to the rule. D1/D2/D5/D6 infer
+      nothing (below the floor or both-peaks). Open for the owner: the Boise UA
+      polygon centroid is 7.5 km west of downtown, and moving it changes the rule
+      curve on 4,503 of 8,192 Boise-area segments (DESIGN_HISTORY Session 76).*
 
-*Suggested prompt:* "Do Item 56 of ROADMAP.md — assign a volume-profile curve to every
+*Suggested prompt (done):* "Do Item 56 of ROADMAP.md — assign a volume-profile curve to every
 XD segment from inferred chain orientation, the urban in/out rule, and an override CSV."
 
 ---

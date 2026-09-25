@@ -6455,3 +6455,125 @@ the Item 55 invalidation deliberate rather than a side effect of the column list
 - Nothing consumes the curves or ratios yet: VHD is unchanged until Item 57.
 - GUI geometry caches written before today lack the `madt_ratio_*` columns. Item 58
   handles the GUI path.
+
+## Session 76 — Item 56: a volume-profile curve for every XD segment (2026-09-25)
+
+### 1. What was built
+
+- **`profile_assignment.py`** (pure pandas/numpy; the urban-area centroids come in as
+  a frame):
+  - `segment_context` gathers each segment's route, interstate flag, travel sign
+    and bearing (from `StartLat…EndLong`, which are in travel order), urban area,
+    zone (`urban` / `approach` / `rural`) and radial (`in` / `out` /
+    `tangential`);
+  - `urban_rule` gives the rule's curve and a reason;
+  - `catalogue_chains` and `route_runs` build the chains, and `infer_orientation`
+    reads each chain's AM/PM delay split;
+  - `assign_profiles` applies override → inferred → urban rule → default, and
+    returns `curve_id, curve_source, am_share_self, am_share_opposite, chain_id,
+    reason` with counts in `attrs`;
+  - `load_overrides`, `write_assignment` / `read_assignment`.
+- **`screen.window_delay`**: the per-segment floored window delay, through the same
+  `_delay_frame` → `speed.segment_delay` path that `rank_corridors` uses, so the
+  inference and the ranking agree on what delay is.
+- **`itd_layers.urban_centroids`**: polygon centroid (in UTM) + population per UACE.
+- **`run_district_screening.py`**:
+  - `assign_volume_profiles` is wiring only, and gains `--urban-context`
+    (auto-found with `--district`), `--urban` and `--profile-overrides`;
+  - writes `d<N>_volume_profiles.csv`, prints the counts by source, and records
+    them with the thresholds in the provenance JSON;
+  - a `day_7d` run screens `am`/`pm` itself for the inference. So the two runs of a
+    district write the same file (byte-identical on D3), and Item 57 can read it
+    from either.
+- **`scripts/volume_profile_overrides.csv`**: header and rules only; no owner rows
+  yet.
+
+### 2. Decisions the scope left open
+
+- **What a route run is.** Grouping by route and direction alone would make I-84 EB
+  from Caldwell to Mountain Home one decision, but it is inbound west of Boise and
+  outbound east of it. A run is therefore route × travel sign × urban area × zone
+  × radial, paired with the other sign and the mirror radial. That keeps the
+  decision local while every segment of a run still inherits it.
+- **Which catalogue chains.** The runner's resolved, accepted chains. For a
+  generated catalogue those are the walk of `_segment_ids`; the curated D3
+  catalogue has no `_segment_ids` and resolves by endpoints. Tiers overlap (core ⊂
+  commuter ⊂ regional). A segment takes its first decisive chain: catalogue before
+  route run, then the shortest. So the core, where the delay is, speaks first.
+- **The "twin helper".** Not used. Both pairings are by key (reporting corridor +
+  direction sign; route key + mirror), so no geometric twin test is needed.
+- **The delay floor.** 0.10 min per observed mile at the side's worse peak (about
+  10 % over free flow at 60 mph). It is required of **both** sides, which is what
+  makes "one direction only congested" fall through.
+- **The urban rule's extent.** The radial applies only to areas of ≥ 50,000 people
+  (the Census's historical urbanized-area size), inside the area or within 5 km of
+  its boundary. That follows the owner's "boundaries guide, don't cut". A smaller
+  town is `balanced_urban` inside and `rural_through` around it; UMR's commute
+  curves come from large-area count stations.
+- **The default.** `balanced_urban`: the two-peak shape commits least to either
+  peak. No real segment reached it, because every segment has urban context.
+
+### 3. A bug the real data found
+
+The first D3 run labelled Caldwell Blvd and Garrity Blvd `interstate_through`. Both
+are I-84 Business Loop, and ITD files a business loop under its interstate's route
+id (`02042AIN084`). `segment_context` now never treats a `business` verdict as an
+interstate (a test pins it). D3's interstate count went from 408 to 326 segments.
+
+### 4. Results
+
+| district | segments | inferred segs | chains inferred |
+|---|---|---|---|
+| D1 | 5,007 | 0 | 0 / 145 |
+| D2 | 3,499 | 0 | 0 / 68 |
+| D3 | 16,105 | 235 | 22 / 234 |
+| D4 | 6,087 | 56 | 14 / 169 |
+| D5 | 4,386 | 0 | 0 / 114 |
+| D6 | 6,686 | 0 | 0 / 138 |
+
+No overrides and no defaults. Full curve counts are in DATA_FORMAT.
+
+**Boise spot-check.** The radials that oppose infer AM-inbound:
+- I-84 EB 0.97 vs WB 0.00, I-184 EB 0.91 / 0.02, Chinden EB 0.66 / 0.15, US-20/26
+  Star–Middleton EB 0.89 / 0.28, SH-44 EB near Star 0.67 / 0.28;
+- I-84 EB leaving Nampa is 0.87 / 0.07. That is the Nampa→Boise commute: the rule
+  calls it outbound (from Nampa), and the inference correctly overrides it.
+
+The signalised arterials (State St, Eagle Rd, SH-69, Broadway, Karcher) do not
+oppose. Most are PM-heavy in both directions or split, so they fall to the rule.
+That is the behaviour the owner asked for: a bottleneck is not evidence.
+
+**Beyond D3.** D4's SH-75 infers NB = AM into Ketchum (0.90 / 0.17) and through
+Hailey (0.71 / 0.22), the Wood River Valley worker commute. The rule alone would
+have called those towns balanced/rural. D1, D2, D5 and D6 infer nothing: most chains
+are below the floor, and the rest (US-2 in Sandpoint, Pocatello's 4th/5th Ave
+couplet, Blackfoot's I-15 BL) are congested at both peaks.
+
+### 5. Open for the owner: the Boise centroid
+
+The scope says "the bearing toward the urban area's centroid". Boise City's polygon
+centroid is at (43.615, −116.295), 7.5 km west of downtown (the polygon takes in
+Meridian). Between the two the rule reverses:
+- I-184 EB reads outbound;
+- Front St WB gets `am_commute_urban` although its am_share is 0.20.
+
+Moving Boise's centre to downtown changes the rule's curve on **4,503 of 8,192**
+Boise-area segments. The inference already corrects the chains that clearly oppose,
+but the rest of downtown rides on the rule. Options: keep the centroid (as scoped),
+add a small owner-reviewed "urban centre" table (UACE → lat/lon) the runner
+substitutes, or override the affected corridors. This needs deciding before Item 57
+weights VHD by these curves. Boise is polycentric (downtown and Meridian), so no
+single centre is right, and the inference is the real answer where it speaks.
+
+### 6. Verification
+
+- 881 tests pass, 2 skipped (856 before):
+  - 22 in `test_profile_assignment.py`: the five scope cases, the rule classes,
+    interstate vs business loop, the small town, the approach zone, tangential,
+    catalogue before route run, the override table's validation and the shipped
+    file, the CSV round trip, `window_delay`, `urban_centroids`;
+  - 3 in `test_run_district_screening.py`: every network segment assigned in a peak
+    and a `day_7d` run, and the `--district` default for the urban context.
+- Real runs of all six districts went to `out/item56_volume_profiles/d<N>/`, so
+  `out/statewide_screening` stays as Item 58's pre-run baseline. Rankings and VHD
+  are unchanged: nothing consumes the curves until Item 57.

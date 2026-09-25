@@ -553,6 +553,32 @@ def _delay_frame(screen: pd.DataFrame, wins: dict, lengths: pd.Series,
     return out, delay_col
 
 
+def window_delay(screen: pd.DataFrame, lengths: pd.Series, windows=("am", "pm"),
+                 free_flow="ref") -> pd.DataFrame:
+    """Per-segment floored mean delay (minutes per vehicle) in each named window —
+    the same definition :func:`rank_corridors` sums (:func:`speed.segment_delay` at
+    the window's means, floored per segment).
+
+    Args:
+        screen: :func:`segment_screen` output holding ``{window}_travel_time`` /
+            ``{window}_speed`` for every name in ``windows``.
+        lengths: ``Segment ID -> Miles``; segments without a length use the
+            speed-based form.
+        windows: the window names to return, one column each.
+
+    Returns:
+        Wide frame indexed by ``Segment ID``, one column per window.
+    """
+    missing = [w for w in windows if f"{w}_travel_time" not in screen.columns]
+    if missing:
+        raise ValueError(f"screen has no {missing} window(s); run segment_screen with them")
+    lengths = lengths.reindex(screen.index.astype("int64"))
+    long, delay_col = _delay_frame(screen, {w: None for w in windows}, lengths, free_flow)
+    wide = long.pivot(index=SEGMENT_COL, columns=WINDOW_COL, values=delay_col)
+    wide.columns.name = None
+    return wide[list(windows)]
+
+
 def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
                    free_flow="ref") -> pd.DataFrame:
     """Rank assembled corridors on a :func:`segment_screen`, one row per corridor ×

@@ -651,3 +651,38 @@ def test_legends_cannot_toggle_each_other_s_traces():
         assert lay["legend"][k] is False
     assert lay["legend2"]["titleclick"] is False and lay["legend2"]["titledoubleclick"] is False
     assert lay["legend2"].get("itemclick", "toggle") == "toggle"   # corridors stay toggleable
+
+
+# ---------------------------------------------------------------------------
+# Volume-profile assignment (Item 56)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("windows", [None, "day_7d"])
+def test_every_network_segment_gets_a_volume_profile(district, windows):
+    from inrix_tools import profile_assignment as pa
+
+    over = {} if windows is None else {"windows": windows}
+    out = rds.run(_args(district, **over))
+    path = out["written"]["volume_profiles"]
+    assert path.name == "volume_profiles.csv"
+    back = pa.read_assignment(path)
+    assert sorted(back.index) == SEGS
+    assert set(back["curve_source"]) <= set(pa.CURVE_SOURCES)
+    vp = out["provenance"]["volume_profiles"]
+    # A 7-day run has no am/pm window of its own; it screens them for the inference.
+    assert vp["inference"] is True
+    assert sum(vp["by_source"].values()) == len(SEGS)
+    # The only accepted entry has no accepted opposite: it cannot infer.
+    assert vp["n_chains_inferred"] == 0
+    assert back.at[1000, "chain_id"] == "toy-nb"
+
+
+def test_district_flag_finds_the_urban_context(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    assert rds.parse_args(["--db", "x", "--district", "3"]).urban_context is None
+    ctx = Path(rds.URBAN_CONTEXT.format(district=3))
+    ctx.parent.mkdir(parents=True)
+    ctx.write_text("XDSegID,urban_uace\n")
+    args = rds.parse_args(["--db", "x", "--district", "3"])
+    assert args.urban_context == str(ctx)
+    assert args.urban == rds.DEFAULT_URBAN
+    assert args.profile_overrides == rds.DEFAULT_PROFILE_OVERRIDES

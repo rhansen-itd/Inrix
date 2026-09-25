@@ -1,0 +1,12 @@
+# Owner-reviewed volume-profile curve assignments (ROADMAP Item 56; inrix_tools.profile_assignment).
+# An override always wins over the inferred orientation, the urban in/out rule and the default.
+# Key each row on ONE of:
+#   xd_seg_id            - a single XD segment, or
+#   corridor + direction - every segment of a catalogue entry (its reporting corridor id and
+#                          EB/WB/NB/SB, e.g. i84,EB).
+# A segment row beats a corridor row. district blank = any district (corridor ids repeat
+# across districts). curve_id must be in the library (src/inrix_tools/data/volume_profiles.json):
+#   am_commute_urban, pm_commute_urban, balanced_urban, rural_through, interstate_through,
+#   rural_recreational  (the last is never chosen by the rule - override only).
+# Every row needs a note saying why and who decided.
+xd_seg_id,district,corridor,direction,curve_id,note
