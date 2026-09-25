@@ -261,3 +261,79 @@ def test_shs_mileposts_interpolate_along_the_segments_own_line():
     assert mp.loc[1, itd_layers.SHS_MP_START_COL] == pytest.approx(0.5, abs=0.01)
     assert mp.loc[1, itd_layers.SHS_MP_END_COL] == pytest.approx(1.0, abs=0.01)
     assert mp.loc[2].isna().all()          # nowhere near its line
+
+
+# ---------------------------------------------------------------------------
+# Highway tiers (Item 61)
+# ---------------------------------------------------------------------------
+def test_segcode_is_the_route_ids_first_five_digits_zero_padded():
+    assert itd_layers.segcode("01540AUS095") == "001540"
+    assert itd_layers.segcode(None) is None and itd_layers.segcode("US95") is None
+
+
+def _tier_layer():
+    from shapely.geometry import LineString
+    return itd_layers.tier_frame([
+        # SH-55 (segcode 001990): State to mp 1.0, Regional from 1.0 (a tier change).
+        {"segcode": "1990", "bmp": "0", "emp": "1.0", "tier": "State",
+         "geometry": LineString([(-116.35, 43.60), (-116.35, 43.6145)])},
+        {"segcode": "001990", "bmp": "1.0", "emp": "2.0", "tier": "Regional",
+         "geometry": LineString([(-116.35, 43.6145), (-116.35, 43.629)])},
+        # I-84 crossing at 43.605.
+        {"segcode": "001010", "bmp": "40", "emp": "41", "tier": "Interstate",
+         "geometry": LineString([(-116.37, 43.605), (-116.33, 43.605)])},
+    ])
+
+
+def _tier_segments():
+    import geopandas as gpd
+    from shapely.geometry import LineString
+    rows = {1: [(-116.35, 43.600), (-116.35, 43.607)],       # mp 0-0.48
+            2: [(-116.35, 43.617), (-116.35, 43.624)],       # mp 1.2-1.7
+            3: [(-116.3502, 43.640), (-116.3502, 43.645)],   # past the layer's end
+            4: [(-116.20, 43.70), (-116.20, 43.71)]}         # nothing near
+    return gpd.GeoDataFrame({"geometry": [LineString(c) for c in rows.values()]},
+                            index=pd.Index(list(rows), name="XDSegID"), crs="EPSG:4326")
+
+
+def test_tiers_join_by_milepost_then_proximity():
+    geo = _tier_segments()
+    rid = pd.Series("01990ASH055", index=geo.index)
+    mp = pd.DataFrame({itd_layers.SHS_MP_START_COL: [0.0, 1.2, 2.8, None],
+                       itd_layers.SHS_MP_END_COL: [0.48, 1.7, 3.1, None]}, index=geo.index)
+    t = itd_layers.segment_tiers(geo, _tier_layer(), rid, mp)
+    assert t.at[1, "tier"] == "State" and t.at[1, "tier_source"] == "milepost"
+    assert t.at[2, "tier"] == "Regional" and t.at[2, "tier_rank"] == 1.0
+    assert t.at[3, "tier"] is None                        # 1.2 km past the last piece
+    assert t.at[4, "tier"] is None and pd.isna(t.at[4, "tier_rank"])
+
+
+def test_tier_proximity_prefers_the_segments_own_route():
+    """Segment 1 lies on SH-55's line and crosses I-84's: without mileposts it takes
+    SH-55's tier, not the Interstate it touches."""
+    geo = _tier_segments().loc[[1]]
+    t = itd_layers.segment_tiers(geo, _tier_layer(), pd.Series("01990ASH055", index=[1]))
+    assert (t.at[1, "tier"], t.at[1, "tier_source"]) == ("State", "proximity_route")
+    other = itd_layers.segment_tiers(geo, _tier_layer(), pd.Series("02000AUS020", index=[1]))
+    assert other.at[1, "tier_source"] == "proximity"
+
+
+def test_an_unknown_tier_is_refused():
+    from shapely.geometry import LineString
+    with pytest.raises(ValueError, match="unknown highway tier"):
+        itd_layers.tier_frame([{"segcode": "1", "bmp": 0, "emp": 1, "tier": "Arterial",
+                                "geometry": LineString([(0, 0), (1, 1)])}])
+
+
+@pytest.mark.skipif(not Path("Highway Tier.geojson").exists(), reason="tier layer absent")
+def test_the_owners_tier_layer_loads():
+    t = itd_layers.load_highway_tiers("Highway Tier.geojson")
+    assert set(t["tier"]) <= set(itd_layers.TIERS) and len(t) > 1000
+    assert t["segcode"].str.fullmatch(r"\d{6}").all()
+
+
+def test_a_travelway_letter_in_the_segcode_is_dropped():
+    from shapely.geometry import LineString
+    t = itd_layers.tier_frame([{"segcode": "D01540", "bmp": 476, "emp": 477, "tier": "State",
+                                "geometry": LineString([(0, 0), (1, 1)])}])
+    assert t.at[0, "segcode"] == "001540"

@@ -6,6 +6,7 @@ import pytest
 
 from inrix_tools import profile_assignment as pa
 from inrix_tools import screen, volume_profiles
+from inrix_tools.route_sections import RouteSection
 
 # A commute-sized urban area centred at (43.60, -116.20), and a radial road west of it.
 CEN_LAT, CEN_LON = 43.60, -116.20
@@ -413,23 +414,51 @@ def _stations(*rows):
     return pd.DataFrame(out)
 
 
-def test_station_covers_its_road_along_the_links():
-    """Snapped to the middle of EB 202, a 1-mile walk reaches 203 (0.5 mi on) and 201
-    (0.5 mi back) but not 204 (1.5 mi); the WB carriageway is the other direction."""
-    r = pa.station_rule(_station_context(), _stations(("00279", "EB", _mid(202), "44")))
+def _sections(*runs, route="44"):
+    """``route_sections.RouteSection``s over the given segment runs (in travel order)."""
+    out = []
+    for ids in runs:
+        direction = "EB" if ids[0] >= 200 else "WB"
+        out.append(RouteSection(f"{route}-{direction}-{ids[0]}", route, direction,
+                                tuple(ids), float(len(ids)),
+                                {"kind": "route_end", "detail": "start"},
+                                {"kind": "junction", "detail": "US-20 (State) meets"}))
+    return out
+
+
+EB, WB = (201, 202, 203, 204), (101, 102, 103, 104)
+
+
+def test_station_covers_its_whole_section():
+    """Snapped to the middle of EB 202, the station covers the EB section end to end
+    (204 is 1.5 mi on — the Item 59 walk stopped at a mile); WB is the other way."""
+    r = pa.station_rule(_station_context(), _stations(("00279", "EB", _mid(202), "44")),
+                        sections=_sections(EB, WB))
     got = r["curve_id"].dropna()
-    assert sorted(got.index) == [201, 202, 203]
+    assert sorted(got.index) == [201, 202, 203, 204]
     assert set(got) == {"fitted_00279_EB"}
     assert r.at[202, "station_miles"] == 0.0
     assert r.at[203, "station_miles"] == pytest.approx(0.5, abs=0.01)
+    assert r.at[204, "station_miles"] == pytest.approx(1.5, abs=0.01)
     assert "ATR 00279 EB on route 44" in r.at[201, "reason"]
+    assert "section 44-EB-201" in r.at[201, "reason"]
     rep = r.attrs["stations"].iloc[0]
-    assert rep["snapped_to"] == 202 and rep["n_segments"] == 3 and rep["n_assigned"] == 3
+    assert rep["snapped_to"] == 202 and rep["n_segments"] == 4 and rep["n_assigned"] == 4
+    assert rep["section_id"] == "44-EB-201" and rep["section_miles"] == 4.0
+    assert rep["miles_assigned"] == 4.0
+    assert rep["section_to"] == "junction: US-20 (State) meets"
+
+
+def test_without_sections_a_station_covers_its_own_segment():
+    r = pa.station_rule(_station_context(), _stations(("00279", "EB", _mid(202), "44")))
+    assert list(r["curve_id"].dropna().index) == [202]
+    assert "no traced route section" in r.attrs["stations"].iloc[0]["note"]
 
 
 def test_station_direction_picks_the_carriageway():
-    r = pa.station_rule(_station_context(), _stations(("00279", "WB", _mid(102), "44")))
-    assert sorted(r["curve_id"].dropna().index) == [101, 102, 103]
+    r = pa.station_rule(_station_context(), _stations(("00279", "WB", _mid(102), "44")),
+                        sections=_sections(EB, WB))
+    assert sorted(r["curve_id"].dropna().index) == [101, 102, 103, 104]
 
 
 def test_diagonal_direction_label_matches_by_bearing():
@@ -437,27 +466,31 @@ def test_diagonal_direction_label_matches_by_bearing():
     60° of SE (135°), the WB one (270°) of NW (315°)."""
     ctx = _station_context()
     r = pa.station_rule(ctx, _stations(("00002", "SE", _mid(202), "44"),
-                                       ("00002", "NW", _mid(102), "44")))
-    assert set(r.loc[[201, 202, 203], "station_direction"]) == {"SE"}
-    assert set(r.loc[[101, 102, 103], "station_direction"]) == {"NW"}
+                                       ("00002", "NW", _mid(102), "44")),
+                        sections=_sections(EB, WB))
+    assert set(r.loc[list(EB), "station_direction"]) == {"SE"}
+    assert set(r.loc[list(WB), "station_direction"]) == {"NW"}
 
 
-def test_link_gap_ends_the_walk():
-    r = pa.station_rule(_station_context(gap=(202, 203)),
-                        _stations(("00279", "EB", _mid(202), "44")))
+def test_a_section_break_ends_the_reach_and_a_stationless_section_falls_through():
+    """A junction between 202 and 203 makes two sections; the station on the first
+    covers nothing of the second."""
+    r = pa.station_rule(_station_context(), _stations(("00279", "EB", _mid(202), "44")),
+                        sections=_sections((201, 202), (203, 204), WB))
     assert sorted(r["curve_id"].dropna().index) == [201, 202]
 
 
 def test_a_parallel_street_of_the_same_route_is_not_covered():
-    """The Broadway / Front–Myrtle case: an unlinked EB segment of the same route a
-    block away is within the radius but is a different road."""
+    """The Broadway / Front–Myrtle case: an EB segment of the same route a block away
+    is on another section."""
     lat, lon = _mid(202)
     block = _seg(501, lon - 0.005, lon + 0.005, lat=lat + 0.002)      # ~220 m north
     mem = pd.concat([_membership(), pd.DataFrame(
         {"route_number": ["44"], "itd_route_id": ["01540ASH044"], "verdict": ["agree"]},
         index=pd.Index([501], name="XDSegID"))])
     ctx = pa.segment_context(_linked_network(extra=[block]), mem, _urban(), _centroids())
-    r = pa.station_rule(ctx, _stations(("00279", "EB", (lat, lon), "44")))
+    r = pa.station_rule(ctx, _stations(("00279", "EB", (lat, lon), "44")),
+                        sections=_sections(EB, WB, (501,)))
     assert pd.isna(r.at[501, "curve_id"]) or r.at[501, "curve_id"] is None
     assert r.at[202, "curve_id"] == "fitted_00279_EB"
 
@@ -469,49 +502,57 @@ def test_a_parallel_street_of_the_same_route_is_not_covered():
     ("44", "NB", 202, "in its direction within"),
 ])
 def test_station_that_covers_nothing_says_why(route, direction, where, note):
-    r = pa.station_rule(_station_context(), _stations(("x", direction, _mid(where), route)))
+    r = pa.station_rule(_station_context(), _stations(("x", direction, _mid(where), route)),
+                        sections=_sections(EB, WB))
     assert r["curve_id"].isna().all()
     assert note in r.attrs["stations"].iloc[0]["note"]
 
 
 def test_station_too_far_from_any_segment_does_not_snap():
     lat, lon = _mid(202)
-    r = pa.station_rule(_station_context(), _stations(("x", "EB", (lat + 0.01, lon), "44")))
+    r = pa.station_rule(_station_context(), _stations(("x", "EB", (lat + 0.01, lon), "44")),
+                        sections=_sections(EB, WB))
     assert r["curve_id"].isna().all()                      # ~0.7 mi off the road
 
 
 def test_interstate_and_business_loop_stations_keep_to_their_own_road():
     mem = _membership("84", "01540AIN084")
-    mem.loc[[201, 202, 203, 204], "verdict"] = "business"
+    mem.loc[list(EB), "verdict"] = "business"
     ctx = _station_context(membership=mem)
+    secs = _sections(EB, route="84 BL") + _sections(WB, route="84")
     main = pa.station_rule(ctx, _stations(("i", "EB", _mid(202), "84"),
-                                          ("i", "WB", _mid(102), "84")))
-    assert sorted(main["curve_id"].dropna().index) == [101, 102, 103]    # not the BL
+                                          ("i", "WB", _mid(102), "84")), sections=secs)
+    assert sorted(main["curve_id"].dropna().index) == list(WB)            # not the BL
     bl = pa.station_rule(ctx, _stations(("b", "EB", _mid(202), "84 BL"),
-                                        ("b", "WB", _mid(102), "84 BL")))
-    assert sorted(bl["curve_id"].dropna().index) == [201, 202, 203]      # not the I-84
+                                        ("b", "WB", _mid(102), "84 BL")), sections=secs)
+    assert sorted(bl["curve_id"].dropna().index) == list(EB)              # not the I-84
 
 
-def test_concurrent_route_station_matches_either_number():
+def test_a_station_takes_the_section_of_its_own_route():
+    """On a concurrency (US-20 on SH-44) the anchor lies on a section of each route;
+    a US-20 station covers US-20's."""
     mem = _membership()
     mem["routes"] = "20/44"
+    secs = _sections((201, 202), route="44") + _sections(EB, route="20")
     r = pa.station_rule(_station_context(membership=mem),
-                        _stations(("c", "EB", _mid(202), "20")))
-    assert r.at[202, "curve_id"] == "fitted_c_EB"
+                        _stations(("c", "EB", _mid(202), "20")), sections=secs)
+    assert sorted(r["curve_id"].dropna().index) == list(EB)
+    assert r.attrs["stations"].iloc[0]["section_id"] == "20-EB-201"
 
 
-def test_overlapping_stations_nearest_along_the_road_wins():
-    r = pa.station_rule(_station_context(), _stations(("a", "EB", _mid(202), "44"),
-                                                      ("b", "EB", _mid(204), "44")))
-    assert r.at[202, "station_id"] == "a" and r.at[204, "station_id"] == "b"
-    assert r.at[203, "station_id"] in {"a", "b"}
+def test_overlapping_stations_nearest_along_the_path_wins():
+    r = pa.station_rule(_station_context(), _stations(("a", "EB", _mid(201), "44"),
+                                                      ("b", "EB", _mid(204), "44")),
+                        sections=_sections(EB, WB))
+    assert list(r.loc[list(EB), "station_id"]) == ["a", "a", "b", "b"]
     rep = r.attrs["stations"].set_index("station_id")
-    assert rep["n_assigned"].sum() == r["curve_id"].notna().sum()
+    assert rep["n_assigned"].sum() == r["curve_id"].notna().sum() == 4
+    assert set(rep["section_id"]) == {"44-EB-201"}
 
 
 def test_station_rule_can_assign_the_nearest_generic():
     r = pa.station_rule(_station_context(), _stations(("00279", "EB", _mid(202), "44")),
-                        use_generic=True)
+                        sections=_sections(EB, WB), use_generic=True)
     assert r.at[202, "curve_id"] == "rural_through"
     assert "nearest generic to fitted_00279_EB" in r.at[202, "reason"]
 
@@ -530,11 +571,12 @@ def test_station_outranks_inference_and_rule_but_not_override(tmp_path):
                   "203,,,,balanced_urban,owner says\n")
     out = pa.assign_profiles(ctx, chains, delay, overrides=pa.load_overrides(ov),
                              profiles=fitted,
-                             stations=_stations(("00279", "EB", _mid(202), "44")))
+                             stations=_stations(("00279", "EB", _mid(202), "44")),
+                             sections=_sections((201, 202, 203), (204,), WB))
     assert out.at[202, "curve_source"] == pa.STATION
     assert out.at[202, "curve_id"] == "fitted_00279_EB"
     assert out.at[203, "curve_source"] == pa.OVERRIDE
-    assert out.at[204, "curve_source"] == pa.INFERRED      # beyond the station's mile
+    assert out.at[204, "curve_source"] == pa.INFERRED      # a stationless section
     assert out.attrs["profile_assignment"]["by_source"][pa.STATION] == 2
     assert out.attrs["profile_assignment"]["n_stations"] == 1
     assert pa.STATION in pa.summary_line(out)

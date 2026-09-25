@@ -3155,7 +3155,7 @@ volume-profile curves from it, with a nearest-station assignment rule."
 
 ---
 
-# Hard stops and route sections — logical termini for corridors and count stations (Items 60–62, scoped 2026-09-25)
+# Hard stops and route sections — logical termini for corridors and count stations (Items 60–63, scoped 2026-09-25)
 
 Owner request, 2026-09-25 (after Session 79):
 - **Station coverage.** The Item 59 one-mile walk is too short: several ATRs were
@@ -3193,62 +3193,86 @@ Owner request, 2026-09-25 (after Session 79):
 
 ---
 
-## 60 — Manual hard stops for corridor stitching
+## 60 — Manual hard stops for corridor stitching ✅ (Session 80)
 
 **Target: Opus.** Pure-core loader + an input to chain assembly; no change to the
 screening math. Independent of 59.
 
 Scope:
 
-- [ ] **`scripts/corridor_hard_stops.csv`** (`#`-comment header, like
+- [x] **`scripts/corridor_hard_stops.csv`** (`#`-comment header, like
       `route_overrides.csv`), one row per stop:
       - columns: `district, route, direction` (blank = both), `lat, lon` (a point
         near the boundary, which is what the owner can author) or `xd_seg_id` +
         `side` (`before` / `after`), and `note` (required: why it is a terminus);
       - a stop resolves to the **segment boundary** on that route's chain nearest the
         point. An unresolved row is an error listing the row, never silently dropped.
-- [ ] **Loader** in the core (`load_hard_stops` → resolved
+      *Written with the 10 seed rows. A point takes the nearest boundary within 100 m
+      plus every other at the same place; blank = that + the nearest running the other
+      way.*
+- [x] **Loader** in the core (`load_hard_stops` → resolved
       `(route, direction, from_seg, to_seg)` boundaries), validated like the other
       override tables.
-- [ ] **Applied as input only:**
+      *`inrix_tools.hard_stops`: `read_hard_stops`, `resolve_hard_stops`,
+      `stop_boundaries`, `crossings`.*
+- [x] **Applied as input only:**
       - The Item 51 route chains (`extents`) are cut at each boundary before cores
         are found, so no core, Tier 2 or Tier 3 crosses one. The stop reason is
         recorded (`SplitKind.MANUAL` / a `hard_stop` boundary) in the audit and the
         catalogue entry.
       - Junction joins and renumbering merges never bridge a stop.
-- [ ] **Duplicate sections.** A way to say that a section of one route is the same
+
+      *`extents.enumerate_mainline_chains` / `generate_catalogue(hard_stops=)`;
+      `SplitKind.HARD_STOP` in the entry descriptions, `chain_stops` in the core audit.
+      `build_statewide_catalogues.py` applies the table by default (`--hard-stops ''`
+      = none). A stop cuts every way on from its segment, or the walk takes the link's
+      stub.*
+- [x] **Duplicate sections.** A way to say that a section of one route is the same
       corridor as another's (SH-8's Moscow couplet = US-95's). Check first whether the
       Item 51 shared-pavement absorption already does this once the stops exist; make
       it explicit only if not.
-- [ ] **Seed rows:** the owner's stops above (Eagle Rd at SH-44; US-20 Broadway |
+      *It does: SH-8's couplet pieces lie wholly inside US-95's and are dropped by the
+      Item 51 subset rule. Nothing new was added.*
+- [x] **Seed rows:** the owner's stops above (Eagle Rd at SH-44; US-20 Broadway |
       couplet | Connector | the EB Connector's last segment; Moscow US-95 and SH-8).
       Confirm each stop lands on the intended boundary on the map.
-- [ ] **Curated D3 catalogue** (`d3_corridors.json`, never overwritten): an
+      *15 boundaries, each ≤ 0.6 m from its point. Checked by segment names and coords;
+      `out/hard_stops/hard_stops_map.html` (`scripts/audit_hard_stops.py`) is for the
+      owner's look.*
+- [x] **Curated D3 catalogue** (`d3_corridors.json`, never overwritten): an
       audit listing the curated entries that cross a stop, for the owner.
-- [ ] Regenerate the generated catalogues to scratch and compare with the committed
+      *2 of 52, each by its last segment: `i184-eb` (the Connector's last segment) and
+      `broadway-nb` (the first Front St segment). `out/hard_stops/catalogue_crossings.csv`.*
+- [x] Regenerate the generated catalogues to scratch and compare with the committed
       ones (as Item 58 did: which corridors split or re-cut). Replacing the committed
       catalogues is the owner's call.
-- [ ] pytest (a stop cuts a chain; joins/merges don't bridge it; both-direction vs
+      *With and without stops, to scratch. D1/4/5/6 byte-identical. D3: Broadway /
+      Front St splits into Broadway + Front St (Myrtle as its EB), and Eagle Rd SB
+      stops at SH-44. D2: SH-8 stops at the couplet, and the US-95 core becomes two
+      couplet-leg facilities (the legs are 206 m apart, over the 200 m pairing limit).
+      The committed catalogues predate Item 58. Session 80 §5.*
+- [x] pytest (a stop cuts a chain; joins/merges don't bridge it; both-direction vs
       one-direction rows; an unresolvable row errors; the seed rows resolve on the
       real networks); DATA_FORMAT; DESIGN_HISTORY.
+      *`tests/test_hard_stops.py` (33); 998 pass.*
 
 Related: Future "Segment-level route overrides (SH-8 in Moscow)". The 3rd St block is
 westbound-only SH-8; the stops may make that item's catalogue half moot, but not its
 membership half.
 
-*Suggested prompt:* "Do Item 60 of ROADMAP.md — ingest manual hard stops for
+*Suggested prompt (done):* "Do Item 60 of ROADMAP.md — ingest manual hard stops for
 corridor stitching, seed them with the owner's Boise and Moscow termini, and audit the
 curated D3 catalogue against them."
 
 ---
 
-## 61 — Station coverage by route section (replaces the Item 59 one-mile walk)
+## 61 — Station coverage by route section (replaces the Item 59 one-mile walk) ✅ (Session 81)
 
 **Target: Opus.** Pure core. Depends on 59 and 60 (reuses its stop table).
 
 Scope:
 
-- [ ] **Route sections.** Trace each state route's chain per direction (the Item 51
+- [x] **Route sections.** Trace each state route's chain per direction (the Item 51
       chains / membership, not a radius). Break it at:
       - a junction with a state route of the **same or higher tier**;
       - an Item 60 hard stop;
@@ -3284,21 +3308,48 @@ Scope:
       layer has the piece, else by proximity. Report the segments left without a
       tier. **A change of tier along one route is not a break** unless there is a
       junction there (owner, 2026-09-25: the tier cut-off is somewhat arbitrary).
-- [ ] **Assignment.** Every segment of a section with a directional station takes the
+
+      *`route_sections.trace_sections` (chains → runs of one route key, `"84 BL"` apart;
+      junctions by concurrency change or a state-route segment within 25 m; two breaks
+      for one route within 0.5 mi are one interchange). Tiers: `itd_layers.
+      load_highway_tiers` / `segment_tiers` (milepost, then own-route proximity, then any
+      within 40 m); 35 of 16,114 state-route segments untiered, listed in
+      `dN_untiered_segments.csv`. Four pieces carry a travelway letter in `segcode`
+      (`A01540`); the loader drops it. Finding for the owner: the layer has **SH-44
+      through Eagle as Expressway**, so it does not break at Eagle Rd (State).*
+- [x] **Assignment.** Every segment of a section with a directional station takes the
       nearest station **along the path**; a section with several stations splits
       between them. A section without a station falls through to the inference / urban
       rule, as today. An override can cap or cut a station's reach (e.g. `generic`
       south of a given stop on Eagle Rd, if the owner prefers the generic curve there).
-- [ ] Remove `STATION_MAX_MILES` and the walk. Keep the snap
+
+      *`station_rule(sections=)`, wired through `assign_profiles` and
+      `run_district_screening.station_sections` (`--highway-tiers`, `--hard-stops`).
+      Cap/cut: a hard-stop row with the new optional `scope` = `stations` ends a
+      station's reach without ending a corridor; segment overrides still win. Station
+      curves now reach 1,520 segments / 891 mi statewide (258 under the walk); every D3
+      I-84 mainline segment on the route (446) has one. Eagle Rd: 00275 + 00330 share
+      I-84 → Chinden.*
+- [x] Remove `STATION_MAX_MILES` and the walk. Keep the snap
       (`STATION_SNAP_MILES`), the direction-by-bearing match and the
       interstate/business route rules.
-- [ ] Report per station: its section (from/to junctions or stops), miles covered,
+      *Done; `thresholds` reports `station_reach: route section`.*
+- [x] Report per station: its section (from/to junctions or stops), miles covered,
       and segments won.
-- [ ] pytest (breaks at a same-tier junction but not at a lower one; stops at a hard
+- [x] pytest (breaks at a same-tier junction but not at a lower one; stops at a hard
       stop; nearest-along-path split; a stationless section falls through);
       DATA_FORMAT; DESIGN_HISTORY.
+      *`tests/test_route_sections.py` (12, incl. the real D3 Eagle Rd / I-84 check),
+      station tests rewritten in `test_profile_assignment`, tier tests in
+      `test_itd_layers`, scope tests in `test_hard_stops`.*
 
-*Suggested prompt:* "Do Item 61 of ROADMAP.md — give each count station the route
+*Not done here:* no district screening was re-run, so the committed
+`out/statewide_screening` assignments still carry the Item 59 reach; Item 62's re-run
+picks this up. Found while checking, not fixed: D2 segment 771090123 (US-95 south of
+Moscow) has no route membership, which ends the SB walk and ATR 00146 SB's section at
+2.6 mi. Scoped as the first box of Item 62 (owner, 2026-09-25).
+
+*Suggested prompt (done):* "Do Item 61 of ROADMAP.md — give each count station the route
 section it sits on, traced and broken at same-or-higher-tier junctions and hard stops,
 instead of a one-mile walk."
 
@@ -3306,10 +3357,36 @@ instead of a one-mile walk."
 
 ## 62 — Statewide ATR pull, refit, and the statewide re-run on fitted curves
 
-**Target: Opus.** Scripts + data; mostly a long background pull. Depends on 61 (and
-60 if its regenerated catalogues are adopted).
+**Target: Opus.** Scripts + data; mostly a long background pull. Depends on 61, and its
+re-run on 63 (the catalogues it ranks). The pull and refit can start before 63 lands.
 
 Scope:
+
+- [ ] **Membership gap-fill: a segment linked through between two members of its
+      route is a member** (owner, 2026-09-25, after Session 81). Do this first: it
+      changes membership, which the catalogues (Item 63) and the re-run both read.
+      - *The case.* D2 segment 771090123 (0.62 mi of US-95 SB, ~2.5 mi south of Moscow
+        on the ~2025 realignment) is `inrix_only`: its INRIX line bows up to 54 m off
+        ITD's US-95 line, past membership's 40 m reach. Its neighbours 771090122 and
+        771090124 are members at 39 m and 19 m. The SB walk ends at the gap, so both
+        the corridor chain and ATR 00146 SB's section stop there (2.6 mi SB vs 28.4 mi
+        NB).
+      - *The rule*, in `routes` membership: an `inrix_only` segment whose INRIX route is
+        R, whose `PreviousXD` and `NextXDSegI` are both members of R, becomes a member of
+        R, with its own verdict/reason (e.g. `gap_fill`, "linked through between two
+        route-R members; SHS line 54 m off"). Not raising the 40 m reach: it keeps
+        parallel local roads off the state routes. Not a `route_overrides.csv` row: that
+        works per road name and would cover every `US-95 S` in Latah County.
+      - *Reach checked in Session 81:* statewide it catches 2 segments, this one and a
+        0.01-mi Pine St piece on US-2 (D1, 771135074); confirm that one is right too.
+        Consider requiring the same `XDGroup` or a cap on miles, and report what it
+        adds per district.
+      - Rebuild the membership files (`build_route_membership.py`), then confirm the
+        catalogues change only where these segments are (a stop-cut regeneration to
+        scratch, as Item 60 §5 did), and that 00146 SB's section runs on south.
+      - pytest (a sandwiched `inrix_only` segment fills; one member neighbour, a
+        different route, or a missing link does not); DATA_FORMAT (the route-membership
+        section); DESIGN_HISTORY.
 
 - [ ] **Pull** April 2026 hourly volumes (report 87; a fallback month where April is
       missing) for every permanent TCDS station on a state route, with
@@ -3323,15 +3400,93 @@ Scope:
 - [ ] **Statewide re-run** with the fitted curves (`--count-profiles`), with maps.
       Keep the Item 58 outputs, and record the ranking comparison
       (`compare_statewide_rankings.py`: Spearman ρ, top-N churn), as Items 53/54/58
-      did. The D3 generated catalogue goes alongside; the curated one is never
-      overwritten.
+      did. Rank on the Item 63 catalogues: the stop-cut generated ones, with **D3's
+      generated catalogue as primary**. The curated D3 catalogue is archived and not
+      ranked (owner, 2026-09-25). Regenerate every statewide map and plot from this
+      run.
 - [ ] Revisit Item 56 with the fuller counts. Session 79 found the urban rule
       agreeing with counts at 50/183 segments (27 %) against 67/75 (89 %) for the
       inference. Does the rule need recalibrating?
 - [ ] DATA_FORMAT (the statewide count coverage); DESIGN_HISTORY.
 
-*Suggested prompt:* "Do Item 62 of ROADMAP.md — pull the statewide ATR counts, refit,
+*Suggested prompt:* "Do Item 62 of ROADMAP.md — fill the sandwiched route-membership gaps, pull the statewide ATR counts, refit,
 and re-run the statewide screening on the fitted curves with a ranking comparison."
+
+---
+
+## 63 — Generated D3 as primary, couplet-leg pairing, and adopting the stop-cut catalogues
+
+**Target: Opus.** Core (one pairing rule) + scripts + catalogue data. Depends on 60.
+Independent of 61; must land before Item 62's statewide re-run.
+
+Owner, 2026-09-25 (after Session 80): archive the curated D3 catalogue and move to the
+generated one for statewide consistency; fix the US-95 Moscow couplet; then re-run the
+rankings and regenerate the plots once the remaining items are done (that re-run is
+Item 62's).
+
+Scope:
+
+- [ ] **Couplet legs pair as one facility.** With the Item 60 stops, Moscow's
+      Washington St (NB, 16.9 VHD) and Jackson St (SB, 12.2) cores are two
+      one-direction facilities. The legs are ~206 m apart, over `PAIR_MAX_MEAN_SEP_M`
+      (200 m). Before Item 60 the core took in Main St, where both directions share
+      the street, and the mean fell under the limit.
+      - *Comment (Session 80):* don't raise 200 m globally. It also guards
+        `pair_chains` and `_runs_alongside` against pairing two different stretches
+        of one route (US-95 north of Sandpoint vs south of Coeur d'Alene), and it
+        would weaken the companion test everywhere. Prefer a targeted rule. Either:
+        - two opposite-direction chains **bounded by the same hard-stop corners**
+          (their start/end stops resolve at the same places) are a couplet's legs
+          and pair whatever their separation; or
+        - reuse `couplets.detect_couplets` / `KNOWN_COUPLETS`: a lead core on a
+          detected couplet leg takes the other leg's core as its companion.
+
+        The second has evidence independent of the stops. Check which also fixes
+        Boise: Front St NB + Myrtle St EB already pair ("US-20: Front St", Session 80
+        §5), so compare the two.
+      - Decide what happens to the **couplet block's own group**
+        (`couplet-95-washington-st-jackson-st`) once the extent facility is the
+        couplet. Today both exist, which counts the couplet twice in a statewide
+        table. Pick one (probably the extent facility, which carries tiers and VHD),
+        or mark the other as not ranked.
+      - pytest: stop-bounded legs 206 m apart pair; two same-route chains 5 km apart
+        still don't.
+- [ ] **Archive the curated D3 catalogue.** Move `scripts/d3_corridors.json` (and
+      `rebuild_d3_catalogue.py`, `d3_place_name_routes.json` if nothing else needs
+      them) to `legacy/d3_curated/`, with a README saying what it was (Item 44) and
+      that it is kept for reference.
+      - Check its consumers first: `run_district_screening.py` (~line 1816),
+        `run_statewide_screening` / `aggregate_statewide_rankings` (the
+        `--catalogue-override 3=…` path, which becomes the default and is kept only
+        as an override), `generate_statewide_maps.py`, `tests/test_d3_catalogue.py`,
+        `test_corridors`, and the `corridors.py` docstrings.
+      - Tests that exercise the curated file stay, pointed at the legacy path, or are
+        retired with a note.
+      - The Session 80 audit's two crossings (`i184-eb`, `broadway-nb`) become moot.
+- [ ] **Generated D3 becomes primary.** Decide the file name. Either rename
+      `d3_corridors_generated.json` → `d3_corridors.json` like the other districts,
+      or keep the name and switch every default. Renaming is cleaner:
+      `build_statewide_catalogues.catalogue_name` loses its D3 special case, and D3 is
+      back in `DEFAULT_DISTRICTS`. Retire `out/statewide_screening_d3generated/`
+      once 62 has run.
+      - **Coverage check before switching:** list each curated corridor with no
+        generated counterpart (overlap by segments), with the reason from the core
+        audit (floor failed, absorbed, capped). Anything the owner wants kept is an
+        issue for the generator (or a hard stop), not a reason to keep the curation.
+- [ ] **Adopt the stop-cut catalogues.** Regenerate all six districts
+      (`build_statewide_catalogues.py --districts 1 2 3 4 5 6`) and commit them.
+      - This also brings in drift since the committed catalogues were built: the
+        Item 58 curve-VHD basis (every `_core.vhd`), plus new facilities in D5 (2
+        tiers) and D6 (Yellowstone Hwy at 25th E Rd / Hitt Rd). Session 80 §5 has the
+        stop vs no-stop diff.
+      - Record a before/after facility list (added / removed / re-cut per district)
+        in DESIGN_HISTORY.
+- [ ] Update memories/CLAUDE-facing docs that say "the curated D3 is primary"
+      (DATA_FORMAT's catalogue notes, the Item 44 references); DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 63 of ROADMAP.md — pair couplet legs into one facility,
+archive the curated D3 catalogue and make the generated one primary, and adopt the
+regenerated stop-cut catalogues."
 
 ---
 

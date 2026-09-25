@@ -7,9 +7,11 @@ gives every XD segment one ``curve_id`` from it, by the first of these that deci
    on a catalogue corridor + direction (:func:`load_overrides`). An override always
    wins; a segment row beats a corridor row.
 2. **station** — a curve fitted from counts (Item 59, :mod:`inrix_tools.counts`) at
-   the nearest count station on the same route and in the same direction of travel,
-   within :data:`STATION_MAX_MILES` (:func:`station_rule`). A count measures the
-   shape the inference below only orients, so it outranks the inference.
+   the nearest count station along the path on the same **route section** — the route
+   traced in one direction between junctions with same-or-higher-tier state routes,
+   hard stops and its ends (Item 61, :mod:`inrix_tools.route_sections`;
+   :func:`station_rule`). A count measures the shape the inference below only orients,
+   so it outranks the inference.
 3. **inferred** — the *orientation* of a chain, read off its delay. A chain is one
    direction of a road (:class:`Chain`), paired with the chain running the other way.
    When one side's peak delay is clearly AM (``am_share ≥`` :data:`AM_SHARE_COMMUTE`)
@@ -114,11 +116,6 @@ this many of the bearing away from it, outbound; anything between is tangential.
 # ---------------------------------------------------------------------------
 # Station rule (Item 59)
 # ---------------------------------------------------------------------------
-STATION_MAX_MILES = 1.0
-"""How far along the road from a count station its fitted curve still applies: about
-one interchange spacing on an urban freeway, a few signals on an arterial. The shape
-(not the volume) is what carries, and it changes slowly along a road, but a station
-two interchanges away is counting different trips."""
 STATION_SNAP_MILES = 0.25
 """How far a station may sit from the segment it snaps to. TCDS points are placed by
 hand and sit up to ~0.2 mi off the carriageway (ATR 00228 on SH-55 in Nampa)."""
@@ -440,61 +437,65 @@ def _on_station_route(context: pd.DataFrame, route: str) -> np.ndarray:
     return carries
 
 
-def _walk(start, link: pd.Series, allowed: pd.Series, miles: pd.Series, dist: float
-          ) -> list[tuple[int, float]]:
-    """Follow ``link`` (next or previous XD) from ``start``'s neighbour while the
-    segment is ``allowed`` and its near end is within :data:`STATION_MAX_MILES`;
-    ``dist`` is the distance to that first neighbour. Returns ``(segment, miles to
-    its near end)``."""
-    out, seen = [], {start}
-    cur = link.get(start)
-    while (cur is not None and not pd.isna(cur) and int(cur) not in seen
-           and bool(allowed.get(int(cur), False)) and dist <= STATION_MAX_MILES):
-        cur = int(cur)
-        seen.add(cur)
-        out.append((cur, dist))
-        step = miles.get(cur)
-        dist += float(step) if step is not None and not pd.isna(step) else 0.0
-        cur = link.get(cur)
-    return out
+def _station_section(anchor: int, route: str, by_seg: Mapping[int, list]):
+    """The section a station snapped to ``anchor`` counts: of those through the
+    anchor, the one of the station's route key (``"84 BL"`` for a business loop), else
+    of its route number, else the longest."""
+    from .counts import split_route
+    here = by_seg.get(int(anchor), [])
+    if not here:
+        return None
+    number, business = split_route(route)
+    want = f"{number}{' BL' if business else ''}"
+    for pick in ([s for s in here if s.route == want],
+                 [s for s in here if s.number == number], here):
+        if pick:
+            return max(pick, key=lambda s: (s.miles, s.section_id))
+    return None
 
 
 def station_rule(context: pd.DataFrame, stations: pd.DataFrame | None, *,
+                 sections: Sequence | None = None,
                  use_generic: bool = False) -> pd.DataFrame:
-    """The nearest count station's curve for the road it counts.
+    """The count station's curve for its section of the road (Item 61).
 
     Each station-direction (``counts.station_curves``) **snaps** to the nearest
     segment that is on its route (:func:`_on_station_route`), not a ramp, travelling
     within :data:`STATION_DIRECTION_TOL_DEG` of its direction and within
-    :data:`STATION_SNAP_MILES` of it. From there it **follows the road**: the XD
-    ``next_xd`` / ``prev_xd`` links, both ways, for as long as the segments stay on
-    the route and off ramps, up to :data:`STATION_MAX_MILES` along the road. Following
-    links rather than drawing a radius keeps a station off a parallel street of the
-    same route (Boise's Broadway ATR is US-20, and so are the Front/Myrtle couplet
-    and Chinden a few blocks away). A link gap ends the walk. A segment covered by
-    several stations takes the nearest along the road.
+    :data:`STATION_SNAP_MILES` of it. It then covers the **route section** that segment
+    lies on (``route_sections.trace_sections``): the route traced one way, from a
+    junction with a same-or-higher-tier state route, a hard stop or the route's end to
+    the next. Tracing the route rather than drawing a radius keeps a station off a
+    parallel street of the same route (Boise's Broadway ATR is US-20, and so are the
+    Front/Myrtle couplet and Chinden). Where a section holds several stations, each
+    segment takes the **nearest along the path**; a segment on sections of two routes
+    (a concurrency) takes the nearest of either's stations. A section with no station
+    falls through to the rules below.
 
     A ``2WAY`` station, or one with no route, covers nothing: it cannot say which
     direction's shape it measured, or which road.
 
     Args:
-        context: :func:`segment_context` (with ``next_xd`` / ``prev_xd``; without
-            links a station covers only the segment it snaps to).
+        context: :func:`segment_context`.
         stations: ``counts.station_curves``' table (``station_id``, ``direction``,
             ``lat``, ``lon``, ``route``, ``source``, ``curve_id``,
             ``nearest_generic``, ``misplaced_share``); ``None`` = no stations.
+        sections: ``route_sections.trace_sections`` over the same network; ``None``
+            = none traced, so a station covers only the segment it snaps to.
         use_generic: assign each station's ``nearest_generic`` instead of its fitted
             curve (the fitted curves mapped back onto the generic ids).
 
     Returns:
         Indexed like ``context``, columns :data:`STATION_RULE_COLUMNS`
-        (``station_miles`` is along the road to the segment's near end, 0 for the one
+        (``station_miles`` is along the path to the segment's near end, 0 for the one
         the station is on); ``curve_id`` None where no station covers the segment.
-        ``attrs['stations']``: per station-direction, the segment it snapped to, the
-        segments it covers (``n_segments``) and those it won (``n_assigned``), or why
-        none.
+        ``attrs['stations']``: per station-direction, the segment it snapped to, its
+        section (``section_id``, ``section_from`` / ``section_to``, ``section_miles``,
+        ``n_segments``) and what it won (``n_assigned``, ``miles_assigned``), or why
+        nothing.
     """
     from .counts import DIRECTION_BEARING
+    from .route_sections import section_index
     out = pd.DataFrame({"curve_id": None, "reason": None, "station_id": None,
                         "station_direction": None, "station_miles": np.nan},
                        index=context.index)
@@ -503,16 +504,15 @@ def station_rule(context: pd.DataFrame, stations: pd.DataFrame | None, *,
         out.attrs["stations"] = pd.DataFrame(report)
         return out
     ids = context.index.to_numpy()
-    miles = context["miles"]
-    nan_links = pd.Series(pd.NA, index=context.index, dtype="Int64")
-    next_xd = context["next_xd"] if "next_xd" in context.columns else nan_links
-    prev_xd = context["prev_xd"] if "prev_xd" in context.columns else nan_links
+    miles = context["miles"].fillna(0.0)
+    by_seg = section_index(sections or ())
     usable = (~context["ramp"].to_numpy(bool)) & context["travel_bearing"].notna().to_numpy()
     best = pd.Series(np.inf, index=context.index)
     for st in stations.itertuples(index=False):
         row = {"station_id": st.station_id, "direction": st.direction,
                "route": st.route, "curve_id": st.curve_id, "snapped_to": None,
-               "snap_miles": np.nan, "n_segments": 0, "note": ""}
+               "snap_miles": np.nan, "section_id": None, "section_from": None,
+               "section_to": None, "section_miles": np.nan, "n_segments": 0, "note": ""}
         report.append(row)
         if st.direction not in DIRECTION_BEARING:
             row["note"] = "two-way count: no direction to match"
@@ -536,29 +536,47 @@ def station_rule(context: pd.DataFrame, stations: pd.DataFrame | None, *,
             continue
         anchor = int(ids[k])
         row["snapped_to"], row["snap_miles"] = anchor, round(float(snap[k]), 3)
-        allowed = pd.Series(on_route, index=context.index)
-        a_miles = float(miles.iloc[k]) if not pd.isna(miles.iloc[k]) else 0.0
-        covered = ([(anchor, 0.0)]
-                   + _walk(anchor, next_xd, allowed, miles, (1 - t[k]) * a_miles)
-                   + _walk(anchor, prev_xd, allowed, miles, t[k] * a_miles))
-        row["n_segments"] = len(covered)
+        sec = _station_section(anchor, st.route, by_seg)
+        if sec is None:
+            path = [anchor]
+            row["note"] = "on no traced route section: covers its own segment only"
+        else:
+            path = [int(x) for x in sec.segment_ids if x in best.index]
+            row["section_id"] = sec.section_id
+            row["section_from"] = f"{sec.start.get('kind')}: {sec.start.get('detail')}"
+            row["section_to"] = f"{sec.end.get('kind')}: {sec.end.get('detail')}"
+            row["section_miles"] = sec.miles
+        # Along-path distance from the station to each segment's near end.
+        seg_miles = miles.reindex(path).fillna(0.0).to_numpy(float)
+        starts = np.concatenate([[0.0], np.cumsum(seg_miles)[:-1]])
+        a = path.index(anchor) if anchor in path else 0
+        pos = starts[a] + float(t[k]) * seg_miles[a]
+        ends = starts + seg_miles
+        dist = np.where(pos < starts, starts - pos, np.where(pos > ends, pos - ends, 0.0))
+        row["n_segments"] = len(path)
         curve = st.nearest_generic if use_generic else st.curve_id
         fitted = ("" if not use_generic
                   else f", nearest generic to {st.curve_id} ({st.misplaced_share:.0%} of "
                        "the day's volume misplaced)")
-        for sid, d in covered:
+        where = f"section {sec.section_id}" if sec is not None else "its own segment"
+        for sid, d in zip(path, dist):
             if d >= best.at[sid]:
                 continue
             best.at[sid] = d
             out.loc[sid, ["curve_id", "station_id", "station_direction", "station_miles",
                           "reason"]] = [
-                curve, st.station_id, st.direction, round(d, 2),
+                curve, st.station_id, st.direction, round(float(d), 2),
                 f"{str(st.source).upper()} {st.station_id} {st.direction} on route "
-                f"{st.route}, {d:.2f} mi along the road{fitted}"]
+                f"{st.route}, {d:.2f} mi along {where}{fitted}"]
     rep = pd.DataFrame(report)
-    won = out.groupby(["station_id", "station_direction"]).size()
+    hit = out["station_id"].notna()
+    won = out[hit].groupby(["station_id", "station_direction"]).size()
+    won_mi = miles[hit].groupby([out.loc[hit, "station_id"],
+                                 out.loc[hit, "station_direction"]]).sum()
     rep["n_assigned"] = [int(won.get((r.station_id, r.direction), 0))
                          for r in rep.itertuples()]
+    rep["miles_assigned"] = [round(float(won_mi.get((r.station_id, r.direction), 0.0)), 2)
+                             for r in rep.itertuples()]
     out.attrs["stations"] = rep
     return out
 
@@ -801,6 +819,7 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
                     district: int | None = None,
                     profiles: Mapping | None = None,
                     stations: pd.DataFrame | None = None,
+                    sections: Sequence | None = None,
                     station_generic: bool = False) -> pd.DataFrame:
     """One curve per segment of ``context``.
 
@@ -815,6 +834,8 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
             in it (with ``stations``, that includes the fitted curves).
         stations: count stations with fitted curves (``counts.station_curves``) for
             :func:`station_rule`; ``None`` skips it.
+        sections: ``route_sections.trace_sections`` — how far each station reaches;
+            ``None`` = each covers only the segment it snaps to.
         station_generic: the station rule assigns each station's nearest generic
             curve instead of its fitted one.
 
@@ -838,7 +859,8 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
             seg_chains.setdefault(int(s), []).append(c.chain_id)
 
     rule = urban_rule(context)
-    counted = station_rule(context, stations, use_generic=station_generic)
+    counted = station_rule(context, stations, sections=sections,
+                           use_generic=station_generic)
     forced = _override_map(overrides, chains, district)
 
     rows = []
@@ -887,6 +909,7 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
         "n_chains_inferred": (0 if inference is None
                               else int(inference["curve_id"].notna().sum())),
         "n_stations": 0 if stations is None else int(len(stations)),
+        "n_sections": 0 if sections is None else len(sections),
         "station_curves": "nearest generic" if station_generic else "fitted",
         "thresholds": {
             "am_share_commute": AM_SHARE_COMMUTE,
@@ -896,7 +919,7 @@ def assign_profiles(context: pd.DataFrame, chains: Sequence[Chain] = (),
             "urban_approach_m": URBAN_APPROACH_M,
             "urban_core_radius_m": URBAN_CORE_RADIUS_M,
             "radial_tol_deg": RADIAL_TOL_DEG,
-            "station_max_miles": STATION_MAX_MILES,
+            "station_reach": "route section (Item 61)",
             "station_snap_miles": STATION_SNAP_MILES,
             "station_direction_tol_deg": STATION_DIRECTION_TOL_DEG,
         },

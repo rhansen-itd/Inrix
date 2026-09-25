@@ -2182,16 +2182,20 @@ the shape that the inference only orients. For each station-direction:
    - `"84 BL"` matches business-loop segments of route 84.
    - A US/SH number matches any segment whose membership `routes` carries it,
      concurrencies included.
-2. **Follow the road.** Walk `NextXDSegI` / `PreviousXD` both ways while the segments
-   stay on the route and off ramps, up to **1.0 mi** along the road
-   (`STATION_MAX_MILES`, measured to each segment's near end).
-   - A link gap ends the walk. About 3 % of on-system segments lack a link, against
-     53 % network-wide.
-   - A radius was tried first. It spread Boise's Broadway ATR (US-20) onto the
-     Front/Myrtle couplet and the Connector's onto Chinden, all US-20 and all within
-     a mile.
-3. A segment covered by several stations takes the nearest along the road. `2WAY`
-   and route-less stations cover nothing.
+2. **Cover its route section** (Item 61; the Item 59 one-mile walk, `STATION_MAX_MILES`,
+   is gone). The station covers the section its snapped segment lies on
+   (`route_sections.trace_sections`, below). Of the sections through that segment it
+   takes the one of its own route key (`"84 BL"` for a loop), else of its route
+   number, else the longest.
+3. **Nearest along the path.** A section holding several stations splits between them:
+   each segment takes the station nearest along the path (to the segment's near end;
+   `station_miles`). A segment on sections of two routes (a concurrency) takes the
+   nearer of either's stations. `2WAY` and route-less stations cover nothing. Without
+   sections (`sections=None`) a station covers only its own segment.
+4. **A section with no station** falls through to inference / urban rule, as before.
+   To keep a station's curve off part of its section (the owner is unsure Eagle Rd's
+   Chinden-area ATRs apply all the way to I-84), add a hard stop scoped `stations`
+   (below), or a segment override.
 
 The station's **fitted** curve is assigned, or with `station_generic` its nearest
 generic id. The assignment CSV is unchanged. The curves it uses that are not packaged
@@ -2200,8 +2204,89 @@ are written beside it as `d<N>_volume_profiles_curves.json`
 library plus that companion, which is how the GUI and `build_statewide_catalogues.py`
 resolve fitted ids.
 
-**Coverage.** Every directional station snaps. Statewide, **258 segments** get a
-station curve: D1 37, D2 18, D3 140, D4 16, D5 40, D6 7.
+**Coverage.** Every directional station snaps. Under the Item 59 walk, **258
+segments** statewide got a station curve (D1 37, D2 18, D3 140, D4 16, D5 40, D6 7).
+Under the Item 61 sections it is **1,520 segments, 891 mi** (D1 300, D2 138, D3 717,
+D4 188, D5 23, D6 154). Every D3 I-84 mainline segment on the route (446) carries
+one. D5 drops (40 → 23): its two US-91 ATRs sit on a 2.1-mi section between I-86 and
+the I-15 BL, and the one-mile walk ran past both ends of it.
+
+### Route sections (`route_sections.py`, Item 61)
+
+A **section** is one direction of one route, traced as the Item 51 chains trace it
+(`enumerate_mainline_chains(min_miles=0, hard_stops=...)`, then split into runs of one
+route key), and broken:
+- at a **junction with a state route of the same or higher tier** (owner, 2026-09-25;
+  US and SH count as one tier, as the tier layer has them);
+- at a **hard stop** scoped `both` or `stations`;
+- at the **route's end**: the chain's end, or where the route leaves the road the chain
+  follows (a concurrency ending, a renumbering the chain walked across).
+
+A change of tier along the route is **not** a break without a junction there.
+
+**Junctions** are found two ways at each boundary of a run of route `r`:
+- *concurrency*: a route in one neighbour's set and not the other's;
+- *geometry*: a state-route segment not carrying `r` within **25 m**
+  (`JUNCTION_TOL_M`) of a section segment. The crossing is placed on the boundary
+  nearer to where the lines are closest; XD breaks at interchange gores, not always at
+  the overpass.
+
+The joining route's tier is that of its own nearby segments (not carrying `r`). The
+section's tier is the lower of the two segments either side, an untiered one taking the
+nearest tier along the run. Two breaks for the same route within **0.5 mi**
+(`JUNCTION_MERGE_MILES`) are one interchange: without that the Flying Wye stranded a
+0.1-mi I-84 EB segment between I-184's merge and diverge. A crossing without ramps would
+also read as a junction; in the state system that is rare.
+
+**Business loops** are their own route key (`"84 BL"`), from `segment_context`'s
+`business`. A loop never breaks its parent (it carries the same number).
+
+**What the sections look like** (April 2026 run): D1 77, D2 96, D3 235, D4 192, D5 123,
+D6 140. In D3:
+- I-84 breaks only at the Flying Wye: 49 mi west (ATRs 00195, 00279, 00328 split it) and
+  83 mi east (00002, 00262).
+- Eagle Rd (SH-55) runs I-84 → Chinden (US-20), 4.5 mi, split between 00275 and 00330.
+  North of Chinden has no ATR yet (00270 is Item 62's pull), so it falls through.
+- **SH-44 does not break at Eagle Rd.** The tier layer has SH-44 through Eagle as
+  **Expressway**, which outranks SH-55's State. So 00333 and 00340 share SH-44 from
+  I-84 to US-20 (22.9 mi). That follows the rule as written. The owner should check it.
+- SH-55 in Nampa is broken by the I-84 BL (State) as well as I-84, so ATR 00228 covers
+  0.37 mi.
+
+**Gaps it exposes (not fixed here):** D2 segment 771090123 on US-95 south of Moscow
+has no route membership. The SB walk (and the corridor chain) ends there, so ATR
+00146 SB covers 2.6 mi while NB covers 28.4 mi.
+
+**Review tables** (`run_district_screening.py`, beside `dN_volume_profiles.csv`):
+- `dN_station_coverage.csv`: per station-direction, its section (`section_from` /
+  `section_to`), `section_miles`, `n_assigned`, `miles_assigned`;
+- `dN_route_sections.csv`: every section with the stations on it;
+- `dN_untiered_segments.csv`: state-route segments the tier layer left without a tier.
+
+## ITD Highway Tier layer (`Highway Tier.geojson`, Item 61)
+
+Owner-supplied (2026-09-25), gitignored, repo root. It is a GeoJSON export from the ITD
+GIS app, which did not display it correctly, so the owner is not fully confident in it.
+- **1,880 lines** in WGS84. Properties: `segcode`, `bmp` / `emp` (mileposts, strings),
+  `tier`, plus `OBJECTID` and `LOC_ERROR`.
+- **Tiers**, lowest first: District 487, Regional 702, State 544, Expressway 2,
+  Interstate 145 (`itd_layers.TIERS`).
+- **`segcode`** is the SHS `RouteId`'s first five digits, zero-padded to six
+  (`001540` ↔ `01540AUS095`; `itd_layers.segcode`). **Four pieces write the travelway
+  into it** (`A01540` / `D01540` on US-95 at mp 476–477, `A02350` / `D02350` at mp 80);
+  the loader drops the letter.
+- It covers only 201 of the SHS's 1,061 segcodes and has milepost gaps (SH-55 mp
+  16.1–47.3, US-20 22.1–24.8 and 52.8–95.3).
+
+**The join** (`itd_layers.segment_tiers`), per segment, first of:
+1. `milepost`: the segment's own segcode piece whose `bmp`–`emp` holds its midpoint
+   milepost (±0.05 mi); overlapping pieces take the highest tier;
+2. `proximity_route`: the nearest piece of its own segcode within 40 m;
+3. `proximity`: the nearest piece of any route within 40 m.
+
+On the state-route segments it leaves **35 of 16,114 untiered** (D1 6, D2 13, D3 6,
+D4 5, D5 1, D6 4). Sources statewide are mostly `milepost`; in D3, 3,032 milepost, 242
+proximity_route, 237 proximity.
 
 **The count check on Item 56**, at those 258 segments, comparing each station's
 nearest generic with the curve Items 56/58 had assigned:
@@ -2602,6 +2687,96 @@ Moscow, Boise, Nampa, Weiser, Twin Falls, Pocatello and Blackfoot pass. Sandpoin
 out of `KNOWN_COUPLETS`: a divided highway, not a couplet (owner). For the owner:
 Mountain Home's N Main St / 2nd St E (I-84 BL, 35.5 m) survives; D3's catalogue is
 curated and doesn't carry it.
+
+## Manual hard stops (`hard_stops.py`, Item 60)
+
+The chain walk stitches a route across junctions and renumberings. The owner sometimes
+reads a corridor as ending where the walk runs on: a **logical terminus** (FHWA NEPA
+sense), or a real change of context (a downtown couplet vs the two-way road feeding it).
+No screening signal finds these, so they are authored in
+`scripts/corridor_hard_stops.csv` and ingested as **input only**. The cores, tiers and
+floors are unchanged.
+
+**The table.** It has `#` comment lines, like `route_overrides.csv`, and one row per stop:
+`district, route, direction, lat, lon, xd_seg_id, side, note`, plus an optional
+`scope` (Item 61): blank or `both` = corridor chains and count-station sections;
+`corridors` = the chains only; `stations` = only a count station's reach.
+`stop_boundaries(resolved, use=)` keeps the rows for one use (default `corridors`).
+- `route` is the number (`55`, not `SH-55`).
+- `direction` is `NB`/`SB`/`EB`/`WB`, or blank for both.
+- Each row names its place one of two ways:
+  - `lat, lon`: a point near the boundary;
+  - `xd_seg_id` + `side` (`before`/`after` that segment).
+- `note` is required: why it is a terminus, and who decided.
+
+`read_hard_stops` validates the table and names the bad rows.
+
+**A stop is a segment boundary** `(from_seg, to_seg)` on the route
+(`resolve_hard_stops`).
+- **Candidates.** Consecutive pairs on the stop-free chains, plus `NextXDSegI` links
+  between two of the route's segments.
+- **Route.** **Both** segments must carry the route. A US-95 stop at the couplet's south
+  corner in Moscow therefore does not also cut SH-8's turn there, and vice versa.
+- **Point rows.** A point takes the nearest boundary within 100 m, together with
+  **every** other boundary at the same place (within 5 m).
+  - A blank direction also takes the nearest boundary running the other way (no
+    bearing in common, one opposite). That gives both carriageways at a divided
+    junction, or both couplet legs where they meet at one corner.
+  - The "same place" rule matters. Where the walk turned off the link, the link's own
+    continuation is still a candidate there. Cutting only the turn hands the walk that
+    stub:
+    - W Front St runs on 0.15 mi past the Connector;
+    - SH-8 eastbound on 3rd St could run on along the westbound-only block to
+      Washington St.
+  - Such link-only boundaries are reported with `on_chain = False`.
+- A row that resolves to nothing is an error listing every such row, never a silent
+  drop.
+
+**How the chains take them** (`extents.enumerate_mainline_chains(hard_stops=)`,
+`{(from, to): reason}` from `stop_boundaries`):
+- the link is cut;
+- junction joins, stub joins and renumbering merges refuse a stop boundary;
+- a final pass splits anything that still steps across one.
+
+`linked_into` still reads the uncut links, so the segment past a stop does not become a
+head for some other junction join. Each chain records the stops it ends at (`stops`,
+`stop_at("start"|"end")`). An end can sit on two stops: the Moscow couplet's
+northbound leg starts past both US-95's and SH-8's.
+- A piece with a stop at **both** ends is an owner-declared section. It is kept below
+  the 1-mi chain minimum: Moscow's couplet legs are 0.63–0.65 mi.
+- A piece with a stop at one end only is still a stub (the W Front St stub, 0.15 mi).
+- Of two identical walks (US-20 and US-26 on Myrtle St, once the Connector is cut
+  away), the lower route number names the chain. Before, the order was arbitrary.
+
+**In the catalogue.** An extent that runs to a chain end at a stop gives it as its
+boundary (`SplitKind.HARD_STOP`, "a manual hard stop (route 55: …)"). The core audit
+gains `chain_stops`, and `_generated.hard_stops` lists the boundaries used.
+
+**Duplicate sections need nothing new.** Once the Moscow stops cut SH-8 at the couplet,
+SH-8's couplet pieces lie wholly inside US-95's. The Item 51 rule, which drops a chain
+wholly inside a longer one, removes them. So the couplet is one corridor (US-95's), with
+no explicit duplicate mapping.
+
+**The seed rows** (owner, 2026-09-25) resolve to 15 boundaries:
+- **D3, 6 boundaries:**
+  - Eagle Rd | SH-44, both ways (the SH-55 chain turns east along SH-44 there);
+  - Broadway | Front St (NB);
+  - Front St | I-184 W, plus the W Front St stub (WB);
+  - I-184 E | the EB Connector's last segment (EB).
+- **D2, 9 boundaries:**
+  - US-95: south | couplet (both), couplet | north (NB and SB rows: the legs rejoin
+    Main St 120 m apart);
+  - SH-8: couplet | Troy Rd (both), Washington St | 3rd St (WB), and 3rd St | Jackson
+    St plus the 3rd St block (EB).
+- **Broadway's other side is left alone.** Myrtle St EB → Broadway SB is not linked, and
+  the walk never joined it, so the chains are separate already. No SB row is needed
+  there.
+
+`scripts/audit_hard_stops.py` writes three files to `out/hard_stops/`:
+- `resolved_hard_stops.csv`;
+- `hard_stops_map.html` (the segment before each boundary in blue, the one after in
+  orange);
+- `catalogue_crossings.csv`: every committed catalogue entry that steps across a stop.
 
 ## Direction convention & directional map display (Item 20)
 

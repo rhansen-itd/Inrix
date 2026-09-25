@@ -1,4 +1,5 @@
-"""ITD reference layers: the State Highway System and the Census urban areas.  (ROADMAP Item 52)
+"""ITD reference layers: the State Highway System, the Census urban areas and the
+highway tiers.  (ROADMAP Items 52, 61)
 
 Two layers the owner supplied from ITD's ArcGIS Online, both gitignored fixtures in the
 repo root (see DATA_FORMAT.md, "ITD State Highway System" / "ITD urban areas"):
@@ -32,6 +33,10 @@ The SHS codes, as read from the layer against the AADT descriptions of the same
   divided road** (``01010DIN084`` runs the full 275 mi of I-84 beside ``01010AIN084``).
   With both, each INRIX carriageway lies on a line of its own, unlike the AADT layer's
   one centreline 22–30 m off each (Item 34).
+
+* **``Highway Tier.geojson``** (Item 61) — ITD's highway tiers, Interstate > Expressway >
+  State > Regional > District, by ``segcode`` + milepost. A count station's section
+  breaks where a same-or-higher-tier state route meets it (:mod:`route_sections`).
 
 Pure: paths come from the caller, no plotting. Heavy imports happen inside functions.
 """
@@ -368,4 +373,144 @@ def shs_mileposts(geo, shs, route_ids) -> pd.DataFrame:
             f0, f1 = float(grp.at[k, "FromMeasur"]), float(grp.at[k, "ToMeasure"])
             t = part.project(pt, normalized=True) if part.length > 0 else 0.0
             out.at[sid, col] = round(f0 + (f1 - f0) * t, 3)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Highway tiers (Item 61)
+# ---------------------------------------------------------------------------
+TIERS = ("District", "Regional", "State", "Expressway", "Interstate")
+"""ITD's highway tiers, lowest first; :data:`TIER_RANK` orders them."""
+TIER_RANK = {t: i for i, t in enumerate(TIERS)}
+
+TIER_COL = "tier"
+TIER_RANK_COL = "tier_rank"
+TIER_SOURCE_COL = "tier_source"      # milepost / proximity_route / proximity / None
+TIER_MP_TOL = 0.05
+"""Milepost slack (miles) when a segment's midpoint is matched to a tier piece."""
+TIER_MAX_OFFSET_M = 40.0
+"""A segment further than this from every tier line gets no tier by proximity."""
+
+
+def segcode(route_id) -> str | None:
+    """The Highway Tier layer's ``segcode`` for an SHS ``RouteId``: its first five
+    digits, zero-padded to six (``01540AUS095`` → ``001540``). ``None`` if it is not
+    one."""
+    rid = "" if route_id is None or (isinstance(route_id, float) and pd.isna(route_id)) \
+        else str(route_id).strip()
+    return rid[:5].zfill(6) if len(rid) >= 5 and rid[:5].isdigit() else None
+
+
+def load_highway_tiers(source):
+    """ITD's Highway Tier layer (``Highway Tier.geojson``, a GeoJSON export from the ITD
+    GIS app) in WGS84: ``segcode`` (6-digit str), ``bmp`` / ``emp`` (mileposts, float),
+    ``tier`` (one of :data:`TIERS`) and ``tier_rank``.
+
+    Raises:
+        ValueError: a tier outside :data:`TIERS` (the export is not fully trusted).
+    """
+    from pyogrio import read_dataframe
+
+    gdf = read_dataframe(source)
+    gdf = gdf.to_crs(WGS84) if gdf.crs is not None else gdf.set_crs(WGS84)
+    return _derive_tier_fields(gdf)
+
+
+def _derive_tier_fields(gdf):
+    out = gdf[["segcode", "bmp", "emp", "tier", "geometry"]].copy()
+    # Four pieces write the travelway into the code (``A01540`` / ``D01540`` on US-95
+    # at mp 476, ``A02350`` / ``D02350``): the five digits are the segcode.
+    code = out["segcode"].astype(str).str.strip().str.replace(r"^[A-Za-z](\d{5})$", r"\1",
+                                                              regex=True)
+    out["segcode"] = code.str.zfill(6)
+    for col in ("bmp", "emp"):
+        out[col] = pd.to_numeric(out[col], errors="coerce")
+    out["tier"] = out["tier"].astype(str).str.strip()
+    bad = sorted(set(out["tier"]) - set(TIERS))
+    if bad:
+        raise ValueError(f"unknown highway tier(s) {bad}; expected {list(TIERS)}")
+    out["tier_rank"] = out["tier"].map(TIER_RANK).astype(int)
+    return out.reset_index(drop=True)
+
+
+def tier_frame(rows, crs=WGS84):
+    """A synthetic tier layer from dicts (``segcode``, ``bmp``, ``emp``, ``tier``,
+    ``geometry``) — for tests."""
+    import geopandas as gpd
+
+    return _derive_tier_fields(gpd.GeoDataFrame(list(rows), crs=crs))
+
+
+def segment_tiers(geo, tiers, route_ids, mileposts=None) -> pd.DataFrame:
+    """Each segment's highway tier, first of:
+
+    1. **milepost** — the tier piece on the segment's own ``segcode`` (its SHS
+       ``RouteID``, :func:`segcode`) whose ``bmp``–``emp`` holds the segment's midpoint
+       milepost (:func:`shs_mileposts`), within :data:`TIER_MP_TOL`; where pieces
+       overlap, the highest tier;
+    2. **proximity_route** — the nearest piece on its own ``segcode`` within
+       :data:`TIER_MAX_OFFSET_M` of the segment's midpoint (a milepost the layer's
+       pieces don't cover, or no milepost);
+    3. **proximity** — the nearest piece of any route within that distance.
+
+    The layer covers only ITD's long mainline segcodes and has milepost gaps (SH-55
+    mp 16.1–47.3), so some segments get none; they are reported, not guessed.
+
+    Args:
+        geo: GeoDataFrame indexed by segment id (any CRS).
+        tiers: :func:`load_highway_tiers`.
+        route_ids: Series indexed like ``geo`` — the SHS ``RouteID`` per segment.
+        mileposts: :func:`shs_mileposts` for ``geo``, or ``None``.
+
+    Returns:
+        Indexed like ``geo``: :data:`TIER_COL`, :data:`TIER_RANK_COL` (float, NaN =
+        none) and :data:`TIER_SOURCE_COL`.
+    """
+    import numpy as np
+    from shapely import STRtree
+
+    out = pd.DataFrame({TIER_COL: pd.Series([None] * len(geo), index=geo.index,
+                                            dtype=object),
+                        TIER_RANK_COL: np.nan,
+                        TIER_SOURCE_COL: pd.Series([None] * len(geo), index=geo.index,
+                                                   dtype=object)}, index=geo.index)
+    valid = geo.geometry.notna() & ~geo.geometry.is_empty
+    if not valid.any() or len(tiers) == 0:
+        return out
+    codes = pd.Series(route_ids).reindex(geo.index).map(segcode)
+    mp = pd.Series(np.nan, index=geo.index)
+    if mileposts is not None and len(mileposts):
+        m = mileposts.reindex(geo.index)
+        mp = m[[SHS_MP_START_COL, SHS_MP_END_COL]].mean(axis=1, skipna=True)
+
+    by_code = {c: g for c, g in tiers.groupby("segcode")}
+    metric = geo[valid].estimate_utm_crs()
+    mids = geo.geometry[valid].to_crs(metric).interpolate(0.5, normalized=True)
+    lines = tiers.to_crs(metric).geometry
+    tree = STRtree(list(lines.values))
+    for sid, mid in mids.items():
+        code = codes.get(sid)
+        grp = by_code.get(code) if code is not None else None
+        hit, source = None, None
+        if grp is not None and pd.notna(mp.get(sid)):
+            m = float(mp[sid])
+            lo = grp[["bmp", "emp"]].min(axis=1) - TIER_MP_TOL
+            hi = grp[["bmp", "emp"]].max(axis=1) + TIER_MP_TOL
+            on = grp[(lo <= m) & (m <= hi)]
+            if len(on):
+                hit, source = int(on["tier_rank"].max()), "milepost"
+        if hit is None:
+            near = tree.query(mid, predicate="dwithin", distance=TIER_MAX_OFFSET_M)
+            if len(near):
+                cand = tiers.iloc[near]
+                dist = lines.iloc[near].distance(mid)
+                same = cand["segcode"] == code
+                pick = dist[same.to_numpy()] if same.any() else dist
+                k = pick.idxmin()
+                hit = int(tiers.at[k, "tier_rank"])
+                source = "proximity_route" if same.any() else "proximity"
+        if hit is not None:
+            out.at[sid, TIER_COL] = TIERS[hit]
+            out.at[sid, TIER_RANK_COL] = float(hit)
+            out.at[sid, TIER_SOURCE_COL] = source
     return out

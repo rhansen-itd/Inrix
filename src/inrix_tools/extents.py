@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -79,6 +79,9 @@ class SplitKind(str, Enum):
     DILUTION = "dilution"
     URBAN_BOUNDARY = "urban_boundary"
     CONTEXT_LIMIT = "context_limit"
+    # Item 60: an owner-authored terminus (``hard_stops``). The chain is cut there, so
+    # an extent reaching the chain end records the stop as its reason.
+    HARD_STOP = "hard_stop"
 
 
 class ExtentTier(str, Enum):
@@ -536,6 +539,7 @@ _SPLIT_PHRASE = {
     SplitKind.DILUTION: "the dilution limit",
     SplitKind.URBAN_BOUNDARY: "the urban-area boundary",
     SplitKind.CONTEXT_LIMIT: "the context-length limit",
+    SplitKind.HARD_STOP: "a manual hard stop",
 }
 
 
@@ -565,7 +569,8 @@ def describe_split(split: SplitPoint | None, fallback: str = "the chain end") ->
     elif split.kind is SplitKind.CONGESTION_DROP:
         detail = (f"{d.get('transition', '')}, TTI {d.get('tti_before')} -> {d.get('tti_after')}")
     elif split.kind in (SplitKind.CONGESTION_END, SplitKind.DILUTION,
-                        SplitKind.URBAN_BOUNDARY, SplitKind.CONTEXT_LIMIT):
+                        SplitKind.URBAN_BOUNDARY, SplitKind.CONTEXT_LIMIT,
+                        SplitKind.HARD_STOP):
         detail = str(d.get("detail", ""))
     else:
         detail = ""
@@ -936,6 +941,18 @@ class MainlineChain:
     joins: tuple[dict, ...] = ()
     """How the chain was assembled beyond ``NextXDSegI``: each junction join and
     renumbering merge, for the audit (Item 51)."""
+    stops: tuple[dict, ...] = ()
+    """The manual hard stops (Item 60) the chain ends at: ``{at: "start"|"end",
+    from, to, reason}``, one per boundary (an end can sit on two)."""
+
+    def stop_at(self, at: str) -> dict | None:
+        """The hard stop at the chain's ``"start"`` or ``"end"``, if it ends at one;
+        where several boundaries meet there, the first, with every reason joined."""
+        here = [s for s in self.stops if s["at"] == at]
+        if not here:
+            return None
+        reasons = list(dict.fromkeys(s["reason"] for s in here))
+        return {**here[0], "reason": " | ".join(reasons)}
 
     @property
     def n_segments(self) -> int:
@@ -1195,11 +1212,14 @@ def _walk_route(members: set[int], nxt_raw: dict[int, int]) -> list[list[int]]:
 
 
 def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
-                      linked_into: set[int]) -> list[tuple[list[int], list[dict]]]:
+                      linked_into: set[int],
+                      blocked: Collection[tuple[int, int]] = ()
+                      ) -> list[tuple[list[int], list[dict]]]:
     """Join one route's walks where the route turns off the link (see the section note).
 
     ``linked_into`` is every member segment some member of this route links into; a
-    head that appears there is mid-route and never a join target."""
+    head that appears there is mid-route and never a join target. ``blocked`` are the
+    Item 60 hard-stop boundaries ``(from, to)``: no join is made across one."""
     items = [(list(w), []) for w in walks if w]
 
     def _heads(exclude: int) -> list[tuple[int, int]]:
@@ -1216,7 +1236,7 @@ def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
             tail = walk[-1]
             best = None
             for j, head in _heads(i):
-                if head in walk:
+                if head in walk or (tail, head) in blocked:
                     continue
                 c = _join_candidate(cg, tail, head)
                 if c is not None and (best is None or (c["gap_m"], c["turn_deg"])
@@ -1246,7 +1266,7 @@ def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
                 a = walk[k]
                 best = None
                 for j, head in _heads(i):
-                    if head in walk:
+                    if head in walk or (a, head) in blocked:
                         continue
                     c = _join_candidate(cg, a, head)
                     if c is None:
@@ -1277,7 +1297,8 @@ def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
 
 
 def _merge_renumberings(chains: list[dict], cg: _ChainGeometry,
-                        nxt_raw: dict[int, int]) -> list[dict]:
+                        nxt_raw: dict[int, int],
+                        blocked: Collection[tuple[int, int]] = ()) -> list[dict]:
     """Merge chains where the street runs on and only the route number changes.
 
     ``chains`` are dicts ``{route, ids, joins}``, one route's walk each. The street runs
@@ -1294,7 +1315,7 @@ def _merge_renumberings(chains: list[dict], cg: _ChainGeometry,
 
     Built as a graph of ``(chain, position)`` nodes: each chain's own links, with a
     street continuation replacing the link it overrides; chains are then its maximal
-    paths.
+    paths. No continuation crosses a ``blocked`` hard-stop boundary (Item 60).
     """
     from shapely import STRtree
 
@@ -1334,7 +1355,7 @@ def _merge_renumberings(chains: list[dict], cg: _ChainGeometry,
                     targets.add(start_ids[int(q)])
             is_tail = k == len(ids) - 1
             for y in targets:
-                if cg.street(y) != street:
+                if cg.street(y) != street or (x, y) in blocked:
                     continue
                 if y != x and _turn(cg.out_brg.get(x), cg.in_brg.get(y)) > MERGE_MAX_TURN_DEG:
                     continue
@@ -1420,6 +1441,7 @@ def enumerate_mainline_chains(
     min_miles: float = MIN_CHAIN_MILES,
     route_numbers: Sequence[str] | None = None,
     join: bool = True,
+    hard_stops: Mapping[tuple[int, int], str] | None = None,
 ) -> list[MainlineChain]:
     """Walk every state route in ``network`` into maximal directional chains.
 
@@ -1441,6 +1463,11 @@ def enumerate_mainline_chains(
         route_numbers: optional whitelist of route numbers to walk.
         join: join and merge across junctions and renumberings (Item 51). ``False``
             walks each route by the link alone.
+        hard_stops: manual hard stops (Item 60), ``{(from_seg, to_seg): reason}`` as
+            ``hard_stops.stop_boundaries`` gives them. No link, join or merge crosses
+            one, so every chain ends at a stop it meets, and records it in ``stops``.
+            A piece with a stop at **both** ends is an owner-declared section, not a
+            stub, and is kept whatever its length (the Moscow couplet is 0.65 mi).
 
     Returns:
         Chains sorted by miles descending. A concurrent segment can lie on more than
@@ -1484,32 +1511,39 @@ def enumerate_mainline_chains(
     for sid, nid in pd.to_numeric(net_idx.get("NextXDSegI", pd.Series(dtype=float)),
                                   errors="coerce").dropna().items():
         nxt_raw[int(sid)] = int(nid)
+    blocked = {(int(a), int(b)): str(r) for (a, b), r in (hard_stops or {}).items()}
+    # A stop cuts the link itself. ``linked_into`` still reads the uncut links, so the
+    # segment past a stop does not become a head that some other junction joins into.
+    nxt_walk = {s: n for s, n in nxt_raw.items() if (s, n) not in blocked}
 
     cg = _ChainGeometry(net_idx, set(sets)) if join else None
     raw: list[dict] = []
     for route in sorted(by_route, key=lambda r: (len(r), r)):
         members = by_route[route]
-        walks = _walk_route(members, nxt_raw)
+        walks = _walk_route(members, nxt_walk)
         if join and cg is not None and cg.geom:
             linked_into = {n for s in members if (n := nxt_raw.get(s)) in members}
-            joined = _join_route_walks(route, walks, cg, linked_into)
+            joined = _join_route_walks(route, walks, cg, linked_into, blocked)
         else:
             joined = [(w, []) for w in walks]
         raw.extend({"route": route, "ids": w, "joins": log} for w, log in joined)
 
     if join and cg is not None and cg.geom:
-        merged = _merge_renumberings(raw, cg, nxt_raw)
+        merged = _merge_renumberings(raw, cg, nxt_walk, blocked)
     else:
         merged = [{"ids": c["ids"], "joins": c["joins"],
                    "routes_miles": {c["route"]: 0.0}} for c in raw]
-
     miles_of = pd.to_numeric(net_idx["Miles"], errors="coerce").fillna(0.0)
+    if blocked:
+        merged = _cut_at_stops(merged, blocked, sets, miles_of)
+
     out: list[MainlineChain] = []
     for c in merged:
         walk = c["ids"]
         sub = net_idx.loc[walk]
         total_miles = round(float(miles_of.reindex(walk).sum()), 3)
-        if total_miles < min_miles:
+        ends = {st["at"] for st in c.get("stops", ())}
+        if total_miles < min_miles and ends != {"start", "end"}:
             continue
         bearings = [str(b).strip() for b in sub["Bearing"].dropna() if str(b).strip()]
         names = [str(v).strip() for v in sub.get("RoadName", pd.Series(dtype=object)).dropna()
@@ -1529,11 +1563,14 @@ def enumerate_mainline_chains(
             route_numbers=ordered,
             route_labels=tuple(labels.get(r, route_label(r, names)) for r in ordered),
             joins=tuple(c["joins"]),
+            stops=tuple(c.get("stops", ())),
         ))
 
     # A chain wholly inside a longer one adds nothing (a concurrent route's walk that
-    # never leaves its partner, like SH-3 on SH-8's pavement).
-    out.sort(key=lambda c: -c.miles)
+    # never leaves its partner, like SH-3 on SH-8's pavement). Of two identical walks
+    # the lower route number names it: a hard stop at the Connector leaves US-20 and
+    # US-26 walking the same Myrtle St segments, and which came first was arbitrary.
+    out.sort(key=lambda c: (-c.miles, len(c.route_number), c.route_number))
     kept: list[MainlineChain] = []
     covered: list[set[int]] = []
     for c in out:
@@ -1543,6 +1580,49 @@ def enumerate_mainline_chains(
         kept.append(c)
         covered.append(ids)
     return kept
+
+
+def _cut_at_stops(merged: list[dict], blocked: Mapping[tuple[int, int], str],
+                  sets: Mapping[int, frozenset[str]], miles_of: pd.Series) -> list[dict]:
+    """Split each assembled chain at any stop it still steps across, and record on every
+    piece the stops it ends at (Item 60).
+
+    With the links cut and joins and merges refusing a stop, nothing should step across
+    one; the split is the guarantee. A chain **ends at** a stop when its first segment
+    is a stop's ``to`` or its last a stop's ``from``, whether the stop was met inside
+    the assembled chain or the walk simply broke there.
+    """
+    by_from: dict[int, list[tuple[int, int]]] = {}
+    by_to: dict[int, list[tuple[int, int]]] = {}
+    for a, b in sorted(blocked):
+        by_from.setdefault(a, []).append((a, b))
+        by_to.setdefault(b, []).append((a, b))
+    out = []
+    for c in merged:
+        ids = c["ids"]
+        cuts = [i + 1 for i, (a, b) in enumerate(zip(ids, ids[1:])) if (a, b) in blocked]
+        bounds = [0, *cuts, len(ids)]
+        for lo, hi in zip(bounds, bounds[1:]):
+            piece = ids[lo:hi]
+            # Every stop at each end: at the couplet's south corner in Moscow the
+            # northbound leg starts past both US-95's stop and SH-8's.
+            stops = [{"at": "start", "from": a, "to": b, "reason": blocked[(a, b)]}
+                     for a, b in by_to.get(piece[0], [])]
+            stops += [{"at": "end", "from": a, "to": b, "reason": blocked[(a, b)]}
+                      for a, b in by_from.get(piece[-1], [])]
+            if len(bounds) == 2:
+                out.append({**c, "stops": stops})
+                continue
+            keep = set(piece)
+            joins = [j for j in c["joins"] if j.get("from") in keep]
+            routes_miles = {r: float(sum(miles_of.get(s, 0.0) for s in piece
+                                         if r in sets.get(s, ())))
+                            for r in c["routes_miles"]}
+            routes_miles = {r: m for r, m in routes_miles.items() if m > 0} \
+                or dict(c["routes_miles"])
+            out.append({"ids": piece, "joins": joins, "routes_miles": routes_miles,
+                        "stops": stops})
+    return out
 
 
 def _mode(values: Sequence[str]) -> str:
@@ -2729,8 +2809,35 @@ class DirectionAnalysis:
         return [c for c in self.candidates if c.qualifies]
 
 
+def _chain_end(chain: MainlineChain, split: SplitPoint | None, at: str) -> SplitPoint | None:
+    """``split``, or — where an extent runs to a chain end that is a manual hard stop —
+    that stop, so the entry says why it ends there (Item 60)."""
+    if split is not None:
+        return split
+    stop = chain.stop_at(at)
+    if stop is None:
+        return None
+    ids = chain.segment_ids
+    index = 0 if at == "start" else len(ids) - 1
+    return SplitPoint(segment_index=index, segment_id=int(ids[index]),
+                      kind=SplitKind.HARD_STOP, score=1.0,
+                      details={"detail": stop["reason"], "from": stop["from"],
+                               "to": stop["to"]})
+
+
 def _tiers_for(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
                splits: Sequence[SplitPoint], net_idx) -> dict[ExtentTier, ExtentAlternative]:
+    tiers = _tiers_within(chain, core, seg, splits, net_idx)
+    if not chain.stops:
+        return tiers
+    return {t: dataclasses.replace(alt, bounding_splits=(
+                _chain_end(chain, alt.bounding_splits[0], "start"),
+                _chain_end(chain, alt.bounding_splits[1], "end")))
+            for t, alt in tiers.items()}
+
+
+def _tiers_within(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
+                  splits: Sequence[SplitPoint], net_idx) -> dict[ExtentTier, ExtentAlternative]:
     ids = list(chain.segment_ids)
     core_alt = _alternative(
         ExtentTier.CORE, ids, net_idx, core.start, core.stop,
@@ -2890,6 +2997,7 @@ def generate_catalogue(
     bins: pd.DataFrame | None = None,
     curves=None,
     profiles=None,
+    hard_stops: Mapping[tuple[int, int], str] | None = None,
 ) -> dict:
     """Build a whole corridor catalogue from a district network (Items 46, 50).
 
@@ -2925,6 +3033,10 @@ def generate_catalogue(
         audit: when given, one row per analysed direction is appended — every chain's
             strongest candidate with its metrics and the floors it failed — so the
             decisions can be checked segment by segment.
+        hard_stops: manual hard stops (Item 60), ``{(from_seg, to_seg): reason}``, cut
+            into the chains before cores are found (:func:`enumerate_mainline_chains`),
+            so no core or tier crosses one. An extent ending at one says so
+            (``SplitKind.HARD_STOP``), and the audit carries ``chain_stops``.
 
     Returns:
         ``{"_note", "_generated", "corridors", "reporting_corridors"}``, ready for
@@ -2945,7 +3057,8 @@ def generate_catalogue(
             bins, seg["baseline_tt"], net_idx, curves,
             _screen.bin_weights(bins, profiles, windows=list(peak_windows)),
             by_month=True)
-    chains = enumerate_mainline_chains(network, min_miles=min_chain_miles)
+    chains = enumerate_mainline_chains(network, min_miles=min_chain_miles,
+                                       hard_stops=hard_stops)
     route_sets = segment_route_sets(network)
     pairs = pair_chains(chains, network, metric_crs=metric_crs)
     junctions = incoming_route_map(network)
@@ -2969,6 +3082,9 @@ def generate_catalogue(
                "chain_miles": a.chain.miles, "chain_routes": "/".join(a.chain.routes),
                "chain_joins": "; ".join(
                    f"{j['kind']} {j['route']} {j['from']}->{j['to']}" for j in a.chain.joins),
+               "chain_stops": "; ".join(
+                   f"{st['at']} {st['from']}|{st['to']} ({st['reason']})"
+                   for st in a.chain.stops),
                "role": role, "facility": facility,
                "n_candidates": len(a.candidates), "n_qualifying": len(a.qualifying)}
         if best is not None:
@@ -3265,6 +3381,14 @@ def generate_catalogue(
             entries.extend(tier_entries)
             groups.append(group)
 
+    generated = {
+        "peak_windows": list(peak_windows),
+        "vhd_basis": seg.attrs.get("vhd_basis", "index"),
+        "n_chains": len(chains),
+        "n_facilities": len(facilities),
+    }
+    if hard_stops:
+        generated["hard_stops"] = [f"{a}|{b}: {r}" for (a, b), r in hard_stops.items()]
     return {
         "_note": note or (
             "Generated by inrix_tools.extents.generate_catalogue (ROADMAP Items 46, 50) "
@@ -3273,10 +3397,7 @@ def generate_catalogue(
             "re-run the builder."
         ),
         "_generated": {
-            "peak_windows": list(peak_windows),
-            "vhd_basis": seg.attrs.get("vhd_basis", "index"),
-            "n_chains": len(chains),
-            "n_facilities": len(facilities),
+            **generated,
             "tiers": [t.value for t in tiers],
             "ranked_tier": ExtentTier.CORE.value,
             "thresholds": {

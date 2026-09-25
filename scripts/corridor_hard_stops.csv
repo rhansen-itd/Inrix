@@ -1,0 +1,24 @@
+# Manual hard stops for corridor stitching (ROADMAP Item 60; inrix_tools.hard_stops).
+# The chain walk (extents.enumerate_mainline_chains) stitches a route across junctions and
+# renumberings; a row here is a logical terminus (FHWA NEPA sense) or a real context change
+# that no chain, core, Tier 2 or Tier 3 may cross. Input only: the screening is unchanged.
+# One row per stop:
+#   district, route (the number: 55, not SH-55), direction (NB/SB/EB/WB; blank = both),
+#   lat, lon   (a point near the boundary; it resolves to the route's nearest segment boundary
+#               within 100 m, or with direction blank to that one and the nearest running the
+#               other way), OR xd_seg_id + side (before/after that segment),
+#   note       (required: why it is a terminus, and who decided),
+#   scope      (optional, Item 61: blank/both = corridor chains and count-station sections;
+#               corridors = chains only; stations = only a count station's reach).
+# A row that resolves to no boundary is an error. Review: scripts/audit_hard_stops.py.
+district,route,direction,lat,lon,xd_seg_id,side,note,scope
+3,55,,43.69094,-116.35407,,,"Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north. Owner, 2026-09-25"
+3,20,NB,43.60797,-116.19336,,,"US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25"
+3,20,WB,43.61704,-116.21076,,,"US-20 Front St | the Connector (I-184), where it becomes freeway. Owner, 2026-09-25"
+3,20,EB,,,1187347115,before,"The EB Connector's last segment goes with the couplet: still on the divided facility, but it queues from the first signal on Myrtle. Owner, 2026-09-25"
+2,95,,46.72614,-117.00009,,,"Moscow: US-95 south | the Washington/Jackson couplet. Owner, 2026-09-25"
+2,95,NB,46.73515,-117.00144,,,"Moscow: the couplet (Washington St) | US-95 north (N Main St). Owner, 2026-09-25"
+2,95,SB,46.73458,-117.00281,,,"Moscow: US-95 north (N Main St) | the couplet (Jackson St). Owner, 2026-09-25"
+2,8,,46.72614,-117.00009,,,"Moscow: the couplet | SH-8 east (Troy Rd). Owner, 2026-09-25"
+2,8,WB,46.73237,-117.00002,,,"Moscow: the couplet (Washington St) | SH-8 west (3rd St). Owner, 2026-09-25"
+2,8,EB,46.73235,-117.00275,,,"Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8 (Future: segment-level route overrides). Owner, 2026-09-25"

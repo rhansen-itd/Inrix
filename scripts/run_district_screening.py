@@ -57,6 +57,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from inrix_tools import aadt as aadt_mod                  # noqa: E402
 from inrix_tools import corridors, geometry, kml, routes, screen, store  # noqa: E402
 from inrix_tools import itd_layers                        # noqa: E402
+from inrix_tools import hard_stops as hard_stops_mod      # noqa: E402
+from inrix_tools import route_sections                    # noqa: E402
 from inrix_tools import profile_assignment as profiles_mod  # noqa: E402
 from inrix_tools import counts as counts_mod              # noqa: E402
 from inrix_tools import volume_profiles                   # noqa: E402
@@ -224,10 +226,62 @@ def load_count_profiles(count_dir):
     return volume_profiles.load_profiles(lib), counts_mod.read_stations(st)
 
 
+DEFAULT_HIGHWAY_TIERS = "Highway Tier.geojson"
+"""ITD's Highway Tier layer (Item 61): where a count station's section breaks."""
+DEFAULT_HARD_STOPS = "scripts/corridor_hard_stops.csv"
+
+
+def station_sections(net, *, repairs=None, membership_path=None, shs=None,
+                     tiers_source=None, hard_stops_path=None, district=None,
+                     business=()):
+    """The route sections the station rule reads (Item 61), on the network as the
+    catalogue builder walks it: link repairs, ITD membership and SHS mileposts applied,
+    each segment's highway tier joined, and the hard stops scoped to stations cut in.
+
+    Returns ``(sections, tiers)``: ``route_sections.trace_sections`` and the
+    ``itd_layers.segment_tiers`` frame over the state-route segments (``None`` without
+    a tier layer). ``tiers.attrs['hard_stops']`` counts the stop boundaries used."""
+    from inrix_tools import extents
+
+    work = net.drop_duplicates(subset="XDSegID").copy()
+    if repairs is not None:
+        work = corridors.apply_link_repairs(work, repairs)
+    if membership_path:
+        work = routes.apply_route_membership(work, routes.read_membership(membership_path))
+    idx = work.set_index("XDSegID", drop=False)
+    layer = itd_layers._shs_frame_from(shs) if shs else None
+    on_system = sorted(extents.segment_route_sets(work))
+    mp = None
+    if layer is not None and routes.ITD_ROUTE_ID_COL in idx.columns:
+        sub = idx.loc[on_system]
+        mp = itd_layers.shs_mileposts(sub, layer, sub[routes.ITD_ROUTE_ID_COL])
+        for col in mp.columns:
+            work[col] = work["XDSegID"].map(mp[col]).to_numpy()
+    tiers = None
+    if tiers_source and Path(tiers_source).exists() and \
+            routes.ITD_ROUTE_ID_COL in idx.columns:
+        sub = idx.loc[on_system]
+        tiers = itd_layers.segment_tiers(sub, itd_layers.load_highway_tiers(tiers_source),
+                                         sub[routes.ITD_ROUTE_ID_COL], mp)
+    stops = {}
+    if hard_stops_path and Path(hard_stops_path).exists() and district is not None:
+        resolved = hard_stops_mod.resolve_hard_stops(
+            hard_stops_mod.read_hard_stops(hard_stops_path), work, district)
+        stops = hard_stops_mod.stop_boundaries(resolved, use="stations")
+    sections = route_sections.trace_sections(
+        work, tiers=None if tiers is None else tiers[itd_layers.TIER_RANK_COL],
+        hard_stops=stops, business=business)
+    if tiers is not None:
+        tiers.attrs["hard_stops"] = len(stops)
+    return sections, tiers
+
+
 def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
                            urban_context_path, urban_source, overrides_path,
                            centres_path=None, district=None, peak_screen=None,
-                           count_profiles=None, station_generic=False):
+                           count_profiles=None, station_generic=False,
+                           repairs=None, shs=None, tiers_source=None,
+                           hard_stops_path=None):
     """A volume-profile curve for every segment of the district network (Item 56).
 
     Wiring only — :mod:`inrix_tools.profile_assignment` decides. The inference reads
@@ -236,8 +290,11 @@ def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
     peak and 7-day runs assign the same curves. Any input that is absent is skipped,
     and the rule falls back as the module says. ``count_profiles`` is a
     ``fit_count_profiles.py`` output directory (Item 59): its fitted curves join the
-    library and its stations drive the station rule. The library used is returned in
-    ``attrs['library']``."""
+    library and its stations drive the station rule, each station covering its route
+    section (Item 61, :func:`station_sections` — ``repairs``, ``shs``,
+    ``tiers_source`` and ``hard_stops_path`` feed it). The library used is returned in
+    ``attrs['library']``, the sections in ``attrs['sections']`` and the segment tiers
+    in ``attrs['tiers']``."""
     table = net.drop(columns="geometry", errors="ignore")
     table = table.drop_duplicates(subset="XDSegID")
     membership = routes.read_membership(membership_path) if membership_path else None
@@ -273,9 +330,16 @@ def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
         library = volume_profiles.merge_profiles(library, fitted)
     overrides = (profiles_mod.load_overrides(overrides_path, library)
                  if overrides_path and Path(overrides_path).exists() else None)
+    sections = tiers = None
+    if stations is not None and "geometry" in net.columns:
+        sections, tiers = station_sections(
+            net, repairs=repairs, membership_path=membership_path, shs=shs,
+            tiers_source=tiers_source, hard_stops_path=hard_stops_path,
+            district=district, business=context.index[context["business"]])
     assignment = profiles_mod.assign_profiles(
         context, chain_list, delay, overrides=overrides, district=district,
-        profiles=library, stations=stations, station_generic=station_generic)
+        profiles=library, stations=stations, sections=sections,
+        station_generic=station_generic)
     # The VHD weights are built per curve, so carry only the fitted curves in use.
     used = set(assignment["curve_id"].dropna())
     assignment.attrs["library"] = volume_profiles.merge_profiles(
@@ -291,9 +355,41 @@ def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
         "count_profiles": str(count_profiles) if stations is not None else None,
         "station_curves": ("nearest generic" if station_generic else "fitted")
                           if stations is not None else None,
+        "highway_tiers": str(tiers_source) if tiers is not None else None,
+        "station_hard_stops": (str(hard_stops_path)
+                               if sections is not None and hard_stops_path else None),
         "inference": delay is not None,
     }
+    assignment.attrs["sections"] = sections
+    assignment.attrs["tiers"] = tiers
     return assignment
+
+
+def station_coverage_tables(assignment, network, district=None) -> dict:
+    """The Item 61 review tables: ``station_coverage`` (per station-direction: its
+    section, miles covered, segments won), ``route_sections`` (every section, with the
+    stations on it) and ``untiered_segments`` (state-route segments the tier layer left
+    without a tier). Empty when no station rule ran."""
+    out = {}
+    rep = assignment.attrs.get("stations")
+    sections = assignment.attrs.get("sections")
+    if rep is not None and len(rep):
+        out["station_coverage"] = rep
+    if sections:
+        frame = route_sections.sections_frame(sections)
+        if rep is not None and len(rep) and "section_id" in rep.columns:
+            on = (rep.dropna(subset=["section_id"])
+                  .assign(label=lambda r: r["station_id"].astype(str) + " " + r["direction"])
+                  .groupby("section_id")["label"].agg(" | ".join))
+            frame["stations"] = frame["section_id"].map(on).fillna("")
+        out["route_sections"] = frame
+    tiers = assignment.attrs.get("tiers")
+    if tiers is not None:
+        miss = tiers[tiers[itd_layers.TIER_COL].isna()]
+        net = network.drop_duplicates(subset="XDSegID").set_index("XDSegID")
+        cols = [c for c in ("RoadNumber", "RoadName", "Miles", "County") if c in net.columns]
+        out["untiered_segments"] = net.reindex(miss.index)[cols].rename_axis("XDSegID")
+    return out
 
 
 SEGMENT_VHD_PEAK = "segment_peak_curve_vhd.parquet"
@@ -1529,7 +1625,9 @@ def run(args) -> dict:
             urban_context_path=args.urban_context, urban_source=args.urban,
             overrides_path=args.profile_overrides, centres_path=args.urban_centres,
             district=args.district, count_profiles=args.count_profiles,
-            station_generic=args.station_generic,
+            station_generic=args.station_generic, repairs=repairs,
+            shs=shs_source(args.shs), tiers_source=args.highway_tiers or None,
+            hard_stops_path=args.hard_stops or None,
             peak_screen=lambda: screen_segments(
                 con, area_key, windows=peak_windows,
                 cvalue_threshold=args.cvalue_threshold, bin_minutes=args.bin_minutes,
@@ -1600,6 +1698,7 @@ def run(args) -> dict:
                                    "n_chains": pa_attrs["n_chains"],
                                    "n_chains_inferred": pa_attrs["n_chains_inferred"],
                                    "n_stations": pa_attrs["n_stations"],
+                                   "n_sections": pa_attrs.get("n_sections"),
                                    "thresholds": pa_attrs["thresholds"]}
         dist_tag = f"D{args.district}" if args.district else "district"
         print(f"{dist_tag} volume profiles: {profiles_mod.summary_line(assignment)} "
@@ -1622,6 +1721,12 @@ def run(args) -> dict:
         written["volume_profiles"] = profiles_mod.write_assignment(
             assignment, Path(args.out_dir) / vp_name,
             profiles=assignment.attrs["library"])
+        # Item 61: where each count station's curve reaches, and why it stops.
+        prefix = f"d{args.district}_" if args.district else ""
+        for name, table in station_coverage_tables(assignment, net).items():
+            path = Path(args.out_dir) / f"{prefix}{name}.csv"
+            table.to_csv(path, index=name == "untiered_segments")
+            written[name] = path
 
         # Save segment screen results for fast statewide vector map aggregation
         scr_fname = "segment_7day_screen.parquet" if is_7day else "segment_peak_screen.parquet"
@@ -1747,6 +1852,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="fit_count_profiles.py output dir: count-fitted curves and the "
                         "station rule (Item 59), used when present; '' = generic "
                         "curves only")
+    p.add_argument("--highway-tiers", default=DEFAULT_HIGHWAY_TIERS,
+                   help="ITD Highway Tier layer (Item 61): a count station's section "
+                        "breaks at a same-or-higher-tier junction; '' = no tier breaks")
+    p.add_argument("--hard-stops", default=DEFAULT_HARD_STOPS,
+                   help="hard stops (Items 60/61); rows scoped both/stations also end "
+                        "a count station's section; '' = none")
     p.add_argument("--station-generic", action="store_true",
                    help="the station rule assigns each station's nearest generic curve "
                         "instead of its fitted one")
