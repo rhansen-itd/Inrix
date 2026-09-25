@@ -17,7 +17,7 @@
 #   route the segment carries) onto a head nothing in the route links into, starting on
 #   the segment's second half within 20 m, turning <= 120 deg, milepost-consistent where
 #   both lie on one SHS line. These cross XDGroups, unlike fill/override.
-# n_route_junction: 17
+# n_route_junction: 16
 segment,old_next,new_next,kind,gap_m,bearing_delta_deg,xdgroup,road_name,lanes
 123915185,,124639466,fill,0.0,0.0904335738845532,295892,N 16th St,1.022
 123917606,,124266454,fill,0.0054158306711495,0.8206600253345755,295954,E Coeur Dalene Ave,1.0
@@ -1161,7 +1161,6 @@ segment,old_next,new_next,kind,gap_m,bearing_delta_deg,xdgroup,road_name,lanes
 1626578322,,1626483251,fill,0.0,0.0166653064075603,303556,N Ramsey Rd,1.0
 1626582073,,123928341,fill,6.421913291880398e-07,3.793315500090671,296253,N Hill St,1.0
 1626582074,,1626469079,fill,0.0,4.504122358965873,300909,N Hill St,1.0
-429045286,771135074,1236893477,route_junction,11.3,63.0,300782,N 5th Ave,1.78
 448922827,386047866,1236963313,route_junction,5.9,92.0,2947056,E Mullan Ave,2.0
 475081389,,386052388,route_junction,0.0,3.0,2931833,ID-54,1.0
 475090211,484494261,475110927,route_junction,0.0,14.0,2931937,,1.0

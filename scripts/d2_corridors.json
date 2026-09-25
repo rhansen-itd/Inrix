@@ -6,7 +6,7 @@
       "pm"
     ],
     "vhd_basis": "curve",
-    "n_chains": 51,
+    "n_chains": 50,
     "n_facilities": 2,
     "hard_stops": [
       "124404144|385666846: route 95: Moscow: US-95 south | the Washington/Jackson couplet. Owner, 2026-09-25",

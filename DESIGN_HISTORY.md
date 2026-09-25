@@ -7514,3 +7514,158 @@ the WB core's end.
   `test_endpoint_names_undo_title_case_damage`.
 - Naming tests rewritten: a street name with the town only in the id; a street-less
   facility named "from <start>"; a county id; a couplet name without the town.
+
+## Session 84 — Item 62: membership gap-fill, a sampled statewide ATR pull, the re-run on fitted curves (2026-09-25)
+
+### 1. Membership gap-fill (done first)
+
+- **`routes.fill_route_gaps`**: an `inrix_only` segment whose INRIX route is R, whose
+  `PreviousXD` and `NextXDSegI` are both members of R, and which is ≤ 1 mi
+  (`GAP_FILL_MAX_MILES`), becomes a member of R. Its verdict is `gap_fill` and its
+  source `links`. It is one pass, so a filled segment doesn't vouch for its
+  neighbour. Overrides are untouched. `build_route_membership.py` applies it and
+  prints what it fills.
+- **Reach:** it fills the two segments Session 81 found, and nothing else:
+  - D2 771090123, US-95 SB south of Moscow;
+  - D1 771135074, Pine St in Sandpoint, the 0.01-mi corner where US-2 turns off 5th
+    Ave. The SHS line is on it, but a corner fails the 50%-alongside test. So this
+    one is right too.
+  An XDGroup requirement was considered and rejected: Pine St shares the *next*
+  segment's group, not the previous one's. The mile cap is the guard.
+- **A stale `route_junction` repair.** D1's table had a repair bridging 5th Ave →
+  US-2 past Pine St, derived (Item 51) when Pine St was not a member. With Pine St
+  filled, US-2 WB split into a 6-segment SB piece and a 45-segment WB piece. Re-deriving
+  `route_junction` rows (`generate_route_junctions.py`) removes exactly that one row
+  and changes nothing else. The script also rewrote every other row's floats with
+  last-digit repr noise, so the committed tables were restored and the one row removed
+  by hand. DATA_FORMAT now has the trap: re-derive `route_junction` after a membership
+  change.
+- **Catalogues** (scratch regeneration, then adopted):
+  - D1's US-2 Sandpoint facility gains Pine St (+0.014 mi, VHD 10.3 → 10.4);
+  - D2 changes `_generated.n_chains` only (51 → 50: the two SB chains are one);
+  - D3–D6 are byte-identical.
+  00146 SB's route section runs 28.44 mi (was 2.63), matching NB's 28.4.
+
+### 2. Which stations to pull
+
+The owner asked for a sample, not every station (see the memory note on sampled
+pulls). The pieces:
+- `counts.sample_stations`: along each route, in milepost order, stations within
+  0.5 mi are one site. Pulled and owner-named sites are anchors. Each run between
+  anchors alternates skip/pick, starting with a skip, so it adds ⌊k/2⌋ and no two
+  skipped sites are neighbours. For an even run, the phase that leaves the smaller
+  milepost gap within the run wins. A route with no anchor starts on a pick.
+- `counts.is_ramp_station`: a ramp in the `On` field, or a description naming the ramp
+  counted. A ramp named only to place a mainline station is not one.
+- `itd_layers.station_mileposts`: a station's milepost on its **own** route's SHS
+  line (business lines for `BL`). 00334, SH-55, is 0.5 m from I-84's line.
+- `scripts/select_atr_sample.py` writes `scripts/atr_sample.csv` (committed: ids,
+  roles, reasons) and the sites file.
+
+**A bug caught on the I-84 check.** The first version compared the two phases of an
+even run by the route-wide maximum gap. A rural gap of over 40 miles elsewhere on I-84 tied every
+phase, so it picked Cole (49.9) over Five Mile (48.0) between 00279 and 00262. The
+comparison is now within the run's span, and `test_an_even_run_takes_the_phase_that_halves_the_gap`
+pins it.
+
+**The pull** (`tcds.py`, April 2026):
+- 94 requested; 84 had April data.
+- Fallbacks tried 2026-03, 2026-05, then 2025-04/2024-04/2023-04: 00124, 00163,
+  00182 and 00311 from 2025-04; 00096 and 00194 from 2023-04.
+- 00016, 00085, 00159 and 00173 have no count since 2023. They became `NO_DATA`, and
+  the rule re-picked around them (00019, 00319).
+- `--workers 3` hung twice with no output (19 min at 0% CPU); single sessions were
+  reliable.
+
+### 3. Refit: a data trap
+
+The first refit gave five curves exactly flat (AM share = PM share = 2/24). **TCDS
+serves some counts as daily totals spread evenly over the hours**, in the same
+report 87 layout (00027: 23 × 59, then the remainder in the last hour). All five are
+7-day 2-way-only counts: 00027, 00114, 00147, 00182, and **00291 (I-90), which Item 59
+had fitted flat**. That curve had been in the fitted library since Session 79 and
+nobody caught it. It was not a shape.
+- `counts.daily_matrix` drops a day whose hours 0–22 are equal (`FLAT_DAY_REASON`).
+  A station with only such days is unfitted.
+- `select_atr_sample.DAILY_ONLY` removes the five from the candidates, and the rule
+  re-picked 00184 for 00182.
+
+Final: **122 stations pulled, 117 fitted, 232 curves** (Item 59: 29 / 55).
+- No outage days.
+- Borrowing: 00116 (one Sunday), 00150, 00231.
+- Nearest generic: pm_commute 80, am_commute 57, rural_through 49,
+  rural_recreational 33, interstate_through 7, balanced_urban 6.
+- Misplaced share median 0.065, max 0.170. The far ones are 120–270 veh/day rural
+  stations, plus 00096 US-20 and 00068 SH-75.
+
+### 4. I-84 through the valley (owner's expectation)
+
+It is met for the mainline: 112.2 mi of route-84 segments in Canyon and Ada are on
+station curves. The one exception is 0.95 mi SB of Centennial Way, Caldwell. That road
+is I-84 BL / SH-19, which membership files as `concurrent 19/84`: INRIX says 84 and
+the SHS says 19, with no business-loop line on it. So it forms an isolated route-84
+section with no station. It is a membership question, not a sampling gap, and it is
+left for the owner.
+
+### 5. Statewide re-run
+
+Setup:
+- `run_statewide_screening.py --mode full --maps`, on the default paths: the Item
+  63/64 generated catalogues, D3 generated as primary, and `out/count_profiles`.
+- About 17 minutes; every district and both statewide maps succeeded.
+- The Item 58 tables are kept in `pre_item62/` (tables only).
+- Station curves now cover 8,543 segments. The inference now assigns only 76
+  segments (D3); the station rule outranks it.
+
+The comparison against Item 58 mixes three changes: the curves, the Item 60 stops, and
+D3 curated → generated. Every curated D3 id "leaves" and every generated one
+"enters", so only 37 of 67 corridors join: ρ 0.986 peak, 0.989 7-day. So a second run
+used the **same catalogues on generic curves** (`--count-profiles ''`, into
+`out/statewide_screening_item62_generic/`, no maps). That isolates the curves:
+
+| window | Spearman ρ | top 10 / 20 / 50 kept | largest move | total VHD |
+|---|---|---|---|---|
+| peak | 0.991 (67) | 10 / 19 / 49 | 7 | +2.5% |
+| 7-day | 0.993 (67) | 9 / 20 / 49 | 8 | +4.6% |
+
+- Resort and recreation corridors gain: SH-75 Hailey #28 → #21 (×1.40) and Ketchum
+  (×1.37, into the 7-day top 10); SH-33 Teton ×1.30.
+- US-2 Sandpoint gains 7-day (#42 → #34).
+- The most any corridor loses is US-93 Pole Line, ×0.90.
+
+Tables: `item62_{peak,7day}_ranking_changes.csv` (against Item 58) and
+`item62_curves_{peak,7day}_ranking_changes.csv` (curves only).
+
+### 6. Item 56 revisited
+
+At every segment the station rule now covers, the station's nearest generic is
+compared with what the Item 58 run assigned (`item62_item56_revisit.csv`):
+- **Inference:** 221/258 agree (86%). AM is never counted as PM, or the reverse.
+- **Urban rule:** 2,038/8,285 segments (25%); per station-direction 49/192.
+  - When it commits to a commute side it is mostly right: am → 92 AM / 37 PM,
+    pm → 138 PM / 15 AM.
+  - Its misses are the default shapes. `rural_through` is counted as
+    rural_recreational (2,030) or pm_commute (1,478); `interstate_through` as
+    pm_commute (937); `balanced_urban` as pm or am commute.
+- **But the misses are small.** The rule's curve is a median 0.090 of a day's volume
+  misplaced against the counts, where the best generic is 0.067: 1.7 points. 11.5% of
+  station-directions are more than 5 points worse, and none is more than 10. Worst:
+  `balanced_urban` (+4.3).
+
+Recommendation: no broad recalibration. The generics sit close together, and the
+largest gains now come from station curves directly. A targeted change to
+`balanced_urban` is the owner's call.
+
+### 7. Tests
+
+1,059 pass (1,042 before), 2 skipped.
+- `test_routes`: gap fill (7): a sandwiched segment fills; a concurrent neighbour
+  counts; one member neighbour, another route, a missing or unknown link, two in a
+  row, too long, or a non-`inrix_only` verdict do not.
+- `test_counts`:
+  - `is_ramp_station` (8 cases);
+  - `sample_stations` (7): every other; no two skipped neighbours on a random route;
+    the even-run phase; routes with nothing pulled; forced anchors; co-located
+    sites; routes kept apart;
+  - the flat daily-total day.
+- `test_itd_layers`: `station_mileposts` (own route, business loop, out of reach).

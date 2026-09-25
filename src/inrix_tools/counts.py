@@ -407,6 +407,9 @@ DOW_MIN_SPAN_DAYS = 7
 """The DOW factors are fitted only from at least a week of complete days that
 covers every day of the week; otherwise they are borrowed."""
 
+FLAT_DAY_REASON = "no hourly data (a daily total spread evenly over the hours)"
+"""Why :func:`daily_matrix` drops a day whose hours 0–22 are all equal (Item 62)."""
+
 DAY_TYPE_WEIGHT = {"weekday": 5 / 7, "sat": 1 / 7, "sun": 1 / 7}
 """How much each day type counts when two curves are compared (its share of a week)."""
 
@@ -416,7 +419,8 @@ def daily_matrix(counts: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     ``complete``: one row per usable local date (index), columns hour 0..23, plus
     ``total``, ``dayofweek`` and ``day_type``. A day is usable when it is a 24-hour
-    day (not a DST changeover), has all 24 hours, and its total is at least
+    day (not a DST changeover), has all 24 hours, carries an hourly shape (not a
+    daily total spread flat, :data:`FLAT_DAY_REASON`), and its total is at least
     :data:`OUTAGE_FRACTION` of its day type's median. ``dropped``: the other dates
     with ``reason``.
     """
@@ -434,6 +438,11 @@ def daily_matrix(counts: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     reason = pd.Series("", index=dates, dtype=object)
     reason[np.asarray(length) != 24] = "DST changeover day"
     reason[(reason == "") & wide.isna().any(axis=1)] = "incomplete (missing hours)"
+    # TCDS publishes some counts as daily totals only, spread evenly over the day:
+    # hours 0-22 all equal and the remainder in hour 23 (00027: 23 x 59, then 59 more).
+    # There is no hourly shape in such a day; fitting it gives a flat curve (Item 62).
+    flat = wide[list(range(23))].nunique(axis=1, dropna=False) == 1
+    reason[(reason == "") & flat] = FLAT_DAY_REASON
     wide["total"] = wide[list(range(24))].sum(axis=1)
     wide["dayofweek"] = dates.dayofweek
     wide["day_type"] = np.asarray(DAY_TYPES)[day_type_index(dates.dayofweek)]
@@ -666,3 +675,158 @@ def read_stations(path) -> pd.DataFrame:
     frame["route"] = frame["route"].fillna("")
     frame["borrowed"] = frame["borrowed"].fillna("")
     return frame[list(STATION_COLUMNS)]
+
+
+# ---------------------------------------------------------------------------
+# Which stations to pull (Item 62)
+# ---------------------------------------------------------------------------
+_RAMP_ON = re.compile(r"\b(?:RA|RAMP)\s*$", re.I)
+_RAMP_DESC = re.compile(r"\b(?:on|off)[\s-]*ramp\b|\bramp\s+to\b|\brest\s+area\s+ramp\b", re.I)
+_RAMP_POSITION = re.compile(r"\b(?:end\s+of|jct\b)[^,;()]*?\bramp\b", re.I)
+
+
+def is_ramp_station(on=None, description=None) -> bool:
+    """Whether a TCDS station counts a **ramp**, not the mainline: the ``On`` field is
+    a ramp (``"INT 184 RAMP"``, ``"INT 84 RA"``), or the description names an on/off
+    ramp as the thing counted (00329 "I-84 .1 Mi. E of Franklin Rd. IC EB On ramp").
+    A ramp named only to **place** a mainline station is not one: 00291 "0.1 Mi. E of
+    end of EB On Ramp", 00301 "0.1Mi W of Jct SB on Ramp to I-15"."""
+    if isinstance(on, str) and _RAMP_ON.search(on.strip()):
+        return True
+    if not isinstance(description, str):
+        return False
+    if _RAMP_POSITION.search(description):
+        return False
+    return bool(_RAMP_DESC.search(description))
+
+
+SAMPLE_COLOCATED_MILES = 0.5
+"""Stations on one route closer than this are one **site** (a WIM beside an ATR, a
+relocated counter); a site counts as pulled when any of its stations is."""
+
+SAMPLE_ROLES = ("pulled", "forced", "pick", "skip")
+"""``pulled`` — already on disk; ``forced`` — named by the owner; ``pick`` — chosen by
+the every-other rule; ``skip`` — left out (its ``reason`` says why)."""
+
+
+def _alternate(k: int, offset: int) -> list[int]:
+    return list(range(offset, k, 2))
+
+
+def _max_gap(mps: list[float]) -> float:
+    return max((b - a for a, b in zip(mps, mps[1:])), default=0.0)
+
+
+def sample_stations(stations: pd.DataFrame, *, pulled=(), forced=(),
+                    colocated_miles: float = SAMPLE_COLOCATED_MILES) -> pd.DataFrame:
+    """Roughly **every other** station along each route, closing the gaps between
+    stations already pulled.  (ROADMAP Item 62)
+
+    Pulling every permanent station is excessive: neighbouring stations' profiles
+    differ little (owner, 2026-09-25). Along each route, in milepost order, stations
+    within ``colocated_miles`` of each other are one site. The pulled and ``forced``
+    sites are **anchors**; each run of other sites between two anchors (or between an
+    anchor and the route's end) alternates skip / pick starting from a skip, so no two
+    skipped sites are ever neighbours and the run adds ``floor(k/2)`` pulls. For an even
+    run either phase does that; the one leaving the smaller milepost gap between
+    sampled sites wins. A route with **no** anchor starts on a pick, so it gets at
+    least one station.
+
+    Args:
+        stations: one row per candidate station with ``station_id``, ``route_key``
+            (``"84"``, or a business loop's ``"84 BL 02041"``: one sequence per key)
+            and ``mp`` (milepost along it). An optional ``station_type`` (``P``/``W``)
+            prefers the permanent ATR as a co-located site's representative.
+        pulled: station ids already on disk.
+        forced: station ids the owner named; pulled whatever the rule says.
+        colocated_miles: see :data:`SAMPLE_COLOCATED_MILES`.
+
+    Returns:
+        ``stations`` in route/milepost order with ``site`` (the representative's id),
+        ``role`` (:data:`SAMPLE_ROLES`) and ``reason``.
+    """
+    pulled = {str(s) for s in pulled}
+    forced = {str(s) for s in forced}
+    out = stations.copy()
+    out["station_id"] = out["station_id"].astype(str)
+    out = out.sort_values(["route_key", "mp", "station_id"], kind="stable",
+                          ignore_index=True)
+    out["site"] = None
+    out["role"] = None
+    out["reason"] = ""
+    types = out["station_type"] if "station_type" in out.columns else \
+        pd.Series("P", index=out.index)
+
+    for _, grp in out.groupby("route_key", sort=True):
+        # Sites: consecutive stations closer than colocated_miles.
+        sites: list[list[int]] = []
+        for i in grp.index:
+            if sites and float(out.at[i, "mp"]) - float(out.at[sites[-1][-1], "mp"]) \
+                    < colocated_miles:
+                sites[-1].append(i)
+            else:
+                sites.append([i])
+        reps, state = [], []
+        for members in sites:
+            ids = [out.at[i, "station_id"] for i in members]
+            rank = sorted(members, key=lambda i: (
+                out.at[i, "station_id"] not in pulled, out.at[i, "station_id"] not in forced,
+                str(types.get(i, "P")) != "P", out.at[i, "station_id"]))
+            rep = rank[0]
+            rep_id = out.at[rep, "station_id"]
+            for i in members:
+                out.at[i, "site"] = rep_id
+                if i != rep:
+                    sid = out.at[i, "station_id"]
+                    out.at[i, "role"] = "pulled" if sid in pulled else "skip"
+                    if sid not in pulled:
+                        out.at[i, "reason"] = f"co-located with {rep_id}"
+            if rep_id in pulled:
+                state.append("pulled")
+            elif rep_id in forced or any(s in forced for s in ids):
+                state.append("forced")
+            else:
+                state.append(None)
+            reps.append(rep)
+
+        anchors = [j for j, s in enumerate(state) if s is not None]
+        mps = [float(out.at[r, "mp"]) for r in reps]
+        picks: set[int] = set()
+        bounds = [-1, *anchors, len(reps)]
+        for lo, hi in zip(bounds, bounds[1:]):
+            run = list(range(lo + 1, hi))
+            if not run:
+                continue
+            if not anchors:
+                phases = [0]
+            elif len(run) % 2 == 0:
+                phases = [1, 0]
+            else:
+                phases = [1]
+            ends = [j for j in (lo, hi) if 0 <= j < len(reps)]
+            best = None
+            for ph in phases:
+                chosen = [run[x] for x in _alternate(len(run), ph)]
+                # The gap is judged within this run's span, between its anchors: a
+                # route-wide maximum is set by some other stretch and ties every phase.
+                gap = _max_gap([mps[j] for j in sorted(set(ends) | set(chosen))])
+                if best is None or gap < best[0] - 1e-9:
+                    best = (gap, chosen)
+            picks |= set(best[1])
+
+        for j, rep in enumerate(reps):
+            if state[j] == "pulled":
+                out.at[rep, "role"] = "pulled"
+            elif state[j] == "forced":
+                out.at[rep, "role"] = "forced"
+                out.at[rep, "reason"] = "named by the owner"
+            elif j in picks:
+                out.at[rep, "role"] = "pick"
+                out.at[rep, "reason"] = "every other station"
+            else:
+                out.at[rep, "role"] = "skip"
+                nb = [reps[x] for x in (j - 1, j + 1) if 0 <= x < len(reps)]
+                near = [out.at[r, "station_id"] for r in nb]
+                out.at[rep, "reason"] = "between " + " and ".join(near) if len(near) == 2 \
+                    else f"next to {near[0]}" if near else "alone on its route"
+    return out

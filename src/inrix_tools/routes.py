@@ -58,6 +58,12 @@ divided road. Given it, :func:`route_membership` reads identity from it
 * the AADT layer decides only where the SHS cannot: a numbered segment with an SHS
   line of another route *near* but not *on* it (a frontage road beside the highway).
 
+**Item 62: a gap the links close.** :func:`fill_route_gaps` puts an ``inrix_only``
+segment back on its INRIX route R when its ``PreviousXD`` and ``NextXDSegI`` are both
+members of R (``gap_fill``, decided by the ``links``): a new alignment the INRIX line
+draws more than 40 m off the SHS line (US-95 south of Moscow), or a corner the
+coverage test misses (US-2 turning onto Pine St in Sandpoint).
+
 Pure: no file paths, no plotting. :func:`route_membership` takes the geometry frame, the
 SHS layer and/or the AADT layer, and returns one row per segment; :func:`apply_route_membership` writes
 the resolved route onto a network so the chain and couplet code downstream
@@ -104,15 +110,22 @@ OFF_SYSTEM = "off_system"    # neither source numbers it
 BUSINESS = "business"        # on a business loop: its parent route (+ INRIX's), labelled
 RAMP = "ramp"                # ramps keep INRIX's reading; the join handles their volume
 OVERRIDE = "override"        # an owner-reviewed override row decided
+GAP_FILL = "gap_fill"        # inrix_only, but linked through between two members of its route
 
 VERDICTS = (AGREE, CONCURRENT, BUSINESS, RENUMBERED, INRIX_ONLY, ITD_ONLY, UNCONFIRMED,
-            OFF_SYSTEM, RAMP, OVERRIDE)
+            OFF_SYSTEM, RAMP, OVERRIDE, GAP_FILL)
 """Every verdict :func:`route_membership` can return."""
 
 SOURCE_SHS = "shs"          # the State Highway System decided (Item 52)
 SOURCE_AADT = "aadt"        # the AADT layer decided (Item 48; the fallback since Item 52)
 SOURCE_OVERRIDE = "override"
 SOURCE_NONE = "none"        # a ramp, or no layer had anything to say
+SOURCE_LINKS = "links"      # INRIX's PreviousXD / NextXDSegI links decided (Item 62)
+
+GAP_FILL_MAX_MILES = 1.0
+"""A sandwiched segment longer than this is not gap-filled (:func:`fill_route_gaps`).
+The two it catches statewide are 0.62 and 0.01 mi; a mile-long stretch the SHS misses
+is a question for the owner, not a link."""
 
 CHANGED = (RENUMBERED, INRIX_ONLY, ITD_ONLY, OVERRIDE)
 """Verdicts where the resolved route differs from, or may differ from, INRIX's."""
@@ -636,6 +649,76 @@ def route_membership(geo, aadt=None, overrides=None, shs=None) -> pd.DataFrame:
         "verdicts": out["verdict"].value_counts().to_dict(),
         "sources": out["source"].value_counts().to_dict(),
     }
+    return out
+
+
+def fill_route_gaps(membership, links, *, max_miles: float = GAP_FILL_MAX_MILES
+                    ) -> pd.DataFrame:
+    """Membership with every **sandwiched** ``inrix_only`` segment put back on its
+    route.  (ROADMAP Item 62)
+
+    An ``inrix_only`` segment whose INRIX route is R, whose ``PreviousXD`` **and**
+    ``NextXDSegI`` are both members of R, and which is at most ``max_miles`` long,
+    becomes a member of R with verdict :data:`GAP_FILL` and source
+    :data:`SOURCE_LINKS`. The case is D2's 771090123, 0.62 mi of US-95 SB on the ~2025
+    realignment south of Moscow: its INRIX line bows up to 54 m off the SHS line, past
+    :data:`NEAR_DISTANCE_M`, while both neighbours are members, and the SB walk ended at
+    the gap. The 40 m reach is not raised (it keeps parallel local roads off the state
+    routes), and an override row would not do (it works per road name, county-wide).
+
+    One pass over the verdicts as :func:`route_membership` left them: a filled segment
+    does not vouch for its neighbour, so two ``inrix_only`` segments in a row both stay
+    off. Overrides are never touched (their verdict is not ``inrix_only``).
+
+    Args:
+        membership: :func:`route_membership` output, indexed by segment id.
+        links: indexed by segment id, with ``PreviousXD`` / ``NextXDSegI`` and, when
+            present, ``Miles`` — the district network. A neighbour ``membership``
+            doesn't cover is not a member (no evidence), so nothing fills across it.
+        max_miles: see :data:`GAP_FILL_MAX_MILES`.
+
+    Returns:
+        A copy of ``membership``; ``attrs['route_membership']['gap_filled']`` lists the
+        filled ids.
+    """
+    out = membership.copy()
+    ids = pd.Index(pd.array(out.index, dtype="Int64"))
+    routes_by_id = pd.Series(out["routes"].fillna("").to_numpy(), index=ids)
+    lk = links.copy()
+    lk.index = pd.Index(pd.array(lk.index, dtype="Int64"))
+
+    def _member(sid, route) -> bool:
+        if sid is None or pd.isna(sid):
+            return False
+        sid = int(sid)
+        return sid in routes_by_id.index and str(route) in routes_by_id.loc[sid].split("/")
+
+    filled = []
+    for sid, row in out[out["verdict"] == INRIX_ONLY].iterrows():
+        r = row["inrix_route"]
+        key = int(sid)
+        if pd.isna(r) or key not in lk.index:
+            continue
+        link = lk.loc[key]
+        miles = float(link["Miles"]) if "Miles" in lk.columns and pd.notna(link["Miles"]) \
+            else 0.0
+        if miles > max_miles:
+            continue
+        prev, nxt = link.get("PreviousXD"), link.get("NextXDSegI")
+        if not (_member(prev, r) and _member(nxt, r)):
+            continue
+        r = int(r)
+        out.loc[sid, ["verdict", "source", "routes", "route_number", "reason"]] = [
+            GAP_FILL, SOURCE_LINKS, str(r), str(r),
+            f"linked through between two route-{r} members ({int(prev)} before, "
+            f"{int(nxt)} after); no SHS line within {NEAR_DISTANCE_M:g} m"]
+        filled.append(key)
+    attrs = dict(membership.attrs.get("route_membership", {}))
+    attrs["gap_filled"] = filled
+    attrs["gap_fill_max_miles"] = max_miles
+    attrs["verdicts"] = out["verdict"].value_counts().to_dict()
+    attrs["sources"] = out["source"].value_counts().to_dict()
+    out.attrs["route_membership"] = attrs
     return out
 
 

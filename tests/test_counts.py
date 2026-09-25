@@ -312,3 +312,131 @@ def test_merge_refuses_a_redefined_curve():
     with pytest.raises(ValueError, match="defined twice"):
         volume_profiles.merge_profiles(lib, {"am_commute_urban": other})
     assert volume_profiles.merge_profiles(lib, lib).keys() == lib.keys()
+
+
+# ---------------------------------------------------------------------------
+# Which stations to pull (Item 62)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("on,desc,ramp", [
+    ("INT 84 MAIN", "I-84 .1 Mi. E of Frankllin Rd. IC EB On ramp (EB)", True),   # 00329
+    ("INT 184 RAMP", "I-184 WB ramp to Cole Rd", True),
+    ("INT 84 RA", "I-84 Rest Area Ramp  84 Ft. SE from Snake River View RA entrance", True),
+    ("INT 90 MAIN", "I-90  0.1 Mi. E of end of EB On Ramp IC #12 (EB)", False),  # 00291
+    ("INT 86 MAIN", "0.1Mi  W of Jct SB on Ramp to I-15", False),
+    ("INT 84 MAIN", "I-84  1.4 Mi. SE of Gowen Rd IC (EB)", False),
+    ("N Eagle RD", "SH-55  0.48 Mi. S of Jct SH-44", False),
+    (None, None, False),
+])
+def test_is_ramp_station(on, desc, ramp):
+    assert counts.is_ramp_station(on, desc) is ramp
+
+
+def _route(mps, key="84", types=None):
+    ids = [f"{i:05d}" for i in range(1, len(mps) + 1)]
+    frame = pd.DataFrame({"station_id": ids, "route_key": key, "mp": mps})
+    if types is not None:
+        frame["station_type"] = types
+    return frame
+
+
+def _roles(out):
+    return dict(zip(out["station_id"], out["role"]))
+
+
+def test_sample_takes_every_other_station_between_pulled_ones():
+    # pulled 1 ... 5 stations ... pulled 7: skip, pick, skip, pick, skip.
+    out = counts.sample_stations(_route([0, 10, 20, 30, 40, 50, 60]),
+                                 pulled={"00001", "00007"})
+    assert _roles(out) == {"00001": "pulled", "00002": "skip", "00003": "pick",
+                           "00004": "skip", "00005": "pick", "00006": "skip",
+                           "00007": "pulled"}
+    assert out.set_index("station_id").at["00002", "reason"] == "between 00001 and 00003"
+
+
+def test_no_two_skipped_stations_are_neighbours():
+    rng = np.random.default_rng(3)
+    mps = np.sort(rng.uniform(0, 300, 40)).round(1)
+    mps = [m + i for i, m in enumerate(mps)]       # keep them > 0.5 mi apart
+    out = counts.sample_stations(_route(mps), pulled={"00005", "00020", "00021"})
+    sampled = [r != "skip" for r in out["role"]]
+    assert not any(not a and not b for a, b in zip(sampled, sampled[1:]))
+
+
+def test_an_even_run_takes_the_phase_that_halves_the_gap():
+    # Between pulled 44.9 and 51.3 (I-84: Locust Grove .. Orchard), Five Mile at 48.0
+    # halves the gap; Cole at 49.9 would leave 5 mi. A long gap elsewhere on the route
+    # must not tie the choice.
+    out = counts.sample_stations(_route([0.0, 150.0, 244.9, 248.0, 249.9, 251.3]),
+                                 pulled={"00001", "00003", "00006"})
+    roles = _roles(out)
+    assert roles["00004"] == "pick" and roles["00005"] == "skip"
+
+
+def test_a_route_with_nothing_pulled_gets_at_least_one_station():
+    out = counts.sample_stations(_route([5.0], key="200"), pulled=set())
+    assert _roles(out) == {"00001": "pick"}
+    out = counts.sample_stations(_route([5.0, 30.0, 60.0], key="33"), pulled=set())
+    assert _roles(out) == {"00001": "pick", "00002": "skip", "00003": "pick"}
+
+
+def test_forced_stations_anchor_like_pulled_ones():
+    out = counts.sample_stations(_route([0, 10, 20]), pulled=set(), forced={"00002"})
+    roles = _roles(out)
+    assert roles["00002"] == "forced"
+    assert roles["00001"] == "skip" and roles["00003"] == "skip"
+
+
+def test_colocated_stations_are_one_site():
+    # A WIM (W) 0.1 mi from an ATR (P): one site, the ATR represents it; a pulled
+    # station makes its whole site pulled.
+    out = counts.sample_stations(
+        _route([0.0, 20.0, 20.1, 40.0], types=["P", "W", "P", "P"]), pulled={"00001"})
+    by = out.set_index("station_id")
+    assert by.at["00002", "site"] == "00003" and by.at["00003", "site"] == "00003"
+    assert by.at["00002", "role"] == "skip"
+    assert by.at["00002", "reason"] == "co-located with 00003"
+    assert by.at["00003", "role"] == "pick" and by.at["00004", "role"] == "skip"
+    out = counts.sample_stations(_route([0.0, 0.2]), pulled={"00002"})
+    assert _roles(out) == {"00001": "skip", "00002": "pulled"}
+
+
+def test_routes_are_sampled_separately():
+    frame = pd.concat([_route([0, 10, 20], key="84"),
+                       _route([0, 10, 20], key="84 BL 02042").assign(
+                           station_id=["00011", "00012", "00013"])])
+    out = counts.sample_stations(frame, pulled={"00001", "00003"})
+    roles = _roles(out)
+    assert roles["00002"] == "skip"
+    assert [roles[s] for s in ("00011", "00012", "00013")] == ["pick", "skip", "pick"]
+
+
+def _flat_day(date, total, station="00027", direction="2WAY"):
+    """TCDS's daily-only layout: total // 24 in hours 0-22, the rest in hour 23."""
+    each = total // 24
+    vols = [each] * 23 + [total - 23 * each]
+    d = pd.Timestamp(date)
+    return pd.DataFrame([{"station_id": station, "direction": direction,
+                          "timestamp": (d + pd.Timedelta(h, "h")).tz_localize(TZ),
+                          "volume": float(v), "lat": 47.4, "lon": -116.66, "route": "3",
+                          "source": "atr"} for h, v in enumerate(vols)])
+
+
+def test_a_daily_total_spread_flat_is_not_an_hourly_shape():
+    """Item 62: 00027's workbook is 23 x 59 then 59 + remainder. Those days are
+    dropped, so a station with only such days gets no curve at all."""
+    lib = _library()
+    flat = pd.concat([_flat_day(f"2026-04-{d}", t) for d, t in
+                      ((12, 1416), (13, 1787), (14, 1876))])
+    complete, dropped = counts.daily_matrix(flat)
+    assert complete.empty and (dropped["reason"] == counts.FLAT_DAY_REASON).all()
+    with pytest.raises(ValueError, match="no usable day"):
+        counts.fit_profile(flat, library=lib)
+    fitted, stations = counts.station_curves(flat, lib)
+    assert fitted == {} and "00027 2WAY" in stations.attrs["unfitted"]
+    # Mixed with real hourly days, only the flat one goes.
+    real = _curve_counts(lib["balanced_urban"], start="2026-04-06", days=7,
+                         station="00027", direction="2WAY", route="3")
+    prof = counts.fit_profile(pd.concat([real, _flat_day("2026-04-20", 1500)]), library=lib)
+    assert prof.provenance["station"]["dropped_days"] == {
+        "2026-04-20": counts.FLAT_DAY_REASON}
+    assert np.allclose(prof.hourly["weekday"], lib["balanced_urban"].hourly["weekday"])

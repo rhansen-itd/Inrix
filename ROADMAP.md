@@ -3393,14 +3393,14 @@ names and require a companion core to face the lead core."
 
 ---
 
-## 62 — Statewide ATR pull, refit, and the statewide re-run on fitted curves
+## 62 — Statewide ATR pull, refit, and the statewide re-run on fitted curves ✅ (Session 84)
 
 **Target: Opus.** Scripts + data; mostly a long background pull. Depends on 61, and its
 re-run on 63 (the catalogues it ranks). The pull and refit can start before 63 lands.
 
 Scope:
 
-- [ ] **Membership gap-fill: a segment linked through between two members of its
+- [x] **Membership gap-fill: a segment linked through between two members of its
       route is a member** (owner, 2026-09-25, after Session 81). Do this first: it
       changes membership, which the catalogues (Item 63) and the re-run both read.
       - *The case.* D2 segment 771090123 (0.62 mi of US-95 SB, ~2.5 mi south of Moscow
@@ -3429,7 +3429,17 @@ Scope:
         different route, or a missing link does not); DATA_FORMAT (the route-membership
         section); DESIGN_HISTORY.
 
-- [ ] **Pull** April 2026 hourly volumes (report 87; a fallback month where April is
+      *`routes.fill_route_gaps` (verdict `gap_fill`, source `links`), with a 1-mile cap
+      (`GAP_FILL_MAX_MILES`) and no XDGroup test: Pine St shares the next segment's
+      group but not the previous one's. It fills the two segments, both correct: Pine St
+      is the corner where US-2 turns off 5th Ave. The one side effect was a stale D1
+      `route_junction` repair that bridged 5th Ave past Pine St. With Pine St a member,
+      it split US-2 WB into two chains, so it was re-derived (removed). Catalogue diff:
+      D1's US-2 Sandpoint facility gains Pine St (+0.014 mi); D2 changes `n_chains`
+      only (51 → 50). 00146 SB's section is 28.44 mi (was 2.63). D1 and D2
+      regenerated into `scripts/`.*
+
+- [x] **Pull** April 2026 hourly volumes (report 87; a fallback month where April is
       missing) for a **sample** of the permanent TCDS stations on state routes, with
       `~/tcds-scraper` (about 40 s per site-month). **Not every station** (owner,
       2026-09-25): pulling them all is excessive, since the profile is unlikely to
@@ -3441,14 +3451,45 @@ Scope:
       - **I-84 in the valley:** the station between Meridian Rd and Eagle Rd, and one
         east of Eagle Rd. West of Meridian it doesn't need to be every one.
       - List the chosen stations (and the skipped ones) before pulling.
-- [ ] Refit (`fit_count_profiles.py`) and review `fit_report.csv`: outage days, 2-way
+
+      *`scripts/select_atr_sample.py` → `scripts/atr_sample.csv` (every candidate with
+      its role and reason), on `counts.sample_stations`. Along each route, in SHS
+      milepost order (`itd_layers.station_mileposts`, own-route line only), stations
+      within 0.5 mi are one site. Pulled and owner-named sites anchor the runs, and each
+      run between anchors alternates skip/pick, starting with a skip, so no two skipped
+      sites are neighbours. An even run takes the phase that leaves the smaller gap
+      within the run, and a route with nothing pulled gets at least one station.
+      Ramps are out (`counts.is_ramp_station`: 00329, 00269, 00197), and so are 37
+      city-street stations. 94 were pulled (93 by the rule, plus 00270). 10 had no April
+      2026 data: 6 came from 2025-04 or 2023-04 fallbacks, and 4 have no count since
+      2023 (00016, 00085, 00159, 00173). Re-running the rule without those 4 added
+      00019 and 00319.
+      I-84 in the valley: 00279 (Locust Grove OP) is the station between Meridian and
+      Eagle, already pulled; 00122 (Five Mile), the first east of Eagle, is a pick;
+      00276 and 00142 are the picks west of Meridian. 122 stations are on hand.*
+- [x] Refit (`fit_count_profiles.py`) and review `fit_report.csv`: outage days, 2-way
       stations, curves far from every generic.
-- [ ] **Check the owner's expectation** (an expectation, not a requirement; owner,
+      *232 curves from 117 stations (Item 59: 55 from 29). No outage days. **The
+      five 2-way-only stations are daily totals spread flat over the hours**, not
+      hourly counts. These are 00027, 00114, 00147, 00182, and 00291, which had been
+      fitted flat since Item 59. `counts.daily_matrix` now drops such days
+      (`FLAT_DAY_REASON`), so those stations are unfitted, and the rule re-picked
+      00184 for 00182. The short counts that borrow day types are 00116 (one Sunday),
+      00150 and 00231. The curves farthest from every generic (0.12–0.17
+      misplaced) are low-volume rural stations (00028 SH-75, 00045 SH-3, 00311, 00132,
+      00081, 120–270 veh/day), plus 00096 US-20 NE and 00068 SH-75.*
+- [x] **Check the owner's expectation** (an expectation, not a requirement; owner,
       2026-09-25): ATR coverage runs all the way through the Treasure Valley on I-84,
       with no stretch left on a generic curve for lack of a station. List any I-84
       valley segments without a `station` curve, with the reason (a gap in the
       sample, a section break).
-- [ ] **Statewide re-run** with the fitted curves (`--count-profiles`), with maps.
+      *Met for the mainline: 112.2 mi of route-84 segments in Canyon and Ada are on
+      station curves. The only exception is 0.95 mi SB of **Centennial Way,
+      Caldwell** (4 segments), an isolated route-84 section with no station. It is
+      I-84 BL / SH-19, not mainline. INRIX numbers it 84 and the SHS confirms 19, so
+      membership calls it `concurrent 19/84` and not `business`. That is a
+      membership question, not a sampling gap; it is not fixed here.*
+- [x] **Statewide re-run** with the fitted curves (`--count-profiles`), with maps.
       Keep the Item 58 outputs, and record the ranking comparison
       (`compare_statewide_rankings.py`: Spearman ρ, top-N churn), as Items 53/54/58
       did. Rank on the Item 63 catalogues: the stop-cut generated ones, with **D3's
@@ -3461,10 +3502,30 @@ Scope:
       `out/statewide_screening_d3generated/` for D3. Item 64 (Session 83) also
       renamed every facility (ids unchanged) and split D3's SH-44 State St
       facilities, so D3's SH-44 rows change for that reason too.*
-- [ ] Revisit Item 56 with the fuller counts. Session 79 found the urban rule
+      *Done, with maps (every district and statewide map regenerated). Station
+      curves now cover 8,543 segments (Item 59: 258). Against the Item 58 outputs
+      (`pre_item62/`; `item62_*_ranking_changes.csv`) only 37 of 67 corridors join,
+      because D3's ids changed: ρ 0.986 peak / 0.989 7-day. To isolate the curves, the
+      same catalogues were re-run on generic curves
+      (`out/statewide_screening_item62_generic/`; `item62_curves_*`). That gives ρ
+      **0.991** peak and **0.993** 7-day over 67. The peak top 10 is unchanged and
+      the 7-day top 10 keeps 9. The largest moves are 7 and 8. Total VHD is +2.5%
+      peak and +4.6% 7-day. Resort corridors gain (SH-75 Hailey ×1.40, Ketchum ×1.37,
+      SH-33 Teton ×1.30); US-93 Pole Line loses most (×0.90).*
+- [x] Revisit Item 56 with the fuller counts. Session 79 found the urban rule
       agreeing with counts at 50/183 segments (27 %) against 67/75 (89 %) for the
       inference. Does the rule need recalibrating?
-- [ ] DATA_FORMAT (the statewide count coverage); DESIGN_HISTORY.
+      *Same pattern on 8,285 segments / 192 station-directions (`item62_item56_revisit.csv`):
+      the urban rule agrees at 25% of segments (26% of station-directions), and the
+      inference at 86% (221/258), never flipping AM/PM. But disagreeing costs little:
+      the rule's curve is a median **1.7 points** of a day's volume farther from the
+      counted shape than the best generic (0.090 vs 0.067 misplaced). 11.5% of
+      station-directions are more than 5 points worse, and none is more than 10.
+      Worst is `balanced_urban` (+4.3 points; counts mostly say PM or AM commute),
+      then `rural_through` where counts say `rural_recreational`. **Recommendation:
+      no broad recalibration.** With 8,543 segments on station curves the rule
+      matters less; a targeted look at `balanced_urban` is the owner's call.*
+- [x] DATA_FORMAT (the statewide count coverage); DESIGN_HISTORY.
 
 *Suggested prompt:* "Do Item 62 of ROADMAP.md — fill the sandwiched route-membership gaps, pull a sample of the statewide ATR counts, refit,
 and re-run the statewide screening on the fitted curves with a ranking comparison."

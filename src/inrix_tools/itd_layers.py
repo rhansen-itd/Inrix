@@ -376,6 +376,63 @@ def shs_mileposts(geo, shs, route_ids) -> pd.DataFrame:
     return out
 
 
+STATION_MP_MAX_OFFSET_M = 150.0
+"""A count station further than this from every line of its own route gets no
+milepost. TCDS coordinates are rougher than XD geometry (a station can sit on the
+shoulder or the frontage road), so the reach is wider than :data:`SHS_MP_MAX_OFFSET_M`."""
+
+
+def station_mileposts(points, shs, routes, business=None) -> pd.DataFrame:
+    """Each count station's milepost on **its own route's** SHS roadway line.  (Item 62)
+
+    Snapping to the nearest line of any route misplaces a station at an interchange
+    (00334, labelled SH-55, lies 0.5 m from I-84's line), so only lines carrying
+    ``routes`` are searched: business-loop lines for a business-loop station, member
+    lines (mainline / spur / connector) otherwise.
+
+    Args:
+        points: GeoDataFrame of station points, any CRS.
+        shs: :func:`load_shs`.
+        routes: Series indexed like ``points``: the route number (``"84"``).
+        business: optional bool Series: the station is on a business loop.
+
+    Returns:
+        A DataFrame indexed like ``points`` with ``shs_route_id``, ``shs_mp`` (miles)
+        and ``shs_offset_m``; NaN / ``None`` where no line of the route lies within
+        :data:`STATION_MP_MAX_OFFSET_M`.
+    """
+    out = pd.DataFrame({"shs_route_id": None, "shs_mp": float("nan"),
+                        "shs_offset_m": float("nan")}, index=points.index)
+    valid = points.geometry.notna() & ~points.geometry.is_empty
+    if not valid.any() or len(shs) == 0:
+        return out
+    metric = points[valid].estimate_utm_crs()
+    pts = points.geometry[valid].to_crs(metric)
+    road = shs[shs[SHS_ROAD_KIND_COL] == "roadway"].to_crs(metric)
+    num = road[SHS_ROUTE_NUMBER_COL]
+    is_bl = road[SHS_ROUTE_TYPE_COL] == "business"
+    is_member = road[SHS_ROUTE_TYPE_COL].isin(MEMBER_ROUTE_TYPES)
+    for sid, pt in pts.items():
+        r = routes.get(sid)
+        if r is None or pd.isna(r) or not str(r).strip().isdigit():
+            continue
+        bl = bool(business.get(sid)) if business is not None else False
+        grp = road[(num == int(r)) & (is_bl if bl else is_member)]
+        if grp.empty:
+            continue
+        d = grp.geometry.distance(pt)
+        k = d.idxmin()
+        if float(d.loc[k]) > STATION_MP_MAX_OFFSET_M:
+            continue
+        part = grp.geometry.loc[k]
+        f0, f1 = float(grp.at[k, "FromMeasur"]), float(grp.at[k, "ToMeasure"])
+        t = part.project(pt, normalized=True) if part.length > 0 else 0.0
+        out.at[sid, "shs_route_id"] = grp.at[k, "RouteID"]
+        out.at[sid, "shs_mp"] = round(f0 + (f1 - f0) * t, 3)
+        out.at[sid, "shs_offset_m"] = round(float(d.loc[k]), 1)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Highway tiers (Item 61)
 # ---------------------------------------------------------------------------

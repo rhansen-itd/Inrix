@@ -5,7 +5,8 @@ Wiring only — the verdicts are :func:`inrix_tools.routes.route_membership`'s. 
 each district, read the network cache (exactly the district's counties), add the
 shapefile's ``SlipRoad`` flag, take identity from ITD's State Highway System
 (``SHS_Primary.zip``, Item 52) with the AADT layer as the fallback, apply
-``scripts/route_overrides.csv``, and write
+``scripts/route_overrides.csv``, fill the sandwiched ``inrix_only`` gaps
+(:func:`inrix_tools.routes.fill_route_gaps`, Item 62), and write
 
 * ``<out-dir>/d<N>_route_membership.csv`` — one row per segment; read by
   ``generate_district_highway_inventories.py`` and ``build_statewide_catalogues.py``;
@@ -58,6 +59,9 @@ def district_membership(d, *, aadt_source, aadt_year, overrides, slip, shs=None,
                                cache_path=AADT_CACHE.get(d, f"geometry_cache/d{d}_aadt.parquet"),
                                shs=shs)
     member = routes.route_membership(geo, layer, overrides=overrides, shs=shs)
+    # Item 62: a segment linked through between two members of its route is a member.
+    member = routes.fill_route_gaps(
+        member, net.set_index("XDSegID")[["PreviousXD", "NextXDSegI", "Miles"]])
     miles = net.set_index("XDSegID")["Miles"].astype(float)
     context = itd_layers.urban_context(geo, urban) if urban is not None else None
     return member, miles, context
@@ -121,6 +125,9 @@ def main(argv=None) -> int:
         frames.append(changes.assign(district=d))
         pol = member.attrs["route_membership"]
         print(f"District {d}: {pol['verdicts']}  decided by {pol['sources']}")
+        for sid in pol.get("gap_filled", []):
+            print(f"  gap_fill {sid} {member.at[sid, 'RoadName']} "
+                  f"route {member.at[sid, 'routes']} {miles.get(sid, float('nan')):.2f} mi")
 
     by_road = pd.concat(frames, ignore_index=True)
     by_road = by_road[["district"] + [c for c in by_road.columns if c != "district"]]

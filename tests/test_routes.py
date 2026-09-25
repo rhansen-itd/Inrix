@@ -473,3 +473,84 @@ def test_a_curated_list_drops_off_system_roads_but_keeps_what_it_is_told_to():
     assert routes.no_route_segments(m) == {2, 3}
     # Without the keep, Banks-Lowman would go too.
     assert routes.reconcile_curated_list([1, 3], m)["dropped"] == [3]
+
+
+# ---------------------------------------------------------------------------
+# Item 62: a gap the INRIX links close
+# ---------------------------------------------------------------------------
+def _chain_membership(verdicts, routes_, inrix=95):
+    """Segments 1..n in a chain; ``verdicts`` / ``routes_`` per segment."""
+    n = len(verdicts)
+    m = pd.DataFrame({
+        "RoadName": ["US-95 S"] * n, "County": ["Latah"] * n,
+        "inrix_route": pd.array([inrix] * n, dtype="Int64"),
+        "verdict": verdicts, "source": ["shs"] * n, "routes": routes_,
+        "route_number": [r or None for r in routes_], "reason": ["-"] * n,
+    }, index=pd.Index(range(1, n + 1), name="XDSegID"))
+    links = pd.DataFrame({"PreviousXD": [None] + list(range(1, n)),
+                          "NextXDSegI": list(range(2, n + 1)) + [None],
+                          "Miles": [0.62] * n}, index=m.index)
+    return m, links
+
+
+def test_a_sandwiched_inrix_only_segment_fills():
+    m, links = _chain_membership([routes.AGREE, routes.INRIX_ONLY, routes.AGREE],
+                                 ["95", "", "95"])
+    out = routes.fill_route_gaps(m, links)
+    assert out.loc[2, "verdict"] == routes.GAP_FILL
+    assert out.loc[2, "source"] == routes.SOURCE_LINKS
+    assert out.loc[2, "routes"] == "95" and out.loc[2, "route_number"] == "95"
+    assert "1 before, 3 after" in out.loc[2, "reason"]
+    assert out.attrs["route_membership"]["gap_filled"] == [2]
+    assert routes.route_segments(out, 95) == [1, 2, 3]
+    assert m.loc[2, "verdict"] == routes.INRIX_ONLY          # input untouched
+
+
+def test_a_concurrent_neighbour_is_a_member():
+    m, links = _chain_membership([routes.CONCURRENT, routes.INRIX_ONLY, routes.AGREE],
+                                 ["8/95", "", "95"])
+    assert routes.fill_route_gaps(m, links).loc[2, "verdict"] == routes.GAP_FILL
+
+
+def test_one_member_neighbour_does_not_fill():
+    m, links = _chain_membership([routes.AGREE, routes.INRIX_ONLY, routes.OFF_SYSTEM],
+                                 ["95", "", ""])
+    assert routes.fill_route_gaps(m, links).loc[2, "verdict"] == routes.INRIX_ONLY
+
+
+def test_neighbours_on_a_different_route_do_not_fill():
+    m, links = _chain_membership([routes.AGREE, routes.INRIX_ONLY, routes.AGREE],
+                                 ["12", "", "12"])
+    assert routes.fill_route_gaps(m, links).loc[2, "verdict"] == routes.INRIX_ONLY
+
+
+def test_a_missing_link_does_not_fill():
+    m, links = _chain_membership([routes.AGREE, routes.INRIX_ONLY, routes.AGREE],
+                                 ["95", "", "95"])
+    links.loc[2, "NextXDSegI"] = None
+    assert routes.fill_route_gaps(m, links).loc[2, "verdict"] == routes.INRIX_ONLY
+    links.loc[2, "NextXDSegI"] = 99                       # a neighbour membership lacks
+    assert routes.fill_route_gaps(m, links).loc[2, "verdict"] == routes.INRIX_ONLY
+
+
+def test_two_inrix_only_in_a_row_stay_off_and_a_long_gap_is_not_filled():
+    m, links = _chain_membership(
+        [routes.AGREE, routes.INRIX_ONLY, routes.INRIX_ONLY, routes.AGREE],
+        ["95", "", "", "95"])
+    out = routes.fill_route_gaps(m, links)
+    assert list(out["verdict"]) == [routes.AGREE, routes.INRIX_ONLY, routes.INRIX_ONLY,
+                                    routes.AGREE]
+    m, links = _chain_membership([routes.AGREE, routes.INRIX_ONLY, routes.AGREE],
+                                 ["95", "", "95"])
+    links.loc[2, "Miles"] = routes.GAP_FILL_MAX_MILES + 0.1
+    assert routes.fill_route_gaps(m, links).loc[2, "verdict"] == routes.INRIX_ONLY
+
+
+def test_only_inrix_only_is_filled():
+    m, links = _chain_membership([routes.AGREE, routes.OFF_SYSTEM, routes.AGREE],
+                                 ["95", "", "95"])
+    m["inrix_route"] = pd.array([95, None, 95], dtype="Int64")
+    assert routes.fill_route_gaps(m, links).loc[2, "verdict"] == routes.OFF_SYSTEM
+    m, links = _chain_membership([routes.AGREE, routes.OVERRIDE, routes.AGREE],
+                                 ["95", "", "95"])
+    assert routes.fill_route_gaps(m, links).loc[2, "verdict"] == routes.OVERRIDE

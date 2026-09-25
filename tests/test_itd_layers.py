@@ -337,3 +337,34 @@ def test_a_travelway_letter_in_the_segcode_is_dropped():
     t = itd_layers.tier_frame([{"segcode": "D01540", "bmp": 476, "emp": 477, "tier": "State",
                                 "geometry": LineString([(0, 0), (1, 1)])}])
     assert t.at[0, "segcode"] == "001540"
+
+
+def test_station_mileposts_snap_to_the_stations_own_route():
+    """Item 62: a station is placed on its own route's line, never a nearer line of
+    another route (00334, labelled SH-55, lies 0.5 m from I-84's), and a business-loop
+    station only on business-loop lines."""
+    import geopandas as gpd
+    from shapely.geometry import LineString, Point
+
+    shs = itd_layers.shs_frame([
+        {"RouteId": "01010AIN084", "FromMeasur": 40.0, "ToMeasure": 42.0,
+         "geometry": LineString([(-116.40, 43.600), (-116.36, 43.600)])},
+        {"RouteId": "01990ASH055", "FromMeasur": 10.0, "ToMeasure": 11.0,
+         "geometry": LineString([(-116.40, 43.6005), (-116.36, 43.6005)])},
+        {"RouteId": "02042AIN084", "FromMeasur": 0.0, "ToMeasure": 4.0, "RouteTypeC": 3,
+         "geometry": LineString([(-116.40, 43.601), (-116.36, 43.601)])},
+    ])
+    pts = gpd.GeoDataFrame(
+        {"geometry": [Point(-116.39, 43.600), Point(-116.39, 43.600),
+                      Point(-116.39, 43.600), Point(-116.30, 43.70)]},
+        index=["a", "b", "c", "d"], crs="EPSG:4326")
+    routes = pd.Series(["55", "84", "84", "84"], index=pts.index)
+    business = pd.Series([False, False, True, False], index=pts.index)
+    mp = itd_layers.station_mileposts(pts, shs, routes, business)
+    assert mp.loc["a", "shs_route_id"] == "01990ASH055"
+    assert mp.loc["a", "shs_mp"] == pytest.approx(10.25, abs=0.01)
+    assert mp.loc["a", "shs_offset_m"] == pytest.approx(55, abs=3)
+    assert mp.loc["b", "shs_route_id"] == "01010AIN084"
+    assert mp.loc["b", "shs_mp"] == pytest.approx(40.5, abs=0.01)
+    assert mp.loc["c", "shs_route_id"] == "02042AIN084"
+    assert pd.isna(mp.loc["d", "shs_mp"])      # beyond reach of its route

@@ -2114,10 +2114,43 @@ Item 59 learned about that export:
 - **Zone.** The fitting script reads each district's zone: D1/D2 Pacific, D3–D6
   Mountain.
 
-On hand (`data/atr/`, gitignored): April 2026 for 24 stations, plus fallback months
-for 5 (00048 2023-04, 00161 2025-04, 00275 and 00300 2022-04, 00291 2026-03). The
-April files have no days dropped as outages. 00002 has 29 days and 00059 28, with
-whole days missing.
+- **Trap: some workbooks are daily totals, not hourly counts** (Item 62). TCDS fills
+  every hour of a day with `total // 24` and puts the remainder in the last hour
+  (00027: 23 × 59, then 59 + 17). The layout is the same report 87, and nothing in
+  the metadata says so (`Collection Type` is blank). Fitted, such a day is a
+  **flat** curve, 1/24 an hour. `counts.daily_matrix` drops a day whose hours 0–22
+  are all equal (`FLAT_DAY_REASON`). A station with only such days gets no curve and
+  is listed as unfitted. Five of the stations pulled are like this, all 7-day
+  "2-WAY"-only counts: 00027 (SH-3), 00114 (US-2), 00147 (SH-57), 00182 (SH-55,
+  2025-04) and **00291 (I-90, 2026-03)**. 00291 had been fitted flat since Item 59.
+- **Empty months.** Four stations have nothing in April 2026, March or May 2026, or
+  April 2023–2025 (00016 US-95, 00085 US-12, 00159 US-20, 00173 I-15). They look
+  discontinued.
+- **Ramp stations.** The station list mixes ramp counters in (`On` = `INT 184 RAMP`
+  / `INT 84 RA`, or a description naming the ramp counted: 00329 "…Franklin Rd. IC EB
+  On ramp"). A ramp named only to *place* a mainline station ("E of end of EB On
+  Ramp", "W of Jct SB on Ramp to I-15") is mainline. `counts.is_ramp_station`.
+- **Station ids with a suffix** (`00213-8-26-25`, `00301-10-1-25`) are a relocated
+  counter's second listing; the portal pulls by the five-digit id.
+- **Positions along a route.** The TCDS point can sit up to ~150 m off the SHS line,
+  and at an interchange it is nearer the crossing route (00334, SH-55, is 0.5 m from
+  I-84's line). `itd_layers.station_mileposts` snaps each station to *its own*
+  route's line (business-loop lines for a `BL` station) for a milepost.
+
+On hand (`data/atr/`, gitignored), after Item 62's sample (`scripts/atr_sample.csv`,
+`scripts/select_atr_sample.py`): **122 stations pulled, 117 fitted, 232 curves**.
+- April 2026 for 111 stations.
+- Fallback months for 11: 00048 2023-04; 00161, 00124, 00163, 00182 and 00311
+  2025-04; 00275 and 00300 2022-04; 00096 and 00194 2023-04; 00291 2026-03.
+
+In the Item 62 statewide run the station rule covers **8,543 segments**: D1 1,174,
+D2 1,111, D3 2,394, D4 1,087, D5 1,208 and D6 1,569 (Item 59 covered 258). I-84 is on
+station curves through the whole Treasure Valley.
+
+No day of any hourly station is dropped as an outage. The short counts borrow day
+types: 00116 has one Sunday, 00150 six days and 00231 three weekdays. The pull's
+parallel sessions (`--workers 3`) hung twice without output; one session at a time
+never did.
 
 ### Tube counts and ATSPM
 
@@ -2374,6 +2407,31 @@ The order of the rules for a numbered segment:
 6. `inrix_only` when no line is near at all;
 7. otherwise the SHS can't decide (another route's line is near but not on it), and
    the **AADT layer decides** (`source = aadt`).
+
+**Gap fill (Item 62, `routes.fill_route_gaps`).** After those rules, an `inrix_only`
+segment whose INRIX route is R, whose `PreviousXD` and `NextXDSegI` are **both**
+members of R, and which is ≤ 1 mi long (`GAP_FILL_MAX_MILES`), becomes a member of R
+(`verdict = gap_fill`, `source = links`). It is one pass, so a filled segment does not
+vouch for the next one, and an override is never touched. The 40 m reach stays: it
+keeps parallel local roads off the state routes. Statewide it fills two segments:
+
+- D2 771090123, 0.62 mi of US-95 SB about 2.5 mi south of Moscow on the ~2025
+  realignment. Its INRIX line bows up to 54 m off the SHS line, while its neighbours
+  are members at 39 m and 19 m. The SB chain, and ATR 00146 SB's route section,
+  stopped at the gap: the section was 2.6 mi SB against 28.4 mi NB, and is now 28.4
+  mi.
+- D1 771135074, 0.01 mi of Pine St in Sandpoint where US-2 turns off 5th Ave. The SHS
+  line lies on it, but the corner fails the 50%-alongside test. Its XDGroup matches
+  the next segment's and not the previous one's, so a same-XDGroup requirement would
+  have missed it; the mile cap is the guard instead.
+
+**Trap: a `route_junction` repair can go stale when membership changes.** Item 51's
+`route_junction` rows (`scripts/generate_route_junctions.py`) are derived *from*
+membership. D1 had one bridging 5th Ave straight to US-2 past Pine St, because Pine
+St was not a member. Once Pine St filled, that repair left it as a second head, and
+US-2 WB split into two chains. Re-derive the `route_junction` rows after any
+membership change. (The script also rewrites the other rows' floats with
+last-digit repr noise; restore those and keep only the `route_junction` diff.)
 
 An unnumbered segment gets `itd_only` from a member line on it, or `business` with the
 parent route from a business line on it (Kellogg's Markwell Ave). Otherwise Item 48's
