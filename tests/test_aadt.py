@@ -712,6 +712,9 @@ def test_real_myrtle_bbox_join():
 # ---------------------------------------------------------------------------
 # Layer cache keying (ROADMAP Item 47)
 # ---------------------------------------------------------------------------
+_SEASON = [0.8, 0.8, 0.9, 1.0, 1.05, 1.15, 1.25, 1.2, 1.1, 1.0, 0.9, 0.85]
+
+
 def _write_layer_shapefile(path):
     """A four-record AADT layer spread over ~0.4°, written where pyogrio can read it.
 
@@ -733,6 +736,9 @@ def _write_layer_shapefile(path):
             "Commercial": 1000,
             "Descriptio": f"RECORD {i}",
             "Descript_1": "NONE",
+            "DHV": 1200 + i,
+            # A summer-heavy seasonal pattern (Item 55): MADTm = AADT × _SEASON[m].
+            **{f"MADT{m}": round((10000 + i) * _SEASON[m - 1]) for m in range(1, 13)},
             "geometry": LineString([(lon, 43.60), (lon, 43.62)]),
         })
     # One 2023 record in the western cluster, so a year filter has something to drop.
@@ -905,10 +911,15 @@ def test_shortfall_reasons_name_what_is_wrong():
                                  columns=["Year", "AADT"]) is None
     assert "missing column" in aadt._cache_shortfall(
         cached, None, year=2024, bbox=WEST, columns=["Year", "Descriptio"])
+    v = aadt.LAYER_CACHE_VERSION
     assert "year" in aadt._cache_shortfall(
-        cached, {"year": 2023, "bbox": None}, year=2024, bbox=None, columns=["Year"])
+        cached, {"cache_version": v, "year": 2023, "bbox": None}, year=2024, bbox=None,
+        columns=["Year"])
     assert "request needs" in aadt._cache_shortfall(
-        cached, {"year": 2024, "bbox": list(WEST)}, year=2024, bbox=WIDE, columns=["Year"])
+        cached, {"cache_version": v, "year": 2024, "bbox": list(WEST)}, year=2024,
+        bbox=WIDE, columns=["Year"])
+    assert "version" in aadt._cache_shortfall(
+        cached, {"year": 2024, "bbox": None}, year=2024, bbox=None, columns=["Year"])
 
 
 def test_a_geoparquet_source_is_read_directly(layer_shp, tmp_path):
@@ -1135,3 +1146,105 @@ def test_vhd_follows_the_directional_basis():
     vhd = aadt.vehicle_hours_of_delay(delay, j)
     col = [c for c in vhd.columns if "vhd" in c.lower() or "hours" in c.lower()][0]
     assert vhd.loc[1, col] == pytest.approx(vhd.loc[3, col])
+
+
+# ---------------------------------------------------------------------------
+# Monthly factors carried through the join (ROADMAP Item 55)
+# ---------------------------------------------------------------------------
+def _madt_layer(madt=None, aadt_value=40000):
+    """The parallel-line fixture with one record's MADT1..12 (``None`` = no fields)."""
+    layer = _aadt_layer().iloc[[0]].reset_index(drop=True)
+    layer["AADT"] = aadt_value
+    if madt is not None:
+        for m, v in enumerate(madt, start=1):
+            layer[f"MADT{m}"] = v
+    return layer
+
+
+def test_madt_ratios_survive_the_join_unchanged_by_the_halving():
+    madt = [round(40000 * f) for f in _SEASON]
+    j = aadt.join_aadt(_seg_geo(), _madt_layer(madt))
+    row = j.loc[1001]
+    # The volume is halved onto the per-direction basis (Item 54)...
+    assert row["AADT"] == 20000
+    # ...but the monthly factor is a ratio on the published record, so it is not.
+    assert [row[c] for c in aadt.MADT_RATIO_COLS] == pytest.approx(_SEASON)
+    assert row["madt_source"] == "layer"
+    assert j.attrs["aadt_join"]["madt_source"] == {"layer": 1}
+
+
+def test_madt_ratios_default_to_one_and_flag_when_missing():
+    # A layer without the fields (an old subset, a pre-2022 year of the cumulative layer).
+    j = aadt.join_aadt(_seg_geo(), _madt_layer(None))
+    assert (j.loc[1001, aadt.MADT_RATIO_COLS] == 1.0).all()
+    assert j.loc[1001, "madt_source"] == "missing"
+    # A record with a zero month is not trusted either: all twelve fall back together.
+    bad = [round(40000 * f) for f in _SEASON]
+    bad[3] = 0
+    j = aadt.join_aadt(_seg_geo(), _madt_layer(bad))
+    assert (j.loc[1001, aadt.MADT_RATIO_COLS] == 1.0).all()
+    assert j.loc[1001, "madt_source"] == "missing"
+
+
+def test_madt_ratios_on_a_segment_with_no_volume():
+    far = _madt_layer([40000] * 12)
+    far["geometry"] = [LineString([(-116.10, 43.610), (-116.10, 43.620)])]   # ~8 km off
+    j = aadt.join_aadt(_seg_geo(), far)
+    assert j.loc[1001, "aadt_source"] == "nearest"
+    assert (j.loc[1001, aadt.MADT_RATIO_COLS] == 1.0).all()
+    assert j.loc[1001, "madt_source"] == "no_aadt"
+    empty = aadt.join_aadt(_seg_geo(), far.iloc[0:0])
+    assert empty.loc[1001, "madt_source"] == "no_aadt"
+
+
+def test_madt_ratios_without_the_directional_basis():
+    madt = [round(40000 * f) for f in _SEASON]
+    j = aadt.join_aadt(_seg_geo(), _madt_layer(madt), directional_basis=False)
+    assert j.loc[1001, "AADT"] == 40000
+    assert j.loc[1001, "madt_ratio_07"] == pytest.approx(1.25)
+
+
+def test_the_layer_keeps_madt_and_dhv(layer_shp):
+    layer = aadt.load_aadt(layer_shp, year=2024)
+    assert {"DHV", *aadt.MADT_COLS} <= set(layer.columns)
+    ratios, ok = aadt.madt_ratios(layer)
+    assert ok.all()
+    assert ratios[:, 6] == pytest.approx(1.25, abs=1e-4)      # July
+
+
+def test_a_pre_item55_cache_rebuilds_with_the_monthly_fields(layer_shp, tmp_path):
+    """A cache written before Item 55 lacks ``MADT1..12`` / ``DHV`` and carries no
+    ``cache_version``; it must rebuild, and the rebuilt cache must then be a hit."""
+    import json
+
+    cache = tmp_path / "layer.parquet"
+    old_cols = [c for c in aadt._KEEP_COLS if c != "DHV" and not c.startswith("MADT")]
+    aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, columns=old_cols, cache_path=cache)
+    meta_path = aadt.cache_meta_path(cache)
+    meta = json.loads(meta_path.read_text())
+    meta.pop("cache_version")
+    meta.pop("absent_columns")
+    meta_path.write_text(json.dumps(meta))
+
+    fresh = aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    assert fresh.attrs["aadt_layer"]["cache"] == "rebuilt (cache is version 1, this build writes 2)"
+    assert {"DHV", *aadt.MADT_COLS} <= set(fresh.columns)
+    assert aadt.read_cache_meta(cache)["cache_version"] == aadt.LAYER_CACHE_VERSION
+    again = aadt.load_aadt(layer_shp, year=2024, bbox=WIDE, cache_path=cache)
+    assert again.attrs["aadt_layer"]["cache"] == "hit"
+
+
+def test_a_source_without_the_monthly_fields_does_not_rebuild_forever(tmp_path):
+    """Columns the *source* lacks are recorded as absent, so their absence from the
+    cache is not a shortfall — otherwise every call would re-read the layer."""
+    shp = tmp_path / "no_madt.shp"
+    gpd.GeoDataFrame(
+        {"Year": [2024], "RouteID": ["01001AUS095"], "AADT": [10000],
+         "Descriptio": ["R"], "geometry": [LineString([(-116.24, 43.60), (-116.24, 43.62)])]},
+        crs="EPSG:4326").to_file(shp, engine="pyogrio")
+    cache = tmp_path / "layer.parquet"
+    first = aadt.load_aadt(shp, year=2024, cache_path=cache)
+    assert "MADT1" in aadt.read_cache_meta(cache)["absent_columns"]
+    assert aadt.load_aadt(shp, year=2024, cache_path=cache).attrs["aadt_layer"]["cache"] == "hit"
+    ratios, ok = aadt.madt_ratios(first)
+    assert not ok.any() and (ratios == 1.0).all()

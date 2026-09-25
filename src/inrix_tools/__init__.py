@@ -24,6 +24,7 @@ Modules are scaffolded as stubs until built per ROADMAP.md:
     extents     — corridor split criteria & multi-scale tiers (Item 45)
     routes      — state-route membership from ITD's layers (Items 48, 52)
     itd_layers  — ITD State Highway System + Census urban areas (Item 52)
+    volume_profiles — 24-hour volume curves + DOW factors behind VHD (Item 55)
 """
 
 __version__ = "0.1.0"

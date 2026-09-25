@@ -2866,13 +2866,13 @@ VHD(window) = mean over observed days of  Σ_{h ∈ window} vol(h, d) × delay(h
 
 ---
 
-## 55 — Volume-profile curve library + MADT carried through the AADT join
+## 55 — Volume-profile curve library + MADT carried through the AADT join ✅ (Session 75)
 
 **Target: Opus.** Pure core. Depends on Item 54 being committed.
 
 Scope:
 
-- [ ] **`src/inrix_tools/volume_profiles.py`** (pure):
+- [x] **`src/inrix_tools/volume_profiles.py`** (pure):
       - `VolumeProfile` (`curve_id`, `hourly = {weekday, sat, sun}` × 24, `dow` × 7,
         `provenance`, `description`), validated: each day type Σ = 1, DOW mean 1,
         non-negative;
@@ -2880,7 +2880,7 @@ Scope:
         via `importlib.resources` (no hardcoded paths);
       - `bin_volume_factor(profile, local_ts)` → the share of daily volume in a 5-min
         bin, vectorised over a tz-aware index.
-- [ ] **Generic starter curves, each with cited provenance:** `am_commute_urban`,
+- [x] **Generic starter curves, each with cited provenance:** `am_commute_urban`,
       `pm_commute_urban`, `balanced_urban` (two-peak), `rural_through`,
       `rural_recreational` (weekend- and midday-heavy), `interstate_through` (broad).
       - Research candidates: FHWA *Traffic Monitoring Guide* and NCHRP time-of-day
@@ -2890,22 +2890,40 @@ Scope:
         it `synthesised`.
       - Sanity-check the peak-hour share against the layer's DHV/AADT (median 0.12;
         DHV is K30, so it is an upper bound, not a target).
-- [ ] **`aadt.py`:**
+- [x] **`aadt.py`:**
       - keep `MADT1..12` (and `DHV`) in `_KEEP_COLS`;
       - carry `madt_ratio_01..12` (= MADTm / AADT on the published record, unchanged
         by the Item 54 halving) through `join_aadt`;
       - when MADT is missing, use 1.0 and flag it;
       - version or invalidate the `d{N}_aadt.parquet` cache.
-- [ ] **pytest:**
+- [x] **pytest:**
       - profile validation rejects bad sums;
       - the bin factors over a day equal that day's DOW factor;
       - a DST day (23/25 hours) is handled;
       - MADT ratios survive the join (the `layer_shp` fixture gains MADT fields);
       - the cache rebuilds.
-- [ ] DATA_FORMAT (MADT/DHV now kept, with their 2025 statistics; the curve schema;
+- [x] DATA_FORMAT (MADT/DHV now kept, with their 2025 statistics; the curve schema;
       the equal-daily-directional-volume assumption); DESIGN_HISTORY.
+      *Session 75. Sources:*
+      - *Urban curves: TTI 2019 UMR Appendix A. Its profiles are already
+        directional (AM-peak vs PM-peak direction), so nothing is synthesised from a
+        D-factor. Digitised from the published charts.*
+      - *Rural curves: Idaho's own EPA 2017 NEI hourly-VMT submittal, extracted
+        exactly from the PDF's vector paths.*
+      - *DOW: UMR Exhibit A-6 (urban) and the inverse of INDOT's 2023 factors
+        (rural).*
+      - *`interstate_through` adds a 13.4 % CRC A-100 truck curve.
+        `rural_recreational`'s DOW is synthesised.*
+      - *FHWA's TMG and NCHRP were not used. The TMG gives method, not tables, and
+        NCHRP's time-of-day tables are trip departures, not volumes.*
 
-*Suggested prompt:* "Do Item 55 of ROADMAP.md — build the volume-profile curve library
+      *Everything is rebuilt by `scripts/derive_volume_profiles.py`.
+      `madt_ratio_01..12` + `madt_source` are carried through the join. The layer
+      cache is versioned (`LAYER_CACHE_VERSION = 2`) and records the source's absent
+      columns. 856 tests pass. On real data, the D3 cache rebuilt once, then hit;
+      1,492/1,500 sampled D3 segments carry layer MADTs.*
+
+*Suggested prompt (done):* "Do Item 55 of ROADMAP.md — build the volume-profile curve library
 with cited generic curves, and carry the MADT ratios through the AADT join."
 
 ---

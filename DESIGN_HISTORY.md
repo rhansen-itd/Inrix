@@ -6353,3 +6353,105 @@ AADT/2). All asymmetry is in the assigned curve.
 
 Item 54 must be committed before Item 55. The Future "Directional AADT" bullet now
 points at this batch.
+
+## Session 75 — Item 55: the volume-profile curve library, and MADT through the join (2026-09-25)
+
+### 1. What was built
+
+- **`volume_profiles.py`** (pure):
+  - `VolumeProfile` holds `curve_id`, `hourly` (weekday/sat/sun × 24), `dow` × 7,
+    `provenance` (`basis`, `sources`, `detail`) and `description`. It is validated
+    on construction.
+  - `load_profiles()` reads the package data through `importlib.resources`;
+    `profile_sources()` returns the citation table.
+  - `bin_volume_factor(profile, local_ts)` is vectorised: 2.4 M bins take 0.23 s,
+    because the per-date DST sum is computed once per distinct date.
+- **`src/inrix_tools/data/volume_profiles.json`**: six starter curves. They are
+  generated, not hand-edited: `scripts/derive_volume_profiles.py` builds them from
+  `scripts/volume_profile_sources.json`, and a test holds the two in step.
+- **`aadt.py`**:
+  - `_KEEP_COLS` gains `DHV` and `MADT1..12`;
+  - `madt_ratios()` computes the ratios, and `join_aadt` carries
+    `madt_ratio_01..12` + `madt_source` (`layer` / `missing` / `no_aadt`), with the
+    counts in `attrs['aadt_join']['madt_source']`;
+  - the layer cache sidecar gets `cache_version` (`LAYER_CACHE_VERSION = 2`) and
+    `absent_columns`.
+
+### 2. Where the curves came from, and why not the ROADMAP's candidates
+
+The item suggested FHWA's TMG and NCHRP tables. Neither was pursued: the TMG
+describes method rather than publishing curves, and NCHRP's time-of-day tables are
+trip departures by purpose, not roadway volume. MOVES' default `hourVMTFraction` is
+the obvious national table, but it lives in the MOVES database, not in a citable
+document. What was used:
+
+- **TTI 2019 Urban Mobility Report, Appendix A** for the three urban curves. It turned
+  out to be the best fit to the owner's scheme:
+  - the profiles are **directional**: a road's "AM Peak" curve is the direction
+    whose AM speed is lower, which is exactly Item 56's inferred orientation;
+  - they come from 713 urban count stations;
+  - they carry a DOW table (Exhibit A-6).
+
+  So no commute curve had to be synthesised from a two-way shape and a D-factor. The
+  charts are raster only, so they were digitised by line colour. The check: each
+  96-point series sums to 0.997–1.009 before renormalising, and spot values agree
+  with the chart to ~±0.03 pp.
+- **EPA's 2017 NEI review plots for Idaho** for the rural curves. These are per-county
+  hourly VMT fractions *Idaho* submitted, i.e. local data. The PDF is vector, so the
+  values were parsed from the path coordinates, calibrated against the axis labels'
+  text positions. Each curve sums to 1.005–1.011. Findings:
+  - the curves differ by county, so the library uses the cross-county median;
+  - recreational and other rural counties are indistinguishable on weekdays, and so
+    are freeway and non-freeway.
+- **INDOT 2023 weekday factors** for the rural DOW, inverted (they turn a day's count
+  into AADT). No Idaho DOW table was found.
+
+Two curves are labelled `synthesised`:
+- `interstate_through` gets its "broad" shape from a 13.4 % mix of the CRC A-100
+  combination-truck curve. That share is taken from the layer's `Commercial` field,
+  which is 0 on many interstate records, so it is a floor.
+- `rural_recreational` uses the leisure (weekend) shape on every day, with a weekend-
+  heavy DOW written after FHWA's recreational guidance.
+
+Both are placeholders for Item 59's count fitting. The freeway urban variants and the
+low/severe-congestion UMR profiles are in the source extract, unused.
+
+### 3. The DST decision
+
+The scope asked for a DST day to be "handled"; the question was what that means. The
+factor is renormalised per local date by `S(date)`, the day type's shares over the
+hours that date actually has. So the day's bins still sum to its DOW factor: the
+23-hour day doesn't lose an hour's traffic and the 25-hour day doesn't gain one. The
+factor also stays a function of each timestamp alone, never of which bins are in the
+index. That matters for Item 57, which will sum over windows.
+
+### 4. A cache bug the new columns exposed
+
+Adding columns to `_KEEP_COLS` makes an old cache fail the column test, which is the
+intended invalidation. It also made **any source without the fields rebuild on every
+call**: the test fixture, a saved subset, or a pre-2022 year of the cumulative layer.
+The requested-but-missing columns could never appear. The sidecar now records
+`absent_columns`, and they are not a shortfall. The explicit `cache_version` makes
+the Item 55 invalidation deliberate rather than a side effect of the column list.
+
+### 5. Verification
+
+- 856 tests pass; 2 skipped, as before. New: 26 in `test_volume_profiles.py`, and 7 in
+  `test_aadt.py` covering MADT through the join, the missing / no-volume fallbacks,
+  the pre-Item 55 cache rebuild, and the no-perpetual-rebuild case. The `layer_shp`
+  fixture gains DHV and a summer-heavy MADT pattern.
+- Real data:
+  - `geometry_cache/d3_aadt.parquet` rebuilt once (`cache is version 1, this build
+    writes 2`), then hit.
+  - A 1,500-segment D3 join: 1,492 `layer`, 8 `no_aadt`. Median ratios run 0.81
+    (Jan) to 1.13 (Jul).
+- Layer facts are recorded in DATA_FORMAT:
+  - MADT is on every 2025 record, and absent on the cumulative layer before 2022;
+  - 703 records are flat (MADT = AADT);
+  - a record's twelve ratios average 0.996, not 1.
+
+### 6. Not done here
+
+- Nothing consumes the curves or ratios yet: VHD is unchanged until Item 57.
+- GUI geometry caches written before today lack the `madt_ratio_*` columns. Item 58
+  handles the GUI path.

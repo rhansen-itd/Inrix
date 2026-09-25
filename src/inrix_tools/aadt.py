@@ -49,7 +49,13 @@ from .io import DATETIME_COL, SEGMENT_COL
 _KEEP_COLS = [
     "Year", "RouteID", "Route", "Segment", "FromMeasur", "ToMeasure",
     "AADT", "PassengerA", "Commercial", "Descriptio", "Descript_1",
+    # Item 55: the design-hour volume and the twelve monthly ADTs, populated on every
+    # 2025 record (and on the cumulative layer from 2022). The MADTs become the
+    # monthly factor behind curve-weighted VHD; DHV is the K30 sanity bound on a
+    # curve's peak-hour share.
+    "DHV", *[f"MADT{m}" for m in range(1, 13)],
 ]
+MADT_COLS = [f"MADT{m}" for m in range(1, 13)]
 
 DEFAULT_YEAR = 2025        # the layer is cumulative across years; use the latest.
 DEFAULT_SOURCE = "AADT_2025.zip"
@@ -64,6 +70,8 @@ AADT_KIND_COL = "aadt_record_kind"   # record_kind of the chosen AADT record
 AADT_DESC_COL = "aadt_desc"          # Descriptio of the chosen record (diagnostic)
 AADT_COVER_COL = "aadt_coverage"     # share of the segment the chosen record runs beside
 AADT_ROUTE_NUM_COL = "aadt_route_number"   # route the chosen record names (<NA> = none)
+MADT_RATIO_COLS = [f"madt_ratio_{m:02d}" for m in range(1, 13)]   # MADTm / AADT (Item 55)
+MADT_SOURCE_COL = "madt_source"      # layer / missing / no_aadt
 
 RECORD_KIND_COL = "record_kind"      # on the AADT layer (classify_aadt_records)
 ROUTE_CLASS_COL = "route_class"      # IN / SH / US / OH, parsed from RouteID
@@ -307,6 +315,13 @@ def _bbox_to_crs(bbox, src_crs, dst_crs):
 CACHE_META_SUFFIX = ".meta.json"
 """Sidecar written beside a ``cache_path`` recording what the cache covers."""
 
+LAYER_CACHE_VERSION = 2
+"""What a layer cache holds, as a version. It rises whenever what gets written changes
+in a way the column test cannot see. 2 = Item 55: the cache keeps ``DHV`` and
+``MADT1..12``. An older cache (version 1 or no ``cache_version`` in its sidecar)
+already fails the column test, and the version makes that explicit rather than
+incidental, so it rebuilds."""
+
 
 def _clean_bbox(bbox):
     """``(minx, miny, maxx, maxy)`` as floats, or ``None`` for absent/degenerate.
@@ -380,14 +395,19 @@ def source_key(source) -> dict | None:
     return {"name": p.name, "bytes": size}
 
 
-def _write_cache_meta(cache_path, *, year, bbox, columns, n_rows, source=None) -> None:
+def _write_cache_meta(cache_path, *, year, bbox, columns, n_rows, source=None,
+                      absent_columns=()) -> None:
     import json
 
     cache_meta_path(cache_path).write_text(json.dumps({
+        "cache_version": LAYER_CACHE_VERSION,
         "source": source,
         "year": year,
         "bbox": list(bbox) if bbox is not None else None,
         "columns": list(columns),
+        # Requested but not in the source (a layer without the MADT fields): absent
+        # from the cache for good reason, so their absence is not a shortfall.
+        "absent_columns": list(absent_columns),
         "n_rows": int(n_rows),
         "note": ("What this cache covers. A request outside it rebuilds the cache "
                  "rather than being served a subset (ROADMAP Item 47)."),
@@ -417,7 +437,11 @@ def _cache_shortfall(cached, meta, *, year, bbox, columns, source=None) -> str |
     may only mean the layer has nothing out there — that rebuilds unnecessarily,
     never under-answers.
     """
-    missing = [c for c in columns if c not in cached.columns]
+    if meta is not None and meta.get("cache_version", 1) != LAYER_CACHE_VERSION:
+        return (f"cache is version {meta.get('cache_version', 1)}, "
+                f"this build writes {LAYER_CACHE_VERSION}")
+    absent = set(meta.get("absent_columns", ())) if meta is not None else set()
+    missing = [c for c in columns if c not in cached.columns and c not in absent]
     if missing:
         return f"cache is missing column(s) {missing}"
 
@@ -600,7 +624,8 @@ def _load_aadt_layer(source, year=DEFAULT_YEAR, bbox=None, columns=None, cache_p
         Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
         gdf.to_parquet(cache_path)
         _write_cache_meta(cache_path, year=year, bbox=read_bbox_wgs84,
-                          columns=cols, n_rows=len(gdf), source=src_key)
+                          columns=cols, n_rows=len(gdf), source=src_key,
+                          absent_columns=[c for c in cols if c not in gdf.columns])
         if cache_state == "no_cache":
             cache_state = "written"
     gdf.attrs["aadt_layer"] = {
@@ -829,6 +854,12 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
         * ``RouteID`` / ``Route`` — carried from the chosen line (also for
           ``nearest``, as a diagnostic) / ``Commercial`` — carried only for a match.
 
+        * ``madt_ratio_01`` .. ``madt_ratio_12`` — the chosen record's ``MADTm /
+          AADT`` (:func:`madt_ratios`, Item 55), the monthly factor on either volume
+          basis; ``1.0`` where there is none, with ``madt_source`` saying why:
+          ``layer`` (the record's own MADTs), ``missing`` (the record has no usable
+          MADT) or ``no_aadt`` (no volume was attached).
+
         With ``directional_basis`` (the default), also ``aadt_layer`` (the published
         count), ``aadt_basis`` / ``aadt_basis_reason`` and ``aadt_record_basis`` (the
         chosen record's :func:`classify_aadt_basis` evidence); ``AADT`` is then the
@@ -843,7 +874,8 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
              AADT_DIST_COL: float("nan"), AADT_COVER_COL: float("nan"),
              AADT_KIND_COL: None, AADT_DESC_COL: None, AADT_ROUTE_NUM_COL: None,
              "RouteID": None, "Route": None, "Commercial": pd.NA,
-             AADT_RECORD_BASIS_COL: None}
+             AADT_RECORD_BASIS_COL: None,
+             **dict.fromkeys(MADT_RATIO_COLS, 1.0), MADT_SOURCE_COL: "no_aadt"}
 
     valid_geo = out[out.geometry.notna() & ~out.geometry.is_empty]
     if len(valid_geo) == 0 or len(aadt) == 0:
@@ -892,6 +924,7 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
     aadt_desc = _col_or_none(aadt, "Descriptio")
     aadt_comm = _col_or_none(aadt, "Commercial")
     aadt_ev = _col_or_none(aadt, BASIS_EVIDENCE_COL)
+    madt_ratio, madt_ok = madt_ratios(aadt)
 
     seg_routes = _segment_route_numbers(valid_geo)
     seg_kinds = _segment_kinds(valid_geo)
@@ -952,6 +985,8 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
                 "Route": _take(aadt_route, i),
                 "Commercial": _take(aadt_comm, i, pd.NA),
                 AADT_RECORD_BASIS_COL: _take(aadt_ev, i),
+                **dict(zip(MADT_RATIO_COLS, madt_ratio[i].tolist())),
+                MADT_SOURCE_COL: "layer" if madt_ok[i] else "missing",
             }
         else:
             # Identify the geometrically nearest line so a failed join is
@@ -972,6 +1007,8 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
                 "Route": _take(aadt_route, i),
                 "Commercial": pd.NA,
                 AADT_RECORD_BASIS_COL: None,
+                **dict.fromkeys(MADT_RATIO_COLS, 1.0),
+                MADT_SOURCE_COL: "no_aadt",
             }
 
     for col in blank:
@@ -980,9 +1017,37 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
     out.attrs = dict(geo.attrs)
     out.attrs["aadt_join"] = _join_policy(
         max_distance_m, bearing_tol_deg, prefer_mainline, out[AADT_SOURCE_COL])
+    out.attrs["aadt_join"]["madt_source"] = {
+        k: int(v) for k, v in out[MADT_SOURCE_COL].value_counts().items()}
     if not directional_basis:
         return out.drop(columns=[AADT_RECORD_BASIS_COL])
     return apply_directional_basis(out)
+
+
+def madt_ratios(aadt):
+    """Each record's monthly factors, ``MADTm / AADT`` for m = 1..12.  (Item 55)
+
+    The ratio is taken on the **published** record: both counts are two-way (or both
+    one-way) there, so it is the same on either volume basis, and the Item 54 halving
+    of ``AADT`` does not touch it. A record whose MADTs are absent (a layer or cache
+    without the fields, a pre-2022 year of the cumulative layer), null or non-positive,
+    or whose AADT is not positive, gets **1.0** for every month and ``ok = False``: no
+    seasonal adjustment, and the caller flags it.
+
+    Returns:
+        ``(ratios, ok)``: a ``(len(aadt), 12)`` float array and a boolean array.
+    """
+    import numpy as np
+
+    n = len(aadt)
+    if not all(c in aadt.columns for c in MADT_COLS) or AADT_COL not in aadt.columns:
+        return np.ones((n, 12)), np.zeros(n, dtype=bool)
+    madt = aadt[MADT_COLS].apply(pd.to_numeric, errors="coerce").to_numpy(float)
+    base = pd.to_numeric(aadt[AADT_COL], errors="coerce").to_numpy(float)
+    ok = (np.isfinite(madt) & (madt > 0)).all(axis=1) & np.isfinite(base) & (base > 0)
+    ratios = np.ones((n, 12))
+    ratios[ok] = madt[ok] / base[ok, None]
+    return ratios, ok
 
 
 def _join_policy(max_distance_m, bearing_tol_deg, prefer_mainline, source) -> dict:

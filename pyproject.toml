@@ -51,6 +51,10 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The generic volume-profile curves (Item 55), read via importlib.resources.
+[tool.setuptools.package-data]
+inrix_tools = ["data/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Repo root on the path so the retired-but-tested ``legacy/`` package imports

@@ -1410,9 +1410,9 @@ of delay, AADT-weighted corridor speed).
 
 Fields kept (`_KEEP_COLS`): `Year`, `RouteID`, `Route`, `Segment`, `FromMeasur`,
 `ToMeasure`, `AADT`, `PassengerA`, `Commercial` (the truck split, for a future truck
-view), `Descriptio`, `Descript_1`. Route-measure identity
-(`RouteID`/mileposts) is the layer's own linear reference; extras (`DHV`,
-`MADT1..12`) are dropped.
+view), `Descriptio`, `Descript_1`, and since Item 55 `DHV` and `MADT1..12` (see
+*Monthly factors and DHV* below). Route-measure identity (`RouteID`/mileposts) is the
+layer's own linear reference.
 
 - **`Route` and `Segment` are null on every Idaho row** — dead columns in the shipped
   layer. The live identifier is **`RouteID`**: five digits of route-segment number, a
@@ -1426,6 +1426,50 @@ view), `Descriptio`, `Descript_1`. Route-measure identity
   it carries (`WB OFF EAGLE RD IC #46`), a mainline record as the cross-streets it
   runs between (`EAGLE RD IC #46` → `JCT I-184 IC #49`). Both are **truncated in the
   source** (max 40 chars; `SNAKE RIVER VIEW EB RA` is stored that way).
+
+### Monthly factors (`MADT1..12`) and `DHV` (ROADMAP Item 55)
+
+`MADTm` is the record's average daily traffic in month *m* (1 = January); `DHV` is its
+design-hour volume. All thirteen are integers on the same basis as the record's
+`AADT` (two-way on a two-way road, one-way on a couplet leg).
+
+- **Coverage.** Every 2025 record (8,423 of 8,423) carries all twelve MADTs and a DHV,
+  none null or zero. On `Cumulative_AADT.zip` the MADTs are **absent (zero) for every
+  record up to 2021** and present for 2022–2024. `DHV` is present from 2018 on (a
+  handful of records missing).
+- **2025 statistics** (MADT*m* / AADT, median over records): Jan 0.84, Feb 0.84, Mar
+  0.94, Apr 1.00, May 1.06, Jun 1.07, Jul 1.04, Aug 1.07, Sep 1.09, Oct 1.05, Nov 0.98,
+  Dec 0.90. The means run higher in summer (Jul 1.15), pulled up by a tail of
+  strongly seasonal records (up to 2.55 in July). There are 717 distinct rounded
+  patterns, so the factor is per record, not one statewide table.
+- **The twelve don't average to exactly 1.** The median of a record's twelve ratios is
+  0.996 (0.82–1.02). An AADT is not the plain mean of its MADTs (months differ in
+  length, and ITD's factoring differs). A curve-weighted VHD therefore uses the ratio
+  as published and does not renormalise it.
+- **703 records (8 %) are flat:** every MADT equals the AADT. These carry no seasonal
+  information (presumably unfactored counts); they read as ratio 1.0, the same as a
+  missing MADT, but are flagged `layer`.
+- **`DHV / AADT`:** median 0.12 (IQR 0.10–0.14; interstates 0.119), with a few
+  records at 1.0. DHV is the 30th-highest hour of the year (K30), so it is an **upper
+  bound** on a volume curve's average-day peak-hour share, not a target.
+
+`aadt.join_aadt` carries **`madt_ratio_01` .. `madt_ratio_12`** = MADT*m* / AADT of
+the chosen record (`aadt.madt_ratios`). The ratio is taken on the published record,
+so the Item 54 halving does not change it: the per-direction MADT is
+`AADT × madt_ratio_MM`. **`madt_source`** says where the ratios came from:
+- `layer`: the record's own MADTs;
+- `missing`: the record has no usable MADT (fields absent, any month null or ≤ 0, or
+  AADT ≤ 0). All twelve become 1.0, meaning no seasonal adjustment;
+- `no_aadt`: no volume was attached (`nearest` / `missing`). All twelve are 1.0 and
+  irrelevant.
+
+On a 1,500-segment D3 sample, 1,492 are `layer` and 8 are `no_aadt`.
+
+**Layer cache.** `aadt.LAYER_CACHE_VERSION = 2` is written to the cache sidecar. A
+cache without it (version 1, before Item 55, lacking the new fields) rebuilds once.
+The sidecar also records `absent_columns`: requested fields the *source* lacks, such
+as a pre-2022 subset or a test fixture. Their absence is then not a shortfall, so such
+a source does not rebuild on every call.
 
 ### The divided-highway failure mode (ROADMAP Item 34)
 
@@ -1657,6 +1701,120 @@ the carriageway.
 layer's fallback (next section).
 
 **License:** treat like the data exports — gitignored, not redistributed.
+
+## Volume-profile curves (`volume_profiles.py`, Item 55)
+
+VHD up to Item 54 multiplies a window's mean delay by the **whole day's** directional
+AADT. The curve library supplies the time-of-day and day-of-week factors that turn a
+daily count into a volume per 5-minute bin (Item 57 does the multiplying):
+
+```
+vol(bin) = dirAADT × madt_ratio_MM(month of bin's date) × bin_volume_factor(curve, bin)
+```
+
+**Schema** (`src/inrix_tools/data/volume_profiles.json`, package data loaded with
+`importlib.resources`; `volume_profiles.load_profiles()` → `{curve_id: VolumeProfile}`):
+
+| field | meaning |
+|---|---|
+| `curve_id` | stable id; Item 56 assigns one per XD segment |
+| `hourly.weekday` / `.sat` / `.sun` | 24 shares of that day type's volume, each Σ = 1. Hour 0 = 00:00–01:00 **local** |
+| `dow` | 7 factors, Monday..Sunday (pandas `dayofweek`), mean 1: a day's volume relative to the average day |
+| `provenance` | `basis` (`digitised` / `extracted` / `synthesised` / `fitted`), `sources` (keys into the file's `sources` citation table), `detail` (exactly how it was built) |
+| `description` | one line on the shape |
+
+`VolumeProfile` rejects a missing day type, a count other than 24 / 7, a negative or
+non-finite value, Σ ≠ 1 or mean(dow) ≠ 1 (tolerance 1e-6), and an unknown basis.
+
+**`bin_volume_factor(curve, local_ts, bin_minutes=5)`** gives the share of the average
+day's volume in each bin, from the bin's **start** read on the local wall clock:
+
+```
+dow[weekday] × hourly[day type][local hour] / S(date) / (60 / bin_minutes)
+```
+
+`S(date)` is the day type's hourly shares summed over the hours that local date
+actually has:
+- 1 on an ordinary day;
+- 1 − the skipped hour on the 23-hour spring-forward day;
+- 1 + the repeated hour on the 25-hour fall-back day.
+
+So a complete day's bins always sum to that day's DOW factor, and a week sums to 7.
+The factor depends only on its own timestamp, so a window or a sparse index gets the
+same values as the whole day. A tz-naive index is rejected. Holidays are not
+special-cased.
+
+**The equal-daily-directional-volume assumption.** Both directions of a two-way road
+carry the same daily volume: the Item 54 AADT × 0.5. All directional asymmetry is in
+*which curve* each direction is given. The AM-commute (inbound) side gets
+`am_commute_urban` and the PM-commute side `pm_commute_urban`. Over a day they carry
+equal volume at different hours. This is a documented simplification: a direction
+that really carries more daily traffic is not represented until a count says so
+(Item 59).
+
+### The starter curves and their sources
+
+Rebuilt by `python scripts/derive_volume_profiles.py` from
+`scripts/volume_profile_sources.json`. Re-extracting that file from the PDFs is
+`--extract --umr … --epa …` and needs poppler + Pillow. A test asserts that the
+packaged JSON is exactly what the script builds, so don't hand-edit it.
+
+| curve_id | basis | weekday peak hour (share) | Sat peak | DOW Mon..Sun |
+|---|---|---|---|---|
+| `am_commute_urban` | digitised | 07–08 (0.076) | 0.077 | 1.05 ×4, 1.10, 0.90, 0.80 |
+| `pm_commute_urban` | digitised | 16–17 (0.090) | 0.077 | same |
+| `balanced_urban` | digitised | 16–17 (0.064) | 0.077 | same |
+| `rural_through` | extracted | 16–17 (0.082) | 0.082 | 0.99, 1.05, 1.07, 1.09, 1.16, 0.91, 0.73 |
+| `interstate_through` | synthesised | 15–16 (0.077) | 0.079 | 0.95, 0.97, 1.00, 1.06, 1.18, 0.95, 0.90 |
+| `rural_recreational` | synthesised | 14–15 (0.082) | 0.082 | 0.95, 0.85, 0.85, 0.90, 1.15, 1.25, 1.05 |
+
+- **Urban curves: TTI 2019 Urban Mobility Report, Appendix A.** Its profiles come
+  from 713 urban continuous-count stations in 37 states and are **directional**: the
+  "AM Peak" curve is the direction whose AM-peak speed is lower. That is the
+  inbound/outbound pair the owner's scheme needs, so nothing is synthesised from a
+  two-way shape plus a D-factor.
+  - Weekday: Exhibit A-2 (moderate congestion) non-freeway AM/PM, and A-5 (similar
+    speeds each peak) non-freeway for `balanced_urban`.
+  - Sat and Sun: Exhibit A-4's single weekend non-freeway curve.
+  - DOW: Exhibit A-6 (Mon–Thu +5 %, Fri +10 %, Sat −10 %, Sun −20 %), which already has
+    mean 1.
+  - The exhibits are raster charts. They are digitised by line colour against the
+    0 % and 3 % gridlines, and each 96-point series sums to 0.997–1.009 before
+    renormalising (the calibration check). Spot values match the chart to about
+    ±0.03 percentage points per 15 minutes.
+  - The freeway variants (and A-1/A-3's low/severe congestion levels) are in the
+    source extract for later use.
+- **Rural curves: EPA 2017 NEI onroad review, Idaho.** These are per-county plots of
+  the hourly VMT fractions Idaho submitted. They are vector graphics, so the values
+  are **extracted** from the PDF paths, not read by eye (each sums to 1.005–1.011
+  before renormalising).
+  - `rural_through`: the median of the passenger-car (MOVES source type 21) curve on
+    rural non-freeways (road type 3) over the non-MSA counties (28 weekday / 25
+    weekend county pages).
+  - One weekend curve serves Sat and Sun: MOVES has only weekday/weekend.
+  - DOW is the inverse of INDOT's 2023 R2 (rural arterial) weekday factors,
+    renormalised. INDOT publishes the factor that turns a day's count *into* AADT,
+    so a day's volume is its inverse. No Idaho DOW table was found.
+- **`interstate_through`** mixes curves on rural freeways (road type 2), median over
+  32 non-MSA county pages:
+  - 0.866 × Idaho's passenger-car curve;
+  - 0.134 × the CRC A-100 combination-truck curve (West Region non-MSA), which runs
+    through the night.
+  - 0.134 is the AADT-weighted `Commercial / AADT` on the 2025 layer's interstate
+    mainline records that populate `Commercial` (318). Many records carry
+    `Commercial = 0`, so this is a floor, not a measurement of rural I-84.
+  - DOW: the inverse of INDOT R1 (rural interstate), renormalised. It is
+    Friday-heavy, with a lighter weekend than rural arterials.
+- **`rural_recreational`**: in the recreational counties (Blaine, Valley, Teton,
+  Custer, Fremont; Bonner's weekend plot has no complete curve), Idaho's weekday curves are indistinguishable from the
+  rest of rural Idaho. So the curve takes those counties' **weekend** shape (a
+  single midday hump) for every day type. The weekend-heavy DOW is **synthesised**
+  after FHWA's recreational guidance (steady weekdays, weekend surge). It is a
+  placeholder until Item 59 fits it from an ATR.
+- **Sanity against DHV.** The busiest average-day hour on any curve, × its largest
+  DOW factor, is 0.085–0.102. That is below the layer's median DHV/AADT of 0.12,
+  as it must be: DHV is K30 and adds the seasonal peak. This is checked in
+  `test_volume_profiles`.
 
 ## ITD State Highway System (`SHS_Primary.zip`, Item 52)
 
