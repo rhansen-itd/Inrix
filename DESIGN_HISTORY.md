@@ -6296,3 +6296,60 @@ outputs are in `out/statewide_screening/pre_item54/`, and the comparison tables 
   - the tier tests use 10/50/150.
 - 823 pass.
 
+## Session 74 — Scoping the volume-profile batch (Items 55–59) (2026-09-24)
+
+Planning only; no code changed. The owner wants hourly and directional factors behind
+AADT → VHD. The plan is a store of 24-hour volume curves (Σ = 1), a curve id assigned
+to each XD segment, and hourly VHD = curve share × directional AADT × delay. It adds
+day-of-week and MADT factors, starts from generic curves, and adds count-fitted curves
+later.
+
+**What the code does today.** VHD is an index. Each window's mean per-vehicle delay is
+multiplied by the whole day's directional AADT, in:
+- `aadt.vehicle_hours_of_delay`;
+- `extents.segment_congestion` and `monthly_delay_profile`;
+- `run_district_screening._segment_tti_frame`;
+- the GUI.
+
+Consequences:
+- AM (2 h) and `day_7d` (15 h) carry the same volume, and the AM + PM peak totals
+  count about two days.
+- No K, D, hourly, DOW or monthly factor exists.
+- `MADT1..12` and `DHV` are on every 2025 record but dropped by `_KEEP_COLS`.
+  - Median MADT/AADT runs 0.84 (Jan/Feb) to 1.09 (Sep).
+  - Median DHV/AADT is 0.12.
+
+**Owner decisions.**
+- **Curve shape:** weekday/Sat/Sun 24-hour profiles plus 7 DOW factors (mean 1).
+- **Assignment:** a rule plus an override CSV.
+  - The rule first tries data-inferred orientation. When one direction is clearly
+    AM-heavy and its opposite clearly PM-heavy, that sets which side gets the
+    AM-commute curve.
+  - It is decided per chain/corridor, and segments inherit.
+  - Otherwise: urban-area inbound/outbound, then a default.
+  - I raised that inferring volume from delay is circular. It is accepted because
+    the inference picks only the orientation between two generic shapes, never
+    magnitudes, and needs the pair to clearly oppose each other. A both-peaks
+    bottleneck is not evidence.
+- **Headline VHD:** vehicle-hours in the window on an average day of the *data
+  period*. Each observed day uses its own MADT month and DOW factor, so windows become
+  additive. Annualised VHD is an extra column.
+- **Rollout:** replace the index (kept one release as `vhd_index`), rescale the floors
+  and tiers, and record a ranking comparison, as in Items 53/54.
+- **GUI:** compute and scripts only, no new GUI. The GUI's VHD path is switched only
+  so it stays consistent.
+- **Counts:** none on hand; ATR, tube and detector counts are expected later. Item 59
+  builds the importers against a documented schema.
+
+**Assumption recorded.** The two directions carry equal daily volume (the Item 54
+AADT/2). All asymmetry is in the assigned curve.
+
+**Scoping (appended to ROADMAP.md).**
+- 55 — curve library + MADT through the join;
+- 56 — curve assignment;
+- 57 — curve-weighted VHD in the core (Fable, math-heavy);
+- 58 — consumers, floor rescale, ranking comparison;
+- 59 — count importers + fitting.
+
+Item 54 must be committed before Item 55. The Future "Directional AADT" bullet now
+points at this batch.

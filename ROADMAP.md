@@ -2818,24 +2818,246 @@ basis and halve the thresholds calibrated on two-way counts."
 
 ---
 
+# Volume-profile batch — hourly, day-of-week and monthly volume behind VHD (Items 55–59, scoped 2026-09-24)
+
+Owner request, 2026-09-24 (DESIGN_HISTORY Session 74): replace the flat daily volume
+behind VHD with a library of 24-hour volume curves (each Σ = 1). Each XD segment gets
+a curve id, and hourly volume = curve share × directional AADT.
+- Weekday / Saturday / Sunday shapes and day-of-week factors cover the DOW effect.
+- The layer's `MADT1..12` covers the monthly effect.
+- Curves start generic, from research. Later they can be fitted from counts (ATR,
+  24-hour tubes, detectors), none of which are on hand yet.
+
+**Why it matters.** Today VHD is an index: each window's mean per-vehicle delay ×
+the **whole day's** directional AADT (`aadt.vehicle_hours_of_delay`,
+`extents.segment_congestion`, `run_district_screening._segment_tti_frame`, the GUI).
+- The 2-hour AM window and the 15-hour `day_7d` window carry the same volume.
+- `corridor_peak_totals`' AM + PM sum counts about two days of traffic.
+- Nothing applies a K, D, hourly, DOW or monthly factor.
+- `MADT1..12` and `DHV` are populated on every 2025 record but dropped by
+  `_KEEP_COLS`.
+
+The target quantity, per 5-minute bin `h` on local day `d`:
+
+```
+vol(h, d) = dirAADT × (MADT_month(d) / AADT) × dow[d] × hourly[daytype(d)][hour(h)] / 12
+VHD(window) = mean over observed days of  Σ_{h ∈ window} vol(h, d) × delay(h, d) / 60
+```
+
+- `dirAADT` is the Item 54 per-direction basis.
+- The two directions carry equal daily volume. The directional asymmetry is
+  entirely in *which curve* each direction gets (AM-commute vs PM-commute), which
+  is a documented assumption.
+
+**Owner decisions (2026-09-24):**
+- **Curve shape:** weekday / Sat / Sun 24-hour profiles plus 7 DOW factors (mean 1).
+- **Assignment:** rule + override. Try data-inferred orientation first, decided per
+  chain/corridor with segments inheriting. Fall back to urban in/out, then a
+  default.
+- **Headline VHD:** vehicle-hours in the window on an **average day of the data
+  period**. Each observed day uses its own MADT month and DOW factor, and windows
+  become additive.
+- **Rollout:** **replace** the old index, which is kept for one release as
+  `vhd_index`. Rescale the floors and record a ranking comparison, as in Items 53/54.
+- **Scope:** compute and scripts only, **no new GUI**. The GUI's own VHD path must
+  stay consistent.
+
+**Prerequisite:** commit Item 54 (the working tree) before Item 55.
+
+---
+
+## 55 — Volume-profile curve library + MADT carried through the AADT join
+
+**Target: Opus.** Pure core. Depends on Item 54 being committed.
+
+Scope:
+
+- [ ] **`src/inrix_tools/volume_profiles.py`** (pure):
+      - `VolumeProfile` (`curve_id`, `hourly = {weekday, sat, sun}` × 24, `dow` × 7,
+        `provenance`, `description`), validated: each day type Σ = 1, DOW mean 1,
+        non-negative;
+      - `load_profiles()` from package data `src/inrix_tools/data/volume_profiles.json`
+        via `importlib.resources` (no hardcoded paths);
+      - `bin_volume_factor(profile, local_ts)` → the share of daily volume in a 5-min
+        bin, vectorised over a tz-aware index.
+- [ ] **Generic starter curves, each with cited provenance:** `am_commute_urban`,
+      `pm_commute_urban`, `balanced_urban` (two-peak), `rural_through`,
+      `rural_recreational` (weekend- and midday-heavy), `interstate_through` (broad).
+      - Research candidates: FHWA *Traffic Monitoring Guide* and NCHRP time-of-day
+        distribution tables.
+      - If no published *directional* commute curve exists, synthesise one from a
+        published two-way shape plus a documented D-factor (≈ 0.55–0.65), and label
+        it `synthesised`.
+      - Sanity-check the peak-hour share against the layer's DHV/AADT (median 0.12;
+        DHV is K30, so it is an upper bound, not a target).
+- [ ] **`aadt.py`:**
+      - keep `MADT1..12` (and `DHV`) in `_KEEP_COLS`;
+      - carry `madt_ratio_01..12` (= MADTm / AADT on the published record, unchanged
+        by the Item 54 halving) through `join_aadt`;
+      - when MADT is missing, use 1.0 and flag it;
+      - version or invalidate the `d{N}_aadt.parquet` cache.
+- [ ] **pytest:**
+      - profile validation rejects bad sums;
+      - the bin factors over a day equal that day's DOW factor;
+      - a DST day (23/25 hours) is handled;
+      - MADT ratios survive the join (the `layer_shp` fixture gains MADT fields);
+      - the cache rebuilds.
+- [ ] DATA_FORMAT (MADT/DHV now kept, with their 2025 statistics; the curve schema;
+      the equal-daily-directional-volume assumption); DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 55 of ROADMAP.md — build the volume-profile curve library
+with cited generic curves, and carry the MADT ratios through the AADT join."
+
+---
+
+## 56 — Assign a curve to every XD segment: inferred orientation, urban rule, override
+
+**Target: Opus.** Pure core, plus a runner hook. Depends on 55.
+
+The inference picks only the **orientation** (which direction is the AM-commute
+side). It never sets volume magnitudes, which keeps the circularity with delay
+harmless: on a real commute road the busier-in-the-AM direction *is* the AM-commute
+direction. A bottleneck congested at both peaks, or in one direction only, is not
+evidence and falls through.
+
+Scope:
+
+- [ ] **`src/inrix_tools/profile_assignment.py`:** a frame keyed on `XDSegID` with
+      `curve_id, curve_source ∈ {override, inferred, urban_rule, default},
+      am_share_self, am_share_opposite, chain_id, reason`.
+- [ ] **Chains, not segments.** Use catalogue corridor directions (`_segment_ids`)
+      where present, else route-membership runs (`routes.read_membership`). Opposing
+      chains are paired with the existing direction-sign and twin helpers. A chain
+      decides once and its segments inherit, so the orientation cannot flip along a
+      road.
+- [ ] **Inference.** Per chain, take the length-weighted share of AM vs PM delay
+      (from the `screen.PEAK_WINDOWS` means).
+      - AM-commute if `am_share_A ≥ 0.65` **and** `am_share_B ≤ 0.35`, both above a
+        minimum-delay floor; the mirror case is PM-commute.
+      - The thresholds are module constants.
+      - Unpaired chains and non-opposing chains fall through.
+- [ ] **Urban rule**, from `d{N}_urban_context.csv` plus the bearing toward the urban
+      area's centroid:
+      - inbound → `am_commute_urban`; outbound → `pm_commute_urban`;
+      - inside the urban area with no clear radial → `balanced_urban`;
+      - rural → `rural_through`; interstate → `interstate_through`.
+- [ ] **Override** (`scripts/volume_profile_overrides.csv`, with a `#`-comment header
+      like `route_overrides.csv`): keyed on `XDSegID` *or* corridor id + direction,
+      with a note column. An override always wins.
+- [ ] **Output and wiring.** Write `d{N}_volume_profiles.csv` (the
+      `routes.write_membership` / `read_membership` pattern), wire it into
+      `run_district_screening`, and log assignment counts by source per district.
+- [ ] **pytest:**
+      - a synthetic opposing pair → inferred;
+      - a both-peaks bottleneck → falls to the urban rule;
+      - chain inheritance, with no flip-flop;
+      - an override wins;
+      - an unmatched segment → default.
+- [ ] DATA_FORMAT (assignment rules and thresholds); DESIGN_HISTORY. Spot-check that
+      the Boise radials infer AM-inbound.
+
+*Suggested prompt:* "Do Item 56 of ROADMAP.md — assign a volume-profile curve to every
+XD segment from inferred chain orientation, the urban in/out rule, and an override CSV."
+
+---
+
+## 57 — Curve-weighted VHD in the compute core
+
+**Target: Fable (math-heavy).** Pure core. Depends on 55 and 56.
+
+Scope:
+
+- [ ] **Delay by bin.** `screen` gains a DuckDB aggregation of mean travel time per
+      segment × month × day type × 5-min-of-day over the `kept` rows. Delay is
+      clipped per bin, not per window mean; record the difference this makes.
+- [ ] **Profile-weighted VHD** replaces `aadt.vehicle_hours_of_delay`.
+      - `Σ_bins vol × delay / 60`, averaged over the observed days.
+      - Each day is weighted by its MADT month and DOW factor (the average day of
+        the *data period*).
+      - The old formula is kept as `vhd_index`.
+      - `vhd_annual` is an extra column.
+- [ ] **Callers.** Used by:
+      - `rank_corridors`;
+      - `extents.segment_congestion` (baseline-relative delay, same weighting);
+      - `extents.monthly_delay_profile`, which uses `MADT_m` directly, so
+        `_monthly_vhd` becomes real per-month volume.
+- [ ] **Caveat.** The `aadt_caveat` attrs change from "relative index" to "average
+      day of the period, generic curves".
+- [ ] **pytest:**
+      - hand-computed VHD on a toy segment with a known curve;
+      - AM + PM = the VHD of their union;
+      - a flat curve reproduces `index × window_hours / 24`;
+      - MADT month weighting;
+      - weekend days use the Sat/Sun curves.
+- [ ] DATA_FORMAT (the VHD definition); DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 57 of ROADMAP.md — compute VHD as curve-weighted
+vehicle-hours per average day of the data period, with MADT and DOW factors."
+
+---
+
+## 58 — Curve-weighted VHD everywhere: consumers, floor rescale, ranking comparison
+
+**Target: Opus.** Scripts + GUI consistency. Depends on 57.
+
+Scope:
+
+- [ ] **Switch the consumers to the new metric:**
+      `run_district_screening._segment_tti_frame`, the `corridor_peak_totals`
+      rankings, `aggregate_statewide_rankings.py`, and the GUI's VHD path
+      (`_segment_means`, the KML). This keeps the GUI consistent; it adds no new GUI.
+- [ ] **Rescale the thresholds** by the observed median new/old ratio, with the
+      rationale recorded: `MIN_CORE_VHD`, `MIN_CORE_VHD_PER_MILE`, and the map's
+      `_VHD_TIERS`. The floors stay noise floors (permissive catalogue).
+- [ ] **Ranking comparison.**
+      - Re-run the statewide screening with maps, keeping the pre-run outputs.
+      - Record Spearman ρ and top-N churn (`item58_{peak,7day}_ranking_changes.csv`).
+      - D3 generated goes alongside; the curated catalogue is never overwritten.
+- [ ] **Update the index-valued tests:**
+      - `test_screen` AM vhd == 500;
+      - `test_extents` `0.5*10000/60`;
+      - the GUI/KML VHD tests;
+      - the tier tests.
+- [ ] DATA_FORMAT; DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 58 of ROADMAP.md — switch every VHD consumer to the
+curve-weighted metric, rescale the floors, and record the ranking comparison."
+
+---
+
+## 59 — Curves from counts: importers + fitting (count data not yet on hand)
+
+**Target: Opus.** Pure core. Depends on 55; can run any time after it.
+
+Scope:
+
+- [ ] **Count schema.** A documented CSV schema for hourly directional counts:
+      station id, lat/lon, direction, local timestamp, volume, source.
+- [ ] **Importers** for ITD ATR continuous hourly counts, 24-hour tube counts, and
+      signal/detector (ATSPM) volumes.
+- [ ] **`fit_profile(counts) → VolumeProfile`.**
+      - Normalises weekday/Sat/Sun.
+      - DOW factors come only from ≥ 1 week of data.
+      - A short count fills the weekday curve and borrows the weekend curves from a
+        generic one.
+      - Optional clustering of fitted curves back onto the generic ids.
+- [ ] **Station rule.** A nearest-station assignment (same route and direction,
+      within tolerance) is inserted above the Item 56 urban rule.
+- [ ] pytest on synthetic count fixtures until real files arrive; DATA_FORMAT;
+      DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 59 of ROADMAP.md — import count data and fit
+volume-profile curves from it, with a nearest-station assignment rule."
+
+---
+
 ## Future (not yet scoped — need a planning pass before they're actionable)
 
 - **Directional AADT (direction-aware *volume* + a time-of-day directional
-  factor).** Distinct from Item 20's direction-aware *display*; this is about the
-  AADT **count** used for weighting. AADT (Item 18) is currently a single
-  undirected volume per segment;
-  the owner wants **direction-aware** volume — split N/E vs S/W (a signed `+`/`−`
-  convention) *or* an N/E/S/W selector for the map (as an offset or a multiselect)
-  — and, as the fancy version, a **directional factor by time of day** (the
-  classic peak-direction split, e.g. AM inbound / PM outbound). It would refine
-  the Item 18 vehicle-hours-of-delay and weighted-speed numbers by using the
-  direction-appropriate volume. Needs a planning pass first: check whether the
-  `Cumulative_AADT` layer actually carries direction (route direction, the
-  `MADT1..12` monthly split, class fields) or whether direction must be inferred
-  from the XD segment bearing, and decide the map UX (sign vs selector vs offset
-  vs multiselect) before it's actionable. **Item 34 comes first:** the join this would
-  refine currently attributes ramp counts to one carriageway of a divided highway, so a
-  directional split built on today's `join_aadt` would be splitting the wrong number.
+  factor)** — *scoped as Items 55–59 (2026-09-24).* The layer carries no direction
+  field. The per-direction count is Item 54, and the time-of-day directional split
+  comes from each direction's assigned volume-profile curve (AM- vs PM-commute).
+  The map UX (sign vs selector) stays out of scope: no new GUI.
 - **Segment-level route overrides (SH-8 in Moscow).** Owner, 2026-09-23 (Session 70):
   SH-8 eastbound follows 3rd St, then goes down Jackson St (with US-95) to Troy Rd.
   Westbound, it goes north on Washington St (with US-95) to 3rd St, then heads west.
