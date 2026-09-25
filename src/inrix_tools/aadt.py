@@ -1713,16 +1713,18 @@ CURVE_COL = "curve_id"
 DAYS_PER_YEAR = 365.0
 
 CURVE_VHD_CAVEAT = (
-    "vhd is vehicle-hours of delay on an average calendar day of the data period "
-    "({start} to {end}, {n} days): each bin's delay (mean travel time per segment x "
+    "vhd is vehicle-hours of delay on an average day of the window in the data period "
+    "({start} to {end}, {n} days): per weekday for a weekday window, per calendar day "
+    "for an ungated one (vhd_per). Each bin's delay (mean travel time per segment x "
     "month x day type x bin, less the reference, floored at 0 per bin) times that "
     "bin's volume, dirAADT x MADT_month/AADT x the segment's volume-profile curve "
     "(hourly shape x day-of-week factor), summed over the window and divided by the "
-    "period's days. Windows are additive. The curves are generic (published research "
-    "profiles, ROADMAP Item 55), not counts; the two directions carry equal daily "
-    "volume. vhd_annual = vhd x 365, the period's average day repeated (not seasonally "
-    "rebalanced). vhd_index is the Item 54 relative index (window mean delay x "
-    "daily dirAADT)."
+    "window's days. Windows with the same day gate are additive. The curves are "
+    "generic (published research profiles, ROADMAP Item 55), not counts; the two "
+    "directions carry equal daily volume. vhd_annual = vhd x the gate's days per year "
+    "(365 x days/7), the period's average window day repeated (not seasonally "
+    "rebalanced). vhd_index is the Item 54 relative index (window mean delay x daily "
+    "dirAADT)."
 )
 
 
@@ -1764,13 +1766,15 @@ def _madt_frame(volume, ids: pd.Index) -> tuple[pd.DataFrame, bool]:
 def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, curves,
                                  weights: pd.DataFrame, *, by_month: bool = False,
                                  impute: bool = True) -> pd.DataFrame:
-    """Per-segment, per-window **vehicle-hours of delay on an average day of the data
-    period**, with each bin's delay weighted by that bin's volume.  (Item 57)
+    """Per-segment, per-window **vehicle-hours of delay on an average day of the
+    window in the data period**, with each bin's delay weighted by that bin's volume.
+    (Item 57)
 
-    For segment ``s`` on curve ``c`` and window ``W``, over the ``N`` calendar days of
-    the period:
+    For segment ``s`` on curve ``c`` and window ``W``, over the ``N_W`` days of the
+    period that ``W``'s day gate covers (the weekdays for a weekday window, every
+    calendar day for an ungated one):
 
-        VHD = (1/N) Σ_cells  delay(cell) × dirAADT × MADT_m/AADT × volume_days(c, W, cell) / 60
+        VHD = (1/N_W) Σ_cells  delay(cell) × dirAADT × MADT_m/AADT × volume_days(c, W, cell) / 60
 
     - a **cell** is month ``m`` × day type × bin of the day. ``delay(cell)`` is the
       cell's mean travel time (``screen.segment_bin_screen``) less ``ref_tt[s]``,
@@ -1782,9 +1786,10 @@ def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, 
       day of the cell;
     - ``MADT_m/AADT`` is the segment's ``madt_ratio_MM`` (1.0 where absent).
 
-    Days the window does not cover (weekends, for a weekday window) count in ``N``
-    with zero, so windows are **additive**: AM + PM is the VHD of their union, and the
-    windows of a partition of the week sum to the whole-week VHD.
+    So a weekday peak is vehicle-hours **per weekday** and an ungated window per
+    calendar day; ``vhd_per`` says which. Windows with the same day gate are
+    **additive** (AM + PM is the VHD of their union, per weekday). Windows with
+    different gates add as totals, ``vhd × N_W``, not as ``vhd``.
 
     **Missing cells** (``impute=True``): a cell with no gated observation takes the
     segment's same day type × bin pooled over every month (observation-weighted). A
@@ -1804,13 +1809,15 @@ def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, 
         weights: ``volume_profiles.window_volume_weights`` over the same period, zone
             and bin width as ``bins``.
         by_month: return one row per segment × window × month instead, each month's
-            VHD per average day **of that month in the period**, from that month's own
-            cells (no pooled fill: a month is its own data).
+            VHD per average window day **of that month in the period**, from that
+            month's own cells (no pooled fill: a month is its own data).
         impute: fill a missing cell from its pooled day type × bin (see above).
 
     Returns:
         A long frame: ``Segment ID``, ``window`` (``month`` when ``by_month``),
-        ``vhd``, ``vhd_annual`` (``vhd`` × 365; not by month), ``coverage`` (share of
+        ``vhd``, ``vhd_per`` (``day`` / ``weekday`` / ``weekend day`` / ``gated day``),
+        ``vhd_annual`` (``vhd`` × the gate's days per year, 365 × days/7; not by
+        month), ``coverage`` (share of
         the window's volume whose delay is known), ``observed_share`` (share from
         the cell's own month), ``AADT`` and ``curve_id``. ``vhd`` is NaN where the
         segment has no volume, no curve, no reference or no delay at all.
@@ -1844,7 +1851,11 @@ def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, 
     if wb is not None and bb is not None and int(wb) != int(bb):
         raise ValueError(f"weights are {wb}-minute bins, the delay cells {bb}-minute")
     n_days = int(weights.attrs.get("n_days") or 0)
-    days_by_month = weights.attrs.get("days_by_month") or {}
+    window_days = weights.attrs.get("window_days") or {}
+    window_days_by_month = weights.attrs.get("window_days_by_month") or {}
+    window_per = weights.attrs.get("window_per") or {}
+    window_gate = {name: spec.get("days") for name, spec in
+                   (weights.attrs.get("windows") or {}).items()}
 
     # The grid every segment owes: its curve's weighted cells, per window.
     seg = pd.DataFrame({SEGMENT_COL: ids, CURVE_COL: curve.to_numpy()})
@@ -1885,16 +1896,20 @@ def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, 
                                           _nk=("_delay", "count")).reset_index()
     aadt_g = vol.to_numpy()[ids.get_indexer(agg[SEGMENT_COL])]
     if by_month:
-        days = agg["month"].map(days_by_month).astype(float).to_numpy()
+        days = np.array([window_days_by_month.get(w, {}).get(m, 0)
+                         for w, m in zip(agg["window"], agg["month"])], dtype=float)
     else:
-        days = np.full(len(agg), float(n_days))
+        days = agg["window"].map(window_days).astype(float).to_numpy()
     has = (agg["_nk"] > 0).to_numpy() & np.isfinite(aadt_g) & (days > 0)
     vhd = np.where(has, agg["_vh"].to_numpy() * aadt_g / np.where(days > 0, days, 1.0),
                    np.nan)
     out = agg[by].copy()
     out["vhd"] = vhd
+    out["vhd_per"] = agg["window"].map(window_per).to_numpy()
     if not by_month:
-        out["vhd_annual"] = vhd * DAYS_PER_YEAR
+        gate_days = agg["window"].map(
+            lambda w: 7 if window_gate.get(w) is None else len(window_gate[w]))
+        out["vhd_annual"] = vhd * DAYS_PER_YEAR * gate_days.to_numpy(dtype=float) / 7
     wsum = agg["_w"].where(agg["_w"] > 0)
     out["coverage"] = (agg["_wk"] / wsum).to_numpy()
     out["observed_share"] = (agg["_wo"] / wsum).to_numpy()
@@ -1903,16 +1918,19 @@ def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, 
     if by_month:
         full_levels.append(pd.Index(sorted(weights["month"].unique()), name="month"))
     out = out.set_index(by).reindex(pd.MultiIndex.from_product(full_levels)).reset_index()
+    out["vhd_per"] = out["window"].map(window_per)
     out[AADT_COL] = vol.to_numpy()[ids.get_indexer(out[SEGMENT_COL])]
     out[CURVE_COL] = curve.to_numpy()[ids.get_indexer(out[SEGMENT_COL])]
 
     attrs = weights.attrs
     out.attrs["aadt_caveat"] = CURVE_VHD_CAVEAT.format(
         start=attrs.get("period_start"), end=attrs.get("period_end"), n=n_days)
+    out.attrs["vhd_per"] = dict(window_per)
     out.attrs["curve_vhd"] = {
         "period_start": attrs.get("period_start"),
         "period_end": attrs.get("period_end"),
         "n_days": n_days,
+        "window_days": dict(window_days),
         "tz": attrs.get("tz"),
         "bin_minutes": attrs.get("bin_minutes"),
         "by_month": bool(by_month),

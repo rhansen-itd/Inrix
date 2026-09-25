@@ -6634,7 +6634,8 @@ The owner chose the centre table: "even though the centroid of boise is west, th
 
 ### 2. Decisions
 
-- **"Average day of the data period" counts every calendar day.** A weekday window
+- *(Superseded the same day by §5: the peaks are now per weekday.)*
+  **"Average day of the data period" counts every calendar day.** A weekday window
   contributes 0 on weekends, not "per weekday". This is the literal reading of the
   owner's decision, and it is the one under which *all* windows are additive: weekday
   AM + weekend AM = the ungated AM, and `vhd_annual = vhd × 365` without per-window day
@@ -6668,8 +6669,9 @@ The whole district runs in about 30 s.
 - Per-cell vs window-mean floor: summed delay +4.6 % AM, +2.5 % PM, +9.4 % `day_7d`.
   Segments with material delay are unchanged (median ratio 1.00 / 1.00 / 1.01). The
   difference is 316–387 free-flowing segments that pick up a few congested cells.
-- Curve / index, median per segment: AM 0.083, PM 0.135, `day_7d` 0.94. Flat curves
-  would give 0.060, 0.074 and 0.63: the commute windows and 06:00–21:00 carry more
+- Curve / index, median per segment, per calendar day: AM 0.083, PM 0.135, `day_7d`
+  0.94 (per weekday after §5: AM 0.117, PM 0.189). Flat curves would give 0.060,
+  0.074 and 0.63: the commute windows and 06:00–21:00 carry more
   than their hours' share. This is the ratio Item 58's rescale starts from; MADT was
   not applied in this check, and it will move the number a little.
 
@@ -6690,3 +6692,32 @@ The whole district runs in about 30 s.
   export (including the gated 07:00 hour); the segment subset and period;
   `rank_corridors` on the curve path (flat and packaged library); chunked ==
   single-pass.
+
+### 5. Follow-up: the peaks are per weekday (owner, same day)
+
+I explained the choice of denominator, with a worked example: 100 veh-h per weekday
+and 20 per weekend day give 71.4 + 5.7 = 77.1 per calendar day, all adding up; per
+window day they give 100 + 20 ≠ 77.1. The owner said "I think I want weekday for the
+peaks, but I could be persuaded otherwise if that has unintended negative affects."
+The negative effects are small:
+
+- AM + PM share a gate, so the peak totals still add up.
+- The 7-day ranking is separate and never added to the peaks.
+- Annualising only needs each window's days per year.
+
+What remains is a reader-side risk: adding a peak to `night` / `day_7d`, or comparing
+their shares of the day. A `vhd_per` column guards against it. The owner said to go
+ahead.
+
+- **Change.** Each window is divided by `N_W`, the period's days its gate covers:
+  `window_volume_weights` records `window_days` / `window_days_by_month` /
+  `window_per`. `curve_vehicle_hours_of_delay` and `rank_corridors` gain `vhd_per`
+  (`weekday` / `day` / `weekend day` / `gated day`), and
+  `vhd_annual = vhd × 365 × gate days / 7`. By month, a month is divided by its own
+  gated days.
+- **Effect.** A weekday window's VHD × `N / N_W` (243 / 173 = 1.405 on D3). Ungated
+  windows are unchanged. The flat-curve check is now `index × hours / 24` for every
+  window, with no 5/7. Additivity holds within a gate; across gates the test checks
+  totals (`vhd × N_W`).
+- Tests: the expectations moved from ÷7 to ÷5 per weekday, and the weights'
+  day-count attrs and `vhd_per` are asserted. 907 pass.

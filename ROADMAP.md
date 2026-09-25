@@ -3017,9 +3017,10 @@ Scope:
       - The old formula is kept as `vhd_index`.
       - `vhd_annual` is an extra column.
       *`aadt.curve_vehicle_hours_of_delay`, with the weights from
-      `volume_profiles.window_volume_weights`. The average day counts **every** day
-      of the period (a weekday window is 0 at weekends), so windows are additive and
-      `vhd_annual = vhd × 365`. A missing cell takes its pooled day type × bin;
+      `volume_profiles.window_volume_weights`. The average day is the window's: **per
+      weekday** for the peaks (owner, Session 77 §5), per calendar day for an
+      ungated window, labelled `vhd_per`. Windows with the same gate are additive
+      (AM + PM); `vhd_annual = vhd × gate days per year`. A missing cell takes its pooled day type × bin;
       `coverage` / `observed_share` report it. `vehicle_hours_of_delay` stays as the
       index (the GUI still calls it until Item 58).*
 - [x] **Callers.** Used by:
@@ -3043,8 +3044,8 @@ Scope:
       *`tests/test_curve_vhd.py` (18) + 4 store-level tests in `test_screen.py`;
       907 pass.*
 - [x] DATA_FORMAT (the VHD definition); DESIGN_HISTORY.
-      *D3 preview for Item 58: curve / index median AM 0.083, PM 0.135, `day_7d`
-      0.94 (AADT = MADT = 1).*
+      *D3 preview for Item 58: curve / index median AM 0.117, PM 0.189 (per weekday),
+      `day_7d` 0.94 (AADT = MADT = 1).*
 
 *Suggested prompt (done):* "Do Item 57 of ROADMAP.md — compute VHD as curve-weighted
 vehicle-hours per average day of the data period, with MADT and DOW factors."
@@ -3060,7 +3061,9 @@ over the ranked windows and `curves=` the Item 56 assignment to `rank_corridors`
 `generate_catalogue`, and make sure the AADT frame / network carries
 `madt_ratio_01..12` (else 1.0 is used and `attrs['curve_vhd']['madt_ratios']` says
 "absent"). With `bins` given, the core floors see curve VHD, so their rescale must land
-in the same change. D3 preview of the ratio: median AM 0.083, PM 0.135, `day_7d` 0.94.
+in the same change. D3 preview of the ratio: median AM 0.117, PM 0.189 (per weekday), `day_7d` 0.94.
+Peaks are per weekday and `day_7d` / `night` per calendar day (`vhd_per`): sum only
+windows with the same gate.
 
 Scope:
 

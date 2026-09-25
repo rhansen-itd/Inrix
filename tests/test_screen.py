@@ -345,8 +345,8 @@ def test_bin_screen_segment_subset_and_period(area):
 
 
 def test_rank_corridors_curve_vhd(area):
-    """With a flat curve, the curve-weighted VHD is the index × window hours / 24 ×
-    the share of the week's days the window covers (5 of 7 weekdays)."""
+    """With a flat curve, the curve-weighted VHD is the index × window hours / 24,
+    per weekday for the weekday-gated peaks."""
     con, key = area
     scr = screen.segment_screen(con, key)
     bins = screen.segment_bin_screen(con, key)
@@ -355,14 +355,16 @@ def test_rank_corridors_curve_vhd(area):
                                    curves=curves, profiles=_flat_library())
     r = ranked.set_index("window")
     assert r.loc["am", "vhd_index"] == pytest.approx(500.0)
-    assert r.loc["am", "vhd"] == pytest.approx(500.0 * 2 / 24 * 5 / 7)
+    assert r.loc["am", "vhd"] == pytest.approx(500.0 * 2 / 24)
     assert r.loc["pm", "vhd_index"] == pytest.approx(1000.0)
-    assert r.loc["pm", "vhd"] == pytest.approx(1000.0 * 2.5 / 24 * 5 / 7)
+    assert r.loc["pm", "vhd"] == pytest.approx(1000.0 * 2.5 / 24)
     assert r.loc["am", "vhd_per_mile"] == pytest.approx(r.loc["am", "vhd"] / 3.0)
-    assert r.loc["am", "vhd_annual"] == pytest.approx(r.loc["am", "vhd"] * 365)
+    assert r.loc["am", "vhd_annual"] == pytest.approx(r.loc["am", "vhd"] * 365 * 5 / 7)
     assert r.loc["am", "vhd_coverage"] == pytest.approx(1.0)
+    assert r.loc["am", "vhd_per"] == "weekday" and r.loc["night", "vhd_per"] == "day"
     assert ranked.attrs["vhd_basis"] == "curve"
-    assert "average calendar day" in ranked.attrs["aadt_caveat"]
+    assert "per weekday for a weekday window" in ranked.attrs["aadt_caveat"]
+    assert ranked.attrs["curve_vhd"]["window_days"]["am"] == 5
 
     # the packaged library runs end to end on the same toy
     real = screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()}, _aadt(), bins=bins,
@@ -390,7 +392,7 @@ def test_segment_curve_vhd_chunks_agree(area):
     chunked = screen.segment_curve_vhd(con, key, ref, _aadt(), curves, chunk_size=1, **kw)
     pd.testing.assert_frame_equal(one, chunked)
     am = one[one["window"] == "am"].set_index(SEGMENT_COL)["vhd"]
-    assert am.to_numpy() == pytest.approx([10_000 / 60 * 2 / 24 * 5 / 7] * 3)
+    assert am.to_numpy() == pytest.approx([10_000 / 60 * 2 / 24] * 3)
 
 
 # ---------------------------------------------------------------------------

@@ -825,7 +825,9 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
         ``travel_time_min``, ``free_flow_min``, ``delay_min``, ``tti``,
         ``delay_per_mile``, ``vhd``, ``vhd_per_mile``, ``vhd_index`` (the Item 54
         index: window mean delay × daily dirAADT, kept for one release),
-        ``vhd_annual`` and ``vhd_coverage`` (the curve path only: ``vhd`` × 365, and
+        ``vhd_per``, ``vhd_annual`` and ``vhd_coverage`` (the curve path only: what
+        ``vhd`` is per — ``weekday`` for the peaks, ``day`` for an ungated window —,
+        ``vhd`` × the gate's days per year, and
         the extent-mile-weighted share of window volume with a known delay),
         ``n_ramp_weighted``, ``n_aadt_missing``. ``attrs['vhd_basis']`` is ``'curve'``
         or ``'index'``.
@@ -962,6 +964,8 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
                 "vhd": vhd,
                 "vhd_per_mile": (vhd / obs_miles) if obs_miles > 0 else float("nan"),
                 "vhd_index": vhd_index,
+                "vhd_per": (seg_vhd.attrs["vhd_per"].get(wname)
+                            if seg_vhd is not None else None),
                 "vhd_annual": vhd_annual,
                 "vhd_coverage": vhd_cov,
                 "n_ramp_weighted": n_ramp,
@@ -981,7 +985,7 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
              "n_observed", "miles", "missing_miles", "miles_covered_fraction",
              "n_obs", "min_kept_fraction", "travel_time_min", "free_flow_min",
              "delay_min", "tti", "delay_per_mile", "vhd", "vhd_per_mile",
-             "vhd_index", "vhd_annual", "vhd_coverage",
+             "vhd_index", "vhd_per", "vhd_annual", "vhd_coverage",
              "n_ramp_weighted", "n_aadt_missing"]
     out = out[order]
     out.attrs = {

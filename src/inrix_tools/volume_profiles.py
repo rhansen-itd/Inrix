@@ -281,6 +281,19 @@ def _window_mask(ts: pd.DatetimeIndex, clock: str, dows) -> np.ndarray:
     return mask
 
 
+def day_basis(dows) -> str:
+    """What a window's VHD is *per*: ``"day"`` (ungated), ``"weekday"`` (Mon–Fri),
+    ``"weekend day"`` (Sat–Sun), else ``"gated day"``."""
+    if dows is None:
+        return "day"
+    dows = frozenset(dows)
+    if dows == frozenset(range(5)):
+        return "weekday"
+    if dows == frozenset({5, 6}):
+        return "weekend day"
+    return "gated day"
+
+
 def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
                           bin_minutes: int = 5) -> pd.DataFrame:
     """How much of a segment's daily volume each delay cell carries over a data period.
@@ -293,8 +306,10 @@ def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
         volume_days = Σ_d  bin_volume_factor(profile, bin on d)
 
     so ``dirAADT × MADT_month/AADT × volume_days`` is the traffic that crossed the
-    segment in that cell during the whole period. Dividing by ``attrs['n_days']``
-    gives it per average day of the period. The DOW factor of each day, the day
+    segment in that cell during the whole period. Dividing by the window's days,
+    ``attrs['window_days'][window]`` (the period's days its day gate covers: the
+    weekdays for a weekday window, every day for an ungated one), gives it per
+    average day **of the window**. The DOW factor of each day, the day
     type's hourly shape and the 23/25-hour DST days are all inside
     :func:`bin_volume_factor`.
 
@@ -313,8 +328,10 @@ def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
         (``"YYYY-MM"``), ``day_type`` (:data:`DAY_TYPES`), ``tod_min`` (the bin's start,
         minutes after local midnight) and ``volume_days``. Only cells a window covers
         appear. ``attrs`` records ``period_start`` / ``period_end`` (ISO dates),
-        ``n_days``, ``days_by_month`` (``{"YYYY-MM": n}``), ``tz``, ``bin_minutes``
-        and ``windows`` (the specs, as read).
+        ``n_days``, ``days_by_month`` (``{"YYYY-MM": n}``), ``window_days`` /
+        ``window_days_by_month`` (the same counts over the days each window's gate
+        covers), ``window_per`` (:func:`day_basis` of each window), ``tz``,
+        ``bin_minutes`` and ``windows`` (the specs, as read).
 
     Raises:
         ValueError: the period is empty (end before start), or ``bin_minutes`` does
@@ -365,12 +382,23 @@ def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
            else pd.DataFrame(columns=list(WEIGHT_COLUMNS)))
     out["tod_min"] = out["tod_min"].astype("int64")
     days = pd.date_range(first, last, freq="D")
+    months = pd.Series(days.strftime("%Y-%m"))
+    window_days, window_days_by_month = {}, {}
+    for name, _, dows in specs:
+        gate = (np.ones(len(days), dtype=bool) if dows is None
+                else np.isin(days.dayofweek, sorted(dows)))
+        window_days[name] = int(gate.sum())
+        window_days_by_month[name] = {k: int(v) for k, v in
+                                      months[gate].value_counts().sort_index().items()}
     out.attrs = {
         "period_start": first.date().isoformat(),
         "period_end": last.date().isoformat(),
         "n_days": len(days),
         "days_by_month": {k: int(v) for k, v in
-                          pd.Series(days.strftime("%Y-%m")).value_counts().sort_index().items()},
+                          months.value_counts().sort_index().items()},
+        "window_days": window_days,
+        "window_days_by_month": window_days_by_month,
+        "window_per": {name: day_basis(dows) for name, _, dows in specs},
         "tz": str(tz),
         "bin_minutes": int(bin_minutes),
         "windows": {name: {"window": clock, "days": None if dows is None else sorted(dows)}

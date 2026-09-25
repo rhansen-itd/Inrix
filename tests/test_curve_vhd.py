@@ -129,6 +129,9 @@ class TestWindowVolumeWeights:
         assert sorted(flat["tod_min"]) == [420, 480]
         # five weekdays at 1/24 each
         assert flat["volume_days"].tolist() == pytest.approx([5 / 24, 5 / 24])
+        assert w.attrs["window_days"] == {"am": 5} and w.attrs["n_days"] == 7
+        assert w.attrs["window_days_by_month"] == {"am": {"2026-03": 5}}
+        assert w.attrs["window_per"] == {"am": "weekday"}
 
     def test_an_overnight_window_wraps(self):
         w = vp.window_volume_weights(_library(), _win("night", "10:00PM-5:00AM"),
@@ -155,8 +158,8 @@ class TestCurveVHD:
         """Weekday 08:00 runs 6 min over the reference; the peaky curve puts 50 % of a
         weekday's volume in that hour, and a weekday carries 1.1 days of volume.
 
-        Per weekday: 6 min × 1,000 × 1.1 × 0.5 / 60 = 55 veh-h. Five weekdays over
-        the week's seven days: 5 × 55 / 7 = 39.29 veh-h per average day."""
+        Per weekday: 6 min × 1,000 × 1.1 × 0.5 / 60 = 55 veh-h, and a weekday window
+        is reported per weekday."""
         am = _win("am", "8:00AM-9:00AM", WEEKDAY)
 
         def tt(month, dt, tod):
@@ -164,13 +167,16 @@ class TestCurveVHD:
 
         out = _vhd(_bins(*WEEK, tt), [am], "peaky", start=WEEK[0], end=WEEK[1])
         row = _one(out, "am")
-        assert row["vhd"] == pytest.approx(5 * 6.0 * AADT * 1.1 * 0.5 / 60 / 7)
-        assert row["vhd_annual"] == pytest.approx(row["vhd"] * 365)
+        assert row["vhd"] == pytest.approx(6.0 * AADT * 1.1 * 0.5 / 60)
+        assert row["vhd_per"] == "weekday"
+        assert row["vhd_annual"] == pytest.approx(row["vhd"] * 365 * 5 / 7)
         assert row["coverage"] == pytest.approx(1.0)
-        assert "average calendar day" in out.attrs["aadt_caveat"]
+        assert "per weekday for a weekday window" in out.attrs["aadt_caveat"]
 
     def test_windows_are_additive(self):
-        """AM + PM = their union; weekday + weekend = the ungated window."""
+        """Windows with the same gate add as VHD: AM + mid + PM = their union, per
+        weekday. Windows with different gates add as totals (VHD × their days):
+        15 weekdays of AM + 6 weekend days of AM = 21 days of the ungated AM."""
         rng = np.random.default_rng(57)
         table = {}
 
@@ -186,16 +192,18 @@ class TestCurveVHD:
         out = _vhd(_bins(start, end, tt), wins, "peaky", madt={3: 0.9, 4: 1.2},
                    start=start, end=end)
         v = out.set_index("window")["vhd"]
+        per = out.set_index("window")["vhd_per"]
         assert v["am"] + v["mid"] + v["pm"] == pytest.approx(v["both"])
-        assert v["am"] + v["am_we"] == pytest.approx(v["am_all"])
+        assert v["am"] * 15 + v["am_we"] * 6 == pytest.approx(v["am_all"] * 21)
+        assert (per["am"], per["am_we"], per["am_all"]) == ("weekday", "weekend day", "day")
 
-    @pytest.mark.parametrize("window,day_share", [
-        (_win("am", "7:00AM-9:00AM"), 1.0),
-        (_win("am", "7:00AM-9:00AM", WEEKDAY), 5 / 7),
-        (_win("day", "6:00AM-9:00PM"), 1.0)])
-    def test_a_flat_curve_reproduces_the_index(self, window, day_share):
-        """With a flat curve and no MADT, VHD = index × window hours / 24 (× the share of
-        days the window covers). The index is the window's row-mean delay × AADT / 60."""
+    @pytest.mark.parametrize("window", [
+        _win("am", "7:00AM-9:00AM"),
+        _win("am", "7:00AM-9:00AM", WEEKDAY),
+        _win("day", "6:00AM-9:00PM")])
+    def test_a_flat_curve_reproduces_the_index(self, window):
+        """With a flat curve and no MADT, VHD = index × window hours / 24, gated or not.
+        The index is the window's row-mean delay × AADT / 60."""
         rng = np.random.default_rng(1)
         table = {}
 
@@ -213,7 +221,7 @@ class TestCurveVHD:
         index = mean_delay * AADT / 60
         hours = (_hours(window)[1] - _hours(window)[0]) / 60 + 1
         assert _one(out, window.name)["vhd"] == pytest.approx(
-            index * hours / 24 * day_share)
+            index * hours / 24)
 
     def test_madt_weights_each_month(self):
         """Constant 3-min delay all day: each day carries MADT_m/AADT of the volume."""
@@ -337,9 +345,9 @@ class TestExtentsCallers:
         ids, net, base, bins, curves = self._setup()
         seg = extents.segment_congestion(base, net, bins=bins, curves=curves,
                                          profiles=_library())
-        # index: 1 min × 1,000 / 60; curve: × 2.5 h / 24 h × 5 weekdays / 7 days
+        # index: 1 min × 1,000 / 60; curve: × 2.5 h / 24 h, per weekday
         assert seg.loc[1001, "vhd_index"] == pytest.approx(AADT / 60)
-        assert seg.loc[1001, "vhd"] == pytest.approx(AADT / 60 * 2.5 / 24 * 5 / 7)
+        assert seg.loc[1001, "vhd"] == pytest.approx(AADT / 60 * 2.5 / 24)
         assert seg.loc[1000, "vhd"] == pytest.approx(0.0)
         assert seg.attrs["vhd_basis"] == "curve"
         plain = extents.segment_congestion(base, net)
@@ -357,7 +365,7 @@ class TestExtentsCallers:
                                                     weights, by_month=True)
         profile = extents.monthly_delay_profile(ids, seg, monthly,
                                                 peak_windows=["am", "pm"])
-        # 30-31 March: Mon + Tue, both weekdays, 2 of 2 days; April 1-5: Wed-Fri of 5.
+        # per weekday of each month (30-31 March: Mon, Tue; 1-5 April: Wed-Fri)
         pm_day = AADT / 60 * 2.5 / 24
         assert profile["2026-03"] == pytest.approx(pm_day * 0.8)
-        assert profile["2026-04"] == pytest.approx(pm_day * 1.2 * 3 / 5)
+        assert profile["2026-04"] == pytest.approx(pm_day * 1.2)
