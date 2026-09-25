@@ -393,6 +393,8 @@ def load_dataset(source: str, tz: str, cvalue: int, shapefile: str = DEFAULT_SHA
     # dropdown, map hover title, table rows, and panel titles.
     labels = names.apply_names(meta, _stored_names())
     geo = _decorate_geo(geo, meta, labels)
+    # A geometry cache ingested before Item 54 holds the old volume basis.
+    geo = aadt.to_directional_basis(geo)
 
     # Delay metric (Item 17): a per-row Delay(Minutes) = observed travel time −
     # free-flow travel time, computed once at load so it flows through every panel

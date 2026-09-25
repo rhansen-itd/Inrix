@@ -481,8 +481,8 @@ class TestFindCores:
         assert extents.FAIL_REALTIME in core.fails
 
     def test_a_low_volume_road_fails_the_delay_floor(self):
-        """SH-3 in Benewah County: 460 AADT."""
-        net = _linear_chain(6, aadt_pattern=[460] * 6)
+        """SH-3 in Benewah County: 460 AADT, 230 per direction (Item 54)."""
+        net = _linear_chain(6, aadt_pattern=[230] * 6)
         ids = list(net.index)
         seg = extents.segment_congestion(_baseline(ids, {s: 1.4 for s in ids[1:5]}), net)
         core = extents.find_cores(ids, seg)[0]

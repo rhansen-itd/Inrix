@@ -2778,6 +2778,44 @@ Scope:
 *Suggested prompt (done):* "Do Item 53 of ROADMAP.md — put couplet legs' AADT on the same
 two-way basis as the rest of the network before VHD is computed."
 
+
+---
+
+## 54 — AADT per direction: halve two-way counts instead of doubling one-way ✅ (Session 73)
+
+**Target: one session. Supersedes Item 53's basis decision** (not its evidence rules).
+Owner, 2026-09-24: the per-direction number is the truer one, even though VHD is an
+index, and the outputs (maps, CSVs) should carry it. Chasing the absolute thresholds
+down was judged easier than halving only at the output step, which would have left
+the catalogues, logs and floors on one basis and the products on another.
+
+Scope:
+
+- [x] `aadt.apply_directional_basis` (was `apply_two_way_basis`): a two-way count ×
+      `TWO_WAY_SPLIT` (0.5, basis `two_way_half`); a one-way count (`one_way`) and a
+      ramp movement (`ramp`) as published. `join_aadt(directional_basis=True)`.
+- [x] Halve every absolute threshold on the AADT scale: `MIN_CORE_VHD[_PER_MILE]`
+      10 → 5, `extents.AADT_ABSOLUTE_STEP` 8,000 → 4,000, the unused
+      `VHD_BOTTLENECK` / `VHD_FREEFLOW` 150/25 → 75/10, and the map's `_VHD_TIERS`
+      25/100/300 → **10**/50/150 (owner: 10, since 25 was a round number, not a break
+      in the data).
+- [x] GUI: a geometry cache ingested under the old basis is rebased on load
+      (`aadt.to_directional_basis`); the hover reads "AADT (per direction)".
+- [x] pytest; re-run the statewide screening with maps and check that the rankings
+      don't move and every VHD halves; DATA_FORMAT + DESIGN_HISTORY.
+      *Session 73. 823 tests pass (Item 53's basis tests rewritten, plus a
+      cache-rebase test and a VHD-halves test). On the re-run, 64 of 65 ranked
+      corridors' VHD is exactly half and no within-district rank moves. The exception is
+      the Pocatello Creek Rd core (×0.59 peak, ×0.58 7-day): it has one ramp-weighted
+      segment, and a ramp count is no longer halved. It moves #50 → #45 statewide at
+      peak, and four corridors in the #45–49 band move down one each. 7-day: #47 → #45.
+      Statewide, 35,623 segments are halved; 164 one-way and 202 ramp segments keep
+      their count. The committed catalogues' embedded `_core` VHD and the
+      D3-generated side run are still on older bases; nothing ranks on them.*
+
+*Suggested prompt (done):* "Do Item 54 of ROADMAP.md — put AADT on the per-direction
+basis and halve the thresholds calibrated on two-way counts."
+
 ---
 
 ## Future (not yet scoped — need a planning pass before they're actionable)

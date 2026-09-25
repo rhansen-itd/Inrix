@@ -174,10 +174,10 @@ def shs_source(path=DEFAULT_SHS):
 def join_volumes(geo, aadt_source, *, year, cache_path, max_distance_m, bbox_margin,
                  shs=None, couplet_segments=(), network=None):
     """Mainline-preferred AADT for the corridor members (Item 34); record kinds from the
-    State Highway System where it is unambiguous (Item 52). On the two-way-equivalent
-    basis (Item 53): a couplet leg's one-way count is doubled, from the layer's own
-    evidence and, where it has none, from ``couplet_segments`` (the catalogue's
-    ``one_way_couplet`` legs). ``network`` is where the two-way-street test looks for
+    State Highway System where it is unambiguous (Item 52). On the per-direction basis
+    (Items 53, 54): a two-way count is halved and a couplet leg's one-way count kept,
+    from the layer's own evidence and, where it has none, from ``couplet_segments``
+    (the catalogue's ``one_way_couplet`` legs). ``network`` is where the two-way-street test looks for
     an opposing twin; pass the whole network when ``geo`` is only the corridors."""
     if aadt_source is None:
         return None
@@ -192,8 +192,8 @@ def join_volumes(geo, aadt_source, *, year, cache_path, max_distance_m, bbox_mar
         if network is not None and network.index.name != "Segment ID":
             key = "Segment ID" if "Segment ID" in network.columns else "XDSegID"
             network = network.drop_duplicates(subset=key).set_index(key)
-        joined = aadt_mod.apply_two_way_basis(joined, couplet_segments=couplet_segments,
-                                              network=network)
+        joined = aadt_mod.apply_directional_basis(joined, couplet_segments=couplet_segments,
+                                                  network=network)
     return joined
 
 
@@ -323,12 +323,14 @@ _TTI_TIERS = [
     ("Severe Congestion (TTI ≥ 1.50)",      None, "#e53e3e", 5.2),
 ]
 
-# VHD/mile tier definitions: label, upper bound, color, line width.
+# VHD/mile tier definitions: label, upper bound, color, line width. The bounds were
+# 25 / 100 / 300 on two-way AADT, round numbers rather than breaks in the data; halved
+# with the per-direction basis (Item 54), with the bottom one rounded to 10.
 _VHD_TIERS = [
-    ("Low / Free Flow (< 25 VHD/mi)",        25.0,  "#4a5568", 1.8),
-    ("Minor Delay (25–100 VHD/mi)",          100.0, "#d69e2e", 3.0),
-    ("Moderate Delay (100–300 VHD/mi)",      300.0, "#dd6b20", 4.0),
-    ("Severe Congestion (≥ 300 VHD/mi)",     None,  "#e53e3e", 5.2),
+    ("Low / Free Flow (< 10 VHD/mi)",        10.0,  "#4a5568", 1.8),
+    ("Minor Delay (10–50 VHD/mi)",           50.0,  "#d69e2e", 3.0),
+    ("Moderate Delay (50–150 VHD/mi)",       150.0, "#dd6b20", 4.0),
+    ("Severe Congestion (≥ 150 VHD/mi)",     None,  "#e53e3e", 5.2),
 ]
 
 # Segments the AADT join never reached get their own tier rather than being

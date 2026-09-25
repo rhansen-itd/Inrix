@@ -726,7 +726,7 @@ def _segment_kinds(geo) -> dict:
 
 
 def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
-              prefer_mainline=True, two_way_basis=True):
+              prefer_mainline=True, directional_basis=True):
     """Attach an ``AADT`` value to each segment by spatial match to the AADT layer.
 
     The AADT layer has no segment id, so the join is spatial: candidates are the AADT
@@ -798,12 +798,13 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
         bearing_tol_deg: max undirected bearing difference for a match (≈45°
             cleanly separates same-road / opposing from a cross-street).
         prefer_mainline: apply step 2. ``False`` reverts to route-then-distance.
-        two_way_basis: put ``AADT`` on the two-way-equivalent basis
-            (:func:`apply_two_way_basis`, Item 53) from the layer's own evidence. A
-            couplet leg's one-way count is doubled here; the couplet-membership
-            fallback needs the catalogue, so a caller that has one calls
-            :func:`apply_two_way_basis` again with it. ``False`` leaves the layer's
-            counts as published (and adds no basis columns).
+        directional_basis: put ``AADT`` on the per-direction basis
+            (:func:`apply_directional_basis`, Items 53/54) from the layer's own
+            evidence. A two-way count is halved here and a couplet leg's one-way count
+            kept; the couplet-membership fallback needs the catalogue, so a caller
+            that has one calls :func:`apply_directional_basis` again with it.
+            ``False`` leaves the layer's counts as published (and adds no basis
+            columns).
 
     Returns:
         A copy of ``geo`` with added columns:
@@ -828,10 +829,10 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
         * ``RouteID`` / ``Route`` — carried from the chosen line (also for
           ``nearest``, as a diagnostic) / ``Commercial`` — carried only for a match.
 
-        With ``two_way_basis`` (the default), also ``aadt_layer`` (the published
+        With ``directional_basis`` (the default), also ``aadt_layer`` (the published
         count), ``aadt_basis`` / ``aadt_basis_reason`` and ``aadt_record_basis`` (the
         chosen record's :func:`classify_aadt_basis` evidence); ``AADT`` is then the
-        two-way-equivalent volume.
+        segment's own direction's volume.
 
         ``attrs['aadt_join']`` records the resolved policy and the source counts.
     """
@@ -850,12 +851,12 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
             out[col] = val
         out.attrs["aadt_join"] = _join_policy(
             max_distance_m, bearing_tol_deg, prefer_mainline, out[AADT_SOURCE_COL])
-        return apply_two_way_basis(out) if two_way_basis else \
+        return apply_directional_basis(out) if directional_basis else \
             out.drop(columns=[AADT_RECORD_BASIS_COL])
 
     if RECORD_KIND_COL not in aadt.columns:
         aadt = classify_aadt_records(aadt)
-    if two_way_basis and BASIS_EVIDENCE_COL not in aadt.columns:
+    if directional_basis and BASIS_EVIDENCE_COL not in aadt.columns:
         aadt = classify_aadt_basis(aadt)
 
     # Distances/buffers need a metric CRS; estimate a UTM zone from the segments.
@@ -979,9 +980,9 @@ def join_aadt(geo, aadt, max_distance_m=60.0, bearing_tol_deg=45.0,
     out.attrs = dict(geo.attrs)
     out.attrs["aadt_join"] = _join_policy(
         max_distance_m, bearing_tol_deg, prefer_mainline, out[AADT_SOURCE_COL])
-    if not two_way_basis:
+    if not directional_basis:
         return out.drop(columns=[AADT_RECORD_BASIS_COL])
-    return apply_two_way_basis(out)
+    return apply_directional_basis(out)
 
 
 def _join_policy(max_distance_m, bearing_tol_deg, prefer_mainline, source) -> dict:
@@ -1002,7 +1003,7 @@ def _join_policy(max_distance_m, bearing_tol_deg, prefer_mainline, source) -> di
 
 
 # ---------------------------------------------------------------------------
-# One volume basis: couplet legs' one-way counts to two-way  (Item 53)
+# One volume basis: every count per direction  (Items 53, 54)
 # ---------------------------------------------------------------------------
 # Every XD segment is one direction of travel, and VHD is ``delay/60 × AADT`` per
 # segment, so what the AADT *means* has to be the same on every segment. On the ITD
@@ -1011,17 +1012,26 @@ def _join_policy(max_distance_m, bearing_tol_deg, prefer_mainline, source) -> di
 # its own record, and that count is **one-way**: ``01360AIN015`` (Pocatello's I-15 BL)
 # is 15,000 at the south end, then 7,500 on the ``A`` leg and 7,700 on the ``D`` leg.
 # Left alone, a couplet leg scores about half the VHD the same delay scores anywhere
-# else. The basis kept is the **two-way-equivalent** one the rest of the network
-# already uses, and the one the noise floors were tuned on: a one-way count × 2.
+# else. Item 53 fixed that by doubling the one-way counts (the two-way-equivalent
+# basis). Item 54 turned it round: the basis is **per direction**, the volume an XD
+# segment actually carries. A two-way count is halved (a 50/50 directional split), and
+# a one-way count or a ramp movement is kept as published. Every VHD is half its
+# Item 53 value, so rankings are unchanged, and a corridor's NB + SB VHD is the
+# facility's VHD instead of twice it.
 AADT_LAYER_COL = "aadt_layer"            # the count as the layer publishes it
-AADT_BASIS_COL = "aadt_basis"            # two_way / one_way_x2 / ramp (<NA>: no AADT)
+AADT_BASIS_COL = "aadt_basis"            # two_way_half / one_way / ramp (<NA>: no AADT)
 AADT_BASIS_REASON_COL = "aadt_basis_reason"
 AADT_RECORD_BASIS_COL = "aadt_record_basis"   # the chosen record's basis evidence
 BASIS_EVIDENCE_COL = "basis_evidence"    # on the AADT layer (classify_aadt_basis)
 
-TWO_WAY, ONE_WAY_X2, RAMP_MOVEMENT = "two_way", "one_way_x2", "ramp"
-# Record evidence (classify_aadt_basis). The one-way kinds are what can double a
-# count; the two-way kinds are what stop the couplet-leg fallback from doing it.
+TWO_WAY_HALF, ONE_WAY, RAMP_MOVEMENT = "two_way_half", "one_way", "ramp"
+TWO_WAY_SPLIT = 0.5
+"""Share of a two-way count each direction carries: an even directional split."""
+# The Item 53 (two-way-equivalent) labels, which a geometry cache written between
+# Items 53 and 54 still carries (:func:`to_directional_basis`).
+_LEGACY_TWO_WAY, _LEGACY_ONE_WAY_X2 = "two_way", "one_way_x2"
+# Record evidence (classify_aadt_basis). The one-way kinds are what keep a count
+# whole; the two-way kinds are what stop the couplet-leg fallback from doing it.
 EV_ONE_WAY_WORDS, EV_ONE_WAY_PAIR = "one_way_words", "one_way_pair"
 EV_TWO_WAY_WORDS, EV_DUPLICATED = "two_way_words", "duplicated"
 _EV_ONE_WAY = {EV_ONE_WAY_WORDS, EV_ONE_WAY_PAIR}
@@ -1247,24 +1257,24 @@ def two_way_twins(geo, segment_ids, *, tol_m: float = TWO_WAY_TWIN_TOL_M,
     return out
 
 
-def apply_two_way_basis(joined, *, couplet_segments=(), network=None):
-    """Put every segment's ``AADT`` on the two-way-equivalent basis (Item 53).
+def apply_directional_basis(joined, *, couplet_segments=(), network=None):
+    """Put every segment's ``AADT`` on the per-direction basis (Items 53, 54).
 
     Idempotent: it starts from ``aadt_layer`` (the count the layer publishes, written
     on the first call) each time, so a second call with a couplet membership only
     adds to the first. Per segment:
 
     * a ramp or connector record (``aadt_source == "matched_ramp"``) keeps its count,
-      basis ``ramp``;
-    * the count is doubled (``one_way_x2``) when the record is one-way by the layer's
+      basis ``ramp``: it is one movement already;
+    * the count is kept whole (``one_way``) when the record is one-way by the layer's
       own evidence (``one_way_words`` / ``one_way_pair``, :func:`classify_aadt_basis`)
       **or** the segment is in ``couplet_segments`` and the layer does not say the
       record is two-way — **and** the segment itself is not one carriageway of a
       two-way road (:func:`two_way_twins`). That last test is what keeps a two-way
-      street that happens to reach a one-way record at its original count: Moscow's SH-8 Troy Rd,
-      Blackfoot's Bridge St past Juniper, Boise's Broad St under Front St's ``D``
-      record;
-    * everything else is ``two_way``.
+      street that happens to reach a one-way record on the halved count: Moscow's
+      SH-8 Troy Rd, Blackfoot's Bridge St past Juniper, Boise's Broad St under Front
+      St's ``D`` record;
+    * everything else is ``two_way_half``: the count × :data:`TWO_WAY_SPLIT`.
 
     Args:
         joined: a :func:`join_aadt` frame, indexed by segment id.
@@ -1299,12 +1309,13 @@ def apply_two_way_basis(joined, *, couplet_segments=(), network=None):
     twins = two_way_twins(network if network is not None else out, cand) \
         if len(cand) else set()
     is_twin = out.index.isin(twins)
-    doubled = (layer_one | leg_one) & ~is_twin
+    one_way = (layer_one | leg_one) & ~is_twin
+    halved = has & ~ramp & ~one_way
 
     basis = pd.Series(pd.NA, index=out.index, dtype=object)
-    basis[has] = TWO_WAY
+    basis[halved] = TWO_WAY_HALF
     basis[ramp] = RAMP_MOVEMENT
-    basis[doubled] = ONE_WAY_X2
+    basis[one_way] = ONE_WAY
     reason = pd.Series(pd.NA, index=out.index, dtype=object)
     reason[has] = "default"
     reason[has & rec.isin(_EV_TWO_WAY)] = rec[has & rec.isin(_EV_TWO_WAY)]
@@ -1313,16 +1324,54 @@ def apply_two_way_basis(joined, *, couplet_segments=(), network=None):
     reason[layer_one & ~is_twin] = rec[layer_one & ~is_twin]
     reason[leg_one & ~is_twin] = "couplet_leg"
 
-    out[AADT_COL] = layer.where(~doubled, layer * 2.0)
+    out[AADT_COL] = layer.where(~halved, layer * TWO_WAY_SPLIT)
     out[AADT_BASIS_COL] = basis
     out[AADT_BASIS_REASON_COL] = reason
     out.attrs = dict(joined.attrs)
     out.attrs["aadt_basis"] = {
-        "basis": "two-way equivalent (a one-way count x 2)",
+        "basis": "per direction (a two-way count x 0.5)",
         "counts": {k: int(v) for k, v in basis.value_counts().items()},
         "reasons": {k: int(v) for k, v in reason.value_counts().items()},
         "n_couplet_segments": len(couplet),
     }
+    return out
+
+
+def to_directional_basis(geo):
+    """Bring a cached join (a GUI geometry cache) onto the per-direction basis.
+
+    A cache written since Item 54 is returned as is. One written under Item 53 carries
+    ``aadt_layer`` and the old labels, which say which counts to halve (``two_way``)
+    and which to keep (``one_way_x2``, ``ramp``). One written before Item 53 carries
+    the published count as ``AADT`` and no basis: every count but a ramp's is halved
+    there, as the one-way evidence was never recorded (reason ``legacy_cache``;
+    re-ingest to get it). A frame without ``AADT`` is returned unchanged.
+    """
+    if geo is None or AADT_COL not in getattr(geo, "columns", []):
+        return geo
+    basis = geo[AADT_BASIS_COL] if AADT_BASIS_COL in geo.columns else None
+    if basis is not None and not basis.isin([_LEGACY_TWO_WAY, _LEGACY_ONE_WAY_X2]).any():
+        return geo
+    out = geo.copy()
+    if AADT_LAYER_COL not in out.columns:
+        out[AADT_LAYER_COL] = pd.to_numeric(out[AADT_COL], errors="coerce")
+    layer = pd.to_numeric(out[AADT_LAYER_COL], errors="coerce")
+    has = layer.notna()
+    if basis is not None:
+        halved = has & basis.eq(_LEGACY_TWO_WAY)
+        new = basis.replace({_LEGACY_TWO_WAY: TWO_WAY_HALF, _LEGACY_ONE_WAY_X2: ONE_WAY})
+    else:
+        source = out[AADT_SOURCE_COL] if AADT_SOURCE_COL in out.columns else \
+            pd.Series("matched", index=out.index)
+        ramp = has & source.eq("matched_ramp")
+        halved = has & ~ramp
+        new = pd.Series(pd.NA, index=out.index, dtype=object)
+        new[halved] = TWO_WAY_HALF
+        new[ramp] = RAMP_MOVEMENT
+        out[AADT_BASIS_REASON_COL] = pd.Series(pd.NA, index=out.index, dtype=object) \
+            .mask(halved, "legacy_cache").mask(ramp, "ramp_movement")
+    out[AADT_COL] = layer.where(~halved, layer * TWO_WAY_SPLIT)
+    out[AADT_BASIS_COL] = new
     return out
 
 

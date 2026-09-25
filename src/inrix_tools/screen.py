@@ -1152,7 +1152,8 @@ def direction_totals(breakout: pd.DataFrame) -> pd.DataFrame:
 
 
 _AADT_CAVEAT = (
-    "AADT is a daily total; vhd is a relative weight at the window's mean delay, not "
+    "AADT is a daily total per direction (a two-way count halved; ROADMAP Item 54); "
+    "vhd is a relative weight at the window's mean delay, not "
     "absolute vehicle-hours unless the window is scaled to a full day "
     "(aadt.vehicle_hours_of_delay). Rows weighted by a ramp record are counted in "
     "n_ramp_weighted, not excluded (ROADMAP Item 34)."

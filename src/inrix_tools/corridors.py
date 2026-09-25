@@ -1360,8 +1360,8 @@ def parse_reporting_corridors(data) -> tuple[ReportingCorridor, ...]:
 def couplet_segments(entries, groups, chains) -> set[int]:
     """Every segment on a one-way couplet leg: the resolved chains of the entries whose
     reporting corridor is ``one_way_couplet``. What
-    :func:`inrix_tools.aadt.apply_two_way_basis` falls back on where the AADT layer
-    itself does not say a leg's record is one-way (Item 53).
+    :func:`inrix_tools.aadt.apply_directional_basis` falls back on where the AADT layer
+    itself does not say a leg's record is one-way (Items 53, 54).
 
     Args:
         entries: catalogue entries (:func:`load_catalogue`).

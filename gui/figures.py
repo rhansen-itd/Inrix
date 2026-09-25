@@ -147,7 +147,7 @@ def segment_map(
             av = row.get("AADT")
             if pd.notna(av):
                 src = str(row.get("aadt_source", "")) if "aadt_source" in geo.columns else ""
-                atxt = f"<br>AADT: {av:,.0f}" + (f" ({src})" if src else "")
+                atxt = f"<br>AADT (per direction): {av:,.0f}" + (f" ({src})" if src else "")
             elif "aadt_source" in geo.columns:
                 atxt = "<br>AADT: none"
         texts.append(f"<b>{label}</b>{sub}<br>Segment {sid}{vtxt}{atxt}")

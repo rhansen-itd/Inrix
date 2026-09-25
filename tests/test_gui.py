@@ -1025,7 +1025,7 @@ def test_segment_map_hover_shows_aadt():
         geometry="geometry", crs="EPSG:4326").set_index("Segment ID")
     fig = figures.segment_map(geo)
     txt = "".join(t for tr in fig.data for t in (tr.text or []) if tr.text is not None)
-    assert "AADT: 12,000 (matched)" in txt
+    assert "AADT (per direction): 12,000 (matched)" in txt
     assert "AADT: none" in txt
 
 

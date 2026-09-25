@@ -1382,6 +1382,20 @@ of delay, AADT-weighted corridor speed).
     the couplet legs through the catalogue endpoint. It was written to 5 decimals,
     which put it 1 ft nearer Troy Rd's end than Washington St's start at the node.
     The fix is in `corridors.build_chain`: `JUNCTION_TIE_FEET`.
+    **Basis changed to per direction in Item 54 (Session 73).** `AADT` is now the volume
+    the XD segment's own direction carries: a two-way count × 0.5
+    (`aadt.TWO_WAY_SPLIT`, an even directional split, basis `two_way_half`); a one-way
+    count (`one_way`) and a ramp movement (`ramp`) as published. The Item 53 evidence
+    and the two-way-street gate decide which is which, unchanged. So every VHD is
+    exactly half its Item 53 value, and rankings, ratios and the relative tests don't
+    move. What changes: a corridor's NB + SB VHD is the facility's VHD instead of
+    twice it, and a ramp count now sits on the same footing as the mainline beside it
+    (it was one movement against a two-way count). The absolute thresholds were halved
+    to match: `MIN_CORE_VHD[_PER_MILE]` 10 → 5, `extents.AADT_ABSOLUTE_STEP` 8,000 →
+    4,000 vpd, and the VHD/mi map tiers 25/100/300 → 10/50/150 (the bottom one rounded:
+    the old 25 was a round number, not a break in the data). `aadt_layer` is still the
+    published count. A GUI geometry cache from before Item 54 is rebased on load
+    (`aadt.to_directional_basis`).
 - **No `XDSegID`.** There is no INRIX join key, so the join to our `Segment ID` is
   necessarily **spatial**: `aadt.join_aadt` matches each Item 8 segment polyline to a
   candidate AADT line within `max_distance_m` (default **60 m**), gated by a
@@ -1842,8 +1856,8 @@ real hotspots run 1.2–2.4 per segment, geometric roads 0.95–1.05.
 | `CORE_GAP_SEGMENTS` / `_MILES` | 2 / 0.5 mi | a core bridges up to this much in between (so SH-8's 1.199 is inside it) |
 | `SEGMENT_MILES_CAP` | 0.5 mi | a segment counts toward effective miles only up to this |
 | `MIN_EFFECTIVE_CORE_MILES` | 0.6 | Σ min(miles, cap) × weight; one long segment can't pass alone |
-| `MIN_CORE_VHD_PER_MILE` | 10 | a **noise floor**, not a policy cut. VHD is an index (window delay × daily AADT as a weight), so a cut between two real towns would be arbitrary. It removes only the rural geometric and low-volume roads (1–5); the smallest towns (Blackfoot 44, Bonners Ferry 45, Soda Springs 50) stay in and rank low. Thinning to a top-N is the ranking's job (owner, Session 69) |
-| `MIN_CORE_VHD` | 10 | total vehicle-hours, the same noise floor |
+| `MIN_CORE_VHD_PER_MILE` | 5 | a **noise floor**, not a policy cut. VHD is an index (window delay × daily AADT as a weight), so a cut between two real towns would be arbitrary. It removes only the rural geometric and low-volume roads (0.5–2.5); the smallest towns (Blackfoot 22, Bonners Ferry 22.5, Soda Springs 25) stay in and rank low. Thinning to a top-N is the ranking's job (owner, Session 69). 10 on two-way AADT; halved with the per-direction basis (Item 54) |
+| `MIN_CORE_VHD` | 5 | total vehicle-hours, the same noise floor (10 on two-way AADT) |
 | `MIN_REALTIME_SHARE` | 0.90 | mile-weighted, peak window. Keep list ≥ 0.98; Lowell 0.01, Benewah 0.02–0.03, Idaho County 0.16, Gilbert Grade 0.02–0.04, Galena 0.01 |
 | `SPILL_RETENTION` | 0.5 | Tier 2 grows while the grown extent keeps ≥ 50% of the core's VHD/mi |
 | `CONTEXT_PAD_MILES` | 3 mi | Tier 3 goes at most this far past Tier 2 |

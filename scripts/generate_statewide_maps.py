@@ -101,8 +101,8 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
             couplet_ids = set()
 
         if aadt_source is not None:
-            # After the catalogue: a couplet leg's one-way count is doubled onto the
-            # two-way-equivalent basis the rest of the map is on (Item 53).
+            # After the catalogue: a couplet leg's one-way count is kept whole on the
+            # per-direction basis the rest of the map is on (Items 53, 54).
             net_geo = net_d.copy()
             net_geo["Segment ID"] = net_geo["XDSegID"]
             joined = join_volumes(

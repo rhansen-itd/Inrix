@@ -49,17 +49,17 @@ from shapely.ops import linemerge
 URBAN_FRC_THRESHOLD = 3        # FRC <= 3 is "urban arterial or higher"
 SPEED_DISCONTINUITY_MPH = 15   # Free-flow speed jump indicating urban/rural boundary
 
-# Criterion 3: AADT
+# Criterion 3: AADT (per direction since Item 54: the two-way 8000 vpd step, halved)
 AADT_RELATIVE_GRADIENT = 0.40  # 40% relative change threshold
-AADT_ABSOLUTE_STEP = 8000      # Minimum absolute vpd change
+AADT_ABSOLUTE_STEP = 4000      # Minimum absolute vpd change, per direction
 
 # Criterion 4: Congestion
 TTI_CONGESTED = 1.20           # TTI threshold for "congested" side of discontinuity
 TTI_FREEFLOW = 1.08            # TTI threshold for "free-flowing" side
 CONGESTION_RUN_MIN_SEGS = 3    # Minimum consecutive segments to confirm discontinuity
 RECURRENCE_DROP = 0.40         # Recurrence rate below which congestion "ends"
-VHD_BOTTLENECK = 150.0         # vhd/mile indicating bottleneck
-VHD_FREEFLOW = 25.0            # vhd/mile indicating free-flow
+VHD_BOTTLENECK = 75.0          # vhd/mile indicating bottleneck (per-direction AADT)
+VHD_FREEFLOW = 10.0            # vhd/mile indicating free-flow (per-direction AADT)
 
 # Dilution
 DILUTION_FACTOR_THRESHOLD = 5.0  # If Tier1 rate / Tier3 rate > 5, must partition
@@ -2136,19 +2136,24 @@ long rural segment cannot be a core by itself."""
 MIN_EFFECTIVE_CORE_MILES = 0.6
 """Floor on ``sum(min(miles, SEGMENT_MILES_CAP) x weight)`` over the core."""
 
-MIN_CORE_VHD_PER_MILE = 10.0
+MIN_CORE_VHD_PER_MILE = 5.0
 """A **noise floor** on the core's vehicle-hours of delay per mile, not a policy cut.
 
 VHD here is an index — mean window delay times a daily AADT used as a weight — so a
 cut placed between two real towns would be arbitrary (owner, Session 69: "be pretty
 permissive ... a later decision can filter them back out if they rank too low").
 The floor only removes what is not delay at all: the rural geometric and low-volume
-cores sit at 1–5 (Gilbert Grade 1.1–1.4, Lowell ~2, Benewah 2–4, Galena 2–3). The
-smallest real town cores (Blackfoot 44, Bonners Ferry 45, Soda Springs 50) pass and
-rank at the bottom; thinning to a top-N belongs to the ranking, not the catalogue."""
+cores sit at 0.5–2.5 (Gilbert Grade 0.55–0.7, Lowell ~1, Benewah 1–2, Galena 1–1.5).
+The smallest real town cores (Blackfoot 22, Bonners Ferry 22.5, Soda Springs 25) pass
+and rank at the bottom; thinning to a top-N belongs to the ranking, not the catalogue.
 
-MIN_CORE_VHD = 10.0
-"""Noise floor on the core's total vehicle-hours of delay."""
+Tuned at 10 on two-way AADT (Session 69); halved with the per-direction basis (Item
+54), which halves every VHD, so the same cores pass. The figures above are the
+Session 69 ones halved."""
+
+MIN_CORE_VHD = 5.0
+"""Noise floor on the core's total vehicle-hours of delay (10 on two-way AADT, halved
+for the per-direction basis like :data:`MIN_CORE_VHD_PER_MILE`)."""
 
 MIN_REALTIME_SHARE = 0.90
 """Floor on the core's mile-weighted ``Pct Score30`` share in its peak window. Every

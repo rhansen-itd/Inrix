@@ -87,7 +87,7 @@ def test_join_matches_parallel_rejects_crossing():
     """The bearing check picks the same-orientation parallel line, not the closer
     (by midpoint) perpendicular cross-street."""
     j = aadt.join_aadt(_seg_geo(), _aadt_layer())
-    assert j.loc[1001, "AADT"] == 40000
+    assert j.loc[1001, aadt.AADT_LAYER_COL] == 40000
     assert j.loc[1001, "aadt_source"] == "matched"
     assert j.loc[1001, "Route"] == "R-main"
     assert j.loc[1001, "aadt_dist_m"] < 20  # ~8 m
@@ -144,7 +144,7 @@ def test_join_curved_same_road_matches_by_local_tangent():
     )
     j = aadt.join_aadt(seg, lshape)
     assert j.loc[1001, "aadt_source"] == "matched"
-    assert j.loc[1001, "AADT"] == 12000.0
+    assert j.loc[1001, aadt.AADT_LAYER_COL] == 12000.0
 
 
 def test_join_missing_geometry_and_empty_layer():
@@ -233,7 +233,7 @@ def test_mainline_beats_a_nearer_parallel_ramp():
     carriageway and the mainline centreline is 25 m off, so nearest-wins takes the
     ramp's 18,000 for a road carrying 147,500."""
     j = aadt.join_aadt(_carriageway(), _divided_highway_layer())
-    assert j.loc[1001, "AADT"] == 147500.0
+    assert j.loc[1001, aadt.AADT_LAYER_COL] == 147500.0
     assert j.loc[1001, "aadt_source"] == "matched"
     assert j.loc[1001, "aadt_record_kind"] == "mainline"
     assert j.loc[1001, "aadt_desc"] == "EAGLE RD IC #46"
@@ -272,12 +272,12 @@ def test_route_number_beats_a_nearer_frontage_road():
     layer = gpd.GeoDataFrame(pd.concat([layer, frontage], ignore_index=True),
                              crs="EPSG:4326")
     j = aadt.join_aadt(_carriageway(), layer)
-    assert j.loc[1001, "AADT"] == 147500.0      # not the 3 m, 70-vehicle frontage road
+    assert j.loc[1001, aadt.AADT_LAYER_COL] == 147500.0      # not the 3 m, 70-vehicle frontage road
 
     # An unnumbered segment has no route evidence: distance decides, as before.
     j2 = aadt.join_aadt(_carriageway(road_number=None, road_name="Substation Rd", frc=4),
                         layer)
-    assert j2.loc[1001, "AADT"] == 70.0
+    assert j2.loc[1001, aadt.AADT_LAYER_COL] == 70.0
 
 
 def test_coverage_breaks_a_zero_distance_tie():
@@ -298,7 +298,7 @@ def test_coverage_breaks_a_zero_distance_tie():
     )
     j = aadt.join_aadt(seg, layer)
     assert j.loc[1001, "aadt_dist_m"] == pytest.approx(0.0, abs=0.5)
-    assert j.loc[1001, "AADT"] == 26500.0
+    assert j.loc[1001, aadt.AADT_LAYER_COL] == 26500.0
     assert j.loc[1001, "aadt_desc"] == "OREGON STATE LINE"
 
 
@@ -379,7 +379,7 @@ def test_a_named_route_breaks_a_tie_an_unnumbered_record_cannot():
     equal, the record that names a route wins."""
     seg = _carriageway(road_number=None, road_name="W Karcher Rd", frc=3)
     j = aadt.join_aadt(seg, _two_records_on_the_segment())
-    assert j.loc[1001, "AADT"] == 4700.0
+    assert j.loc[1001, aadt.AADT_LAYER_COL] == 4700.0
     assert j.loc[1001, aadt.AADT_ROUTE_NUM_COL] == 55
     assert "named route" in j.attrs["aadt_join"]["preference"]
 
@@ -414,13 +414,13 @@ def test_the_route_class_preference_never_promotes_a_worse_match():
              LineString([(-116.20, 43.610), (-116.20, 43.620)])]},
         crs="EPSG:4326")
     seg = _carriageway(road_number=None, road_name="W Emerald St", frc=4)
-    assert aadt.join_aadt(seg, layer).loc[1001, "AADT"] == 12500.0      # not 82,000
+    assert aadt.join_aadt(seg, layer).loc[1001, aadt.AADT_LAYER_COL] == 12500.0      # not 82,000
 
     # and coverage still outranks it: the numbered record clipping one end loses to
     # the unnumbered one that runs the length of the segment.
     clipped = layer.copy()
     clipped.loc[0, "geometry"] = LineString([(-116.20, 43.610), (-116.20, 43.6115)])
-    assert aadt.join_aadt(seg, clipped).loc[1001, "AADT"] == 12500.0
+    assert aadt.join_aadt(seg, clipped).loc[1001, aadt.AADT_LAYER_COL] == 12500.0
 
 
 def test_join_reports_coverage_and_the_records_route():
@@ -659,13 +659,13 @@ def test_real_i84_carriageways_agree_after_the_ranked_join():
         sub = j.loc[sids]
         assert (sub["aadt_source"] == "matched").all()          # no ramp attributions
         w = miles.reindex(sids).astype(float)
-        return float((sub["AADT"] * w).sum() / w.sum())
+        return float((sub[aadt.AADT_LAYER_COL] * w).sum() / w.sum())
 
     wb, eb = lw_mean(_I84_WB), lw_mean(_I84_EB)
     assert wb > 110_000                      # was 61,410 under nearest-wins
     assert abs(wb - eb) / eb < 0.05          # the two directions now agree
     # and the westbound profile is the mainline's, monotone west to east:
-    wb_vals = j.loc[_I84_WB[::-1], "AADT"].tolist()        # west -> east
+    wb_vals = j.loc[_I84_WB[::-1], aadt.AADT_LAYER_COL].tolist()        # west -> east
     assert sorted(set(wb_vals)) == [76000.0, 97000.0, 114500.0, 122000.0,
                                     135000.0, 145500.0, 147500.0]
     peak = len(wb_vals) - 1 - wb_vals[::-1].index(max(wb_vals))   # the Eagle Rd crest
@@ -1029,59 +1029,61 @@ def _couplet_segments():
         index=pd.Index([r[0] for r in rows], name=SEGMENT_COL), crs="EPSG:4326")
 
 
-def test_join_doubles_a_couplet_legs_one_way_count():
-    """The legs carry 7,500 and 7,700 one-way; on the two-way-equivalent basis the
-    rest of the network is on they are 15,000 and 15,400 — the two-way road either side
-    carries 15,000. The published count is kept as ``aadt_layer``."""
+def test_join_keeps_a_couplet_legs_one_way_count_and_halves_two_way():
+    """The legs carry 7,500 and 7,700 one-way, which is what each direction carries;
+    the two-way road either side carries 15,000, so each of its directions 7,500 on
+    the per-direction basis (Item 54). The published count is kept as ``aadt_layer``."""
     j = aadt.join_aadt(_couplet_segments(), _couplet_layer())
-    assert j.loc[1, "AADT"] == 15000.0 and j.loc[1, aadt.AADT_LAYER_COL] == 7500.0
-    assert j.loc[2, "AADT"] == 15400.0 and j.loc[2, aadt.AADT_LAYER_COL] == 7700.0
-    assert j.loc[[1, 2], aadt.AADT_BASIS_COL].tolist() == [aadt.ONE_WAY_X2] * 2
+    assert j.loc[1, "AADT"] == 7500.0 and j.loc[1, aadt.AADT_LAYER_COL] == 7500.0
+    assert j.loc[2, "AADT"] == 7700.0 and j.loc[2, aadt.AADT_LAYER_COL] == 7700.0
+    assert j.loc[[1, 2], aadt.AADT_BASIS_COL].tolist() == [aadt.ONE_WAY] * 2
     assert j.loc[[1, 2], aadt.AADT_BASIS_REASON_COL].tolist() == [aadt.EV_ONE_WAY_PAIR] * 2
-    # the two-way road south of the split is untouched
-    assert j.loc[[3, 4], "AADT"].tolist() == [15000.0, 15000.0]
-    assert j.loc[[3, 4], aadt.AADT_BASIS_COL].tolist() == [aadt.TWO_WAY] * 2
-    assert j.attrs["aadt_basis"]["counts"][aadt.ONE_WAY_X2] == 2
+    # the two-way road south of the split is halved
+    assert j.loc[[3, 4], aadt.AADT_LAYER_COL].tolist() == [15000.0, 15000.0]
+    assert j.loc[[3, 4], "AADT"].tolist() == [7500.0, 7500.0]
+    assert j.loc[[3, 4], aadt.AADT_BASIS_COL].tolist() == [aadt.TWO_WAY_HALF] * 2
+    assert j.attrs["aadt_basis"]["counts"][aadt.ONE_WAY] == 2
 
 
-def test_two_way_street_on_a_one_way_record_keeps_its_count():
+def test_two_way_street_on_a_one_way_record_is_halved():
     """Troy Rd's two directions both reach the ``D`` leg's record. A segment with an
     opposing twin of its own street is one carriageway of a two-way road, and its
-    count is not doubled, whatever the record it reached."""
+    count is halved like any two-way count, whatever the record it reached."""
     j = aadt.join_aadt(_couplet_segments(), _couplet_layer())
     assert j.loc[[5, 6], aadt.AADT_LAYER_COL].tolist() == [7700.0, 7700.0]
-    assert j.loc[[5, 6], "AADT"].tolist() == [7700.0, 7700.0]
+    assert j.loc[[5, 6], "AADT"].tolist() == [3850.0, 3850.0]
     assert j.loc[[5, 6], aadt.AADT_BASIS_REASON_COL].tolist() == ["two_way_street"] * 2
     assert aadt.two_way_twins(_couplet_segments(), [1, 2, 3, 5]) == {3, 5}
 
 
 def test_couplet_membership_is_the_fallback_where_the_layer_is_silent():
     """With no ``D`` leg in the layer, the ``A`` leg's record carries no evidence: a
-    couplet-leg segment is doubled only once the catalogue says it is one, and a
-    record the layer marks two-way is never doubled."""
+    couplet-leg segment keeps its whole count only once the catalogue says it is one,
+    and a record the layer marks two-way is always halved."""
     layer = _couplet_layer().drop(index=[2]).reset_index(drop=True)   # no D leg
     segs = _couplet_segments().loc[[1, 3, 4]]
     j = aadt.join_aadt(segs, layer)
-    assert j.loc[1, "AADT"] == 7500.0 and j.loc[1, aadt.AADT_BASIS_COL] == aadt.TWO_WAY
-    k = aadt.apply_two_way_basis(j, couplet_segments={1})
-    assert k.loc[1, "AADT"] == 15000.0
+    assert j.loc[1, "AADT"] == 3750.0
+    assert j.loc[1, aadt.AADT_BASIS_COL] == aadt.TWO_WAY_HALF
+    k = aadt.apply_directional_basis(j, couplet_segments={1})
+    assert k.loc[1, "AADT"] == 7500.0
     assert k.loc[1, aadt.AADT_BASIS_REASON_COL] == "couplet_leg"
-    # idempotent: a second pass starts from the published count, not from 15,000
-    again = aadt.apply_two_way_basis(k, couplet_segments={1})
-    assert again.loc[1, "AADT"] == 15000.0
-    # a record ITD marks two-way is not doubled on membership alone
+    # idempotent: a second pass starts from the published count, not from 7,500
+    again = aadt.apply_directional_basis(k, couplet_segments={1})
+    assert again.loc[1, "AADT"] == 7500.0
+    # a record ITD marks two-way is halved even on a couplet leg's membership
     worded = _couplet_layer(words=True).drop(index=[1, 2]).reset_index(drop=True)
     seg = _couplet_segments().loc[[3]]
-    w = aadt.apply_two_way_basis(aadt.join_aadt(seg, worded), couplet_segments={3})
-    assert w.loc[3, "AADT"] == 15000.0
+    w = aadt.apply_directional_basis(aadt.join_aadt(seg, worded), couplet_segments={3})
+    assert w.loc[3, "AADT"] == 7500.0
     assert w.loc[3, aadt.AADT_BASIS_REASON_COL] == aadt.EV_TWO_WAY_WORDS
 
 
-def test_two_way_basis_off_and_ramps():
-    """``two_way_basis=False`` returns the layer's counts as published, with no basis
-    columns. A ramp record's count is one movement and is never doubled."""
-    raw = aadt.join_aadt(_couplet_segments(), _couplet_layer(), two_way_basis=False)
-    assert raw.loc[1, "AADT"] == 7500.0
+def test_directional_basis_off_and_ramps():
+    """``directional_basis=False`` returns the layer's counts as published, with no
+    basis columns. A ramp record's count is one movement and is never halved."""
+    raw = aadt.join_aadt(_couplet_segments(), _couplet_layer(), directional_basis=False)
+    assert raw.loc[3, "AADT"] == 15000.0
     assert aadt.AADT_BASIS_COL not in raw.columns
     assert aadt.AADT_RECORD_BASIS_COL not in raw.columns
     j = aadt.join_aadt(_carriageway(road_name="Eagle Rd off-ramp", frc=6),
@@ -1092,7 +1094,40 @@ def test_two_way_basis_off_and_ramps():
     assert row["AADT"] == row[aadt.AADT_LAYER_COL] == 18000.0
 
 
-def test_vhd_follows_the_two_way_basis():
+def test_to_directional_basis_rebases_old_caches():
+    """A GUI geometry cache from Item 53 (two-way-equivalent labels) or from before it
+    (no basis at all) comes back on the per-direction basis; a current one is left
+    alone."""
+    idx = pd.Index([1, 2, 3], name=SEGMENT_COL)
+    item53 = pd.DataFrame({"AADT": [15000.0, 15000.0, 900.0],
+                           aadt.AADT_LAYER_COL: [15000.0, 7500.0, 900.0],
+                           aadt.AADT_BASIS_COL: ["two_way", "one_way_x2", "ramp"]},
+                          index=idx)
+    r = aadt.to_directional_basis(item53)
+    assert r["AADT"].tolist() == [7500.0, 7500.0, 900.0]
+    assert r[aadt.AADT_BASIS_COL].tolist() == [aadt.TWO_WAY_HALF, aadt.ONE_WAY,
+                                               aadt.RAMP_MOVEMENT]
+    assert aadt.to_directional_basis(r) is r                   # already current
+    pre53 = pd.DataFrame({"AADT": [15000.0, 900.0, float("nan")],
+                          aadt.AADT_SOURCE_COL: ["matched", "matched_ramp", "missing"]},
+                         index=idx)
+    q = aadt.to_directional_basis(pre53)
+    assert q["AADT"].tolist()[:2] == [7500.0, 900.0] and pd.isna(q.loc[3, "AADT"])
+    assert q[aadt.AADT_BASIS_REASON_COL].tolist()[:2] == ["legacy_cache", "ramp_movement"]
+
+
+def test_directional_vhd_is_half_the_two_way_vhd():
+    """Every non-ramp VHD is exactly half its two-way-basis value, so rankings and
+    ratios are unchanged (Item 54)."""
+    raw = aadt.join_aadt(_couplet_segments(), _couplet_layer(), directional_basis=False)
+    j = aadt.join_aadt(_couplet_segments(), _couplet_layer())
+    delay = pd.Series({3: 0.6, 4: 1.2})
+    col = "vehicle_hours"
+    assert (aadt.vehicle_hours_of_delay(delay, j)[col]
+            == 0.5 * aadt.vehicle_hours_of_delay(delay, raw)[col]).all()
+
+
+def test_vhd_follows_the_directional_basis():
     """VHD reads ``AADT``, so a couplet leg's delay now scores what the same delay
     scores on the two-way road beside it."""
     j = aadt.join_aadt(_couplet_segments(), _couplet_layer())

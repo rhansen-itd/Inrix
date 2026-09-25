@@ -195,9 +195,9 @@ def test_the_join_takes_the_mainline_count_once_records_are_classified_by_the_sh
         index=pd.Index([1], name=SEGMENT_COL), crs="EPSG:4326")
     layer = _aadt_records()
     layer = layer[layer["RouteID"].str.endswith("184")]
-    assert aadt.join_aadt(seg, layer).loc[1, "AADT"] == 5000            # the connector
+    assert aadt.join_aadt(seg, layer).loc[1, aadt.AADT_LAYER_COL] == 5000            # the connector
     fixed = itd_layers.classify_records_with_shs(layer, _shs_for_records())
-    assert aadt.join_aadt(seg, fixed).loc[1, "AADT"] == 68000           # the mainline
+    assert aadt.join_aadt(seg, fixed).loc[1, aadt.AADT_LAYER_COL] == 68000           # the mainline
 
 
 def test_a_ramp_count_on_a_roadway_route_id_stays_a_ramp():
@@ -237,7 +237,7 @@ def test_a_ramp_count_on_a_roadway_route_id_stays_a_ramp():
         {"RoadName": ["I-84 W"], "RoadNumber": ["84"], "RoadList": ["I-84"], "FRC": [1],
          "geometry": [LineString([(-113.5, 42.571), (-113.5, 42.579)])]},
         index=pd.Index([1], name=SEGMENT_COL), crs="EPSG:4326")
-    assert aadt.join_aadt(seg, fixed).loc[1, "AADT"] == 12000
+    assert aadt.join_aadt(seg, fixed).loc[1, aadt.AADT_LAYER_COL] == 12000
 
 
 def test_shs_mileposts_interpolate_along_the_segments_own_line():

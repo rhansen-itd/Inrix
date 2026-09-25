@@ -432,29 +432,29 @@ def _trace_counts(traces):
 def test_segments_without_aadt_get_their_own_tier_not_free_flow():
     """A segment the AADT join never reached is *unknown*, not free-flowing.
 
-    Folding NaN into the "< 25 VHD/mi" tier is what let a statewide join that
+    Folding NaN into the "< 10 VHD/mi" tier is what let a statewide join that
     matched nothing render as 17,016 free-flowing segments.
     """
-    frame = _vhd_frame([float("nan"), float("nan"), 10.0, 150.0, 400.0])
+    frame = _vhd_frame([float("nan"), float("nan"), 5.0, 75.0, 200.0])
     counts = _trace_counts(rds._build_segment_vhd_traces(frame))
 
     assert counts["No AADT Data (unvolumed)"] == 2
-    assert counts["Low / Free Flow (< 25 VHD/mi)"] == 1
-    assert counts["Moderate Delay (100–300 VHD/mi)"] == 1
-    assert counts["Severe Congestion (≥ 300 VHD/mi)"] == 1
+    assert counts["Low / Free Flow (< 10 VHD/mi)"] == 1
+    assert counts["Moderate Delay (50–150 VHD/mi)"] == 1
+    assert counts["Severe Congestion (≥ 150 VHD/mi)"] == 1
     # Every segment lands in exactly one tier.
     assert sum(counts.values()) == 5
 
 
 def test_vhd_tiers_partition_on_their_boundaries():
     """Tier edges are half-open [lower, upper), so a boundary value sits high."""
-    frame = _vhd_frame([24.99, 25.0, 99.99, 100.0, 299.99, 300.0])
+    frame = _vhd_frame([9.99, 10.0, 49.99, 50.0, 149.99, 150.0])
     counts = _trace_counts(rds._build_segment_vhd_traces(frame))
 
-    assert counts["Low / Free Flow (< 25 VHD/mi)"] == 1
-    assert counts["Minor Delay (25–100 VHD/mi)"] == 2
-    assert counts["Moderate Delay (100–300 VHD/mi)"] == 2
-    assert counts["Severe Congestion (≥ 300 VHD/mi)"] == 1
+    assert counts["Low / Free Flow (< 10 VHD/mi)"] == 1
+    assert counts["Minor Delay (10–50 VHD/mi)"] == 2
+    assert counts["Moderate Delay (50–150 VHD/mi)"] == 2
+    assert counts["Severe Congestion (≥ 150 VHD/mi)"] == 1
     assert counts["No AADT Data (unvolumed)"] == 0
 
 
@@ -483,7 +483,7 @@ def test_no_aadt_at_all_yields_all_nan_not_all_zero():
     frame = _vhd_frame([float("nan")] * 4)
     counts = _trace_counts(rds._build_segment_vhd_traces(frame))
     assert counts["No AADT Data (unvolumed)"] == 4
-    assert counts["Low / Free Flow (< 25 VHD/mi)"] == 0
+    assert counts["Low / Free Flow (< 10 VHD/mi)"] == 0
 
 
 def test_missing_metrics_render_as_na_not_zero():

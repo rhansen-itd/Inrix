@@ -6215,3 +6215,84 @@ sidebar, or for the two legends to be stacked.
     theme switch and zooms (the triangle redraw). Each corridor's line and
     triangles stayed in the same visibility state at every step, and the segment
     legend kept all its entries under SB/WB and Hide.
+
+
+## Session 73 — Item 54: AADT per direction (2026-09-24)
+
+### 1. The decision
+
+Item 53 put every segment on the **two-way-equivalent** basis by doubling a couplet
+leg's one-way count, to keep the noise floors as tuned. The owner asked for the
+opposite: the **per-direction** basis, halving every two-way count instead. It is the
+truer number, because an XD segment is one direction of travel. It also makes a
+corridor's NB + SB VHD the facility's VHD rather than twice it. Halving only at the
+output step (maps, CSVs) was considered and rejected. The catalogues, the logs and
+the floor constants would have stayed on one basis while the products used another,
+and chasing the absolute thresholds turned out to be a short list.
+
+`aadt.apply_directional_basis` (renamed from `apply_two_way_basis`) keeps Item 53's
+evidence rules and two-way-street gate unchanged. Only the factor moved:
+- `two_way_half`: the count × `TWO_WAY_SPLIT` (0.5, an even directional split);
+- `one_way`: kept as published;
+- `ramp`: kept as published.
+
+A ramp count is one movement, so under Item 53 it was under-weighted by half next to
+the mainline. Now it is on the same footing. `join_aadt(directional_basis=True)` is
+the default.
+
+### 2. The thresholds
+
+Ratios don't care about scale (spill retention, dilution factor, the AADT relative
+gradient, proration). Only the absolute numbers moved:
+
+| constant | was | now |
+|---|---|---|
+| `extents.MIN_CORE_VHD_PER_MILE` / `MIN_CORE_VHD` | 10 / 10 | 5 / 5 |
+| `extents.AADT_ABSOLUTE_STEP` | 8,000 vpd | 4,000 vpd |
+| `extents.VHD_BOTTLENECK` / `VHD_FREEFLOW` (unused) | 150 / 25 | 75 / 10 |
+| `run_district_screening._VHD_TIERS` | 25 / 100 / 300 | **10** / 50 / 150 |
+
+The floors are halved exactly, so the same cores pass. The bottom map tier is 10, not
+12.5 (owner). The 25 came in with the tiers in Session 45 as a round number, not a
+break in the data. So segments at 10–12.5 VHD/mi per direction (20–25 on the old
+basis) now draw as "Minor Delay" instead of "Low".
+
+### 3. Verification
+
+Statewide re-run (`run_statewide_screening.py --mode full --maps`); the pre-run
+outputs are in `out/statewide_screening/pre_item54/`, and the comparison tables are
+`item54_{peak,7day}_ranking_changes.csv`.
+
+- Segments: 35,623 `two_way_half`, 164 `one_way` (the same 164 Item 53 doubled), 202
+  `ramp`.
+- 64 of 65 ranked corridors: VHD and VHD/mi exactly × 0.5 in both windows. No
+  within-district rank changes.
+- The exception is the Pocatello Creek Rd / Alameda Rd core (D5): × 0.589 peak and
+  × 0.584 7-day. It has one ramp-weighted segment (`n_ramp_weighted = 1`) and the
+  same delay. It moves #50 → #45 statewide at peak, which pushes Broadway St and
+  Yellowstone Hwy (Idaho Falls), SH-44 rural, and the two D1 US-95 cores down one
+  place each. 7-day: #47 → #45, pushing Albeni Hwy and Rathdrum down one.
+
+### 4. Not redone
+
+- The committed catalogues' embedded `_core` / `_monthly_vhd` stats are on the pre-53
+  basis. Regenerate them at the next catalogue pass.
+- The D3-generated side run (`out/statewide_screening_d3generated/`) needs re-running.
+- Nothing ranks on either.
+
+### 5. Code and tests
+
+- `aadt.py`: `apply_directional_basis`, `TWO_WAY_SPLIT`, the `two_way_half` /
+  `one_way` / `ramp` labels, and `to_directional_basis`. That function rebases a GUI
+  geometry cache from Item 53 (by its labels) or from before it (halving everything
+  but ramps, reason `legacy_cache`).
+- `gui/app.py` calls `to_directional_basis` on load. The hover reads "AADT (per
+  direction)". `screen._AADT_CAVEAT` names the basis.
+- Tests:
+  - the match-mechanics join tests now assert `aadt_layer` (the published count);
+  - Item 53's basis tests are rewritten for the new basis;
+  - new: the cache rebase, and "VHD halves exactly";
+  - the Benewah floor fixture is 230 per direction;
+  - the tier tests use 10/50/150.
+- 823 pass.
+
