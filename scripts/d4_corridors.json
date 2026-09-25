@@ -41,7 +41,7 @@
   "corridors": [
     {
       "id": "sh-75-ketchum-core-nb",
-      "name": "SH-75 NB: Ketchum \u2014 Congested Core",
+      "name": "SH-75 NB: from Treasure Ln \u2014 Congested Core",
       "start_latlon": [
         43.63073,
         -114.35588
@@ -50,7 +50,7 @@
         43.68171,
         -114.36572
       ],
-      "description": "Tier 1 (Congested Core) of SH-75: Ketchum, NB. Recurrent congestion core (3.88 mi): peak/baseline 1.98, 35 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-75: from Treasure Ln, NB. Recurrent congestion core (3.88 mi): peak/baseline 1.98, 35 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-ketchum-core",
       "direction": "NB",
       "_tier": "core",
@@ -70,7 +70,7 @@
     },
     {
       "id": "sh-75-ketchum-core-sb",
-      "name": "SH-75 SB: Ketchum \u2014 Congested Core",
+      "name": "SH-75 SB: from Treasure Ln \u2014 Congested Core",
       "start_latlon": [
         43.69251,
         -114.36809
@@ -79,7 +79,7 @@
         43.6615,
         -114.35261
       ],
-      "description": "Tier 1 (Congested Core) of SH-75: Ketchum, SB. Recurrent congestion core (2.38 mi): peak/baseline 1.41, 31 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-75: from Treasure Ln, SB. Recurrent congestion core (2.38 mi): peak/baseline 1.41, 31 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-ketchum-core",
       "direction": "SB",
       "_tier": "core",
@@ -96,7 +96,7 @@
     },
     {
       "id": "sh-75-ketchum-commuter-nb",
-      "name": "SH-75 NB: Ketchum \u2014 Commuter Corridor",
+      "name": "SH-75 NB: from Treasure Ln \u2014 Commuter Corridor",
       "start_latlon": [
         43.63073,
         -114.35588
@@ -105,7 +105,7 @@
         43.69251,
         -114.36809
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-75: Ketchum, NB. Congested extent grown from the core (4.65 mi, 30 VHD/mi, 84% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.94 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.89 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-75: from Treasure Ln, NB. Congested extent grown from the core (4.65 mi, 30 VHD/mi, 84% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.94 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.89 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-ketchum-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -126,7 +126,7 @@
     },
     {
       "id": "sh-75-ketchum-commuter-sb",
-      "name": "SH-75 SB: Ketchum \u2014 Commuter Corridor",
+      "name": "SH-75 SB: from Treasure Ln \u2014 Commuter Corridor",
       "start_latlon": [
         43.69251,
         -114.36809
@@ -135,7 +135,7 @@
         43.6615,
         -114.35261
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-75: Ketchum, SB. Congested extent grown from the core (2.38 mi, 31 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.89 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.68 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-75: from Treasure Ln, SB. Congested extent grown from the core (2.38 mi, 31 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.89 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.68 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-ketchum-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -152,7 +152,7 @@
     },
     {
       "id": "sh-75-ketchum-regional-nb",
-      "name": "SH-75 NB: Ketchum \u2014 Regional Baseline",
+      "name": "SH-75 NB: from Treasure Ln \u2014 Regional Baseline",
       "start_latlon": [
         43.59286,
         -114.34387
@@ -161,7 +161,7 @@
         43.72827,
         -114.38228
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-75: Ketchum, NB. Context around the congested extent (9.96 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-75: from Treasure Ln, NB. Context around the congested extent (9.96 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-ketchum-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -188,7 +188,7 @@
     },
     {
       "id": "sh-75-ketchum-regional-sb",
-      "name": "SH-75 SB: Ketchum \u2014 Regional Baseline",
+      "name": "SH-75 SB: from Treasure Ln \u2014 Regional Baseline",
       "start_latlon": [
         43.72827,
         -114.38228
@@ -197,7 +197,7 @@
         43.62124,
         -114.35468
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-75: Ketchum, SB. Context around the congested extent (7.90 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-75: from Treasure Ln, SB. Context around the congested extent (7.90 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-ketchum-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -221,7 +221,7 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-core-sb",
-      "name": "US-93 SB: Blue Lakes Blvd N, Twin Falls \u2014 Congested Core",
+      "name": "US-93 SB: Blue Lakes Blvd N \u2014 Congested Core",
       "start_latlon": [
         42.6206,
         -114.44982
@@ -230,7 +230,7 @@
         42.54847,
         -114.43661
       ],
-      "description": "Tier 1 (Congested Core) of US-93: Blue Lakes Blvd N, Twin Falls, SB. Recurrent congestion core (6.31 mi): peak/baseline 1.32, 21 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-93: Blue Lakes Blvd N, SB. Recurrent congestion core (6.31 mi): peak/baseline 1.32, 21 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-blue-lakes-blvd-n-twin-falls-core",
       "direction": "SB",
       "_tier": "core",
@@ -260,7 +260,7 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-core-nb",
-      "name": "US-93 NB: Blue Lakes Blvd N, Twin Falls \u2014 Congested Core",
+      "name": "US-93 NB: Blue Lakes Blvd N \u2014 Congested Core",
       "start_latlon": [
         42.54978,
         -114.46016
@@ -269,7 +269,7 @@
         42.6088,
         -114.4519
       ],
-      "description": "Tier 1 (Congested Core) of US-93: Blue Lakes Blvd N, Twin Falls, NB. Recurrent congestion core (4.19 mi): peak/baseline 1.33, 25 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-93: Blue Lakes Blvd N, NB. Recurrent congestion core (4.19 mi): peak/baseline 1.33, 25 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-blue-lakes-blvd-n-twin-falls-core",
       "direction": "NB",
       "_tier": "core",
@@ -294,7 +294,7 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-commuter-sb",
-      "name": "US-93 SB: Blue Lakes Blvd N, Twin Falls \u2014 Commuter Corridor",
+      "name": "US-93 SB: Blue Lakes Blvd N \u2014 Commuter Corridor",
       "start_latlon": [
         42.62804,
         -114.44846
@@ -303,7 +303,7 @@
         42.54847,
         -114.43661
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-93: Blue Lakes Blvd N, Twin Falls, SB. Congested extent grown from the core (6.83 mi, 19 VHD/mi, 93% of the core's). Upstream boundary: the urban-area boundary (leaving Twin Falls, ID; ratio 1.05 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.60 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-93: Blue Lakes Blvd N, SB. Congested extent grown from the core (6.83 mi, 19 VHD/mi, 93% of the core's). Upstream boundary: the urban-area boundary (leaving Twin Falls, ID; ratio 1.05 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.60 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-blue-lakes-blvd-n-twin-falls-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -334,7 +334,7 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-commuter-nb",
-      "name": "US-93 NB: Blue Lakes Blvd N, Twin Falls \u2014 Commuter Corridor",
+      "name": "US-93 NB: Blue Lakes Blvd N \u2014 Commuter Corridor",
       "start_latlon": [
         42.54978,
         -114.46016
@@ -343,7 +343,7 @@
         42.6088,
         -114.4519
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-93: Blue Lakes Blvd N, Twin Falls, NB. Congested extent grown from the core (4.19 mi, 25 VHD/mi, 100% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (leaving Twin Falls, ID; ratio 1.05 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-93: Blue Lakes Blvd N, NB. Congested extent grown from the core (4.19 mi, 25 VHD/mi, 100% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (leaving Twin Falls, ID; ratio 1.05 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-blue-lakes-blvd-n-twin-falls-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -368,7 +368,7 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-regional-sb",
-      "name": "US-93 SB: Blue Lakes Blvd N, Twin Falls \u2014 Regional Baseline",
+      "name": "US-93 SB: Blue Lakes Blvd N \u2014 Regional Baseline",
       "start_latlon": [
         42.62804,
         -114.44846
@@ -377,7 +377,7 @@
         42.54826,
         -114.38938
       ],
-      "description": "Tier 3 (Regional Baseline) of US-93: Blue Lakes Blvd N, Twin Falls, SB. Context around the congested extent (9.23 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-93: Blue Lakes Blvd N, SB. Context around the congested extent (9.23 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-blue-lakes-blvd-n-twin-falls-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -412,7 +412,7 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-regional-nb",
-      "name": "US-93 NB: Blue Lakes Blvd N, Twin Falls \u2014 Regional Baseline",
+      "name": "US-93 NB: Blue Lakes Blvd N \u2014 Regional Baseline",
       "start_latlon": [
         42.54978,
         -114.46016
@@ -421,7 +421,7 @@
         42.6088,
         -114.4519
       ],
-      "description": "Tier 3 (Regional Baseline) of US-93: Blue Lakes Blvd N, Twin Falls, NB. Context around the congested extent (4.19 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-93: Blue Lakes Blvd N, NB. Context around the congested extent (4.19 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-blue-lakes-blvd-n-twin-falls-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -446,7 +446,7 @@
     },
     {
       "id": "sh-75-main-st-hailey-core-sb",
-      "name": "SH-75 SB: Main St, Hailey \u2014 Congested Core",
+      "name": "SH-75 SB: Main St \u2014 Congested Core",
       "start_latlon": [
         43.54729,
         -114.33089
@@ -455,7 +455,7 @@
         43.45583,
         -114.25697
       ],
-      "description": "Tier 1 (Congested Core) of SH-75: Main St, Hailey, SB. Recurrent congestion core (7.59 mi): peak/baseline 1.31, 14 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-75: Main St, SB. Recurrent congestion core (7.59 mi): peak/baseline 1.31, 14 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-main-st-hailey-core",
       "direction": "SB",
       "_tier": "core",
@@ -479,7 +479,7 @@
     },
     {
       "id": "sh-75-main-st-hailey-core-nb",
-      "name": "SH-75 NB: Main St, Hailey \u2014 Congested Core",
+      "name": "SH-75 NB: Main St \u2014 Congested Core",
       "start_latlon": [
         43.45583,
         -114.25697
@@ -488,7 +488,7 @@
         43.54074,
         -114.32758
       ],
-      "description": "Tier 1 (Congested Core) of SH-75: Main St, Hailey, NB. Recurrent congestion core (7.11 mi): peak/baseline 1.34, 10 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-75: Main St, NB. Recurrent congestion core (7.11 mi): peak/baseline 1.34, 10 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-main-st-hailey-core",
       "direction": "NB",
       "_tier": "core",
@@ -511,7 +511,7 @@
     },
     {
       "id": "sh-75-main-st-hailey-commuter-sb",
-      "name": "SH-75 SB: Main St, Hailey \u2014 Commuter Corridor",
+      "name": "SH-75 SB: Main St \u2014 Commuter Corridor",
       "start_latlon": [
         43.56071,
         -114.33137
@@ -520,7 +520,7 @@
         43.45583,
         -114.25697
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-75: Main St, Hailey, SB. Congested extent grown from the core (8.52 mi, 13 VHD/mi, 92% of the core's). Upstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.00 beyond it); downstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.00 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-75: Main St, SB. Congested extent grown from the core (8.52 mi, 13 VHD/mi, 92% of the core's). Upstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.00 beyond it); downstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.00 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-main-st-hailey-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -545,7 +545,7 @@
     },
     {
       "id": "sh-75-main-st-hailey-commuter-nb",
-      "name": "SH-75 NB: Main St, Hailey \u2014 Commuter Corridor",
+      "name": "SH-75 NB: Main St \u2014 Commuter Corridor",
       "start_latlon": [
         43.44289,
         -114.25221
@@ -554,7 +554,7 @@
         43.55433,
         -114.33157
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-75: Main St, Hailey, NB. Congested extent grown from the core (9.02 mi, 9 VHD/mi, 83% of the core's). Upstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.02 beyond it); downstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 0.96 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-75: Main St, NB. Congested extent grown from the core (9.02 mi, 9 VHD/mi, 83% of the core's). Upstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.02 beyond it); downstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 0.96 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-75-main-st-hailey-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -579,7 +579,7 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-core-nb",
-      "name": "US-93 NB: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Congested Core",
+      "name": "US-93 NB: Pole Line Rd / Pole Line Rd W \u2014 Congested Core",
       "start_latlon": [
         42.59175,
         -114.51025
@@ -588,7 +588,7 @@
         42.59189,
         -114.46006
       ],
-      "description": "Tier 1 (Congested Core) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, NB. Recurrent congestion core (2.55 mi): peak/baseline 1.32, 21 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-93: Pole Line Rd / Pole Line Rd W, NB. Recurrent congestion core (2.55 mi): peak/baseline 1.32, 21 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-core",
       "direction": "NB",
       "_tier": "core",
@@ -605,7 +605,7 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-core-sb",
-      "name": "US-93 SB: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Congested Core",
+      "name": "US-93 SB: Pole Line Rd / Pole Line Rd W \u2014 Congested Core",
       "start_latlon": [
         42.59204,
         -114.46006
@@ -614,7 +614,7 @@
         42.59182,
         -114.49943
       ],
-      "description": "Tier 1 (Congested Core) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, SB. Recurrent congestion core (2.00 mi): peak/baseline 1.24, 15 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-93: Pole Line Rd / Pole Line Rd W, SB. Recurrent congestion core (2.00 mi): peak/baseline 1.24, 15 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-core",
       "direction": "SB",
       "_tier": "core",
@@ -631,7 +631,7 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-commuter-nb",
-      "name": "US-93 NB: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Commuter Corridor",
+      "name": "US-93 NB: Pole Line Rd / Pole Line Rd W \u2014 Commuter Corridor",
       "start_latlon": [
         42.59175,
         -114.51025
@@ -640,7 +640,7 @@
         42.59189,
         -114.46006
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, NB. Congested extent grown from the core (2.55 mi, 21 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-93: Pole Line Rd / Pole Line Rd W, NB. Congested extent grown from the core (2.55 mi, 21 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -657,7 +657,7 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-commuter-sb",
-      "name": "US-93 SB: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Commuter Corridor",
+      "name": "US-93 SB: Pole Line Rd / Pole Line Rd W \u2014 Commuter Corridor",
       "start_latlon": [
         42.59204,
         -114.46006
@@ -666,7 +666,7 @@
         42.59175,
         -114.51026
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, SB. Congested extent grown from the core (2.55 mi, 12 VHD/mi, 82% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (leaving Twin Falls, ID; ratio 0.98 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-93: Pole Line Rd / Pole Line Rd W, SB. Congested extent grown from the core (2.55 mi, 12 VHD/mi, 82% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (leaving Twin Falls, ID; ratio 0.98 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -684,7 +684,7 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-regional-nb",
-      "name": "US-93 NB: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Regional Baseline",
+      "name": "US-93 NB: Pole Line Rd / Pole Line Rd W \u2014 Regional Baseline",
       "start_latlon": [
         42.59355,
         -114.52079
@@ -693,7 +693,7 @@
         42.59189,
         -114.46006
       ],
-      "description": "Tier 3 (Regional Baseline) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, NB. Context around the congested extent (3.11 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-93: Pole Line Rd / Pole Line Rd W, NB. Context around the congested extent (3.11 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -711,7 +711,7 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-regional-sb",
-      "name": "US-93 SB: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Regional Baseline",
+      "name": "US-93 SB: Pole Line Rd / Pole Line Rd W \u2014 Regional Baseline",
       "start_latlon": [
         42.59204,
         -114.46006
@@ -720,7 +720,7 @@
         42.59285,
         -114.51595
       ],
-      "description": "Tier 3 (Regional Baseline) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, SB. Context around the congested extent (2.85 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-93: Pole Line Rd / Pole Line Rd W, SB. Context around the congested extent (2.85 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -739,7 +739,7 @@
     },
     {
       "id": "us-30-kimberly-rd-twin-falls-core-wb",
-      "name": "US-30 WB: Kimberly Rd, Twin Falls \u2014 Congested Core",
+      "name": "US-30 WB: Kimberly Rd \u2014 Congested Core",
       "start_latlon": [
         42.54847,
         -114.43661
@@ -748,7 +748,7 @@
         42.56408,
         -114.49338
       ],
-      "description": "Tier 1 (Congested Core) of US-30: Kimberly Rd, Twin Falls, WB. Recurrent congestion core (3.36 mi): peak/baseline 1.23, 9 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-30: Kimberly Rd, WB. Recurrent congestion core (3.36 mi): peak/baseline 1.23, 9 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-30-kimberly-rd-twin-falls-core",
       "direction": "WB",
       "_tier": "core",
@@ -769,7 +769,7 @@
     },
     {
       "id": "us-30-kimberly-rd-twin-falls-regional-wb",
-      "name": "US-30 WB: Kimberly Rd, Twin Falls \u2014 Regional Baseline",
+      "name": "US-30 WB: Kimberly Rd \u2014 Regional Baseline",
       "start_latlon": [
         42.54826,
         -114.38938
@@ -778,7 +778,7 @@
         42.56397,
         -114.54367
       ],
-      "description": "Tier 3 (Regional Baseline) of US-30: Kimberly Rd, Twin Falls, WB. Context around the congested extent (8.33 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-30: Kimberly Rd, WB. Context around the congested extent (8.33 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-30-kimberly-rd-twin-falls-regional",
       "direction": "WB",
       "_tier": "regional",
@@ -808,7 +808,7 @@
     },
     {
       "id": "sh-27-overland-ave-burley-core-sb",
-      "name": "SH-27 SB: Overland Ave, Burley \u2014 Congested Core",
+      "name": "SH-27 SB: Overland Ave \u2014 Congested Core",
       "start_latlon": [
         42.56366,
         -113.79145
@@ -817,7 +817,7 @@
         42.5368,
         -113.79327
       ],
-      "description": "Tier 1 (Congested Core) of SH-27: Overland Ave, Burley, SB. Recurrent congestion core (1.88 mi): peak/baseline 1.20, 13 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-27: Overland Ave, SB. Recurrent congestion core (1.88 mi): peak/baseline 1.20, 13 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-core",
       "direction": "SB",
       "links": [
@@ -843,7 +843,7 @@
     },
     {
       "id": "sh-27-overland-ave-burley-core-eb",
-      "name": "SH-27 EB: Overland Ave, Burley \u2014 Congested Core",
+      "name": "SH-27 EB: Overland Ave \u2014 Congested Core",
       "start_latlon": [
         42.5381,
         -113.78936
@@ -852,7 +852,7 @@
         42.54799,
         -113.79326
       ],
-      "description": "Tier 1 (Congested Core) of SH-27: Overland Ave, Burley, EB. Recurrent congestion core (0.88 mi): peak/baseline 1.21, 12 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-27: Overland Ave, EB. Recurrent congestion core (0.88 mi): peak/baseline 1.21, 12 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-core",
       "direction": "EB",
       "_tier": "core",
@@ -869,7 +869,7 @@
     },
     {
       "id": "sh-27-overland-ave-burley-commuter-sb",
-      "name": "SH-27 SB: Overland Ave, Burley \u2014 Commuter Corridor",
+      "name": "SH-27 SB: Overland Ave \u2014 Commuter Corridor",
       "start_latlon": [
         42.56548,
         -113.78985
@@ -878,7 +878,7 @@
         42.50685,
         -113.79321
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-27: Overland Ave, Burley, SB. Congested extent grown from the core (4.10 mi, 7 VHD/mi, 54% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.29 mi); downstream boundary: the dilution limit (extending would fall to 7 VHD/mi, under 50% of the core's 13). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-27: Overland Ave, SB. Congested extent grown from the core (4.10 mi, 7 VHD/mi, 54% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.29 mi); downstream boundary: the dilution limit (extending would fall to 7 VHD/mi, under 50% of the core's 13). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-commuter",
       "direction": "SB",
       "links": [
@@ -911,7 +911,7 @@
     },
     {
       "id": "sh-27-overland-ave-burley-commuter-eb",
-      "name": "SH-27 EB: Overland Ave, Burley \u2014 Commuter Corridor",
+      "name": "SH-27 EB: Overland Ave \u2014 Commuter Corridor",
       "start_latlon": [
         42.53706,
         -113.76893
@@ -920,7 +920,7 @@
         42.54799,
         -113.79326
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-27: Overland Ave, Burley, EB. Congested extent grown from the core (1.92 mi, 7 VHD/mi, 59% of the core's). Upstream boundary: the dilution limit (extending would fall to 6 VHD/mi, under 50% of the core's 12); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-27: Overland Ave, EB. Congested extent grown from the core (1.92 mi, 7 VHD/mi, 59% of the core's). Upstream boundary: the dilution limit (extending would fall to 6 VHD/mi, under 50% of the core's 12); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-commuter",
       "direction": "EB",
       "_tier": "commuter",
@@ -939,7 +939,7 @@
     },
     {
       "id": "sh-27-overland-ave-burley-regional-sb",
-      "name": "SH-27 SB: Overland Ave, Burley \u2014 Regional Baseline",
+      "name": "SH-27 SB: Overland Ave \u2014 Regional Baseline",
       "start_latlon": [
         42.60504,
         -113.78361
@@ -948,7 +948,7 @@
         42.50106,
         -113.79328
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-27: Overland Ave, Burley, SB. Context around the congested extent (7.31 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-27: Overland Ave, SB. Context around the congested extent (7.31 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-regional",
       "direction": "SB",
       "links": [
@@ -990,7 +990,7 @@
     },
     {
       "id": "sh-27-overland-ave-burley-regional-eb",
-      "name": "SH-27 EB: Overland Ave, Burley \u2014 Regional Baseline",
+      "name": "SH-27 EB: Overland Ave \u2014 Regional Baseline",
       "start_latlon": [
         42.56727,
         -113.73887
@@ -999,7 +999,7 @@
         42.556,
         -113.79322
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-27: Overland Ave, Burley, EB. Context around the congested extent (5.12 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: a highway junction (crossing 84). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-27: Overland Ave, EB. Context around the congested extent (5.12 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: a highway junction (crossing 84). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-regional",
       "direction": "EB",
       "_tier": "regional",
@@ -1024,7 +1024,7 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-core-wb",
-      "name": "SH-74 WB: Washington St S / Shoshone St S, Twin Falls \u2014 Congested Core",
+      "name": "SH-74 WB: Washington St S / Shoshone St S \u2014 Congested Core",
       "start_latlon": [
         42.55655,
         -114.46914
@@ -1033,7 +1033,7 @@
         42.5348,
         -114.47954
       ],
-      "description": "Tier 1 (Congested Core) of SH-74: Washington St S / Shoshone St S, Twin Falls, WB. Recurrent congestion core (1.72 mi): peak/baseline 1.21, 8 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-74: Washington St S / Shoshone St S, WB. Recurrent congestion core (1.72 mi): peak/baseline 1.21, 8 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-74-washington-st-s-shoshone-st-s-twin-falls-core",
       "direction": "WB",
       "_tier": "core",
@@ -1050,7 +1050,7 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-core-eb",
-      "name": "SH-74 EB: Washington St S / Shoshone St S, Twin Falls \u2014 Congested Core",
+      "name": "SH-74 EB: Washington St S / Shoshone St S \u2014 Congested Core",
       "start_latlon": [
         42.54949,
         -114.47871
@@ -1059,7 +1059,7 @@
         42.55655,
         -114.46914
       ],
-      "description": "Tier 1 (Congested Core) of SH-74: Washington St S / Shoshone St S, Twin Falls, EB. Recurrent congestion core (0.69 mi): peak/baseline 1.21, 10 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-74: Washington St S / Shoshone St S, EB. Recurrent congestion core (0.69 mi): peak/baseline 1.21, 10 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-74-washington-st-s-shoshone-st-s-twin-falls-core",
       "direction": "EB",
       "_tier": "core",
@@ -1074,7 +1074,7 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-commuter-wb",
-      "name": "SH-74 WB: Washington St S / Shoshone St S, Twin Falls \u2014 Commuter Corridor",
+      "name": "SH-74 WB: Washington St S / Shoshone St S \u2014 Commuter Corridor",
       "start_latlon": [
         42.55655,
         -114.46914
@@ -1083,7 +1083,7 @@
         42.52017,
         -114.47965
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-74: Washington St S / Shoshone St S, Twin Falls, WB. Congested extent grown from the core (2.73 mi, 6 VHD/mi, 73% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.00 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-74: Washington St S / Shoshone St S, WB. Congested extent grown from the core (2.73 mi, 6 VHD/mi, 73% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.00 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-74-washington-st-s-shoshone-st-s-twin-falls-commuter",
       "direction": "WB",
       "_tier": "commuter",
@@ -1102,7 +1102,7 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-commuter-eb",
-      "name": "SH-74 EB: Washington St S / Shoshone St S, Twin Falls \u2014 Commuter Corridor",
+      "name": "SH-74 EB: Washington St S / Shoshone St S \u2014 Commuter Corridor",
       "start_latlon": [
         42.54949,
         -114.47871
@@ -1111,7 +1111,7 @@
         42.55655,
         -114.46914
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-74: Washington St S / Shoshone St S, Twin Falls, EB. Congested extent grown from the core (0.69 mi, 10 VHD/mi, 100% of the core's). Upstream boundary: an AADT step-change (5,750 -> 9,750 vpd, 41%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-74: Washington St S / Shoshone St S, EB. Congested extent grown from the core (0.69 mi, 10 VHD/mi, 100% of the core's). Upstream boundary: an AADT step-change (5,750 -> 9,750 vpd, 41%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-74-washington-st-s-shoshone-st-s-twin-falls-commuter",
       "direction": "EB",
       "_tier": "commuter",
@@ -1126,7 +1126,7 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-regional-wb",
-      "name": "SH-74 WB: Washington St S / Shoshone St S, Twin Falls \u2014 Regional Baseline",
+      "name": "SH-74 WB: Washington St S / Shoshone St S \u2014 Regional Baseline",
       "start_latlon": [
         42.55655,
         -114.46914
@@ -1135,7 +1135,7 @@
         42.52028,
         -114.52189
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-74: Washington St S / Shoshone St S, Twin Falls, WB. Context around the congested extent (4.88 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-74: Washington St S / Shoshone St S, WB. Context around the congested extent (4.88 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-74-washington-st-s-shoshone-st-s-twin-falls-regional",
       "direction": "WB",
       "_tier": "regional",
@@ -1158,7 +1158,7 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-regional-eb",
-      "name": "SH-74 EB: Washington St S / Shoshone St S, Twin Falls \u2014 Regional Baseline",
+      "name": "SH-74 EB: Washington St S / Shoshone St S \u2014 Regional Baseline",
       "start_latlon": [
         42.54949,
         -114.47871
@@ -1167,7 +1167,7 @@
         42.55655,
         -114.46914
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-74: Washington St S / Shoshone St S, Twin Falls, EB. Context around the congested extent (0.69 mi; reported, not ranked). Upstream boundary: an AADT step-change (5,750 -> 9,750 vpd, 41%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-74: Washington St S / Shoshone St S, EB. Context around the congested extent (0.69 mi; reported, not ranked). Upstream boundary: an AADT step-change (5,750 -> 9,750 vpd, 41%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-74-washington-st-s-shoshone-st-s-twin-falls-regional",
       "direction": "EB",
       "_tier": "regional",
@@ -1182,7 +1182,7 @@
     },
     {
       "id": "us-93-jerome-county-core-nb",
-      "name": "US-93 NB: Jerome County \u2014 Congested Core",
+      "name": "US-93 NB: from Golf Course Rd \u2014 Congested Core",
       "start_latlon": [
         42.63184,
         -114.44735
@@ -1191,7 +1191,7 @@
         42.65679,
         -114.44325
       ],
-      "description": "Tier 1 (Congested Core) of US-93: Jerome County, NB. Recurrent congestion core (1.74 mi): peak/baseline 1.16, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-93: from Golf Course Rd, NB. Recurrent congestion core (1.74 mi): peak/baseline 1.16, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-jerome-county-core",
       "direction": "NB",
       "_tier": "core",
@@ -1207,7 +1207,7 @@
     },
     {
       "id": "us-93-jerome-county-regional-nb",
-      "name": "US-93 NB: Jerome County \u2014 Regional Baseline",
+      "name": "US-93 NB: from Golf Course Rd \u2014 Regional Baseline",
       "start_latlon": [
         42.59142,
         -114.46007
@@ -1216,7 +1216,7 @@
         42.69872,
         -114.4434
       ],
-      "description": "Tier 3 (Regional Baseline) of US-93: Jerome County, NB. Context around the congested extent (7.57 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-93: from Golf Course Rd, NB. Context around the congested extent (7.57 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-93-jerome-county-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -1244,7 +1244,7 @@
     },
     {
       "id": "couplet-30-2nd-ave-e-2nd-ave-s-wb",
-      "name": "US-30 WB: 2nd Ave E couplet leg, Twin Falls",
+      "name": "US-30 WB: 2nd Ave E couplet leg",
       "start_latlon": [
         42.55013,
         -114.46037
@@ -1259,7 +1259,7 @@
     },
     {
       "id": "couplet-30-2nd-ave-e-2nd-ave-s-eb",
-      "name": "US-30 EB: 2nd Ave S couplet leg, Twin Falls",
+      "name": "US-30 EB: 2nd Ave S couplet leg",
       "start_latlon": [
         42.55708,
         -114.47364
@@ -1274,7 +1274,7 @@
     },
     {
       "id": "couplet-30-2nd-ave-n-2nd-ave-w-wb",
-      "name": "US-30 WB: 2nd Ave N couplet leg, Twin Falls",
+      "name": "US-30 WB: 2nd Ave N couplet leg",
       "start_latlon": [
         42.55639,
         -114.46893
@@ -1289,7 +1289,7 @@
     },
     {
       "id": "couplet-30-2nd-ave-n-2nd-ave-w-eb",
-      "name": "US-30 EB: 2nd Ave W couplet leg, Twin Falls",
+      "name": "US-30 EB: 2nd Ave W couplet leg",
       "start_latlon": [
         42.56171,
         -114.48
@@ -1306,13 +1306,13 @@
   "reporting_corridors": [
     {
       "id": "sh-75-ketchum-core",
-      "name": "SH-75: Ketchum \u2014 Tier 1 Congested Core (Treasure Ln to Garnet St)",
-      "description": "Tier 1 (Congested Core) of SH-75: Ketchum, NB. Recurrent congestion core (3.88 mi): peak/baseline 1.98, 35 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-75: from Treasure Ln \u2014 Tier 1 Congested Core (Treasure Ln to Garnet St)",
+      "description": "Tier 1 (Congested Core) of SH-75: from Treasure Ln, NB. Recurrent congestion core (3.88 mi): peak/baseline 1.98, 35 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Treasure Ln to Garnet St)",
       "_facility": "sh-75-ketchum",
-      "_facility_name": "SH-75: Ketchum",
+      "_facility_name": "SH-75: from Treasure Ln",
       "_miles": 3.881,
       "_n_segments": 8,
       "_ranked": true,
@@ -1353,13 +1353,13 @@
     },
     {
       "id": "sh-75-ketchum-commuter",
-      "name": "SH-75: Ketchum \u2014 Tier 2 Commuter Corridor (Treasure Ln to Warm Springs Rd/6Th St)",
-      "description": "Tier 2 (Commuter Corridor) of SH-75: Ketchum, NB. Congested extent grown from the core (4.65 mi, 30 VHD/mi, 84% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.94 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.89 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-75: from Treasure Ln \u2014 Tier 2 Commuter Corridor (Treasure Ln to Warm Springs Rd/6th St)",
+      "description": "Tier 2 (Commuter Corridor) of SH-75: from Treasure Ln, NB. Congested extent grown from the core (4.65 mi, 30 VHD/mi, 84% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.94 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.89 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Treasure Ln to Warm Springs Rd/6Th St)",
+      "_tier_label": "Tier 2 Commuter Corridor (Treasure Ln to Warm Springs Rd/6th St)",
       "_facility": "sh-75-ketchum",
-      "_facility_name": "SH-75: Ketchum",
+      "_facility_name": "SH-75: from Treasure Ln",
       "_miles": 4.65,
       "_n_segments": 9,
       "_ranked": false,
@@ -1400,13 +1400,13 @@
     },
     {
       "id": "sh-75-ketchum-regional",
-      "name": "SH-75: Ketchum \u2014 Tier 3 Regional Baseline (Treasure Ln to W Sage Rd)",
-      "description": "Tier 3 (Regional Baseline) of SH-75: Ketchum, NB. Context around the congested extent (9.96 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-75: from Treasure Ln \u2014 Tier 3 Regional Baseline (Treasure Ln to W Sage Rd)",
+      "description": "Tier 3 (Regional Baseline) of SH-75: from Treasure Ln, NB. Context around the congested extent (9.96 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Treasure Ln to W Sage Rd)",
       "_facility": "sh-75-ketchum",
-      "_facility_name": "SH-75: Ketchum",
+      "_facility_name": "SH-75: from Treasure Ln",
       "_miles": 9.957,
       "_n_segments": 15,
       "_ranked": false,
@@ -1447,13 +1447,13 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-core",
-      "name": "US-93: Blue Lakes Blvd N, Twin Falls \u2014 Tier 1 Congested Core (Golf Course Rd to Madrona St)",
-      "description": "Tier 1 (Congested Core) of US-93: Blue Lakes Blvd N, Twin Falls, SB. Recurrent congestion core (6.31 mi): peak/baseline 1.32, 21 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-93: Blue Lakes Blvd N \u2014 Tier 1 Congested Core (Golf Course Rd to Madrona St)",
+      "description": "Tier 1 (Congested Core) of US-93: Blue Lakes Blvd N, SB. Recurrent congestion core (6.31 mi): peak/baseline 1.32, 21 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Golf Course Rd to Madrona St)",
       "_facility": "us-93-blue-lakes-blvd-n-twin-falls",
-      "_facility_name": "US-93: Blue Lakes Blvd N, Twin Falls",
+      "_facility_name": "US-93: Blue Lakes Blvd N",
       "_miles": 6.308,
       "_n_segments": 18,
       "_ranked": true,
@@ -1492,13 +1492,13 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-commuter",
-      "name": "US-93: Blue Lakes Blvd N, Twin Falls \u2014 Tier 2 Commuter Corridor (Golf Course Rd to Madrona St)",
-      "description": "Tier 2 (Commuter Corridor) of US-93: Blue Lakes Blvd N, Twin Falls, SB. Congested extent grown from the core (6.83 mi, 19 VHD/mi, 93% of the core's). Upstream boundary: the urban-area boundary (leaving Twin Falls, ID; ratio 1.05 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.60 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-93: Blue Lakes Blvd N \u2014 Tier 2 Commuter Corridor (Golf Course Rd to Madrona St)",
+      "description": "Tier 2 (Commuter Corridor) of US-93: Blue Lakes Blvd N, SB. Congested extent grown from the core (6.83 mi, 19 VHD/mi, 93% of the core's). Upstream boundary: the urban-area boundary (leaving Twin Falls, ID; ratio 1.05 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.60 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Golf Course Rd to Madrona St)",
       "_facility": "us-93-blue-lakes-blvd-n-twin-falls",
-      "_facility_name": "US-93: Blue Lakes Blvd N, Twin Falls",
+      "_facility_name": "US-93: Blue Lakes Blvd N",
       "_miles": 6.827,
       "_n_segments": 19,
       "_ranked": false,
@@ -1537,13 +1537,13 @@
     },
     {
       "id": "us-93-blue-lakes-blvd-n-twin-falls-regional",
-      "name": "US-93: Blue Lakes Blvd N, Twin Falls \u2014 Tier 3 Regional Baseline (Golf Course Rd to Deere St)",
-      "description": "Tier 3 (Regional Baseline) of US-93: Blue Lakes Blvd N, Twin Falls, SB. Context around the congested extent (9.23 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-93: Blue Lakes Blvd N \u2014 Tier 3 Regional Baseline (Golf Course Rd to Deere St)",
+      "description": "Tier 3 (Regional Baseline) of US-93: Blue Lakes Blvd N, SB. Context around the congested extent (9.23 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Golf Course Rd to Deere St)",
       "_facility": "us-93-blue-lakes-blvd-n-twin-falls",
-      "_facility_name": "US-93: Blue Lakes Blvd N, Twin Falls",
+      "_facility_name": "US-93: Blue Lakes Blvd N",
       "_miles": 9.231,
       "_n_segments": 23,
       "_ranked": false,
@@ -1582,13 +1582,13 @@
     },
     {
       "id": "sh-75-main-st-hailey-core",
-      "name": "SH-75: Main St, Hailey \u2014 Tier 1 Congested Core (Myrtle St, Hailey to Gannett Picabo Rd)",
-      "description": "Tier 1 (Congested Core) of SH-75: Main St, Hailey, SB. Recurrent congestion core (7.59 mi): peak/baseline 1.31, 14 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-75: Main St \u2014 Tier 1 Congested Core (Myrtle St, Hailey to Gannett Picabo Rd)",
+      "description": "Tier 1 (Congested Core) of SH-75: Main St, SB. Recurrent congestion core (7.59 mi): peak/baseline 1.31, 14 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Myrtle St, Hailey to Gannett Picabo Rd)",
       "_facility": "sh-75-main-st-hailey",
-      "_facility_name": "SH-75: Main St, Hailey",
+      "_facility_name": "SH-75: Main St",
       "_miles": 7.592,
       "_n_segments": 12,
       "_ranked": true,
@@ -1627,13 +1627,13 @@
     },
     {
       "id": "sh-75-main-st-hailey-commuter",
-      "name": "SH-75: Main St, Hailey \u2014 Tier 2 Commuter Corridor (Treasure Ln to Gannett Picabo Rd)",
-      "description": "Tier 2 (Commuter Corridor) of SH-75: Main St, Hailey, SB. Congested extent grown from the core (8.52 mi, 13 VHD/mi, 92% of the core's). Upstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.00 beyond it); downstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.00 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-75: Main St \u2014 Tier 2 Commuter Corridor (Treasure Ln to Gannett Picabo Rd)",
+      "description": "Tier 2 (Commuter Corridor) of SH-75: Main St, SB. Congested extent grown from the core (8.52 mi, 13 VHD/mi, 92% of the core's). Upstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.00 beyond it); downstream boundary: the urban-area boundary (leaving Hailey, ID; ratio 1.00 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Treasure Ln to Gannett Picabo Rd)",
       "_facility": "sh-75-main-st-hailey",
-      "_facility_name": "SH-75: Main St, Hailey",
+      "_facility_name": "SH-75: Main St",
       "_miles": 8.524,
       "_n_segments": 13,
       "_ranked": false,
@@ -1672,13 +1672,13 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-core",
-      "name": "US-93: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Tier 1 Congested Core (2600 E Rd to Washington St)",
-      "description": "Tier 1 (Congested Core) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, NB. Recurrent congestion core (2.55 mi): peak/baseline 1.32, 21 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-93: Pole Line Rd / Pole Line Rd W \u2014 Tier 1 Congested Core (2600 E Rd to Washington St)",
+      "description": "Tier 1 (Congested Core) of US-93: Pole Line Rd / Pole Line Rd W, NB. Recurrent congestion core (2.55 mi): peak/baseline 1.32, 21 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (2600 E Rd to Washington St)",
       "_facility": "us-93-pole-line-rd-pole-line-rd-w-twin-falls",
-      "_facility_name": "US-93: Pole Line Rd / Pole Line Rd W, Twin Falls",
+      "_facility_name": "US-93: Pole Line Rd / Pole Line Rd W",
       "_miles": 2.555,
       "_n_segments": 5,
       "_ranked": true,
@@ -1717,13 +1717,13 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-commuter",
-      "name": "US-93: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Tier 2 Commuter Corridor (2600 E Rd to Washington St)",
-      "description": "Tier 2 (Commuter Corridor) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, NB. Congested extent grown from the core (2.55 mi, 21 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-93: Pole Line Rd / Pole Line Rd W \u2014 Tier 2 Commuter Corridor (2600 E Rd to Washington St)",
+      "description": "Tier 2 (Commuter Corridor) of US-93: Pole Line Rd / Pole Line Rd W, NB. Congested extent grown from the core (2.55 mi, 21 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (2600 E Rd to Washington St)",
       "_facility": "us-93-pole-line-rd-pole-line-rd-w-twin-falls",
-      "_facility_name": "US-93: Pole Line Rd / Pole Line Rd W, Twin Falls",
+      "_facility_name": "US-93: Pole Line Rd / Pole Line Rd W",
       "_miles": 2.555,
       "_n_segments": 5,
       "_ranked": false,
@@ -1762,13 +1762,13 @@
     },
     {
       "id": "us-93-pole-line-rd-pole-line-rd-w-twin-falls-regional",
-      "name": "US-93: Pole Line Rd / Pole Line Rd W, Twin Falls \u2014 Tier 3 Regional Baseline (2600 E Rd to Washington St)",
-      "description": "Tier 3 (Regional Baseline) of US-93: Pole Line Rd / Pole Line Rd W, Twin Falls, NB. Context around the congested extent (3.11 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-93: Pole Line Rd / Pole Line Rd W \u2014 Tier 3 Regional Baseline (2600 E Rd to Washington St)",
+      "description": "Tier 3 (Regional Baseline) of US-93: Pole Line Rd / Pole Line Rd W, NB. Context around the congested extent (3.11 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (2600 E Rd to Washington St)",
       "_facility": "us-93-pole-line-rd-pole-line-rd-w-twin-falls",
-      "_facility_name": "US-93: Pole Line Rd / Pole Line Rd W, Twin Falls",
+      "_facility_name": "US-93: Pole Line Rd / Pole Line Rd W",
       "_miles": 3.106,
       "_n_segments": 6,
       "_ranked": false,
@@ -1807,13 +1807,13 @@
     },
     {
       "id": "us-30-kimberly-rd-twin-falls-core",
-      "name": "US-30: Kimberly Rd, Twin Falls \u2014 Tier 1 Congested Core (Madrona St to Ent To Hospital)",
-      "description": "Tier 1 (Congested Core) of US-30: Kimberly Rd, Twin Falls, WB. Recurrent congestion core (3.36 mi): peak/baseline 1.23, 9 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-30: Kimberly Rd \u2014 Tier 1 Congested Core (Madrona St to Ent To Hospital)",
+      "description": "Tier 1 (Congested Core) of US-30: Kimberly Rd, WB. Recurrent congestion core (3.36 mi): peak/baseline 1.23, 9 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Madrona St to Ent To Hospital)",
       "_facility": "us-30-kimberly-rd-twin-falls",
-      "_facility_name": "US-30: Kimberly Rd, Twin Falls",
+      "_facility_name": "US-30: Kimberly Rd",
       "_miles": 3.363,
       "_n_segments": 9,
       "_ranked": true,
@@ -1848,7 +1848,7 @@
         "2026-07": 50.6,
         "2026-08": 49.3
       },
-      "_companion": "SB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.22, 11 VHD/mi over the mirrored span)",
+      "_companion": "SB here is in the extent of us-93-blue-lakes-blvd-n-twin-falls, whose core does not face this one",
       "_couplets": [
         "couplet-30-2nd-ave-e-2nd-ave-s",
         "couplet-30-2nd-ave-n-2nd-ave-w"
@@ -1856,13 +1856,13 @@
     },
     {
       "id": "us-30-kimberly-rd-twin-falls-regional",
-      "name": "US-30: Kimberly Rd, Twin Falls \u2014 Tier 3 Regional Baseline (Deere St to N 2500 E Rd)",
-      "description": "Tier 3 (Regional Baseline) of US-30: Kimberly Rd, Twin Falls, WB. Context around the congested extent (8.33 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-30: Kimberly Rd \u2014 Tier 3 Regional Baseline (Deere St to N 2500 E Rd)",
+      "description": "Tier 3 (Regional Baseline) of US-30: Kimberly Rd, WB. Context around the congested extent (8.33 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Deere St to N 2500 E Rd)",
       "_facility": "us-30-kimberly-rd-twin-falls",
-      "_facility_name": "US-30: Kimberly Rd, Twin Falls",
+      "_facility_name": "US-30: Kimberly Rd",
       "_miles": 8.327,
       "_n_segments": 18,
       "_ranked": false,
@@ -1897,7 +1897,7 @@
         "2026-07": 50.6,
         "2026-08": 49.3
       },
-      "_companion": "SB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.22, 11 VHD/mi over the mirrored span)",
+      "_companion": "SB here is in the extent of us-93-blue-lakes-blvd-n-twin-falls, whose core does not face this one",
       "_couplets": [
         "couplet-30-2nd-ave-e-2nd-ave-s",
         "couplet-30-2nd-ave-n-2nd-ave-w"
@@ -1905,13 +1905,13 @@
     },
     {
       "id": "sh-27-overland-ave-burley-core",
-      "name": "SH-27: Overland Ave, Burley \u2014 Tier 1 Congested Core (I-84 Eb Ramps Ic No. 208 to 16Th St)",
-      "description": "Tier 1 (Congested Core) of SH-27: Overland Ave, Burley, SB. Recurrent congestion core (1.88 mi): peak/baseline 1.20, 13 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-27: Overland Ave \u2014 Tier 1 Congested Core (I-84 EB Ramps IC No. 208 to 16th St)",
+      "description": "Tier 1 (Congested Core) of SH-27: Overland Ave, SB. Recurrent congestion core (1.88 mi): peak/baseline 1.20, 13 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (I-84 Eb Ramps Ic No. 208 to 16Th St)",
+      "_tier_label": "Tier 1 Congested Core (I-84 EB Ramps IC No. 208 to 16th St)",
       "_facility": "sh-27-overland-ave-burley",
-      "_facility_name": "SH-27: Overland Ave, Burley",
+      "_facility_name": "SH-27: Overland Ave",
       "_miles": 1.878,
       "_n_segments": 8,
       "_ranked": true,
@@ -1952,13 +1952,13 @@
     },
     {
       "id": "sh-27-overland-ave-burley-commuter",
-      "name": "SH-27: Overland Ave, Burley \u2014 Tier 2 Commuter Corridor (I-84 Eb Ramps Ic No. 208 to 200 S Rd)",
-      "description": "Tier 2 (Commuter Corridor) of SH-27: Overland Ave, Burley, SB. Congested extent grown from the core (4.10 mi, 7 VHD/mi, 54% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.29 mi); downstream boundary: the dilution limit (extending would fall to 7 VHD/mi, under 50% of the core's 13). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-27: Overland Ave \u2014 Tier 2 Commuter Corridor (I-84 EB Ramps IC No. 208 to 200 S Rd)",
+      "description": "Tier 2 (Commuter Corridor) of SH-27: Overland Ave, SB. Congested extent grown from the core (4.10 mi, 7 VHD/mi, 54% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.29 mi); downstream boundary: the dilution limit (extending would fall to 7 VHD/mi, under 50% of the core's 13). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (I-84 Eb Ramps Ic No. 208 to 200 S Rd)",
+      "_tier_label": "Tier 2 Commuter Corridor (I-84 EB Ramps IC No. 208 to 200 S Rd)",
       "_facility": "sh-27-overland-ave-burley",
-      "_facility_name": "SH-27: Overland Ave, Burley",
+      "_facility_name": "SH-27: Overland Ave",
       "_miles": 4.099,
       "_n_segments": 15,
       "_ranked": false,
@@ -1999,13 +1999,13 @@
     },
     {
       "id": "sh-27-overland-ave-burley-regional",
-      "name": "SH-27: Overland Ave, Burley \u2014 Tier 3 Regional Baseline (200 S Rd to 300 S Rd)",
-      "description": "Tier 3 (Regional Baseline) of SH-27: Overland Ave, Burley, SB. Context around the congested extent (7.31 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-27: Overland Ave \u2014 Tier 3 Regional Baseline (200 S Rd to 300 S Rd)",
+      "description": "Tier 3 (Regional Baseline) of SH-27: Overland Ave, SB. Context around the congested extent (7.31 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (200 S Rd to 300 S Rd)",
       "_facility": "sh-27-overland-ave-burley",
-      "_facility_name": "SH-27: Overland Ave, Burley",
+      "_facility_name": "SH-27: Overland Ave",
       "_miles": 7.308,
       "_n_segments": 24,
       "_ranked": false,
@@ -2046,13 +2046,13 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-core",
-      "name": "SH-74: Washington St S / Shoshone St S, Twin Falls \u2014 Tier 1 Congested Core (2Nd Ave W (Us-30) to Pheasant Rd)",
-      "description": "Tier 1 (Congested Core) of SH-74: Washington St S / Shoshone St S, Twin Falls, WB. Recurrent congestion core (1.72 mi): peak/baseline 1.21, 8 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-74: Washington St S / Shoshone St S \u2014 Tier 1 Congested Core (2nd Ave W (US-30) to Pheasant Rd)",
+      "description": "Tier 1 (Congested Core) of SH-74: Washington St S / Shoshone St S, WB. Recurrent congestion core (1.72 mi): peak/baseline 1.21, 8 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (2Nd Ave W (Us-30) to Pheasant Rd)",
+      "_tier_label": "Tier 1 Congested Core (2nd Ave W (US-30) to Pheasant Rd)",
       "_facility": "sh-74-washington-st-s-shoshone-st-s-twin-falls",
-      "_facility_name": "SH-74: Washington St S / Shoshone St S, Twin Falls",
+      "_facility_name": "SH-74: Washington St S / Shoshone St S",
       "_miles": 1.717,
       "_n_segments": 5,
       "_ranked": true,
@@ -2091,13 +2091,13 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-commuter",
-      "name": "SH-74: Washington St S / Shoshone St S, Twin Falls \u2014 Tier 2 Commuter Corridor (2Nd Ave W (Us-30) to Washington St @3600N Rd)",
-      "description": "Tier 2 (Commuter Corridor) of SH-74: Washington St S / Shoshone St S, Twin Falls, WB. Congested extent grown from the core (2.73 mi, 6 VHD/mi, 73% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.00 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-74: Washington St S / Shoshone St S \u2014 Tier 2 Commuter Corridor (2nd Ave W (US-30) to Washington St @3600N Rd)",
+      "description": "Tier 2 (Commuter Corridor) of SH-74: Washington St S / Shoshone St S, WB. Congested extent grown from the core (2.73 mi, 6 VHD/mi, 73% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.00 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (2Nd Ave W (Us-30) to Washington St @3600N Rd)",
+      "_tier_label": "Tier 2 Commuter Corridor (2nd Ave W (US-30) to Washington St @3600N Rd)",
       "_facility": "sh-74-washington-st-s-shoshone-st-s-twin-falls",
-      "_facility_name": "SH-74: Washington St S / Shoshone St S, Twin Falls",
+      "_facility_name": "SH-74: Washington St S / Shoshone St S",
       "_miles": 2.729,
       "_n_segments": 7,
       "_ranked": false,
@@ -2136,13 +2136,13 @@
     },
     {
       "id": "sh-74-washington-st-s-shoshone-st-s-twin-falls-regional",
-      "name": "SH-74: Washington St S / Shoshone St S, Twin Falls \u2014 Tier 3 Regional Baseline (2Nd Ave W (Us-30) to Sh-74 Conn)",
-      "description": "Tier 3 (Regional Baseline) of SH-74: Washington St S / Shoshone St S, Twin Falls, WB. Context around the congested extent (4.88 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-74: Washington St S / Shoshone St S \u2014 Tier 3 Regional Baseline (2nd Ave W (US-30) to SH-74 Conn)",
+      "description": "Tier 3 (Regional Baseline) of SH-74: Washington St S / Shoshone St S, WB. Context around the congested extent (4.88 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (2Nd Ave W (Us-30) to Sh-74 Conn)",
+      "_tier_label": "Tier 3 Regional Baseline (2nd Ave W (US-30) to SH-74 Conn)",
       "_facility": "sh-74-washington-st-s-shoshone-st-s-twin-falls",
-      "_facility_name": "SH-74: Washington St S / Shoshone St S, Twin Falls",
+      "_facility_name": "SH-74: Washington St S / Shoshone St S",
       "_miles": 4.88,
       "_n_segments": 11,
       "_ranked": false,
@@ -2181,13 +2181,13 @@
     },
     {
       "id": "us-93-jerome-county-core",
-      "name": "US-93: Jerome County \u2014 Tier 1 Congested Core (Golf Course Rd to Crossroads Pkwy)",
-      "description": "Tier 1 (Congested Core) of US-93: Jerome County, NB. Recurrent congestion core (1.74 mi): peak/baseline 1.16, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-93: from Golf Course Rd \u2014 Tier 1 Congested Core (Golf Course Rd to Crossroads Pkwy)",
+      "description": "Tier 1 (Congested Core) of US-93: from Golf Course Rd, NB. Recurrent congestion core (1.74 mi): peak/baseline 1.16, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Golf Course Rd to Crossroads Pkwy)",
       "_facility": "us-93-jerome-county",
-      "_facility_name": "US-93: Jerome County",
+      "_facility_name": "US-93: from Golf Course Rd",
       "_miles": 1.737,
       "_n_segments": 4,
       "_ranked": true,
@@ -2226,13 +2226,13 @@
     },
     {
       "id": "us-93-jerome-county-regional",
-      "name": "US-93: Jerome County \u2014 Tier 3 Regional Baseline (Cheney Dr to 400 S Rd)",
-      "description": "Tier 3 (Regional Baseline) of US-93: Jerome County, NB. Context around the congested extent (7.57 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-93: from Golf Course Rd \u2014 Tier 3 Regional Baseline (Cheney Dr to 400 S Rd)",
+      "description": "Tier 3 (Regional Baseline) of US-93: from Golf Course Rd, NB. Context around the congested extent (7.57 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Cheney Dr to 400 S Rd)",
       "_facility": "us-93-jerome-county",
-      "_facility_name": "US-93: Jerome County",
+      "_facility_name": "US-93: from Golf Course Rd",
       "_miles": 7.574,
       "_n_segments": 16,
       "_ranked": false,
@@ -2271,7 +2271,7 @@
     },
     {
       "id": "couplet-30-2nd-ave-e-2nd-ave-s",
-      "name": "US-30: 2nd Ave E / 2nd Ave S couplet, Twin Falls",
+      "name": "US-30: 2nd Ave E / 2nd Ave S couplet",
       "description": "One-way couplet carrying US-30 across 2nd Ave E (WB) and 2nd Ave S (EB) in Twin Falls (ZIP 83301); 0.77 mi per leg, mean lateral separation 215 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,
@@ -2282,7 +2282,7 @@
     },
     {
       "id": "couplet-30-2nd-ave-n-2nd-ave-w",
-      "name": "US-30: 2nd Ave N / 2nd Ave W couplet, Twin Falls",
+      "name": "US-30: 2nd Ave N / 2nd Ave W couplet",
       "description": "One-way couplet carrying US-30 across 2nd Ave N (WB) and 2nd Ave W (EB) in Twin Falls (ZIP 83301); 0.56 mi per leg, mean lateral separation 232 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,

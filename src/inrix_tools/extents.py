@@ -1921,8 +1921,23 @@ def _endpoint_name(net_idx: pd.DataFrame, seg_id: int, *, end: bool) -> str:
             # treats a ``#`` *anywhere* in a line as the start of a comment. An
             # endpoint named "US-95 IC #12" therefore truncates its own row on the
             # way back in, and the corridor reads as all-null downstream.
-            return re.sub(r"\s+", " ", re.sub(r"\s*#\s*", " No. ", str(val))).strip().title()
+            return _tidy_title(
+                re.sub(r"\s+", " ", re.sub(r"\s*#\s*", " No. ", str(val))).strip().title())
     return ""
+
+
+_UPPER_TOKENS = re.compile(r"\b(Ic|Eb|Wb|Nb|Sb|Nw|Ne|Sw|Se|Op|Jct)\b")
+
+
+def _tidy_title(text: str) -> str:
+    """Undo what ``str.title`` does to ITD's descriptions (2026-09-25, once names lead
+    with them): ``Sh-41`` -> ``SH-41``, ``4Th`` -> ``4th``, ``Ic`` / ``Eb`` / ``Nw`` ->
+    ``IC`` / ``EB`` / ``NW``."""
+    text = re.sub(r"\b(Sh|Us|Id|Sr)-(?=\d)", lambda m: m.group(1).upper() + "-", text)
+    text = re.sub(r"\b(\d+)(St|Nd|Rd|Th)\b", lambda m: m.group(1) + m.group(2).lower(), text)
+    text = _UPPER_TOKENS.sub(lambda m: "JCT" if m.group(1) == "Jct" else m.group(1).upper(),
+                             text)
+    return re.sub(r",(?=\S)", ", ", text)
 
 
 def _slug(text: str) -> str:
@@ -2895,6 +2910,10 @@ def _core_town(seg: pd.DataFrame, core: CoreCandidate | None) -> str:
     return str(inside["urban_area"].dropna().mode().iloc[0]).split(",")[0].strip()
 
 
+CORE_FACING_MIN_SHARE = 0.5
+"""A companion core must face the lead core: at least this share of the shorter of the
+two runs beside the other (owner, 2026-09-25; SH-44 State St)."""
+
 MIRROR_MIN_COVER = 0.3
 """An opposite chain's mirrored slice must be at least this share of the footprint's
 length to count as its other direction."""
@@ -2929,6 +2948,32 @@ def _runs_alongside(slice_geom, footprint_geom, *, max_sep_m: float = PAIR_MAX_M
         return False
     near = sum(1 for pt in pts if footprint_geom.distance(pt) <= max_sep_m)
     return near >= min_share * len(pts)
+
+
+def _cores_face(geom_a, geom_b, *, max_sep_m: float = PAIR_MAX_MEAN_SEP_M,
+                min_share: float = CORE_FACING_MIN_SHARE) -> bool:
+    """Whether two opposite-direction cores lie across the road from each other: at
+    least ``min_share`` of the **shorter** one runs beside the other (either way
+    round, so a short core inside a long one faces it)."""
+    return (_runs_alongside(geom_a, geom_b, max_sep_m=max_sep_m, min_share=min_share,
+                            min_cover=0.0)
+            or _runs_alongside(geom_b, geom_a, max_sep_m=max_sep_m, min_share=min_share,
+                               min_cover=0.0))
+
+
+def _span_minus(span: tuple[int, int], holes: Sequence[tuple[int, int]]
+                ) -> list[tuple[int, int]]:
+    """``span`` (``[lo, hi)`` chain indices) with each hole cut out, as the pieces left."""
+    out, lo = [], span[0]
+    for h_lo, h_hi in sorted(holes):
+        if h_lo > lo:
+            out.append((lo, min(h_lo, span[1])))
+        lo = max(lo, h_hi)
+        if lo >= span[1]:
+            break
+    if lo < span[1]:
+        out.append((lo, span[1]))
+    return [(a, b) for a, b in out if b > a]
 
 
 def _opposed_slice(net_idx, ids_a: Sequence[int], ids_b: Sequence[int]) -> bool:
@@ -3011,7 +3056,9 @@ def generate_catalogue(
     has a qualifying core of its own overlapping the lead core's footprint, and then
     with its own boundaries. Otherwise it is **dropped**, and the group's
     ``_companion`` note says why (its own peak/baseline over the mirrored span) — a
-    free-flowing direction summed into a reporting corridor only dilutes it.
+    free-flowing direction summed into a reporting corridor only dilutes it. A core
+    beside the lead's Tier 2 that does not **face the lead core** (:func:`_cores_face`)
+    is a different bottleneck: it is not the companion, and stands as its own facility.
 
     Tier 1 is the core (ranked); Tier 2 grows it while the congestion continues
     (:func:`grow_congested_extent`); Tier 3 is capped context
@@ -3227,7 +3274,7 @@ def generate_catalogue(
         claimed[id(d)].append((pos[t2.segment_ids[0]], pos[t2.segment_ids[-1]] + 1))
         t2_geom = _alt_geom(t2.segment_ids)
 
-        companion, note, other = None, "", None
+        companion, note, other, note_owner = None, "", None, None
         spans: list[tuple[DirectionAnalysis, tuple[int, int]]] = []
         for o in _opposites(d):
             span = _index_span(list(o.chain.segment_ids), t2, network, metric_crs)
@@ -3244,20 +3291,32 @@ def generate_catalogue(
         # that runs beside the lead's Tier 2 the other way. Matched on the core itself,
         # not through the mirror: a business loop's chain passes the same street both
         # ways (Burley's I-84 BL on Overland Ave), and a mirror snaps to either pass.
+        #
+        # The companion core must also **face the lead core** (owner, 2026-09-25): one
+        # beside only the lead's grown Tier 2 is a different bottleneck. SH-44's
+        # westbound core ends near Linder Rd and its eastbound one starts west of
+        # SH-16, 2.3 mi apart; they were paired through the westbound Tier 2. Such a
+        # core is left free (``apart``) to be its own facility.
         best_c = None
+        apart: list[tuple[DirectionAnalysis, CoreCandidate]] = []
+        core_geom = _alt_geom(core.segment_ids)
         for o in _opposites(d):
             for c in o.qualifying:
                 c = _free(o, c)
-                if c is None or (best_c is not None and c.vhd <= best_c[1].vhd):
+                if c is None:
                     continue
                 # A couplet's other leg is its other direction however far apart the
                 # two streets are (Item 63); the separation test is for everything else.
-                if not ((_couplet_pair(core.segment_ids, c.segment_ids)
-                         or _runs_alongside(_alt_geom(c.segment_ids), t2_geom,
-                                            min_cover=0.0))
+                couplet = _couplet_pair(core.segment_ids, c.segment_ids)
+                c_geom = _alt_geom(c.segment_ids)
+                if not ((couplet or _runs_alongside(c_geom, t2_geom, min_cover=0.0))
                         and _opposed_slice(net_idx, t2.segment_ids, c.segment_ids)):
                     continue
-                best_c = (o, c)
+                if not (couplet or _cores_face(c_geom, core_geom)):
+                    apart.append((o, c))
+                    continue
+                if best_c is None or c.vhd > best_c[1].vhd:
+                    best_c = (o, c)
         if best_c is not None:
             companion = DirectionAnalysis(best_c[0].chain, best_c[0].candidates, best_c[1])
         if companion is not None:
@@ -3271,17 +3330,33 @@ def generate_catalogue(
             claimed[id(other)].append((opos[c2.segment_ids[0]], opos[c2.segment_ids[-1]] + 1))
         elif spans:
             other, span = spans[0]
-            own = _run_metrics(seg, other.chain.segment_ids[span[0]:span[1]])
-            note = (
-                f"{other.chain.direction} not catalogued: no qualifying core of "
-                f"its own opposite the {d.chain.direction} one"
-                + (f" (peak/baseline {own['peak_ratio']:.2f}, "
-                   f"{own['vhd_per_mile']:.0f} VHD/mi over the mirrored span)"
-                   if pd.notna(own["peak_ratio"]) else "")
-            )
+            o_ids = other.chain.segment_ids[span[0]:span[1]]
+            own = _run_metrics(seg, o_ids)
+            held_by = [t2_owner[s] for s in o_ids if s in t2_owner]
+            if any(a is other for a, _ in apart):
+                note = (f"{other.chain.direction} not paired: its core here runs beside "
+                        f"this Tier 2 but does not face the {d.chain.direction} core, "
+                        f"so it stands as its own facility")
+            elif held_by and len(held_by) >= 0.5 * len(o_ids):
+                # The other direction is congested here, as part of a stronger
+                # facility whose core does not face this one (the ``apart`` rule).
+                note_owner = max(set(held_by), key=held_by.count)
+                note = (f"{other.chain.direction} here is in the extent of {{owner}}, "
+                        f"whose core does not face this one")
+            else:
+                note = (
+                    f"{other.chain.direction} not catalogued: no qualifying core of "
+                    f"its own opposite the {d.chain.direction} one"
+                    + (f" (peak/baseline {own['peak_ratio']:.2f}, "
+                       f"{own['vhd_per_mile']:.0f} VHD/mi over the mirrored span)"
+                       if pd.notna(own["peak_ratio"]) else "")
+                )
         for o, span in spans:
             if companion is None or o.chain is not companion.chain:
-                mirrored[id(o)].append(span)
+                # The mirror holds what lies under it, except a core left ``apart``:
+                # that one is cut out of the span so it can stand on its own.
+                holes = sorted((c.start, c.stop) for a, c in apart if a is o)
+                mirrored[id(o)].extend(_span_minus(span, holes))
         for m in [lead] + ([companion] if companion is not None else []):
             for sgm in m.core.segment_ids:
                 core_owner.setdefault(sgm, n_now)
@@ -3295,7 +3370,8 @@ def generate_catalogue(
                         float(miles_of.get(sgm, 0.0))
         facilities.append({"lead": lead, "other": companion,
                            "other_chain": other.chain if other is not None else None,
-                           "note": note, "score": core.vhd, "shared": shared})
+                           "note": note, "note_owner": note_owner,
+                           "score": core.vhd, "shared": shared})
         with_facility.add(id(d))
         if other is not None:
             with_facility.add(id(other))
@@ -3320,25 +3396,35 @@ def generate_catalogue(
         lead: DirectionAnalysis = fac["lead"]
         other: DirectionAnalysis | None = fac["other"]
         chain = lead.chain
-        # Named for the road and the town (Item 51): "US-20: Northgate Mile, Idaho
-        # Falls", not "US-20: Bonneville County (2)". The county the **core** lies in
-        # stands in for a town outside every urban area.
+        # Named for the road (Item 51): "US-20: Northgate Mile", not "US-20: Bonneville
+        # County (2)". The place is left out of the *name* (owner, 2026-09-25: the
+        # Census urban-area names read "Boise City", "Ontario--Payette"); a facility
+        # with no street is named for where its core starts. The *id* keeps the place,
+        # so ids stay stable across runs and the ranking comparison still joins.
         band, street, place = facility_naming(chain, lead.core, seg, net_idx, route_sets)
-        facility_name = f"{band}: {street}, {place}" if street else f"{band}: {place}"
+        where = _endpoint_name(net_idx, lead.core.segment_ids[0], end=False)
+        if street:
+            facility_name = f"{band}: {street}"
+        else:
+            facility_name = f"{band}: from {where}" if where else f"{band}: {place}"
         facility_id = _slug(f"{band}-{street}-{place}" if street else f"{band}-{place}")
-        if facility_name in used_names or facility_id in used_ids:
+        if facility_id in used_ids:
             # Two cores on one road in one town (SH-41 in Rathdrum): say where each
-            # starts. The *name* has to differ as well as the id, or the tier
-            # comparison collapses them.
-            where = _endpoint_name(net_idx, lead.core.segment_ids[0], end=False)
-            facility_name = f"{facility_name} (from {where})" if where else facility_name
+            # starts.
             facility_id = _slug(f"{facility_id}-{where}") if where else facility_id
-            n = 1
-            base = facility_id
-            while facility_id in used_ids or facility_name in used_names:
-                n += 1
-                facility_id = f"{base}-{n}"
-                facility_name = f"{facility_name.rsplit(' #', 1)[0]} #{n}"
+        if facility_name in used_names and street and where:
+            # The *name* has to differ as well as the id, or the tier comparison
+            # collapses them; without the place, one street in two towns collides too.
+            facility_name = f"{facility_name} (from {where})"
+        base_id, base_name = facility_id, facility_name
+        n = 1
+        while facility_id in used_ids:
+            n += 1
+            facility_id = f"{base_id}-{n}"
+        n = 1
+        while facility_name in used_names:
+            n += 1
+            facility_name = f"{base_name} #{n}"
         used_ids.add(facility_id)
         used_names.add(facility_name)
         fac_ids[id(fac)] = facility_id
@@ -3387,7 +3473,10 @@ def generate_catalogue(
                 if row.get("facility") == facility_id:
                     row["flags"] = "; ".join(meta["_flags"])
         if fac["note"]:
-            meta["_companion"] = fac["note"]
+            owner = fac.get("note_owner")
+            meta["_companion"] = (fac["note"].format(owner=fac_ids.get(
+                id(as_built[owner]), "a capped facility")) if owner is not None
+                else fac["note"])
         # The couplets this facility's cores run on (Item 63): their own reporting
         # corridors are the same delay, and are not ranked beside it.
         on = sorted(k for k, (l1, l2) in legs.items()

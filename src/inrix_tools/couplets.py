@@ -820,7 +820,8 @@ def couplet_catalogue_entries(
     legs = net_idx.reindex([s for s in (*pair.dir1_segment_ids, *pair.dir2_segment_ids)
                             if s in net_idx.index])
     label = _business_band(_route_label(rnum, names), legs)
-    # Named for the town (Item 52's urban area) where there is one, like the corridors.
+    # The place goes in the description, not the name (owner, 2026-09-25): the name is
+    # the route and the two streets, like the extent facilities.
     town = _place_name(legs) if len(legs) else ""
     place = town or (f"{pair.county} County" if pair.county else "Couplet")
 
@@ -840,7 +841,7 @@ def couplet_catalogue_entries(
 
     reporting = {
         "id": group_id,
-        "name": f"{label}: {pair.dir1_street} / {pair.dir2_street} couplet, {place}",
+        "name": f"{label}: {pair.dir1_street} / {pair.dir2_street} couplet",
         "description": (
             f"One-way couplet carrying {label} across {pair.dir1_street} "
             f"({dir1_dir}) and {pair.dir2_street} ({dir2_dir}) in {place} "
@@ -855,7 +856,7 @@ def couplet_catalogue_entries(
 
     entry1 = {
         "id": dir1_id,
-        "name": f"{label} {dir1_dir}: {pair.dir1_street} couplet leg, {place}",
+        "name": f"{label} {dir1_dir}: {pair.dir1_street} couplet leg",
         "start_latlon": dir1_start,
         "end_latlon": dir1_end,
         "description": (f"One-way couplet leg on {pair.dir1_street} ({dir1_dir}) carrying "
@@ -868,7 +869,7 @@ def couplet_catalogue_entries(
 
     entry2 = {
         "id": dir2_id,
-        "name": f"{label} {dir2_dir}: {pair.dir2_street} couplet leg, {place}",
+        "name": f"{label} {dir2_dir}: {pair.dir2_street} couplet leg",
         "start_latlon": dir2_start,
         "end_latlon": dir2_end,
         "description": (f"One-way couplet leg on {pair.dir2_street} ({dir2_dir}) carrying "

@@ -3355,6 +3355,43 @@ instead of a one-mile walk."
 
 ---
 
+## 64 — Corridor names without the town, and companion cores that face the lead ✅ (Session 83)
+
+**Target: Opus.** Core (naming + one pairing rule) + regenerated catalogues. Depends on
+63; must land before Item 62's statewide re-run and map regeneration.
+
+Owner, 2026-09-25 (after Session 82, looking at the maps before Item 62's re-run).
+
+Scope:
+
+- [x] **Drop the place from corridor names.** Remove "Boise City" and similar from
+      facility and couplet names. The Census urban-area names read badly ("Boise
+      City", "Ontario--Payette").
+      *Owner's choice: drop it everywhere. A facility with no street is named for where
+      its core starts ("I-84: from Vista IC No. 53"). The id keeps the place, so ids
+      are stable and Item 62's ranking comparison still joins. Same-name facilities
+      get "(from X)", then "#n". Couplets read "US-20: Front St / Myrtle St couplet",
+      with the town in the description. `_endpoint_name` repairs `str.title`'s damage
+      (`Sh-41` → `SH-41`, `4Th` → `4th`, `Ic` → `IC`).*
+- [x] **A companion core must face the lead core.** D3's #14, SH-44 State St (from
+      State St Ext), paired a WB core near Linder Rd with an EB core west of SH-16,
+      about 2.3 mi apart, through the WB Tier 2. The companion search tested the
+      opposite core only against the lead's Tier 2.
+      *Owner's choice: a non-facing core stands as its own facility. The companion now
+      needs ≥ 50% of the shorter core within 200 m of the other
+      (`CORE_FACING_MIN_SHARE`); couplet legs are exempt. A core left apart is cut out
+      of the lead's mirrored span so the mirror doesn't absorb it, and both
+      facilities' `_companion` notes point at each other. SH-44 now pairs the WB State
+      St Ext core with the EB core that faces it (formerly its own "(from N Palmer Ln)"
+      facility), and the EB core west of SH-16 is "SH-44: State St (from Can-Ada Rd)".
+      No other facility in D1–D6 changed.*
+- [x] Regenerate all six catalogues; pytest; DATA_FORMAT; DESIGN_HISTORY.
+
+*Suggested prompt (done):* "Do Item 64 of ROADMAP.md — drop the town from corridor
+names and require a companion core to face the lead core."
+
+---
+
 ## 62 — Statewide ATR pull, refit, and the statewide re-run on fitted curves
 
 **Target: Opus.** Scripts + data; mostly a long background pull. Depends on 61, and its
@@ -3410,7 +3447,9 @@ Scope:
       *These are the default paths since Item 63, so no `--catalogue-override` is
       needed. The comparison against the Item 58 outputs mixes three changes: the
       curves, the stops and D3's curated → generated swap. Say so, or compare against
-      `out/statewide_screening_d3generated/` for D3.*
+      `out/statewide_screening_d3generated/` for D3. Item 64 (Session 83) also
+      renamed every facility (ids unchanged) and split D3's SH-44 State St
+      facilities, so D3's SH-44 rows change for that reason too.*
 - [ ] Revisit Item 56 with the fuller counts. Session 79 found the urban rule
       agreeing with counts at 50/183 segments (27 %) against 67/75 (89 %) for the
       inference. Does the rule need recalibrating?

@@ -41,7 +41,7 @@
   "corridors": [
     {
       "id": "us-95-coeur-d-alene-core-nb",
-      "name": "US-95 NB: Coeur d'Alene \u2014 Congested Core",
+      "name": "US-95 NB: from Upriver Dr \u2014 Congested Core",
       "start_latlon": [
         47.68694,
         -116.797
@@ -50,7 +50,7 @@
         47.78804,
         -116.7884
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Coeur d'Alene, NB. Recurrent congestion core (7.15 mi): peak/baseline 1.41, 34 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-95: from Upriver Dr, NB. Recurrent congestion core (7.15 mi): peak/baseline 1.41, 34 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-coeur-d-alene-core",
       "direction": "NB",
       "_tier": "core",
@@ -83,7 +83,7 @@
     },
     {
       "id": "us-95-coeur-d-alene-core-sb",
-      "name": "US-95 SB: Coeur d'Alene \u2014 Congested Core",
+      "name": "US-95 SB: from Upriver Dr \u2014 Congested Core",
       "start_latlon": [
         47.79521,
         -116.78847
@@ -92,7 +92,7 @@
         47.68694,
         -116.797
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Coeur d'Alene, SB. Recurrent congestion core (7.65 mi): peak/baseline 1.31, 18 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-95: from Upriver Dr, SB. Recurrent congestion core (7.65 mi): peak/baseline 1.31, 18 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-coeur-d-alene-core",
       "direction": "SB",
       "_tier": "core",
@@ -126,7 +126,7 @@
     },
     {
       "id": "us-95-coeur-d-alene-commuter-nb",
-      "name": "US-95 NB: Coeur d'Alene \u2014 Commuter Corridor",
+      "name": "US-95 NB: from Upriver Dr \u2014 Commuter Corridor",
       "start_latlon": [
         47.68694,
         -116.797
@@ -135,7 +135,7 @@
         47.79521,
         -116.78817
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-95: Coeur d'Alene, NB. Congested extent grown from the core (7.65 mi, 32 VHD/mi, 94% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.52 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-95: from Upriver Dr, NB. Congested extent grown from the core (7.65 mi, 32 VHD/mi, 94% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.52 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-coeur-d-alene-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -169,7 +169,7 @@
     },
     {
       "id": "us-95-coeur-d-alene-commuter-sb",
-      "name": "US-95 SB: Coeur d'Alene \u2014 Commuter Corridor",
+      "name": "US-95 SB: from Upriver Dr \u2014 Commuter Corridor",
       "start_latlon": [
         47.79521,
         -116.78847
@@ -178,7 +178,7 @@
         47.68694,
         -116.797
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-95: Coeur d'Alene, SB. Congested extent grown from the core (7.65 mi, 18 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.52 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.66 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-95: from Upriver Dr, SB. Congested extent grown from the core (7.65 mi, 18 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.52 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.66 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-coeur-d-alene-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -212,7 +212,7 @@
     },
     {
       "id": "us-95-coeur-d-alene-regional-nb",
-      "name": "US-95 NB: Coeur d'Alene \u2014 Regional Baseline",
+      "name": "US-95 NB: from Upriver Dr \u2014 Regional Baseline",
       "start_latlon": [
         47.68095,
         -116.80663
@@ -221,7 +221,7 @@
         47.80266,
         -116.78799
       ],
-      "description": "Tier 3 (Regional Baseline) of US-95: Coeur d'Alene, NB. Context around the congested extent (8.80 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-95: from Upriver Dr, NB. Context around the congested extent (8.80 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-coeur-d-alene-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -257,7 +257,7 @@
     },
     {
       "id": "us-95-coeur-d-alene-regional-sb",
-      "name": "US-95 SB: Coeur d'Alene \u2014 Regional Baseline",
+      "name": "US-95 SB: from Upriver Dr \u2014 Regional Baseline",
       "start_latlon": [
         47.80266,
         -116.78833
@@ -266,7 +266,7 @@
         47.68067,
         -116.80671
       ],
-      "description": "Tier 3 (Regional Baseline) of US-95: Coeur d'Alene, SB. Context around the congested extent (8.82 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-95: from Upriver Dr, SB. Context around the congested extent (8.82 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-coeur-d-alene-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -302,7 +302,7 @@
     },
     {
       "id": "i-90-coeur-d-alene-core-wb",
-      "name": "I-90 WB: Coeur d'Alene \u2014 Congested Core",
+      "name": "I-90 WB: from 4th St IC No. 13 \u2014 Congested Core",
       "start_latlon": [
         47.69676,
         -116.77646
@@ -311,7 +311,7 @@
         47.70072,
         -116.8129
       ],
-      "description": "Tier 1 (Congested Core) of I-90: Coeur d'Alene, WB. Recurrent congestion core (1.72 mi): peak/baseline 1.77, 60 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of I-90: from 4th St IC No. 13, WB. Recurrent congestion core (1.72 mi): peak/baseline 1.77, 60 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-90-coeur-d-alene-core",
       "direction": "WB",
       "_tier": "core",
@@ -328,7 +328,7 @@
     },
     {
       "id": "i-90-coeur-d-alene-commuter-wb",
-      "name": "I-90 WB: Coeur d'Alene \u2014 Commuter Corridor",
+      "name": "I-90 WB: from 4th St IC No. 13 \u2014 Commuter Corridor",
       "start_latlon": [
         47.69676,
         -116.77646
@@ -337,7 +337,7 @@
         47.70362,
         -116.83041
       ],
-      "description": "Tier 2 (Commuter Corridor) of I-90: Coeur d'Alene, WB. Congested extent grown from the core (2.56 mi, 43 VHD/mi, 71% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.07 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.13 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of I-90: from 4th St IC No. 13, WB. Congested extent grown from the core (2.56 mi, 43 VHD/mi, 71% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.07 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.13 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-90-coeur-d-alene-commuter",
       "direction": "WB",
       "_tier": "commuter",
@@ -355,7 +355,7 @@
     },
     {
       "id": "i-90-coeur-d-alene-regional-wb",
-      "name": "I-90 WB: Coeur d'Alene \u2014 Regional Baseline",
+      "name": "I-90 WB: from 4th St IC No. 13 \u2014 Regional Baseline",
       "start_latlon": [
         47.66351,
         -116.74847
@@ -364,7 +364,7 @@
         47.70841,
         -116.85369
       ],
-      "description": "Tier 3 (Regional Baseline) of I-90: Coeur d'Alene, WB. Context around the congested extent (6.44 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: an AADT step-change (30,500 -> 320 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of I-90: from 4th St IC No. 13, WB. Context around the congested extent (6.44 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: an AADT step-change (30,500 -> 320 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-90-coeur-d-alene-regional",
       "direction": "WB",
       "_tier": "regional",
@@ -389,7 +389,7 @@
     },
     {
       "id": "sh-53-kootenai-county-core-eb",
-      "name": "SH-53 EB: Kootenai County \u2014 Congested Core",
+      "name": "SH-53 EB: from Washington State Line \u2014 Congested Core",
       "start_latlon": [
         47.73589,
         -117.04172
@@ -398,7 +398,7 @@
         47.75259,
         -117.00264
       ],
-      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County, EB. Recurrent congestion core (1.94 mi): peak/baseline 1.52, 15 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-53: from Washington State Line, EB. Recurrent congestion core (1.94 mi): peak/baseline 1.52, 15 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-core",
       "direction": "EB",
       "_tier": "core",
@@ -413,7 +413,7 @@
     },
     {
       "id": "sh-53-kootenai-county-core-wb",
-      "name": "SH-53 WB: Kootenai County \u2014 Congested Core",
+      "name": "SH-53 WB: from Washington State Line \u2014 Congested Core",
       "start_latlon": [
         47.75584,
         -116.99501
@@ -422,7 +422,7 @@
         47.74194,
         -117.02754
       ],
-      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County, WB. Recurrent congestion core (1.79 mi): peak/baseline 1.15, 3 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-53: from Washington State Line, WB. Recurrent congestion core (1.79 mi): peak/baseline 1.15, 3 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-core",
       "direction": "WB",
       "_tier": "core",
@@ -437,7 +437,7 @@
     },
     {
       "id": "sh-53-kootenai-county-commuter-eb",
-      "name": "SH-53 EB: Kootenai County \u2014 Commuter Corridor",
+      "name": "SH-53 EB: from Washington State Line \u2014 Commuter Corridor",
       "start_latlon": [
         47.73589,
         -117.04172
@@ -446,7 +446,7 @@
         47.76327,
         -116.98146
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County, EB. Congested extent grown from the core (3.17 mi, 10 VHD/mi, 64% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from Washington State Line, EB. Congested extent grown from the core (3.17 mi, 10 VHD/mi, 64% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-commuter",
       "direction": "EB",
       "_tier": "commuter",
@@ -463,7 +463,7 @@
     },
     {
       "id": "sh-53-kootenai-county-commuter-wb",
-      "name": "SH-53 WB: Kootenai County \u2014 Commuter Corridor",
+      "name": "SH-53 WB: from Washington State Line \u2014 Commuter Corridor",
       "start_latlon": [
         47.76327,
         -116.98146
@@ -472,7 +472,7 @@
         47.73589,
         -117.04172
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County, WB. Congested extent grown from the core (3.17 mi, 2 VHD/mi, 77% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from Washington State Line, WB. Congested extent grown from the core (3.17 mi, 2 VHD/mi, 77% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-commuter",
       "direction": "WB",
       "_tier": "commuter",
@@ -489,7 +489,7 @@
     },
     {
       "id": "sh-53-kootenai-county-regional-eb",
-      "name": "SH-53 EB: Kootenai County \u2014 Regional Baseline",
+      "name": "SH-53 EB: from Washington State Line \u2014 Regional Baseline",
       "start_latlon": [
         47.73589,
         -117.04172
@@ -498,7 +498,7 @@
         47.78924,
         -116.93666
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County, EB. Context around the congested extent (5.92 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from Washington State Line, EB. Context around the congested extent (5.92 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-regional",
       "direction": "EB",
       "_tier": "regional",
@@ -520,7 +520,7 @@
     },
     {
       "id": "sh-53-kootenai-county-regional-wb",
-      "name": "SH-53 WB: Kootenai County \u2014 Regional Baseline",
+      "name": "SH-53 WB: from Washington State Line \u2014 Regional Baseline",
       "start_latlon": [
         47.78924,
         -116.93667
@@ -529,7 +529,7 @@
         47.73589,
         -117.04172
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County, WB. Context around the congested extent (5.92 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from Washington State Line, WB. Context around the congested extent (5.92 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-regional",
       "direction": "WB",
       "_tier": "regional",
@@ -551,7 +551,7 @@
     },
     {
       "id": "sh-41-coeur-d-alene-core-sb",
-      "name": "SH-41 SB: Coeur d'Alene \u2014 Congested Core",
+      "name": "SH-41 SB: from Prairie Ave \u2014 Congested Core",
       "start_latlon": [
         47.74919,
         -116.89419
@@ -560,7 +560,7 @@
         47.71585,
         -116.89442
       ],
-      "description": "Tier 1 (Congested Core) of SH-41: Coeur d'Alene, SB. Recurrent congestion core (2.30 mi): peak/baseline 1.19, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-41: from Prairie Ave, SB. Recurrent congestion core (2.30 mi): peak/baseline 1.19, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-coeur-d-alene-core",
       "direction": "SB",
       "_tier": "core",
@@ -580,7 +580,7 @@
     },
     {
       "id": "sh-41-coeur-d-alene-core-nb",
-      "name": "SH-41 NB: Coeur d'Alene \u2014 Congested Core",
+      "name": "SH-41 NB: from Prairie Ave \u2014 Congested Core",
       "start_latlon": [
         47.7231,
         -116.89419
@@ -589,7 +589,7 @@
         47.74886,
         -116.89387
       ],
-      "description": "Tier 1 (Congested Core) of SH-41: Coeur d'Alene, NB. Recurrent congestion core (1.78 mi): peak/baseline 1.21, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-41: from Prairie Ave, NB. Recurrent congestion core (1.78 mi): peak/baseline 1.21, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-coeur-d-alene-core",
       "direction": "NB",
       "_tier": "core",
@@ -608,7 +608,7 @@
     },
     {
       "id": "sh-41-coeur-d-alene-commuter-sb",
-      "name": "SH-41 SB: Coeur d'Alene \u2014 Commuter Corridor",
+      "name": "SH-41 SB: from Prairie Ave \u2014 Commuter Corridor",
       "start_latlon": [
         47.74919,
         -116.89419
@@ -617,7 +617,7 @@
         47.71585,
         -116.89442
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Coeur d'Alene, SB. Congested extent grown from the core (2.30 mi, 7 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.70 mi); downstream boundary: an AADT step-change (13,750 -> 2,550 vpd, 82%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: from Prairie Ave, SB. Congested extent grown from the core (2.30 mi, 7 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.70 mi); downstream boundary: an AADT step-change (13,750 -> 2,550 vpd, 82%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-coeur-d-alene-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -637,7 +637,7 @@
     },
     {
       "id": "sh-41-coeur-d-alene-commuter-nb",
-      "name": "SH-41 NB: Coeur d'Alene \u2014 Commuter Corridor",
+      "name": "SH-41 NB: from Prairie Ave \u2014 Commuter Corridor",
       "start_latlon": [
         47.7231,
         -116.89419
@@ -646,7 +646,7 @@
         47.77374,
         -116.8937
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Coeur d'Alene, NB. Congested extent grown from the core (3.50 mi, 4 VHD/mi, 55% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.50 mi); downstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: from Prairie Ave, NB. Congested extent grown from the core (3.50 mi, 4 VHD/mi, 55% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.50 mi); downstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-coeur-d-alene-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -668,7 +668,7 @@
     },
     {
       "id": "sh-41-coeur-d-alene-regional-sb",
-      "name": "SH-41 SB: Coeur d'Alene \u2014 Regional Baseline",
+      "name": "SH-41 SB: from Prairie Ave \u2014 Regional Baseline",
       "start_latlon": [
         47.76646,
         -116.89406
@@ -677,7 +677,7 @@
         47.71383,
         -116.89452
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-41: Coeur d'Alene, SB. Context around the congested extent (3.64 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: an AADT step-change (13,750 -> 2,550 vpd, 82%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-41: from Prairie Ave, SB. Context around the congested extent (3.64 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: an AADT step-change (13,750 -> 2,550 vpd, 82%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-coeur-d-alene-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -700,7 +700,7 @@
     },
     {
       "id": "sh-41-coeur-d-alene-regional-nb",
-      "name": "SH-41 NB: Coeur d'Alene \u2014 Regional Baseline",
+      "name": "SH-41 NB: from Prairie Ave \u2014 Regional Baseline",
       "start_latlon": [
         47.71311,
         -116.89468
@@ -709,7 +709,7 @@
         47.81103,
         -116.89034
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-41: Coeur d'Alene, NB. Context around the congested extent (6.91 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-41: from Prairie Ave, NB. Context around the congested extent (6.91 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-coeur-d-alene-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -739,7 +739,7 @@
     },
     {
       "id": "sh-41-rathdrum-core-nb",
-      "name": "SH-41 NB: Rathdrum \u2014 Congested Core",
+      "name": "SH-41 NB: from Wyoming Ave \u2014 Congested Core",
       "start_latlon": [
         47.78051,
         -116.89375
@@ -748,7 +748,7 @@
         47.82008,
         -116.88373
       ],
-      "description": "Tier 1 (Congested Core) of SH-41: Rathdrum, NB. Recurrent congestion core (3.06 mi): peak/baseline 1.26, 5 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-41: from Wyoming Ave, NB. Recurrent congestion core (3.06 mi): peak/baseline 1.26, 5 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-rathdrum-core",
       "direction": "NB",
       "_tier": "core",
@@ -766,7 +766,7 @@
     },
     {
       "id": "sh-41-rathdrum-core-sb",
-      "name": "SH-41 SB: Rathdrum \u2014 Congested Core",
+      "name": "SH-41 SB: from Wyoming Ave \u2014 Congested Core",
       "start_latlon": [
         47.82652,
         -116.87371
@@ -775,7 +775,7 @@
         47.7973,
         -116.89408
       ],
-      "description": "Tier 1 (Congested Core) of SH-41: Rathdrum, SB. Recurrent congestion core (2.55 mi): peak/baseline 1.24, 5 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-41: from Wyoming Ave, SB. Recurrent congestion core (2.55 mi): peak/baseline 1.24, 5 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-rathdrum-core",
       "direction": "SB",
       "_tier": "core",
@@ -792,7 +792,7 @@
     },
     {
       "id": "sh-41-rathdrum-commuter-nb",
-      "name": "SH-41 NB: Rathdrum \u2014 Commuter Corridor",
+      "name": "SH-41 NB: from Wyoming Ave \u2014 Commuter Corridor",
       "start_latlon": [
         47.74481,
         -116.89391
@@ -801,7 +801,7 @@
         47.82652,
         -116.87371
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Rathdrum, NB. Congested extent grown from the core (6.18 mi, 3 VHD/mi, 61% of the core's). Upstream boundary: an AADT step-change (10,500 -> 4,450 vpd, 58%); downstream boundary: the urban-area boundary (leaving Rathdrum, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: from Wyoming Ave, NB. Congested extent grown from the core (6.18 mi, 3 VHD/mi, 61% of the core's). Upstream boundary: an AADT step-change (10,500 -> 4,450 vpd, 58%); downstream boundary: the urban-area boundary (leaving Rathdrum, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-rathdrum-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -825,7 +825,7 @@
     },
     {
       "id": "sh-41-rathdrum-commuter-sb",
-      "name": "SH-41 SB: Rathdrum \u2014 Commuter Corridor",
+      "name": "SH-41 SB: from Wyoming Ave \u2014 Commuter Corridor",
       "start_latlon": [
         47.82652,
         -116.87371
@@ -834,7 +834,7 @@
         47.78462,
         -116.89402
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Rathdrum, SB. Congested extent grown from the core (3.43 mi, 4 VHD/mi, 82% of the core's). Upstream boundary: the urban-area boundary (leaving Rathdrum, ID; ratio 1.03 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.75 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: from Wyoming Ave, SB. Congested extent grown from the core (3.43 mi, 4 VHD/mi, 82% of the core's). Upstream boundary: the urban-area boundary (leaving Rathdrum, ID; ratio 1.03 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.75 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-rathdrum-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -853,7 +853,7 @@
     },
     {
       "id": "sh-41-rathdrum-regional-nb",
-      "name": "SH-41 NB: Rathdrum \u2014 Regional Baseline",
+      "name": "SH-41 NB: from Wyoming Ave \u2014 Regional Baseline",
       "start_latlon": [
         47.74481,
         -116.89391
@@ -862,7 +862,7 @@
         47.82652,
         -116.87371
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-41: Rathdrum, NB. Context around the congested extent (6.18 mi; reported, not ranked). Upstream boundary: an AADT step-change (10,500 -> 4,450 vpd, 58%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-41: from Wyoming Ave, NB. Context around the congested extent (6.18 mi; reported, not ranked). Upstream boundary: an AADT step-change (10,500 -> 4,450 vpd, 58%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-rathdrum-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -886,7 +886,7 @@
     },
     {
       "id": "sh-41-rathdrum-regional-sb",
-      "name": "SH-41 SB: Rathdrum \u2014 Regional Baseline",
+      "name": "SH-41 SB: from Wyoming Ave \u2014 Regional Baseline",
       "start_latlon": [
         47.82652,
         -116.87371
@@ -895,7 +895,7 @@
         47.77374,
         -116.89407
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-41: Rathdrum, SB. Context around the congested extent (4.18 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-41: from Wyoming Ave, SB. Context around the congested extent (4.18 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-rathdrum-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -915,7 +915,7 @@
     },
     {
       "id": "sh-53-rathdrum-core-wb",
-      "name": "SH-53 WB: Rathdrum \u2014 Congested Core",
+      "name": "SH-53 WB: from SH-41 (NW JCT) \u2014 Congested Core",
       "start_latlon": [
         47.81723,
         -116.86841
@@ -924,7 +924,7 @@
         47.80974,
         -116.90148
       ],
-      "description": "Tier 1 (Congested Core) of SH-53: Rathdrum, WB. Recurrent congestion core (1.92 mi): peak/baseline 1.27, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-53: from SH-41 (NW JCT), WB. Recurrent congestion core (1.92 mi): peak/baseline 1.27, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-rathdrum-core",
       "direction": "WB",
       "links": [
@@ -946,7 +946,7 @@
     },
     {
       "id": "sh-53-rathdrum-core-eb",
-      "name": "SH-53 EB: Rathdrum \u2014 Congested Core",
+      "name": "SH-53 EB: from SH-41 (NW JCT) \u2014 Congested Core",
       "start_latlon": [
         47.80974,
         -116.90148
@@ -955,7 +955,7 @@
         47.81723,
         -116.86841
       ],
-      "description": "Tier 1 (Congested Core) of SH-53: Rathdrum, EB. Recurrent congestion core (1.92 mi): peak/baseline 1.23, 6 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-53: from SH-41 (NW JCT), EB. Recurrent congestion core (1.92 mi): peak/baseline 1.23, 6 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-rathdrum-core",
       "direction": "EB",
       "links": [
@@ -977,7 +977,7 @@
     },
     {
       "id": "sh-53-rathdrum-commuter-wb",
-      "name": "SH-53 WB: Rathdrum \u2014 Commuter Corridor",
+      "name": "SH-53 WB: from SH-41 (NW JCT) \u2014 Commuter Corridor",
       "start_latlon": [
         47.81723,
         -116.82015
@@ -986,7 +986,7 @@
         47.80974,
         -116.90148
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Rathdrum, WB. Congested extent grown from the core (4.16 mi, 3 VHD/mi, 51% of the core's). Upstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7); downstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from SH-41 (NW JCT), WB. Congested extent grown from the core (4.16 mi, 3 VHD/mi, 51% of the core's). Upstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7); downstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-rathdrum-commuter",
       "direction": "WB",
       "links": [
@@ -1012,7 +1012,7 @@
     },
     {
       "id": "sh-53-rathdrum-commuter-eb",
-      "name": "SH-53 EB: Rathdrum \u2014 Commuter Corridor",
+      "name": "SH-53 EB: from SH-41 (NW JCT) \u2014 Commuter Corridor",
       "start_latlon": [
         47.80974,
         -116.90148
@@ -1021,7 +1021,7 @@
         47.81723,
         -116.86841
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Rathdrum, EB. Congested extent grown from the core (1.92 mi, 6 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.54 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.56 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from SH-41 (NW JCT), EB. Congested extent grown from the core (1.92 mi, 6 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.54 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.56 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-rathdrum-commuter",
       "direction": "EB",
       "links": [
@@ -1043,7 +1043,7 @@
     },
     {
       "id": "sh-53-rathdrum-regional-wb",
-      "name": "SH-53 WB: Rathdrum \u2014 Regional Baseline",
+      "name": "SH-53 WB: from SH-41 (NW JCT) \u2014 Regional Baseline",
       "start_latlon": [
         47.81723,
         -116.82015
@@ -1052,7 +1052,7 @@
         47.80287,
         -116.91576
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-53: Rathdrum, WB. Context around the congested extent (4.99 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from SH-41 (NW JCT), WB. Context around the congested extent (4.99 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-rathdrum-regional",
       "direction": "WB",
       "links": [
@@ -1080,7 +1080,7 @@
     },
     {
       "id": "sh-53-rathdrum-regional-eb",
-      "name": "SH-53 EB: Rathdrum \u2014 Regional Baseline",
+      "name": "SH-53 EB: from SH-41 (NW JCT) \u2014 Regional Baseline",
       "start_latlon": [
         47.80287,
         -116.91576
@@ -1089,7 +1089,7 @@
         47.81721,
         -116.85634
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-53: Rathdrum, EB. Context around the congested extent (3.31 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from SH-41 (NW JCT), EB. Context around the congested extent (3.31 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-rathdrum-regional",
       "direction": "EB",
       "links": [
@@ -1114,7 +1114,7 @@
     },
     {
       "id": "us-95-sandpoint-core-sb",
-      "name": "US-95 SB: Sandpoint \u2014 Congested Core",
+      "name": "US-95 SB: from Bottle Bay Rd \u2014 Congested Core",
       "start_latlon": [
         48.2691,
         -116.5417
@@ -1123,7 +1123,7 @@
         48.24179,
         -116.53916
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Sandpoint, SB. Recurrent congestion core (1.93 mi): peak/baseline 1.17, 6 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-95: from Bottle Bay Rd, SB. Recurrent congestion core (1.93 mi): peak/baseline 1.17, 6 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-sandpoint-core",
       "direction": "SB",
       "_tier": "core",
@@ -1138,7 +1138,7 @@
     },
     {
       "id": "us-95-sandpoint-commuter-sb",
-      "name": "US-95 SB: Sandpoint \u2014 Commuter Corridor",
+      "name": "US-95 SB: from Bottle Bay Rd \u2014 Commuter Corridor",
       "start_latlon": [
         48.27376,
         -116.5451
@@ -1147,7 +1147,7 @@
         48.22458,
         -116.54692
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-95: Sandpoint, SB. Congested extent grown from the core (3.85 mi, 4 VHD/mi, 68% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the urban-area boundary (leaving Sandpoint, ID; ratio 1.01 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-95: from Bottle Bay Rd, SB. Congested extent grown from the core (3.85 mi, 4 VHD/mi, 68% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the urban-area boundary (leaving Sandpoint, ID; ratio 1.01 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-sandpoint-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -1165,7 +1165,7 @@
     },
     {
       "id": "us-95-sandpoint-regional-sb",
-      "name": "US-95 SB: Sandpoint \u2014 Regional Baseline",
+      "name": "US-95 SB: from Bottle Bay Rd \u2014 Regional Baseline",
       "start_latlon": [
         48.28998,
         -116.54898
@@ -1174,7 +1174,7 @@
         48.22458,
         -116.54692
       ],
-      "description": "Tier 3 (Regional Baseline) of US-95: Sandpoint, SB. Context around the congested extent (4.74 mi; reported, not ranked). Upstream boundary: a highway junction (2 -> 95); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-95: from Bottle Bay Rd, SB. Context around the congested extent (4.74 mi; reported, not ranked). Upstream boundary: a highway junction (2 -> 95); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-sandpoint-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -1195,7 +1195,7 @@
     },
     {
       "id": "us-2-sandpoint-core-wb",
-      "name": "US-2 WB: Sandpoint \u2014 Congested Core",
+      "name": "US-2 WB: from Poplar St \u2014 Congested Core",
       "start_latlon": [
         48.28036,
         -116.55332
@@ -1204,7 +1204,7 @@
         48.26301,
         -116.57669
       ],
-      "description": "Tier 1 (Congested Core) of US-2: Sandpoint, WB. Recurrent congestion core (1.79 mi): peak/baseline 1.16, 6 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-2: from Poplar St, WB. Recurrent congestion core (1.79 mi): peak/baseline 1.16, 6 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-2-sandpoint-core",
       "direction": "WB",
       "_tier": "core",
@@ -1220,7 +1220,7 @@
     },
     {
       "id": "us-2-sandpoint-regional-wb",
-      "name": "US-2 WB: Sandpoint \u2014 Regional Baseline",
+      "name": "US-2 WB: from Poplar St \u2014 Regional Baseline",
       "start_latlon": [
         48.29035,
         -116.54883
@@ -1229,7 +1229,7 @@
         48.25225,
         -116.62797
       ],
-      "description": "Tier 3 (Regional Baseline) of US-2: Sandpoint, WB. Context around the congested extent (5.17 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 200); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-2: from Poplar St, WB. Context around the congested extent (5.17 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 200); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-2-sandpoint-regional",
       "direction": "WB",
       "_tier": "regional",
@@ -1252,7 +1252,7 @@
     },
     {
       "id": "us-95-main-st-boundary-county-core-nb",
-      "name": "US-95 NB: Main St, Boundary County \u2014 Congested Core",
+      "name": "US-95 NB: Main St \u2014 Congested Core",
       "start_latlon": [
         48.67275,
         -116.33701
@@ -1261,7 +1261,7 @@
         48.69154,
         -116.31639
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Main St, Boundary County, NB. Recurrent congestion core (1.67 mi): peak/baseline 1.17, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-95: Main St, NB. Recurrent congestion core (1.67 mi): peak/baseline 1.17, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-main-st-boundary-county-core",
       "direction": "NB",
       "_tier": "core",
@@ -1276,7 +1276,7 @@
     },
     {
       "id": "us-95-main-st-boundary-county-core-sb",
-      "name": "US-95 SB: Main St, Boundary County \u2014 Congested Core",
+      "name": "US-95 SB: Main St \u2014 Congested Core",
       "start_latlon": [
         48.69127,
         -116.31634
@@ -1285,7 +1285,7 @@
         48.67662,
         -116.3323
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Main St, Boundary County, SB. Recurrent congestion core (1.31 mi): peak/baseline 1.16, 4 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-95: Main St, SB. Recurrent congestion core (1.31 mi): peak/baseline 1.16, 4 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-main-st-boundary-county-core",
       "direction": "SB",
       "_tier": "core",
@@ -1299,7 +1299,7 @@
     },
     {
       "id": "us-95-main-st-boundary-county-commuter-nb",
-      "name": "US-95 NB: Main St, Boundary County \u2014 Commuter Corridor",
+      "name": "US-95 NB: Main St \u2014 Commuter Corridor",
       "start_latlon": [
         48.65962,
         -116.33891
@@ -1308,7 +1308,7 @@
         48.6952,
         -116.31128
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-95: Main St, Boundary County, NB. Congested extent grown from the core (2.97 mi, 3 VHD/mi, 70% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.96 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-95: Main St, NB. Congested extent grown from the core (2.97 mi, 3 VHD/mi, 70% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.96 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-main-st-boundary-county-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -1325,7 +1325,7 @@
     },
     {
       "id": "us-95-main-st-boundary-county-commuter-sb",
-      "name": "US-95 SB: Main St, Boundary County \u2014 Commuter Corridor",
+      "name": "US-95 SB: Main St \u2014 Commuter Corridor",
       "start_latlon": [
         48.69822,
         -116.31171
@@ -1334,7 +1334,7 @@
         48.67236,
         -116.33715
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-95: Main St, Boundary County, SB. Congested extent grown from the core (2.37 mi, 3 VHD/mi, 67% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.93 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-95: Main St, SB. Congested extent grown from the core (2.37 mi, 3 VHD/mi, 67% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.93 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-main-st-boundary-county-commuter",
       "direction": "SB",
       "_tier": "commuter",
@@ -1352,7 +1352,7 @@
     },
     {
       "id": "us-95-main-st-boundary-county-regional-nb",
-      "name": "US-95 NB: Main St, Boundary County \u2014 Regional Baseline",
+      "name": "US-95 NB: Main St \u2014 Regional Baseline",
       "start_latlon": [
         48.62455,
         -116.34991
@@ -1361,7 +1361,7 @@
         48.72659,
         -116.30289
       ],
-      "description": "Tier 3 (Regional Baseline) of US-95: Main St, Boundary County, NB. Context around the congested extent (8.27 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: a highway junction (crossing 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-95: Main St, NB. Context around the congested extent (8.27 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: a highway junction (crossing 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-main-st-boundary-county-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -1388,7 +1388,7 @@
     },
     {
       "id": "us-95-main-st-boundary-county-regional-sb",
-      "name": "US-95 SB: Main St, Boundary County \u2014 Regional Baseline",
+      "name": "US-95 SB: Main St \u2014 Regional Baseline",
       "start_latlon": [
         48.72892,
         -116.30143
@@ -1397,7 +1397,7 @@
         48.63298,
         -116.34758
       ],
-      "description": "Tier 3 (Regional Baseline) of US-95: Main St, Boundary County, SB. Context around the congested extent (7.85 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 95); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-95: Main St, SB. Context around the congested extent (7.85 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 95); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-main-st-boundary-county-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -1423,7 +1423,7 @@
     },
     {
       "id": "us-95-sandpoint-tibbetts-ln-core-nb",
-      "name": "US-95 NB: Sandpoint (from Tibbetts Ln) \u2014 Congested Core",
+      "name": "US-95 NB: from Tibbetts Ln \u2014 Congested Core",
       "start_latlon": [
         48.29757,
         -116.54823
@@ -1432,7 +1432,7 @@
         48.31614,
         -116.54623
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Sandpoint (from Tibbetts Ln), NB. Recurrent congestion core (1.30 mi): peak/baseline 1.16, 4 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-95: from Tibbetts Ln, NB. Recurrent congestion core (1.30 mi): peak/baseline 1.16, 4 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-sandpoint-tibbetts-ln-core",
       "direction": "NB",
       "_tier": "core",
@@ -1446,7 +1446,7 @@
     },
     {
       "id": "us-95-sandpoint-tibbetts-ln-regional-nb",
-      "name": "US-95 NB: Sandpoint (from Tibbetts Ln) \u2014 Regional Baseline",
+      "name": "US-95 NB: from Tibbetts Ln \u2014 Regional Baseline",
       "start_latlon": [
         48.28998,
         -116.54898
@@ -1455,7 +1455,7 @@
         48.33476,
         -116.54795
       ],
-      "description": "Tier 3 (Regional Baseline) of US-95: Sandpoint (from Tibbetts Ln), NB. Context around the congested extent (3.12 mi; reported, not ranked). Upstream boundary: a highway junction (95 -> 2); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-95: from Tibbetts Ln, NB. Context around the congested extent (3.12 mi; reported, not ranked). Upstream boundary: a highway junction (95 -> 2); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-sandpoint-tibbetts-ln-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -1473,7 +1473,7 @@
     },
     {
       "id": "us-2-albeni-hwy-bonner-county-core-wb",
-      "name": "US-2 WB: Albeni Hwy, Bonner County \u2014 Congested Core",
+      "name": "US-2 WB: Albeni Hwy \u2014 Congested Core",
       "start_latlon": [
         48.18054,
         -116.90222
@@ -1482,7 +1482,7 @@
         48.18063,
         -116.93012
       ],
-      "description": "Tier 1 (Congested Core) of US-2: Albeni Hwy, Bonner County, WB. Recurrent congestion core (1.29 mi): peak/baseline 1.16, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-2: Albeni Hwy, WB. Recurrent congestion core (1.29 mi): peak/baseline 1.16, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-2-albeni-hwy-bonner-county-core",
       "direction": "WB",
       "_tier": "core",
@@ -1496,7 +1496,7 @@
     },
     {
       "id": "us-2-albeni-hwy-bonner-county-commuter-wb",
-      "name": "US-2 WB: Albeni Hwy, Bonner County \u2014 Commuter Corridor",
+      "name": "US-2 WB: Albeni Hwy \u2014 Commuter Corridor",
       "start_latlon": [
         48.18,
         -116.8884
@@ -1505,7 +1505,7 @@
         48.18063,
         -116.93012
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-2: Albeni Hwy, Bonner County, WB. Congested extent grown from the core (1.93 mi, 3 VHD/mi, 74% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-2: Albeni Hwy, WB. Congested extent grown from the core (1.93 mi, 3 VHD/mi, 74% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-2-albeni-hwy-bonner-county-commuter",
       "direction": "WB",
       "_tier": "commuter",
@@ -1520,7 +1520,7 @@
     },
     {
       "id": "us-2-albeni-hwy-bonner-county-regional-wb",
-      "name": "US-2 WB: Albeni Hwy, Bonner County \u2014 Regional Baseline",
+      "name": "US-2 WB: Albeni Hwy \u2014 Regional Baseline",
       "start_latlon": [
         48.1548,
         -116.84842
@@ -1529,7 +1529,7 @@
         48.18025,
         -116.98586
       ],
-      "description": "Tier 3 (Regional Baseline) of US-2: Albeni Hwy, Bonner County, WB. Context around the congested extent (7.07 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-2: Albeni Hwy, WB. Context around the congested extent (7.07 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-2-albeni-hwy-bonner-county-regional",
       "direction": "WB",
       "_tier": "regional",
@@ -1552,7 +1552,7 @@
     },
     {
       "id": "sh-41-5th-ave-kootenai-county-core-sb",
-      "name": "SH-41 SB: 5th Ave, Kootenai County \u2014 Congested Core",
+      "name": "SH-41 SB: 5th Ave \u2014 Congested Core",
       "start_latlon": [
         47.97404,
         -116.86851
@@ -1561,7 +1561,7 @@
         47.95532,
         -116.86836
       ],
-      "description": "Tier 1 (Congested Core) of SH-41: 5th Ave, Kootenai County, SB. Recurrent congestion core (1.29 mi): peak/baseline 1.22, 3 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-41: 5th Ave, SB. Recurrent congestion core (1.29 mi): peak/baseline 1.22, 3 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-5th-ave-kootenai-county-core",
       "direction": "SB",
       "_tier": "core",
@@ -1575,7 +1575,7 @@
     },
     {
       "id": "sh-41-5th-ave-kootenai-county-core-nb",
-      "name": "SH-41 NB: 5th Ave, Kootenai County \u2014 Congested Core",
+      "name": "SH-41 NB: 5th Ave \u2014 Congested Core",
       "start_latlon": [
         47.95532,
         -116.86836
@@ -1584,7 +1584,7 @@
         47.97404,
         -116.86851
       ],
-      "description": "Tier 1 (Congested Core) of SH-41: 5th Ave, Kootenai County, NB. Recurrent congestion core (1.29 mi): peak/baseline 1.17, 3 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-41: 5th Ave, NB. Recurrent congestion core (1.29 mi): peak/baseline 1.17, 3 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-5th-ave-kootenai-county-core",
       "direction": "NB",
       "_tier": "core",
@@ -1598,7 +1598,7 @@
     },
     {
       "id": "sh-41-5th-ave-kootenai-county-regional-sb",
-      "name": "SH-41 SB: 5th Ave, Kootenai County \u2014 Regional Baseline",
+      "name": "SH-41 SB: 5th Ave \u2014 Regional Baseline",
       "start_latlon": [
         48.00207,
         -116.89675
@@ -1607,7 +1607,7 @@
         47.92174,
         -116.84837
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-41: 5th Ave, Kootenai County, SB. Context around the congested extent (6.47 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-41: 5th Ave, SB. Context around the congested extent (6.47 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-5th-ave-kootenai-county-regional",
       "direction": "SB",
       "_tier": "regional",
@@ -1629,7 +1629,7 @@
     },
     {
       "id": "sh-41-5th-ave-kootenai-county-regional-nb",
-      "name": "SH-41 NB: 5th Ave, Kootenai County \u2014 Regional Baseline",
+      "name": "SH-41 NB: 5th Ave \u2014 Regional Baseline",
       "start_latlon": [
         47.92174,
         -116.84837
@@ -1638,7 +1638,7 @@
         48.00207,
         -116.89676
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-41: 5th Ave, Kootenai County, NB. Context around the congested extent (6.47 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-41: 5th Ave, NB. Context around the congested extent (6.47 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-41-5th-ave-kootenai-county-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -1660,7 +1660,7 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-core-eb",
-      "name": "SH-53 EB: Kootenai County (from Meyer Rd) \u2014 Congested Core",
+      "name": "SH-53 EB: from Meyer Rd \u2014 Congested Core",
       "start_latlon": [
         47.81723,
         -116.82015
@@ -1669,7 +1669,7 @@
         47.81843,
         -116.78781
       ],
-      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County (from Meyer Rd), EB. Recurrent congestion core (1.52 mi): peak/baseline 1.19, 2 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-53: from Meyer Rd, EB. Recurrent congestion core (1.52 mi): peak/baseline 1.19, 2 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-meyer-rd-core",
       "direction": "EB",
       "_tier": "core",
@@ -1685,7 +1685,7 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-core-wb",
-      "name": "SH-53 WB: Kootenai County (from Meyer Rd) \u2014 Congested Core",
+      "name": "SH-53 WB: from Meyer Rd \u2014 Congested Core",
       "start_latlon": [
         47.81847,
         -116.78763
@@ -1694,7 +1694,7 @@
         47.81723,
         -116.82015
       ],
-      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County (from Meyer Rd), WB. Recurrent congestion core (1.53 mi): peak/baseline 1.16, 2 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-53: from Meyer Rd, WB. Recurrent congestion core (1.53 mi): peak/baseline 1.16, 2 VHD/mi, 99% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-meyer-rd-core",
       "direction": "WB",
       "_tier": "core",
@@ -1711,7 +1711,7 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-commuter-eb",
-      "name": "SH-53 EB: Kootenai County (from Meyer Rd) \u2014 Commuter Corridor",
+      "name": "SH-53 EB: from Meyer Rd \u2014 Commuter Corridor",
       "start_latlon": [
         47.81723,
         -116.82015
@@ -1720,7 +1720,7 @@
         47.81843,
         -116.78781
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County (from Meyer Rd), EB. Congested extent grown from the core (1.52 mi, 2 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.56 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from Meyer Rd, EB. Congested extent grown from the core (1.52 mi, 2 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.56 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-meyer-rd-commuter",
       "direction": "EB",
       "_tier": "commuter",
@@ -1736,7 +1736,7 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-commuter-wb",
-      "name": "SH-53 WB: Kootenai County (from Meyer Rd) \u2014 Commuter Corridor",
+      "name": "SH-53 WB: from Meyer Rd \u2014 Commuter Corridor",
       "start_latlon": [
         47.81847,
         -116.78763
@@ -1745,7 +1745,7 @@
         47.81684,
         -116.88042
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County (from Meyer Rd), WB. Congested extent grown from the core (4.33 mi, 2 VHD/mi, 119% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: an urban/rural FRC transition (FRC 4 -> 3). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from Meyer Rd, WB. Congested extent grown from the core (4.33 mi, 2 VHD/mi, 119% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: an urban/rural FRC transition (FRC 4 -> 3). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-meyer-rd-commuter",
       "direction": "WB",
       "_tier": "commuter",
@@ -1767,7 +1767,7 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-regional-eb",
-      "name": "SH-53 EB: Kootenai County (from Meyer Rd) \u2014 Regional Baseline",
+      "name": "SH-53 EB: from Meyer Rd \u2014 Regional Baseline",
       "start_latlon": [
         47.81688,
         -116.88032
@@ -1776,7 +1776,7 @@
         47.8185,
         -116.78764
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County (from Meyer Rd), EB. Context around the congested extent (4.33 mi; reported, not ranked). Upstream boundary: an urban/rural FRC transition (FRC 3 -> 4); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from Meyer Rd, EB. Context around the congested extent (4.33 mi; reported, not ranked). Upstream boundary: an urban/rural FRC transition (FRC 3 -> 4); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-meyer-rd-regional",
       "direction": "EB",
       "_tier": "regional",
@@ -1798,7 +1798,7 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-regional-wb",
-      "name": "SH-53 WB: Kootenai County (from Meyer Rd) \u2014 Regional Baseline",
+      "name": "SH-53 WB: from Meyer Rd \u2014 Regional Baseline",
       "start_latlon": [
         47.81847,
         -116.78763
@@ -1807,7 +1807,7 @@
         47.81684,
         -116.88042
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County (from Meyer Rd), WB. Context around the congested extent (4.33 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: an urban/rural FRC transition (FRC 4 -> 3). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from Meyer Rd, WB. Context around the congested extent (4.33 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: an urban/rural FRC transition (FRC 4 -> 3). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-53-kootenai-county-meyer-rd-regional",
       "direction": "WB",
       "_tier": "regional",
@@ -1831,13 +1831,13 @@
   "reporting_corridors": [
     {
       "id": "us-95-coeur-d-alene-core",
-      "name": "US-95: Coeur d'Alene \u2014 Tier 1 Congested Core (Upriver Dr to Miles Ave)",
-      "description": "Tier 1 (Congested Core) of US-95: Coeur d'Alene, NB. Recurrent congestion core (7.15 mi): peak/baseline 1.41, 34 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: from Upriver Dr \u2014 Tier 1 Congested Core (Upriver Dr to Miles Ave)",
+      "description": "Tier 1 (Congested Core) of US-95: from Upriver Dr, NB. Recurrent congestion core (7.15 mi): peak/baseline 1.41, 34 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Upriver Dr to Miles Ave)",
       "_facility": "us-95-coeur-d-alene",
-      "_facility_name": "US-95: Coeur d'Alene",
+      "_facility_name": "US-95: from Upriver Dr",
       "_miles": 7.155,
       "_n_segments": 21,
       "_ranked": true,
@@ -1876,13 +1876,13 @@
     },
     {
       "id": "us-95-coeur-d-alene-commuter",
-      "name": "US-95: Coeur d'Alene \u2014 Tier 2 Commuter Corridor (Upriver Dr to Lancaster Rd)",
-      "description": "Tier 2 (Commuter Corridor) of US-95: Coeur d'Alene, NB. Congested extent grown from the core (7.65 mi, 32 VHD/mi, 94% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.52 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: from Upriver Dr \u2014 Tier 2 Commuter Corridor (Upriver Dr to Lancaster Rd)",
+      "description": "Tier 2 (Commuter Corridor) of US-95: from Upriver Dr, NB. Congested extent grown from the core (7.65 mi, 32 VHD/mi, 94% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.52 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Upriver Dr to Lancaster Rd)",
       "_facility": "us-95-coeur-d-alene",
-      "_facility_name": "US-95: Coeur d'Alene",
+      "_facility_name": "US-95: from Upriver Dr",
       "_miles": 7.65,
       "_n_segments": 22,
       "_ranked": false,
@@ -1921,13 +1921,13 @@
     },
     {
       "id": "us-95-coeur-d-alene-regional",
-      "name": "US-95: Coeur d'Alene \u2014 Tier 3 Regional Baseline (Upriver Dr to Lancaster Rd)",
-      "description": "Tier 3 (Regional Baseline) of US-95: Coeur d'Alene, NB. Context around the congested extent (8.80 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: from Upriver Dr \u2014 Tier 3 Regional Baseline (Upriver Dr to Lancaster Rd)",
+      "description": "Tier 3 (Regional Baseline) of US-95: from Upriver Dr, NB. Context around the congested extent (8.80 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Upriver Dr to Lancaster Rd)",
       "_facility": "us-95-coeur-d-alene",
-      "_facility_name": "US-95: Coeur d'Alene",
+      "_facility_name": "US-95: from Upriver Dr",
       "_miles": 8.803,
       "_n_segments": 24,
       "_ranked": false,
@@ -1966,13 +1966,13 @@
     },
     {
       "id": "i-90-coeur-d-alene-core",
-      "name": "I-90: Coeur d'Alene \u2014 Tier 1 Congested Core (4Th St Ic No. 13 to Northwest Blvd Ic No. 11)",
-      "description": "Tier 1 (Congested Core) of I-90: Coeur d'Alene, WB. Recurrent congestion core (1.72 mi): peak/baseline 1.77, 60 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "I-90: from 4th St IC No. 13 \u2014 Tier 1 Congested Core (4th St IC No. 13 to Northwest Blvd IC No. 11)",
+      "description": "Tier 1 (Congested Core) of I-90: from 4th St IC No. 13, WB. Recurrent congestion core (1.72 mi): peak/baseline 1.77, 60 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (4Th St Ic No. 13 to Northwest Blvd Ic No. 11)",
+      "_tier_label": "Tier 1 Congested Core (4th St IC No. 13 to Northwest Blvd IC No. 11)",
       "_facility": "i-90-coeur-d-alene",
-      "_facility_name": "I-90: Coeur d'Alene",
+      "_facility_name": "I-90: from 4th St IC No. 13",
       "_miles": 1.722,
       "_n_segments": 5,
       "_ranked": true,
@@ -2013,13 +2013,13 @@
     },
     {
       "id": "i-90-coeur-d-alene-commuter",
-      "name": "I-90: Coeur d'Alene \u2014 Tier 2 Commuter Corridor (4Th St Ic No. 13 to Rathdrum Sh-41 Ic No. 7)",
-      "description": "Tier 2 (Commuter Corridor) of I-90: Coeur d'Alene, WB. Congested extent grown from the core (2.56 mi, 43 VHD/mi, 71% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.07 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.13 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "I-90: from 4th St IC No. 13 \u2014 Tier 2 Commuter Corridor (4th St IC No. 13 to Rathdrum SH-41 IC No. 7)",
+      "description": "Tier 2 (Commuter Corridor) of I-90: from 4th St IC No. 13, WB. Congested extent grown from the core (2.56 mi, 43 VHD/mi, 71% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.07 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 1.13 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (4Th St Ic No. 13 to Rathdrum Sh-41 Ic No. 7)",
+      "_tier_label": "Tier 2 Commuter Corridor (4th St IC No. 13 to Rathdrum SH-41 IC No. 7)",
       "_facility": "i-90-coeur-d-alene",
-      "_facility_name": "I-90: Coeur d'Alene",
+      "_facility_name": "I-90: from 4th St IC No. 13",
       "_miles": 2.561,
       "_n_segments": 6,
       "_ranked": false,
@@ -2060,13 +2060,13 @@
     },
     {
       "id": "i-90-coeur-d-alene-regional",
-      "name": "I-90: Coeur d'Alene \u2014 Tier 3 Regional Baseline (Sherman Ave Ic No. 15 to Rathdrum Sh-41 Ic No. 7)",
-      "description": "Tier 3 (Regional Baseline) of I-90: Coeur d'Alene, WB. Context around the congested extent (6.44 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: an AADT step-change (30,500 -> 320 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "I-90: from 4th St IC No. 13 \u2014 Tier 3 Regional Baseline (Sherman Ave IC No. 15 to Rathdrum SH-41 IC No. 7)",
+      "description": "Tier 3 (Regional Baseline) of I-90: from 4th St IC No. 13, WB. Context around the congested extent (6.44 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: an AADT step-change (30,500 -> 320 vpd, 99%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Sherman Ave Ic No. 15 to Rathdrum Sh-41 Ic No. 7)",
+      "_tier_label": "Tier 3 Regional Baseline (Sherman Ave IC No. 15 to Rathdrum SH-41 IC No. 7)",
       "_facility": "i-90-coeur-d-alene",
-      "_facility_name": "I-90: Coeur d'Alene",
+      "_facility_name": "I-90: from 4th St IC No. 13",
       "_miles": 6.444,
       "_n_segments": 13,
       "_ranked": false,
@@ -2107,13 +2107,13 @@
     },
     {
       "id": "sh-53-kootenai-county-core",
-      "name": "SH-53: Kootenai County \u2014 Tier 1 Congested Core (Washington State Line to W Prairie Ave (Hauser))",
-      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County, EB. Recurrent congestion core (1.94 mi): peak/baseline 1.52, 15 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from Washington State Line \u2014 Tier 1 Congested Core (Washington State Line to W Prairie Ave (Hauser))",
+      "description": "Tier 1 (Congested Core) of SH-53: from Washington State Line, EB. Recurrent congestion core (1.94 mi): peak/baseline 1.52, 15 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Washington State Line to W Prairie Ave (Hauser))",
       "_facility": "sh-53-kootenai-county",
-      "_facility_name": "SH-53: Kootenai County",
+      "_facility_name": "SH-53: from Washington State Line",
       "_miles": 1.942,
       "_n_segments": 3,
       "_ranked": true,
@@ -2154,13 +2154,13 @@
     },
     {
       "id": "sh-53-kootenai-county-commuter",
-      "name": "SH-53: Kootenai County \u2014 Tier 2 Commuter Corridor (Washington State Line to W Prairie Ave (Hauser))",
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County, EB. Congested extent grown from the core (3.17 mi, 10 VHD/mi, 64% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from Washington State Line \u2014 Tier 2 Commuter Corridor (Washington State Line to W Prairie Ave (Hauser))",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from Washington State Line, EB. Congested extent grown from the core (3.17 mi, 10 VHD/mi, 64% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Washington State Line to W Prairie Ave (Hauser))",
       "_facility": "sh-53-kootenai-county",
-      "_facility_name": "SH-53: Kootenai County",
+      "_facility_name": "SH-53: from Washington State Line",
       "_miles": 3.174,
       "_n_segments": 5,
       "_ranked": false,
@@ -2201,13 +2201,13 @@
     },
     {
       "id": "sh-53-kootenai-county-regional",
-      "name": "SH-53: Kootenai County \u2014 Tier 3 Regional Baseline (Washington State Line to W Prairie Ave (Hauser))",
-      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County, EB. Context around the congested extent (5.92 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from Washington State Line \u2014 Tier 3 Regional Baseline (Washington State Line to W Prairie Ave (Hauser))",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from Washington State Line, EB. Context around the congested extent (5.92 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Washington State Line to W Prairie Ave (Hauser))",
       "_facility": "sh-53-kootenai-county",
-      "_facility_name": "SH-53: Kootenai County",
+      "_facility_name": "SH-53: from Washington State Line",
       "_miles": 5.922,
       "_n_segments": 10,
       "_ranked": false,
@@ -2248,13 +2248,13 @@
     },
     {
       "id": "sh-41-coeur-d-alene-core",
-      "name": "SH-41: Coeur d'Alene \u2014 Tier 1 Congested Core (Prairie Ave to Mullan Ave)",
-      "description": "Tier 1 (Congested Core) of SH-41: Coeur d'Alene, SB. Recurrent congestion core (2.30 mi): peak/baseline 1.19, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-41: from Prairie Ave \u2014 Tier 1 Congested Core (Prairie Ave to Mullan Ave)",
+      "description": "Tier 1 (Congested Core) of SH-41: from Prairie Ave, SB. Recurrent congestion core (2.30 mi): peak/baseline 1.19, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Prairie Ave to Mullan Ave)",
       "_facility": "sh-41-coeur-d-alene",
-      "_facility_name": "SH-41: Coeur d'Alene",
+      "_facility_name": "SH-41: from Prairie Ave",
       "_miles": 2.304,
       "_n_segments": 8,
       "_ranked": true,
@@ -2293,13 +2293,13 @@
     },
     {
       "id": "sh-41-coeur-d-alene-commuter",
-      "name": "SH-41: Coeur d'Alene \u2014 Tier 2 Commuter Corridor (Prairie Ave to Mullan Ave)",
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Coeur d'Alene, SB. Congested extent grown from the core (2.30 mi, 7 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.70 mi); downstream boundary: an AADT step-change (13,750 -> 2,550 vpd, 82%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-41: from Prairie Ave \u2014 Tier 2 Commuter Corridor (Prairie Ave to Mullan Ave)",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: from Prairie Ave, SB. Congested extent grown from the core (2.30 mi, 7 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.70 mi); downstream boundary: an AADT step-change (13,750 -> 2,550 vpd, 82%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Prairie Ave to Mullan Ave)",
       "_facility": "sh-41-coeur-d-alene",
-      "_facility_name": "SH-41: Coeur d'Alene",
+      "_facility_name": "SH-41: from Prairie Ave",
       "_miles": 2.304,
       "_n_segments": 8,
       "_ranked": false,
@@ -2338,13 +2338,13 @@
     },
     {
       "id": "sh-41-coeur-d-alene-regional",
-      "name": "SH-41: Coeur d'Alene \u2014 Tier 3 Regional Baseline (Prairie Ave to I-90 Wb Ramps Ic No. 7)",
-      "description": "Tier 3 (Regional Baseline) of SH-41: Coeur d'Alene, SB. Context around the congested extent (3.64 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: an AADT step-change (13,750 -> 2,550 vpd, 82%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-41: from Prairie Ave \u2014 Tier 3 Regional Baseline (Prairie Ave to I-90 WB Ramps IC No. 7)",
+      "description": "Tier 3 (Regional Baseline) of SH-41: from Prairie Ave, SB. Context around the congested extent (3.64 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: an AADT step-change (13,750 -> 2,550 vpd, 82%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Prairie Ave to I-90 Wb Ramps Ic No. 7)",
+      "_tier_label": "Tier 3 Regional Baseline (Prairie Ave to I-90 WB Ramps IC No. 7)",
       "_facility": "sh-41-coeur-d-alene",
-      "_facility_name": "SH-41: Coeur d'Alene",
+      "_facility_name": "SH-41: from Prairie Ave",
       "_miles": 3.637,
       "_n_segments": 11,
       "_ranked": false,
@@ -2383,13 +2383,13 @@
     },
     {
       "id": "sh-41-rathdrum-core",
-      "name": "SH-41: Rathdrum \u2014 Tier 1 Congested Core (Wyoming Ave to Sh-41 (Nw Jct))",
-      "description": "Tier 1 (Congested Core) of SH-41: Rathdrum, NB. Recurrent congestion core (3.06 mi): peak/baseline 1.26, 5 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-41: from Wyoming Ave \u2014 Tier 1 Congested Core (Wyoming Ave to SH-41 (NW JCT))",
+      "description": "Tier 1 (Congested Core) of SH-41: from Wyoming Ave, NB. Recurrent congestion core (3.06 mi): peak/baseline 1.26, 5 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Wyoming Ave to Sh-41 (Nw Jct))",
+      "_tier_label": "Tier 1 Congested Core (Wyoming Ave to SH-41 (NW JCT))",
       "_facility": "sh-41-rathdrum",
-      "_facility_name": "SH-41: Rathdrum",
+      "_facility_name": "SH-41: from Wyoming Ave",
       "_miles": 3.064,
       "_n_segments": 6,
       "_ranked": true,
@@ -2428,13 +2428,13 @@
     },
     {
       "id": "sh-41-rathdrum-commuter",
-      "name": "SH-41: Rathdrum \u2014 Tier 2 Commuter Corridor (Prairie Ave to Sh-53 (Nw Jct))",
-      "description": "Tier 2 (Commuter Corridor) of SH-41: Rathdrum, NB. Congested extent grown from the core (6.18 mi, 3 VHD/mi, 61% of the core's). Upstream boundary: an AADT step-change (10,500 -> 4,450 vpd, 58%); downstream boundary: the urban-area boundary (leaving Rathdrum, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-41: from Wyoming Ave \u2014 Tier 2 Commuter Corridor (Prairie Ave to SH-53 (NW JCT))",
+      "description": "Tier 2 (Commuter Corridor) of SH-41: from Wyoming Ave, NB. Congested extent grown from the core (6.18 mi, 3 VHD/mi, 61% of the core's). Upstream boundary: an AADT step-change (10,500 -> 4,450 vpd, 58%); downstream boundary: the urban-area boundary (leaving Rathdrum, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Prairie Ave to Sh-53 (Nw Jct))",
+      "_tier_label": "Tier 2 Commuter Corridor (Prairie Ave to SH-53 (NW JCT))",
       "_facility": "sh-41-rathdrum",
-      "_facility_name": "SH-41: Rathdrum",
+      "_facility_name": "SH-41: from Wyoming Ave",
       "_miles": 6.177,
       "_n_segments": 12,
       "_ranked": false,
@@ -2473,13 +2473,13 @@
     },
     {
       "id": "sh-41-rathdrum-regional",
-      "name": "SH-41: Rathdrum \u2014 Tier 3 Regional Baseline (Prairie Ave to Sh-53 (Nw Jct))",
-      "description": "Tier 3 (Regional Baseline) of SH-41: Rathdrum, NB. Context around the congested extent (6.18 mi; reported, not ranked). Upstream boundary: an AADT step-change (10,500 -> 4,450 vpd, 58%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-41: from Wyoming Ave \u2014 Tier 3 Regional Baseline (Prairie Ave to SH-53 (NW JCT))",
+      "description": "Tier 3 (Regional Baseline) of SH-41: from Wyoming Ave, NB. Context around the congested extent (6.18 mi; reported, not ranked). Upstream boundary: an AADT step-change (10,500 -> 4,450 vpd, 58%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Prairie Ave to Sh-53 (Nw Jct))",
+      "_tier_label": "Tier 3 Regional Baseline (Prairie Ave to SH-53 (NW JCT))",
       "_facility": "sh-41-rathdrum",
-      "_facility_name": "SH-41: Rathdrum",
+      "_facility_name": "SH-41: from Wyoming Ave",
       "_miles": 6.177,
       "_n_segments": 12,
       "_ranked": false,
@@ -2518,13 +2518,13 @@
     },
     {
       "id": "sh-53-rathdrum-core",
-      "name": "SH-53: Rathdrum \u2014 Tier 1 Congested Core (Sh-41 (Nw Jct) to Honu Ct)",
-      "description": "Tier 1 (Congested Core) of SH-53: Rathdrum, WB. Recurrent congestion core (1.92 mi): peak/baseline 1.27, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from SH-41 (NW JCT) \u2014 Tier 1 Congested Core (SH-41 (NW JCT) to Honu Ct)",
+      "description": "Tier 1 (Congested Core) of SH-53: from SH-41 (NW JCT), WB. Recurrent congestion core (1.92 mi): peak/baseline 1.27, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Sh-41 (Nw Jct) to Honu Ct)",
+      "_tier_label": "Tier 1 Congested Core (SH-41 (NW JCT) to Honu Ct)",
       "_facility": "sh-53-rathdrum",
-      "_facility_name": "SH-53: Rathdrum",
+      "_facility_name": "SH-53: from SH-41 (NW JCT)",
       "_miles": 1.922,
       "_n_segments": 4,
       "_ranked": true,
@@ -2565,13 +2565,13 @@
     },
     {
       "id": "sh-53-rathdrum-commuter",
-      "name": "SH-53: Rathdrum \u2014 Tier 2 Commuter Corridor (Meyer Rd to Honu Ct)",
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Rathdrum, WB. Congested extent grown from the core (4.16 mi, 3 VHD/mi, 51% of the core's). Upstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7); downstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from SH-41 (NW JCT) \u2014 Tier 2 Commuter Corridor (Meyer Rd to Honu Ct)",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from SH-41 (NW JCT), WB. Congested extent grown from the core (4.16 mi, 3 VHD/mi, 51% of the core's). Upstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7); downstream boundary: the dilution limit (extending would fall to 3 VHD/mi, under 50% of the core's 7). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Meyer Rd to Honu Ct)",
       "_facility": "sh-53-rathdrum",
-      "_facility_name": "SH-53: Rathdrum",
+      "_facility_name": "SH-53: from SH-41 (NW JCT)",
       "_miles": 4.161,
       "_n_segments": 8,
       "_ranked": false,
@@ -2612,13 +2612,13 @@
     },
     {
       "id": "sh-53-rathdrum-regional",
-      "name": "SH-53: Rathdrum \u2014 Tier 3 Regional Baseline (Meyer Rd to Honu Ct)",
-      "description": "Tier 3 (Regional Baseline) of SH-53: Rathdrum, WB. Context around the congested extent (4.99 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from SH-41 (NW JCT) \u2014 Tier 3 Regional Baseline (Meyer Rd to Honu Ct)",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from SH-41 (NW JCT), WB. Context around the congested extent (4.99 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Meyer Rd to Honu Ct)",
       "_facility": "sh-53-rathdrum",
-      "_facility_name": "SH-53: Rathdrum",
+      "_facility_name": "SH-53: from SH-41 (NW JCT)",
       "_miles": 4.99,
       "_n_segments": 10,
       "_ranked": false,
@@ -2659,13 +2659,13 @@
     },
     {
       "id": "us-95-sandpoint-core",
-      "name": "US-95: Sandpoint \u2014 Tier 1 Congested Core (1.93 mi)",
-      "description": "Tier 1 (Congested Core) of US-95: Sandpoint, SB. Recurrent congestion core (1.93 mi): peak/baseline 1.17, 6 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: from Bottle Bay Rd \u2014 Tier 1 Congested Core (1.93 mi)",
+      "description": "Tier 1 (Congested Core) of US-95: from Bottle Bay Rd, SB. Recurrent congestion core (1.93 mi): peak/baseline 1.17, 6 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (1.93 mi)",
       "_facility": "us-95-sandpoint",
-      "_facility_name": "US-95: Sandpoint",
+      "_facility_name": "US-95: from Bottle Bay Rd",
       "_miles": 1.925,
       "_n_segments": 3,
       "_ranked": true,
@@ -2706,13 +2706,13 @@
     },
     {
       "id": "us-95-sandpoint-commuter",
-      "name": "US-95: Sandpoint \u2014 Tier 2 Commuter Corridor (Beg New Align Ic No. 474 to Sagle Rd)",
-      "description": "Tier 2 (Commuter Corridor) of US-95: Sandpoint, SB. Congested extent grown from the core (3.85 mi, 4 VHD/mi, 68% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the urban-area boundary (leaving Sandpoint, ID; ratio 1.01 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: from Bottle Bay Rd \u2014 Tier 2 Commuter Corridor (Beg New Align IC No. 474 to Sagle Rd)",
+      "description": "Tier 2 (Commuter Corridor) of US-95: from Bottle Bay Rd, SB. Congested extent grown from the core (3.85 mi, 4 VHD/mi, 68% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the urban-area boundary (leaving Sandpoint, ID; ratio 1.01 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Beg New Align Ic No. 474 to Sagle Rd)",
+      "_tier_label": "Tier 2 Commuter Corridor (Beg New Align IC No. 474 to Sagle Rd)",
       "_facility": "us-95-sandpoint",
-      "_facility_name": "US-95: Sandpoint",
+      "_facility_name": "US-95: from Bottle Bay Rd",
       "_miles": 3.851,
       "_n_segments": 6,
       "_ranked": false,
@@ -2753,13 +2753,13 @@
     },
     {
       "id": "us-95-sandpoint-regional",
-      "name": "US-95: Sandpoint \u2014 Tier 3 Regional Baseline (Beg New Align Ic No. 474 to Sagle Rd)",
-      "description": "Tier 3 (Regional Baseline) of US-95: Sandpoint, SB. Context around the congested extent (4.74 mi; reported, not ranked). Upstream boundary: a highway junction (2 -> 95); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: from Bottle Bay Rd \u2014 Tier 3 Regional Baseline (Beg New Align IC No. 474 to Sagle Rd)",
+      "description": "Tier 3 (Regional Baseline) of US-95: from Bottle Bay Rd, SB. Context around the congested extent (4.74 mi; reported, not ranked). Upstream boundary: a highway junction (2 -> 95); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Beg New Align Ic No. 474 to Sagle Rd)",
+      "_tier_label": "Tier 3 Regional Baseline (Beg New Align IC No. 474 to Sagle Rd)",
       "_facility": "us-95-sandpoint",
-      "_facility_name": "US-95: Sandpoint",
+      "_facility_name": "US-95: from Bottle Bay Rd",
       "_miles": 4.744,
       "_n_segments": 9,
       "_ranked": false,
@@ -2800,13 +2800,13 @@
     },
     {
       "id": "us-2-sandpoint-core",
-      "name": "US-2: Sandpoint \u2014 Tier 1 Congested Core (Poplar St to Old Us-2, Dover)",
-      "description": "Tier 1 (Congested Core) of US-2: Sandpoint, WB. Recurrent congestion core (1.79 mi): peak/baseline 1.16, 6 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-2: from Poplar St \u2014 Tier 1 Congested Core (Poplar St to Old US-2, Dover)",
+      "description": "Tier 1 (Congested Core) of US-2: from Poplar St, WB. Recurrent congestion core (1.79 mi): peak/baseline 1.16, 6 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Poplar St to Old Us-2, Dover)",
+      "_tier_label": "Tier 1 Congested Core (Poplar St to Old US-2, Dover)",
       "_facility": "us-2-sandpoint",
-      "_facility_name": "US-2: Sandpoint",
+      "_facility_name": "US-2: from Poplar St",
       "_miles": 1.788,
       "_n_segments": 4,
       "_ranked": true,
@@ -2845,13 +2845,13 @@
     },
     {
       "id": "us-2-sandpoint-regional",
-      "name": "US-2: Sandpoint \u2014 Tier 3 Regional Baseline (Us-95 Nb On Ramp to Pine St Loop)",
-      "description": "Tier 3 (Regional Baseline) of US-2: Sandpoint, WB. Context around the congested extent (5.17 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 200); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-2: from Poplar St \u2014 Tier 3 Regional Baseline (US-95 NB On Ramp to Pine St Loop)",
+      "description": "Tier 3 (Regional Baseline) of US-2: from Poplar St, WB. Context around the congested extent (5.17 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 200); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Us-95 Nb On Ramp to Pine St Loop)",
+      "_tier_label": "Tier 3 Regional Baseline (US-95 NB On Ramp to Pine St Loop)",
       "_facility": "us-2-sandpoint",
-      "_facility_name": "US-2: Sandpoint",
+      "_facility_name": "US-2: from Poplar St",
       "_miles": 5.171,
       "_n_segments": 11,
       "_ranked": false,
@@ -2890,13 +2890,13 @@
     },
     {
       "id": "us-95-main-st-boundary-county-core",
-      "name": "US-95: Main St, Boundary County \u2014 Tier 1 Congested Core (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
-      "description": "Tier 1 (Congested Core) of US-95: Main St, Boundary County, NB. Recurrent congestion core (1.67 mi): peak/baseline 1.17, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: Main St \u2014 Tier 1 Congested Core (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
+      "description": "Tier 1 (Congested Core) of US-95: Main St, NB. Recurrent congestion core (1.67 mi): peak/baseline 1.17, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
       "_facility": "us-95-main-st-boundary-county",
-      "_facility_name": "US-95: Main St, Boundary County",
+      "_facility_name": "US-95: Main St",
       "_miles": 1.673,
       "_n_segments": 3,
       "_ranked": true,
@@ -2935,13 +2935,13 @@
     },
     {
       "id": "us-95-main-st-boundary-county-commuter",
-      "name": "US-95: Main St, Boundary County \u2014 Tier 2 Commuter Corridor (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
-      "description": "Tier 2 (Commuter Corridor) of US-95: Main St, Boundary County, NB. Congested extent grown from the core (2.97 mi, 3 VHD/mi, 70% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.96 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: Main St \u2014 Tier 2 Commuter Corridor (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
+      "description": "Tier 2 (Commuter Corridor) of US-95: Main St, NB. Congested extent grown from the core (2.97 mi, 3 VHD/mi, 70% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.65 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.96 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Deep Crk Loop(Co Rd No. 2) to Tamarack Ln)",
       "_facility": "us-95-main-st-boundary-county",
-      "_facility_name": "US-95: Main St, Boundary County",
+      "_facility_name": "US-95: Main St",
       "_miles": 2.965,
       "_n_segments": 5,
       "_ranked": false,
@@ -2980,13 +2980,13 @@
     },
     {
       "id": "us-95-main-st-boundary-county-regional",
-      "name": "US-95: Main St, Boundary County \u2014 Tier 3 Regional Baseline (Kootenai Trail Rd to Chinook St)",
-      "description": "Tier 3 (Regional Baseline) of US-95: Main St, Boundary County, NB. Context around the congested extent (8.27 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: a highway junction (crossing 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: Main St \u2014 Tier 3 Regional Baseline (Kootenai Trail Rd to Chinook St)",
+      "description": "Tier 3 (Regional Baseline) of US-95: Main St, NB. Context around the congested extent (8.27 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: a highway junction (crossing 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Kootenai Trail Rd to Chinook St)",
       "_facility": "us-95-main-st-boundary-county",
-      "_facility_name": "US-95: Main St, Boundary County",
+      "_facility_name": "US-95: Main St",
       "_miles": 8.27,
       "_n_segments": 15,
       "_ranked": false,
@@ -3025,13 +3025,13 @@
     },
     {
       "id": "us-95-sandpoint-tibbetts-ln-core",
-      "name": "US-95: Sandpoint (from Tibbetts Ln) \u2014 Tier 1 Congested Core (Tibbetts Ln to End Divided Hwy)",
-      "description": "Tier 1 (Congested Core) of US-95: Sandpoint (from Tibbetts Ln), NB. Recurrent congestion core (1.30 mi): peak/baseline 1.16, 4 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: from Tibbetts Ln \u2014 Tier 1 Congested Core (Tibbetts Ln to End Divided Hwy)",
+      "description": "Tier 1 (Congested Core) of US-95: from Tibbetts Ln, NB. Recurrent congestion core (1.30 mi): peak/baseline 1.16, 4 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Tibbetts Ln to End Divided Hwy)",
       "_facility": "us-95-sandpoint-tibbetts-ln",
-      "_facility_name": "US-95: Sandpoint (from Tibbetts Ln)",
+      "_facility_name": "US-95: from Tibbetts Ln",
       "_miles": 1.298,
       "_n_segments": 2,
       "_ranked": true,
@@ -3070,13 +3070,13 @@
     },
     {
       "id": "us-95-sandpoint-tibbetts-ln-regional",
-      "name": "US-95: Sandpoint (from Tibbetts Ln) \u2014 Tier 3 Regional Baseline (Ic No. 475 Sh-200 to End Divided Hwy)",
-      "description": "Tier 3 (Regional Baseline) of US-95: Sandpoint (from Tibbetts Ln), NB. Context around the congested extent (3.12 mi; reported, not ranked). Upstream boundary: a highway junction (95 -> 2); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: from Tibbetts Ln \u2014 Tier 3 Regional Baseline (IC No. 475 SH-200 to End Divided Hwy)",
+      "description": "Tier 3 (Regional Baseline) of US-95: from Tibbetts Ln, NB. Context around the congested extent (3.12 mi; reported, not ranked). Upstream boundary: a highway junction (95 -> 2); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Ic No. 475 Sh-200 to End Divided Hwy)",
+      "_tier_label": "Tier 3 Regional Baseline (IC No. 475 SH-200 to End Divided Hwy)",
       "_facility": "us-95-sandpoint-tibbetts-ln",
-      "_facility_name": "US-95: Sandpoint (from Tibbetts Ln)",
+      "_facility_name": "US-95: from Tibbetts Ln",
       "_miles": 3.121,
       "_n_segments": 6,
       "_ranked": false,
@@ -3115,13 +3115,13 @@
     },
     {
       "id": "us-2-albeni-hwy-bonner-county-core",
-      "name": "US-2: Albeni Hwy, Bonner County \u2014 Tier 1 Congested Core (9Th St (Sh-57) to Bodie Canyon Rd)",
-      "description": "Tier 1 (Congested Core) of US-2: Albeni Hwy, Bonner County, WB. Recurrent congestion core (1.29 mi): peak/baseline 1.16, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-2: Albeni Hwy \u2014 Tier 1 Congested Core (9th St (SH-57) to Bodie Canyon Rd)",
+      "description": "Tier 1 (Congested Core) of US-2: Albeni Hwy, WB. Recurrent congestion core (1.29 mi): peak/baseline 1.16, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (9Th St (Sh-57) to Bodie Canyon Rd)",
+      "_tier_label": "Tier 1 Congested Core (9th St (SH-57) to Bodie Canyon Rd)",
       "_facility": "us-2-albeni-hwy-bonner-county",
-      "_facility_name": "US-2: Albeni Hwy, Bonner County",
+      "_facility_name": "US-2: Albeni Hwy",
       "_miles": 1.285,
       "_n_segments": 2,
       "_ranked": true,
@@ -3160,13 +3160,13 @@
     },
     {
       "id": "us-2-albeni-hwy-bonner-county-commuter",
-      "name": "US-2: Albeni Hwy, Bonner County \u2014 Tier 2 Commuter Corridor (Larch St, Priest River to Bodie Canyon Rd)",
-      "description": "Tier 2 (Commuter Corridor) of US-2: Albeni Hwy, Bonner County, WB. Congested extent grown from the core (1.93 mi, 3 VHD/mi, 74% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-2: Albeni Hwy \u2014 Tier 2 Commuter Corridor (Larch St, Priest River to Bodie Canyon Rd)",
+      "description": "Tier 2 (Commuter Corridor) of US-2: Albeni Hwy, WB. Congested extent grown from the core (1.93 mi, 3 VHD/mi, 74% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Larch St, Priest River to Bodie Canyon Rd)",
       "_facility": "us-2-albeni-hwy-bonner-county",
-      "_facility_name": "US-2: Albeni Hwy, Bonner County",
+      "_facility_name": "US-2: Albeni Hwy",
       "_miles": 1.928,
       "_n_segments": 3,
       "_ranked": false,
@@ -3205,13 +3205,13 @@
     },
     {
       "id": "us-2-albeni-hwy-bonner-county-regional",
-      "name": "US-2: Albeni Hwy, Bonner County \u2014 Tier 3 Regional Baseline (East Side Rd to Le Clerc Rd)",
-      "description": "Tier 3 (Regional Baseline) of US-2: Albeni Hwy, Bonner County, WB. Context around the congested extent (7.07 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-2: Albeni Hwy \u2014 Tier 3 Regional Baseline (East Side Rd to Le Clerc Rd)",
+      "description": "Tier 3 (Regional Baseline) of US-2: Albeni Hwy, WB. Context around the congested extent (7.07 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (East Side Rd to Le Clerc Rd)",
       "_facility": "us-2-albeni-hwy-bonner-county",
-      "_facility_name": "US-2: Albeni Hwy, Bonner County",
+      "_facility_name": "US-2: Albeni Hwy",
       "_miles": 7.069,
       "_n_segments": 11,
       "_ranked": false,
@@ -3250,13 +3250,13 @@
     },
     {
       "id": "sh-41-5th-ave-kootenai-county-core",
-      "name": "SH-41: 5th Ave, Kootenai County \u2014 Tier 1 Congested Core (Maine St to Sh-54)",
-      "description": "Tier 1 (Congested Core) of SH-41: 5th Ave, Kootenai County, SB. Recurrent congestion core (1.29 mi): peak/baseline 1.22, 3 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-41: 5th Ave \u2014 Tier 1 Congested Core (Maine St to SH-54)",
+      "description": "Tier 1 (Congested Core) of SH-41: 5th Ave, SB. Recurrent congestion core (1.29 mi): peak/baseline 1.22, 3 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Maine St to Sh-54)",
+      "_tier_label": "Tier 1 Congested Core (Maine St to SH-54)",
       "_facility": "sh-41-5th-ave-kootenai-county",
-      "_facility_name": "SH-41: 5th Ave, Kootenai County",
+      "_facility_name": "SH-41: 5th Ave",
       "_miles": 1.294,
       "_n_segments": 2,
       "_ranked": true,
@@ -3295,13 +3295,13 @@
     },
     {
       "id": "sh-41-5th-ave-kootenai-county-regional",
-      "name": "SH-41: 5th Ave, Kootenai County \u2014 Tier 3 Regional Baseline (Spirit Lake Rd to Seasons Rd)",
-      "description": "Tier 3 (Regional Baseline) of SH-41: 5th Ave, Kootenai County, SB. Context around the congested extent (6.47 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-41: 5th Ave \u2014 Tier 3 Regional Baseline (Spirit Lake Rd to Seasons Rd)",
+      "description": "Tier 3 (Regional Baseline) of SH-41: 5th Ave, SB. Context around the congested extent (6.47 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: the context-length limit (3 mi past Tier 2). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Spirit Lake Rd to Seasons Rd)",
       "_facility": "sh-41-5th-ave-kootenai-county",
-      "_facility_name": "SH-41: 5th Ave, Kootenai County",
+      "_facility_name": "SH-41: 5th Ave",
       "_miles": 6.47,
       "_n_segments": 10,
       "_ranked": false,
@@ -3340,13 +3340,13 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-core",
-      "name": "SH-53: Kootenai County (from Meyer Rd) \u2014 Tier 1 Congested Core (Meyer Rd to Old Us-95)",
-      "description": "Tier 1 (Congested Core) of SH-53: Kootenai County (from Meyer Rd), EB. Recurrent congestion core (1.52 mi): peak/baseline 1.19, 2 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from Meyer Rd \u2014 Tier 1 Congested Core (Meyer Rd to Old US-95)",
+      "description": "Tier 1 (Congested Core) of SH-53: from Meyer Rd, EB. Recurrent congestion core (1.52 mi): peak/baseline 1.19, 2 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Meyer Rd to Old Us-95)",
+      "_tier_label": "Tier 1 Congested Core (Meyer Rd to Old US-95)",
       "_facility": "sh-53-kootenai-county-meyer-rd",
-      "_facility_name": "SH-53: Kootenai County (from Meyer Rd)",
+      "_facility_name": "SH-53: from Meyer Rd",
       "_miles": 1.523,
       "_n_segments": 4,
       "_ranked": true,
@@ -3385,13 +3385,13 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-commuter",
-      "name": "SH-53: Kootenai County (from Meyer Rd) \u2014 Tier 2 Commuter Corridor (Meyer Rd to Old Us-95)",
-      "description": "Tier 2 (Commuter Corridor) of SH-53: Kootenai County (from Meyer Rd), EB. Congested extent grown from the core (1.52 mi, 2 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.56 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from Meyer Rd \u2014 Tier 2 Commuter Corridor (Meyer Rd to Old US-95)",
+      "description": "Tier 2 (Commuter Corridor) of SH-53: from Meyer Rd, EB. Congested extent grown from the core (1.52 mi, 2 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.56 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Meyer Rd to Old Us-95)",
+      "_tier_label": "Tier 2 Commuter Corridor (Meyer Rd to Old US-95)",
       "_facility": "sh-53-kootenai-county-meyer-rd",
-      "_facility_name": "SH-53: Kootenai County (from Meyer Rd)",
+      "_facility_name": "SH-53: from Meyer Rd",
       "_miles": 1.523,
       "_n_segments": 4,
       "_ranked": false,
@@ -3430,13 +3430,13 @@
     },
     {
       "id": "sh-53-kootenai-county-meyer-rd-regional",
-      "name": "SH-53: Kootenai County (from Meyer Rd) \u2014 Tier 3 Regional Baseline (Sh-41 (Nw Jct) to Old Us-95)",
-      "description": "Tier 3 (Regional Baseline) of SH-53: Kootenai County (from Meyer Rd), EB. Context around the congested extent (4.33 mi; reported, not ranked). Upstream boundary: an urban/rural FRC transition (FRC 3 -> 4); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "SH-53: from Meyer Rd \u2014 Tier 3 Regional Baseline (SH-41 (NW JCT) to Old US-95)",
+      "description": "Tier 3 (Regional Baseline) of SH-53: from Meyer Rd, EB. Context around the congested extent (4.33 mi; reported, not ranked). Upstream boundary: an urban/rural FRC transition (FRC 3 -> 4); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Sh-41 (Nw Jct) to Old Us-95)",
+      "_tier_label": "Tier 3 Regional Baseline (SH-41 (NW JCT) to Old US-95)",
       "_facility": "sh-53-kootenai-county-meyer-rd",
-      "_facility_name": "SH-53: Kootenai County (from Meyer Rd)",
+      "_facility_name": "SH-53: from Meyer Rd",
       "_miles": 4.33,
       "_n_segments": 10,
       "_ranked": false,

@@ -2528,10 +2528,10 @@ real hotspots run 1.2–2.4 per segment, geometric roads 0.95–1.05.
   to `statewide_*_context_extents.csv`, each with its facility's core rank.
 
 **Each direction answers for itself.** The opposing carriageway is catalogued only
-where it has a qualifying core of its own that overlaps the lead's Tier 2 footprint,
-and then with its own boundaries. Otherwise it is dropped, and the group's
-`_companion` says why. For example: "EB not catalogued: … (peak/baseline 1.01,
-16 VHD/mi over the mirrored span)".
+where it has a qualifying core of its own that overlaps the lead's Tier 2 footprint
+**and faces the lead's core** (below), and then with its own boundaries. Otherwise it
+is dropped, and the group's `_companion` says why. For example: "EB not catalogued: …
+(peak/baseline 1.01, 16 VHD/mi over the mirrored span)".
 
 **Every qualifying core on a chain is its own facility.** Before this, only the
 longest core on a chain was catalogued. That lost Hailey behind Ketchum on SH-75. A
@@ -2654,6 +2654,17 @@ cardinal bearings both failed here:
 - Burley's Overland Ave is a southbound SH-27 chain one way and an eastbound I-84 BL
   business-loop chain the other.
 
+**The companion core faces the lead core** (owner, 2026-09-25). Running beside the
+lead's Tier 2 is not enough: ≥ 50% of the shorter of the two cores
+(`CORE_FACING_MIN_SHARE`) must lie within 200 m of the other. A core beside only the
+grown Tier 2 is a different bottleneck. It stands as its own one-direction facility,
+cut out of the lead's mirrored span so the mirror doesn't absorb it. SH-44 State St
+was the case: the WB core ends near Linder Rd and the EB core starts west of SH-16,
+about 2.3 mi apart, and the two were paired through the WB Tier 2. The lead's
+`_companion` then says "EB not paired: its core here runs beside this Tier 2 but does
+not face the WB core…", and the other facility's says "WB here is in the extent of
+<facility>, whose core does not face this one". Couplet legs (next) are exempt.
+
 **A couplet's legs are one facility's two directions** (Item 63). A companion core on
 the other leg of a detected couplet that the lead core is on pairs whatever the legs'
 separation. With the Item 60 stops, Moscow's Washington St (NB) and Jackson St (SB)
@@ -2678,18 +2689,28 @@ A mirrored span claims the other direction's ground only where it runs alongside
 covers ≥ 30% of the footprint. A chain that merely touches it at a junction doesn't
 count: Twin Falls' US-93 on Pole Line Rd ends where US-93 turns onto Blue Lakes Blvd.
 
-**Names say what the road is.** A facility is named `<band>: <street>, <town>`:
+**Names say what the road is.** A facility is named `<band>: <street>` (the town was
+dropped from names on 2026-09-25 at the owner's request; the Census urban-area names
+read "Boise City", "Ontario--Payette"):
 - **band:** the route carrying most of the core's miles, with `BL` / `BR` / `Spur` when
   the core's `RoadList` says so (`I-15 BL`);
 - **street:** the core's street by `RoadName` miles, with its leading quadrant
   dropped, plus a second street when it has ≥ 30%. A segment named only by its route
   (`US-20`, `Highway 95`) gives no street, and its `RoadList` byway aliases
   ("Idaho Medal of Honor Hwy") are not read;
-- **town:** Item 52's urban area, else "<County> County".
+- **no street:** named for where the core starts (its first segment's ITD `aadt_desc`,
+  else `RoadName`, title-case repaired: `SH-41`, `4th`, `IC`),
+  "I-84: from Vista IC No. 53", "SH-75: from Treasure Ln"; the town only as a last resort;
+- **town:** Item 52's urban area, else "<County> County". It stays in the facility
+  **id** (`sh-44-state-st-boise-city`), so ids are stable across runs and the ranking
+  comparison still joins. It is also in each entry's `description` wherever a boundary
+  is an urban edge.
 
-Examples: "US-26: Yellowstone Hwy, Idaho Falls", "SH-8: Pullman Rd, Moscow", "I-90:
-Coeur d'Alene". Couplets read "US-95: Washington St / Jackson St couplet, Moscow", and
-each leg is labelled by its own compass direction.
+Two facilities with one name (one street in two towns, or twice in one) get
+"(from <start>)", then "#n". Examples: "US-26: Yellowstone Hwy", "SH-8: Pullman Rd",
+"SH-44: State St (from State St Ext)". Couplets read "US-95: Washington St / Jackson
+St couplet" (the town is in the description), and each leg is labelled by its own
+compass direction.
 
 **Couplets must be one-way pairs** (`couplets.detect_couplets`, with membership applied):
 - both legs must be on the state system, and share a route **under membership**, not

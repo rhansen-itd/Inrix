@@ -7445,3 +7445,72 @@ congested parts.
 - `test_aggregate_statewide_rankings` (2): a deferred couplet is context at its
   facility's rank; a flagged one ranks with its flag.
 - `test_d3_catalogue` and `test_corridors` pass unchanged on the legacy path.
+
+## Session 83 — Item 64: corridor names without the town, companion cores that face the lead (2026-09-25)
+
+Owner requests from looking at the maps before Item 62's re-run, scoped and done
+in the same session. Both landed before 62.
+
+### 1. Names
+
+The owner asked to get rid of "Boise City" and other place names like it in corridor
+names. The place came from the Census urban-area name (Item 52), or "<County> County"
+outside one. The owner chose to drop it everywhere.
+- **Facilities** (`generate_catalogue`): `<band>: <street>`. With no street, the name
+  is where the core starts (`_endpoint_name`: ITD `aadt_desc`, else `RoadName`), e.g.
+  "I-84: from Vista IC No. 53". The town is used only when there is no endpoint name.
+- **Ids keep the place** (`sh-44-state-st-boise-city`), so they are stable across runs
+  and Item 62's `compare_statewide_rankings` still joins. Id and name are now
+  de-duplicated separately. A name clash (one street in two towns, now possible) gets
+  "(from X)", then "#n".
+- **Couplets** (`couplets.couplet_catalogue_entries`): "US-20: Front St / Myrtle St
+  couplet", with the town kept in the description.
+- **`_tidy_title`**: the endpoint names now lead facility names, so this undoes
+  `str.title`'s damage: `Sh-41` → `SH-41`, `4Th` → `4th`, `Ic`/`Eb`/`Nw` →
+  `IC`/`EB`/`NW`, and a space after a comma.
+
+### 2. Pairing: the companion core faces the lead core
+
+The owner asked why D3's #14, SH-44 State St (from State St Ext), paired two cores
+with a gap between them. The WB core runs State St Ext → about Linder Rd (2.31 mi,
+56 VHD/mi). The EB core ran west of SH-16 → SH-16 (2.66 mi), about 2.3 mi west of
+the WB core's end.
+- **Cause:** the companion search tested the opposite core against the lead's
+  **Tier 2** only (`_runs_alongside(..., min_cover=0)`). WB's Tier 2 grows west past
+  SH-16 to the urban edge, so any EB core out there qualified.
+- **Rule:** a companion must also face the lead core. `_cores_face` requires ≥ 50% of
+  the shorter core within 200 m of the other (`CORE_FACING_MIN_SHARE`), checked either
+  way round, so a short core inside a long one faces it. Couplet legs (Item 63) are
+  exempt.
+- **A core left apart stands on its own** (the owner's choice over "keep it in Tiers
+  2/3 only"). Otherwise the lead's mirrored span, which holds the opposite chain's
+  cores under the lead's Tier 2, would have absorbed it. So it is cut out of that span
+  (`_span_minus`).
+- **Notes:** the lead's `_companion` says "EB not paired: … does not face the WB
+  core". The other facility's says "WB here is in the extent of <facility>, whose core
+  does not face this one", instead of a misleading "WB not catalogued".
+
+**Result (D1–D6 regenerated):** only D3's SH-44 changed structurally.
+- "SH-44: State St (from State St Ext)" now pairs the WB core with the EB core that
+  faces it: −116.432 → −116.383, 2.49 mi, 17 VHD/mi. That core was its own "(from N
+  Palmer Ln)" facility (42.6 VHD), which is gone.
+- The EB core west of SH-16 is its own facility, "SH-44: State St (from Can-Ada Rd)",
+  id `sh-44-state-st-star` (53.8 VHD), with Tiers 1 and 3. Its Tier 2 equals its core.
+- Facility counts are unchanged: D1 13, D2 3, D3 30, D4 10, D5 8, D6 6 (couplet
+  groups included).
+- Every entry verifies, and `audit_hard_stops.py` finds 0 crossings.
+- Every other facility's segments are identical; only names changed.
+
+### 3. Tests
+
+1,035 pass (1,029 before), 2 skipped.
+- `test_extents.TestCompanionFacesTheLeadCore` (3), on a synthetic divided road:
+  - a core beside only the Tier 2 is its own facility, with the notes;
+  - a core across from the lead pairs;
+  - a short core inside a long one pairs.
+  The old code paired the first case, checked by running it against the stashed
+  change.
+- `test_span_minus_cuts_holes_out_of_a_span` and
+  `test_endpoint_names_undo_title_case_damage`.
+- Naming tests rewritten: a street name with the town only in the id; a street-less
+  facility named "from <start>"; a county id; a couplet name without the town.

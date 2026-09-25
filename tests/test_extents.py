@@ -976,23 +976,38 @@ class TestItem51Facilities:
                                          min_chain_miles=0.5)
         assert len([g for g in cat["reporting_corridors"] if g["_tier"] == "core"]) == 1
 
-    def test_facilities_are_named_for_street_and_town(self):
+    def test_facilities_are_named_for_the_street_and_keep_the_town_in_the_id(self):
+        """Owner, 2026-09-25: no place in the name; the id keeps it, so runs join."""
         net = _concurrent_network()
         ids = list(net["XDSegID"])
         cat = extents.generate_catalogue(net, _baseline(ids, {102: 3.0, 103: 3.0, 104: 3.0}),
                                          observed=set(ids), min_chain_miles=0.5)
         core = next(g for g in cat["reporting_corridors"] if g["_tier"] == "core")
-        assert core["_facility_name"].endswith(": Yellowstone Hwy, Idaho Falls")
-        assert "County" not in core["_facility_name"]
+        assert core["_facility_name"].endswith(": Yellowstone Hwy")
+        assert "Idaho Falls" not in core["_facility_name"]
+        assert core["_facility"].endswith("-yellowstone-hwy-idaho-falls")
 
-    def test_the_county_names_a_core_outside_every_urban_area(self):
+    def test_a_facility_with_no_street_is_named_for_where_its_core_starts(self):
+        net = _concurrent_network()
+        net["RoadName"] = net["RoadName"].where(net["XDSegID"] >= 200, "US-20")
+        net["aadt_desc"] = None
+        net.loc[net["XDSegID"] == 102, "aadt_desc"] = "Lincoln Rd"
+        ids = list(net["XDSegID"])
+        cat = extents.generate_catalogue(net, _baseline(ids, {102: 3.0, 103: 3.0, 104: 3.0}),
+                                         observed=set(ids), min_chain_miles=0.5)
+        core = next(g for g in cat["reporting_corridors"] if g["_tier"] == "core")
+        assert core["_facility_name"].endswith(": from Lincoln Rd")
+        assert core["_facility"].endswith("-idaho-falls")
+
+    def test_the_county_ids_a_core_outside_every_urban_area(self):
         net = _concurrent_network()
         net["urban_share"] = 0.0
         ids = list(net["XDSegID"])
         cat = extents.generate_catalogue(net, _baseline(ids, {102: 3.0, 103: 3.0, 104: 3.0}),
                                          observed=set(ids), min_chain_miles=0.5)
         core = next(g for g in cat["reporting_corridors"] if g["_tier"] == "core")
-        assert core["_facility_name"].endswith(", Latah County")
+        assert core["_facility"].endswith("-latah-county")
+        assert "County" not in core["_facility_name"]
 
     def test_an_entry_names_the_links_the_network_does_not_assert(self):
         from inrix_tools import corridors
@@ -1097,3 +1112,74 @@ class TestCoupletLegPairing:
         cores = self._cores(0.065, {"couplet-95": ((999,), (998,))})
         assert sorted(g["_directions"] for g in cores) == [["NB"], ["SB"]]
         assert not any("_couplets" in g for g in cores)
+
+
+# ─── Owner, 2026-09-25: a companion core must face the lead core ─────
+
+def _divided_network():
+    """SH-44 as a divided road, NB 100-111 and SB 200-211 about 30 m apart, 0.35-mi
+    segments; SB segment 200 + j lies beside NB segment 111 - j."""
+    rows, lon = [], -116.4
+    for i in range(12):
+        rows.append(_seg_row(100 + i, 101 + i if i < 11 else None, "44", "State St",
+                             (lon, 46.70 + i * 0.005), (lon, 46.70 + (i + 1) * 0.005),
+                             bearing="N", group=1))
+        rows.append(_seg_row(200 + i, 201 + i if i < 11 else None, "44", "State St",
+                             (lon + 0.0004, 46.76 - i * 0.005),
+                             (lon + 0.0004, 46.76 - (i + 1) * 0.005),
+                             bearing="S", group=2))
+    net = gpd.GeoDataFrame(rows, crs="EPSG:4326")
+    net["urban_area"] = "Boise City, ID"
+    net["urban_share"] = 1.0
+    return net
+
+
+class TestCompanionFacesTheLeadCore:
+    """The NB core (108-110) grows a Tier 2 south to 104. An SB core beside 104-106
+    lies inside that Tier 2 but not across from the NB core: SH-44 State St's WB core
+    near Linder Rd and EB core west of SH-16."""
+    NB_CORE = {**{s: 1.6 for s in (108, 109, 110)}, **{s: 1.09 for s in range(101, 108)}}
+
+    def _cores(self, sb_core):
+        net = _divided_network()
+        ids = list(net["XDSegID"])
+        ratios = {**self.NB_CORE, **{s: 1.4 for s in sb_core}}
+        cat = extents.generate_catalogue(net, _baseline(ids, ratios), observed=set(ids),
+                                         min_chain_miles=0.5)
+        return [g for g in cat["reporting_corridors"] if g["_tier"] == "core"]
+
+    def test_a_core_beside_only_the_tier_2_is_its_own_facility(self):
+        cores = self._cores((205, 206, 207))
+        assert sorted(g["_directions"] for g in cores) == [["NB"], ["SB"]]
+        nb = next(g for g in cores if g["_directions"] == ["NB"])
+        sb = next(g for g in cores if g["_directions"] == ["SB"])
+        assert "does not face the NB core" in nb["_companion"]
+        assert sb["_companion"].startswith(f"NB here is in the extent of {nb['_facility']}")
+
+    def test_a_core_across_from_the_lead_core_is_its_companion(self):
+        cores = self._cores((201, 202, 203))
+        assert len(cores) == 1
+        assert cores[0]["_directions"] == ["NB", "SB"]
+
+    def test_a_short_core_inside_a_long_one_faces_it(self):
+        """Either way round: the shorter core need only lie beside the longer."""
+        cores = self._cores((200, 201, 202, 203, 204, 205))
+        assert len(cores) == 1
+        assert sorted(cores[0]["_directions"]) == ["NB", "SB"]
+
+
+def test_span_minus_cuts_holes_out_of_a_span():
+    assert extents._span_minus((0, 10), [(3, 5)]) == [(0, 3), (5, 10)]
+    assert extents._span_minus((0, 10), [(0, 4), (8, 12)]) == [(4, 8)]
+    assert extents._span_minus((2, 6), [(0, 10)]) == []
+    assert extents._span_minus((2, 6), []) == [(2, 6)]
+
+
+def test_endpoint_names_undo_title_case_damage():
+    t = extents._tidy_title
+    assert t("4Th St Ic No. 13") == "4th St IC No. 13"
+    assert t("Sh-41 (Nw Jct)") == "SH-41 (NW JCT)"
+    assert t("I-84 Eb On Ramp Ic No. 33") == "I-84 EB On Ramp IC No. 33"
+    assert t("Center St(Sh-31),Victor") == "Center St(SH-31), Victor"
+    assert t("25Th E Rd (Hitt Rd)") == "25th E Rd (Hitt Rd)"
+    assert t("Eagle Rd") == "Eagle Rd"

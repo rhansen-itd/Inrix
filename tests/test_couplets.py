@@ -442,17 +442,18 @@ class TestItem51CoupletNames:
         assert len(pairs) == 1
         assert {pairs[0].dir1_bearing, pairs[0].dir2_bearing} == {"N", "S"}
 
-    def test_a_couplet_is_named_for_its_streets_and_town(self):
+    def test_a_couplet_is_named_for_its_streets_not_its_town(self):
+        """The place is in the description, not the name (owner, 2026-09-25)."""
         net = _grid_network(name_a="W Front St", name_b="W Myrtle St")
         net["urban_area"] = "Boise City, ID"
         net["urban_share"] = 1.0
         pair = couplets.detect_couplets(net, min_length_mi=0.5)[0]
         d1, _, rc = couplets.couplet_catalogue_entries(pair, net)
         assert rc["name"].split(": ", 1)[1] in (
-            "Front St / Myrtle St couplet, Boise City",
-            "Myrtle St / Front St couplet, Boise City")
-        assert "County" not in rc["name"]
-        assert d1["name"].endswith("couplet leg, Boise City")
+            "Front St / Myrtle St couplet", "Myrtle St / Front St couplet")
+        assert "Boise" not in rc["name"] and "Boise" not in d1["name"]
+        assert "in Boise City" in rc["description"]
+        assert d1["name"].endswith("couplet leg")
 
     def test_ordinals_keep_a_lower_case_suffix(self):
         assert couplets.street_key("W 5th Ave") == "5th Ave"
