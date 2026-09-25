@@ -3159,8 +3159,9 @@ volume-profile curves from it, with a nearest-station assignment rule."
 
 Owner request, 2026-09-25 (after Session 79):
 - **Station coverage.** The Item 59 one-mile walk is too short: several ATRs were
-  pulled for I-84 on the assumption that its profile stays similar along it, and
-  every I-84 segment should get a fitted curve. Replace the radius with a traced
+  pulled for I-84 on the assumption that its profile stays similar along it, so the
+  owner expects station coverage all the way through the valley (an expectation, not
+  a requirement; owner's clarification, 2026-09-25). Replace the radius with a traced
   path, as routes are traced, that breaks where a break is expected: at a
   junction with a state route of the **same or higher tier**.
   - I-84 does not break at the SH-55 interchange.
@@ -3429,14 +3430,24 @@ Scope:
         section); DESIGN_HISTORY.
 
 - [ ] **Pull** April 2026 hourly volumes (report 87; a fallback month where April is
-      missing) for every permanent TCDS station on a state route, with
-      `~/tcds-scraper` (about 40 s per site-month; about an hour at `--workers 3`).
-      Mainline only: drop ramp-count stations (e.g. 00329 "EB On ramp"). Include
-      00270 (Eagle Rd north of Chinden) and every I-84 station.
+      missing) for a **sample** of the permanent TCDS stations on state routes, with
+      `~/tcds-scraper` (about 40 s per site-month). **Not every station** (owner,
+      2026-09-25): pulling them all is excessive, since the profile is unlikely to
+      vary much between neighbouring stations. That's why only a few were pulled so
+      far. Roughly **every other** station along a route, chosen to close the gaps
+      between the stations already pulled.
+      - Mainline only: drop ramp-count stations (e.g. 00329 "EB On ramp").
+      - Include 00270 (Eagle Rd north of Chinden).
+      - **I-84 in the valley:** the station between Meridian Rd and Eagle Rd, and one
+        east of Eagle Rd. West of Meridian it doesn't need to be every one.
+      - List the chosen stations (and the skipped ones) before pulling.
 - [ ] Refit (`fit_count_profiles.py`) and review `fit_report.csv`: outage days, 2-way
       stations, curves far from every generic.
-- [ ] **Check the owner's requirement:** every I-84 segment carries a `station` curve.
-      List any that don't, with the reason.
+- [ ] **Check the owner's expectation** (an expectation, not a requirement; owner,
+      2026-09-25): ATR coverage runs all the way through the Treasure Valley on I-84,
+      with no stretch left on a generic curve for lack of a station. List any I-84
+      valley segments without a `station` curve, with the reason (a gap in the
+      sample, a section break).
 - [ ] **Statewide re-run** with the fitted curves (`--count-profiles`), with maps.
       Keep the Item 58 outputs, and record the ranking comparison
       (`compare_statewide_rankings.py`: Spearman ρ, top-N churn), as Items 53/54/58
@@ -3455,7 +3466,7 @@ Scope:
       inference. Does the rule need recalibrating?
 - [ ] DATA_FORMAT (the statewide count coverage); DESIGN_HISTORY.
 
-*Suggested prompt:* "Do Item 62 of ROADMAP.md — fill the sandwiched route-membership gaps, pull the statewide ATR counts, refit,
+*Suggested prompt:* "Do Item 62 of ROADMAP.md — fill the sandwiched route-membership gaps, pull a sample of the statewide ATR counts, refit,
 and re-run the statewide screening on the fitted curves with a ranking comparison."
 
 ---
