@@ -1110,8 +1110,10 @@ def chain_description(chain: ChainResult, network, fields=_DESCRIBE_FIELDS) -> d
 #
 # A catalogue is local knowledge — *which* corridors a district-wide screen should
 # rank, and which interchange to which interchange each one runs between. It is
-# data, not code: a JSON file of endpoint pairs (``scripts/d3_corridors.json`` for
-# ITD District 3), resolved through :func:`build_chain` like any other chain.
+# data, not code: a JSON file of endpoint pairs (``scripts/dN_corridors.json`` per
+# ITD district, generated since Item 46 — District 3's since Item 63, its hand-curated
+# Item 44 catalogue archived in ``legacy/d3_curated/``), resolved through
+# :func:`build_chain` like any other chain.
 #
 # What it deliberately is **not** is the mechanism the 2026-09 outside screening
 # pass used: ``RoadNumber`` plus a lat/lon bounding box, a ``NextXDSegI`` walk, and
@@ -1380,8 +1382,8 @@ def load_catalogue(path) -> tuple[CorridorEntry, ...]:
     """Read and validate a corridor catalogue JSON file (see :func:`parse_catalogue`).
 
     The path is the caller's — nothing in this package knows where a catalogue
-    lives (CLAUDE.md: no hardcoded file paths). ``scripts/d3_corridors.json`` is the
-    District 3 one.
+    lives (CLAUDE.md: no hardcoded file paths). ``scripts/dN_corridors.json`` are the
+    district ones.
     """
     import json
 

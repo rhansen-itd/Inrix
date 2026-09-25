@@ -3384,6 +3384,9 @@ Scope:
       - Rebuild the membership files (`build_route_membership.py`), then confirm the
         catalogues change only where these segments are (a stop-cut regeneration to
         scratch, as Item 60 §5 did), and that 00146 SB's section runs on south.
+        *Item 63 landed first (Session 82), so the committed catalogues are already the
+        stop-cut ones. Once the scratch diff is confined to these segments, regenerate
+        D1 and D2 into `scripts/` and commit them.*
       - pytest (a sandwiched `inrix_only` segment fills; one member neighbour, a
         different route, or a missing link does not); DATA_FORMAT (the route-membership
         section); DESIGN_HISTORY.
@@ -3404,6 +3407,10 @@ Scope:
       generated catalogue as primary**. The curated D3 catalogue is archived and not
       ranked (owner, 2026-09-25). Regenerate every statewide map and plot from this
       run.
+      *These are the default paths since Item 63, so no `--catalogue-override` is
+      needed. The comparison against the Item 58 outputs mixes three changes: the
+      curves, the stops and D3's curated → generated swap. Say so, or compare against
+      `out/statewide_screening_d3generated/` for D3.*
 - [ ] Revisit Item 56 with the fuller counts. Session 79 found the urban rule
       agreeing with counts at 50/183 segments (27 %) against 67/75 (89 %) for the
       inference. Does the rule need recalibrating?
@@ -3414,7 +3421,7 @@ and re-run the statewide screening on the fitted curves with a ranking compariso
 
 ---
 
-## 63 — Generated D3 as primary, couplet-leg pairing, and adopting the stop-cut catalogues
+## 63 — Generated D3 as primary, couplet-leg pairing, and adopting the stop-cut catalogues ✅ (Session 82)
 
 **Target: Opus.** Core (one pairing rule) + scripts + catalogue data. Depends on 60.
 Independent of 61; must land before Item 62's statewide re-run.
@@ -3426,7 +3433,7 @@ Item 62's).
 
 Scope:
 
-- [ ] **Couplet legs pair as one facility.** With the Item 60 stops, Moscow's
+- [x] **Couplet legs pair as one facility.** With the Item 60 stops, Moscow's
       Washington St (NB, 16.9 VHD) and Jackson St (SB, 12.2) cores are two
       one-direction facilities. The legs are ~206 m apart, over `PAIR_MAX_MEAN_SEP_M`
       (200 m). Before Item 60 the core took in Main St, where both directions share
@@ -3451,7 +3458,18 @@ Scope:
         or mark the other as not ranked.
       - pytest: stop-bounded legs 206 m apart pair; two same-route chains 5 km apart
         still don't.
-- [ ] **Archive the curated D3 catalogue.** Move `scripts/d3_corridors.json` (and
+
+      *The second: `generate_catalogue(couplet_legs=)`, fed by the builder's
+      `couplet_block`. A companion core on the other leg of a detected couplet that the
+      lead core is on skips the 200 m alongside test (the opposed test stays). Moscow is
+      now one facility, "US-95: Washington St, Moscow" (NB+SB). Boise's Front St / Myrtle
+      St paired already and is unchanged. The couplet group becomes `_ranked: false`
+      with `_counted_in` when the facility's ranked core covers ≥ 50% of **each** leg:
+      Moscow, Boise, Nampa. A partly covered couplet still ranks, flagged `shares …`:
+      Twin Falls ×2, Pocatello, Blackfoot. The aggregate reads both. Tests:
+      `TestCoupletLegPairing` (206 m legs pair only as a couplet; 5 km apart don't),
+      builder and aggregate tests.*
+- [x] **Archive the curated D3 catalogue.** Move `scripts/d3_corridors.json` (and
       `rebuild_d3_catalogue.py`, `d3_place_name_routes.json` if nothing else needs
       them) to `legacy/d3_curated/`, with a README saying what it was (Item 44) and
       that it is kept for reference.
@@ -3463,7 +3481,15 @@ Scope:
       - Tests that exercise the curated file stay, pointed at the legacy path, or are
         retired with a note.
       - The Session 80 audit's two crossings (`i184-eb`, `broadway-nb`) become moot.
-- [ ] **Generated D3 becomes primary.** Decide the file name. Either rename
+
+      *`legacy/d3_curated/` holds `d3_corridors.json`, `rebuild_d3_catalogue.py` (now
+      writing there) and a README. `d3_place_name_routes.json` stays in `scripts/`,
+      because the TT Logger validation report (`build_validation_report.py
+      --route-segments`) reads it. `test_d3_catalogue` and the curated-D3 tests in
+      `test_corridors` point at the legacy path, as a real-network resolution fixture.
+      `audit_hard_stops.py` audits the generated catalogues only, and finds 0
+      crossings.*
+- [x] **Generated D3 becomes primary.** Decide the file name. Either rename
       `d3_corridors_generated.json` → `d3_corridors.json` like the other districts,
       or keep the name and switch every default. Renaming is cleaner:
       `build_statewide_catalogues.catalogue_name` loses its D3 special case, and D3 is
@@ -3473,7 +3499,21 @@ Scope:
         generated counterpart (overlap by segments), with the reason from the core
         audit (floor failed, absorbed, capped). Anything the owner wants kept is an
         issue for the generator (or a hard stop), not a reason to keep the curation.
-- [ ] **Adopt the stop-cut catalogues.** Regenerate all six districts
+
+      *Renamed: `scripts/d3_corridors.json` is the generated catalogue, D3 is in
+      `DEFAULT_DISTRICTS` and `catalogue_name` has no special case.
+      `--catalogue-override 3=legacy/d3_curated/d3_corridors.json` still works.
+      `out/statewide_screening_d3generated/` is left for Item 62 to retire.*
+
+      *Coverage: 20 of 26 curated corridors have ≥ 50% of their miles in a generated
+      tier. The 6 without are rural: SH-55 Eagle → Horseshoe Bend → Cascade → McCall →
+      New Meadows, SH-16 Star → Emmett, and SH-45's rural control. On their own
+      segments each is ≤ 1.3 VHD/mi at a peak/baseline ratio of ≤ 1.08. Their few
+      qualifying pieces are cores of the SH-55 Boise, Valley County and SH-16
+      facilities; the rest fail the effective-miles floor or have no candidate. For the
+      owner: the SH-45 rural control has nothing to find, so it can't be generated.
+      I-184 EB is dropped as a direction (peak/baseline 1.03). Session 82 §4.*
+- [x] **Adopt the stop-cut catalogues.** Regenerate all six districts
       (`build_statewide_catalogues.py --districts 1 2 3 4 5 6`) and commit them.
       - This also brings in drift since the committed catalogues were built: the
         Item 58 curve-VHD basis (every `_core.vhd`), plus new facilities in D5 (2
@@ -3481,10 +3521,20 @@ Scope:
         stop vs no-stop diff.
       - Record a before/after facility list (added / removed / re-cut per district)
         in DESIGN_HISTORY.
-- [ ] Update memories/CLAUDE-facing docs that say "the curated D3 is primary"
+
+      *All six regenerated and verified; 0 hard-stop crossings. Facilities: D1 13, D2 2
+      (US-95 Main St / Jackson St → Washington St, the couplet), D3 26 (Broadway / Front
+      St + Myrtle St → Broadway, and Front St with Myrtle as its EB), D4 8, D5 6, D6
+      5 → 6. The rest is the Item 58 curve-VHD basis. Session 82 §3.*
+- [x] Update memories/CLAUDE-facing docs that say "the curated D3 is primary"
       (DATA_FORMAT's catalogue notes, the Item 44 references); DESIGN_HISTORY.
 
-*Suggested prompt:* "Do Item 63 of ROADMAP.md — pair couplet legs into one facility,
+      *DATA_FORMAT (catalogue form, the reporting-corridor note, the couplet table,
+      the pairing and ranked-once rules, Mountain Home); the docstrings in
+      `corridors`, `aggregate_statewide_rankings`, `run_statewide_screening` and the
+      builder; the D3-curated memory; DESIGN_HISTORY Session 82.*
+
+*Suggested prompt (done):* "Do Item 63 of ROADMAP.md — pair couplet legs into one facility,
 archive the curated D3 catalogue and make the generated one primary, and adopt the
 regenerated stop-cut catalogues."
 

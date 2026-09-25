@@ -8,8 +8,9 @@ Reads the per-district peak and 7-day screening outputs from:
 Produces:
 1. out/statewide_screening/statewide_peak_corridor_rankings.csv
    - Statewide ranking of the **ranked** corridors by Peak Delay Density (VHD / Mile):
-     Tier 1 cores, couplets, and District 3's curated entries. Tier 2 and Tier 3
-     extents are context, not peers (ROADMAP Item 50), and go to
+     Tier 1 cores and the couplets no core runs on. Tier 2 and Tier 3 extents, and a
+     couplet a facility's core covers (Item 63), are context, not peers (ROADMAP
+     Item 50), and go to
    ``statewide_peak_context_extents.csv`` with their facility's core rank.
 2. out/statewide_screening/statewide_7day_corridor_rankings.csv
    - The same for the 7-day all-day window (context in
@@ -51,9 +52,9 @@ def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE,
     each reporting corridor knows its ``_facility`` and ``_tier_number`` — so the
     comparison now covers every facility the pipeline catalogued.
 
-    A catalogue with no tier metadata (District 3's, which is the Item 44
-    empirical rebuild rather than a generated pass) contributes nothing and is
-    reported as such, rather than being back-filled by hand.
+    A catalogue with no tier metadata (an override such as the archived curated
+    District 3 one, ``legacy/d3_curated/``) contributes nothing and is reported as
+    such, rather than being back-filled by hand.
     """
     groups: list[dict] = []
     for d in districts:
@@ -83,8 +84,10 @@ def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE,
 def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE,
                      overrides: dict | None = None) -> dict:
     """``(district, corridor_group) -> (tier_number, ranked, facility, flags)`` from the
-    generated catalogues. A group with no tier metadata (a couplet, District 3's
-    curated entries) is absent and ranks as before."""
+    generated catalogues. A group with no tier metadata (a couplet) is absent and ranks
+    as before, unless it is marked ``_ranked: false`` because a facility's core covers
+    it (Item 63): then it is context under that facility (``_counted_in``). One a core
+    covers only in part ranks, and carries its ``_flags``."""
     out = {}
     for d in districts:
         path = catalogue_file(pattern, d, overrides)
@@ -93,6 +96,14 @@ def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE,
         cat = json.loads(path.read_text())
         for grp in cat.get("reporting_corridors", []):
             if "_tier_number" not in grp:
+                # A couplet whose legs a facility's core runs on (Item 63) is context
+                # under that facility, not a second ranked row for the same delay.
+                # A couplet a core runs on only in part ranks, with the overlap flagged.
+                if grp.get("_ranked") is False:
+                    out[(d, grp["id"])] = (pd.NA, False, grp.get("_counted_in"),
+                                           f"counted in {grp.get('_counted_in')}")
+                elif grp.get("_flags"):
+                    out[(d, grp["id"])] = (pd.NA, True, None, "; ".join(grp["_flags"]))
                 continue
             ranked = grp.get("_ranked", grp["_tier_number"] == 1)
             out[(d, grp["id"])] = (grp["_tier_number"], bool(ranked), grp.get("_facility"),

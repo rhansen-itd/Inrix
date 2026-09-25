@@ -2998,6 +2998,7 @@ def generate_catalogue(
     curves=None,
     profiles=None,
     hard_stops: Mapping[tuple[int, int], str] | None = None,
+    couplet_legs: Mapping[str, tuple[Sequence[int], Sequence[int]]] | None = None,
 ) -> dict:
     """Build a whole corridor catalogue from a district network (Items 46, 50).
 
@@ -3037,6 +3038,13 @@ def generate_catalogue(
             into the chains before cores are found (:func:`enumerate_mainline_chains`),
             so no core or tier crosses one. An extent ending at one says so
             (``SplitKind.HARD_STOP``), and the audit carries ``chain_stops``.
+        couplet_legs: detected one-way couplets (Item 63), ``{couplet id: (leg 1 ids,
+            leg 2 ids)}`` (``couplets.detect_couplets``). A companion core on the
+            other leg of a couplet the lead core is on pairs **whatever the legs'
+            separation**: Moscow's Washington St and Jackson St lie ~206 m apart, over
+            :data:`PAIR_MAX_MEAN_SEP_M`, which stays as it is for everything else.
+            A facility whose core lies on a couplet leg lists it in ``_couplets``,
+            so the couplet's own reporting corridor is not ranked a second time.
 
     Returns:
         ``{"_note", "_generated", "corridors", "reporting_corridors"}``, ready for
@@ -3192,6 +3200,13 @@ def generate_catalogue(
     def _inside_t2(core: CoreCandidate) -> bool:
         return _share(core, t2_owner) >= SHARED_CORE_MAX
 
+    legs = {k: (frozenset(a), frozenset(b)) for k, (a, b) in (couplet_legs or {}).items()}
+
+    def _couplet_pair(ids_a: Sequence[int], ids_b: Sequence[int]) -> bool:
+        """Whether two cores lie on opposite legs of one detected couplet (Item 63)."""
+        a, b = set(ids_a), set(ids_b)
+        return any((a & l1 and b & l2) or (a & l2 and b & l1) for l1, l2 in legs.values())
+
     facilities: list[dict] = []
     pool = sorted(((d, c) for d in dirs_all for c in d.qualifying), key=lambda x: -x[1].vhd)
     with_facility: set[int] = set()
@@ -3235,7 +3250,11 @@ def generate_catalogue(
                 c = _free(o, c)
                 if c is None or (best_c is not None and c.vhd <= best_c[1].vhd):
                     continue
-                if not (_runs_alongside(_alt_geom(c.segment_ids), t2_geom, min_cover=0.0)
+                # A couplet's other leg is its other direction however far apart the
+                # two streets are (Item 63); the separation test is for everything else.
+                if not ((_couplet_pair(core.segment_ids, c.segment_ids)
+                         or _runs_alongside(_alt_geom(c.segment_ids), t2_geom,
+                                            min_cover=0.0))
                         and _opposed_slice(net_idx, t2.segment_ids, c.segment_ids)):
                     continue
                 best_c = (o, c)
@@ -3369,6 +3388,12 @@ def generate_catalogue(
                     row["flags"] = "; ".join(meta["_flags"])
         if fac["note"]:
             meta["_companion"] = fac["note"]
+        # The couplets this facility's cores run on (Item 63): their own reporting
+        # corridors are the same delay, and are not ranked beside it.
+        on = sorted(k for k, (l1, l2) in legs.items()
+                    if any((l1 | l2) & set(m.core.segment_ids) for m in members))
+        if on:
+            meta["_couplets"] = on
         for tier in keep:
             other_alt = other.tiers[tier] if other is not None else None
             tier_entries, group = extent_catalogue_entries(

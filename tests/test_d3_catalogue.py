@@ -1,7 +1,7 @@
 """Tests for the expanded District 3 catalogue and screening outputs (ROADMAP Item 44).
 
 Validates:
-1. scripts/d3_corridors.json schema, directions, couplet flags, descriptions.
+1. legacy/d3_curated/d3_corridors.json (archived, Item 63) schema, directions, couplet flags, descriptions.
 2. 100% resolution of all 34 entries through build_chain with link repairs.
 3. Candidate triage audit trail (candidate_triage.csv and .json).
 4. Full district screening outputs and rankings.
@@ -18,7 +18,7 @@ import pytest
 from inrix_tools import corridors
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-D3_CATALOGUE = REPO_ROOT / "scripts" / "d3_corridors.json"
+D3_CATALOGUE = REPO_ROOT / "legacy" / "d3_curated" / "d3_corridors.json"
 D3_REPAIRS = REPO_ROOT / "scripts" / "d3_link_repairs.csv"
 D3_NETWORK = REPO_ROOT / "geometry_cache" / "d3_network.geoparquet"
 TRIAGE_CSV = REPO_ROOT / "out" / "district_screening" / "candidate_triage.csv"
@@ -29,7 +29,7 @@ SCREENING_DIR = REPO_ROOT / "out" / "district_screening"
 def test_d3_catalogue_schema_and_completeness():
     """All 52 entries and 26 reporting corridors must be well-formed and paired (Item 49
     split US-95 at Payette into two; Item 51's route junctions rejoin it)."""
-    assert D3_CATALOGUE.exists(), "scripts/d3_corridors.json missing"
+    assert D3_CATALOGUE.exists(), "legacy/d3_curated/d3_corridors.json missing"
     entries = corridors.load_catalogue(D3_CATALOGUE)
     groups = corridors.load_reporting_corridors(D3_CATALOGUE)
 

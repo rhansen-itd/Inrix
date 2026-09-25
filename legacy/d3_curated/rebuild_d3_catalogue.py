@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from inrix_tools import corridors
 
-CATALOGUE_PATH = Path("scripts/d3_corridors.json")
+CATALOGUE_PATH = Path("legacy/d3_curated/d3_corridors.json")
 
 NOTE = (
     "ITD District 3 screening catalogue (refined per ROADMAP Item 44): "

@@ -53,6 +53,38 @@ def test_flags_travel_with_the_ranked_row(tmp_path):
     assert ranked.loc[1, "flags"] == ""
 
 
+def test_a_couplet_a_core_covers_is_context_under_that_facility(tmp_path):
+    """Item 63: Moscow's couplet group and the US-95 facility pairing its legs are the
+    same delay; the couplet goes to context with the facility's rank."""
+    path = _catalogue(tmp_path)
+    cat = json.loads((tmp_path / "d1_corridors.json").read_text())
+    cat["reporting_corridors"][-1].update({"_couplet": True, "_ranked": False,
+                                           "_counted_in": "us-95"})
+    (tmp_path / "d1_corridors.json").write_text(json.dumps(cat))
+    tiers = agg.load_group_tiers([1], path)
+    full = pd.DataFrame({"district": 1,
+                         "corridor_group": ["us-95-core", "sh-75-core", "couplet-x"],
+                         "vhd_per_mile": [300.0, 100.0, 200.0]})
+    ranked, context = agg.split_ranked(full, tiers)
+    assert list(ranked["corridor_group"]) == ["us-95-core", "sh-75-core"]
+    row = context.set_index("corridor_group").loc["couplet-x"]
+    assert row["core_statewide_rank"] == 1 and row["facility"] == "us-95"
+    assert "counted in us-95" in row["flags"]
+
+
+def test_a_partly_covered_couplet_ranks_with_its_flag(tmp_path):
+    path = _catalogue(tmp_path)
+    cat = json.loads((tmp_path / "d1_corridors.json").read_text())
+    cat["reporting_corridors"][-1].update({"_couplet": True,
+                                           "_flags": ["shares 0.62 mi with us-95"]})
+    (tmp_path / "d1_corridors.json").write_text(json.dumps(cat))
+    full = pd.DataFrame({"district": 1, "corridor_group": ["us-95-core", "couplet-x"],
+                         "vhd_per_mile": [300.0, 200.0]})
+    ranked, _ = agg.split_ranked(full, agg.load_group_tiers([1], path))
+    assert list(ranked["corridor_group"]) == ["us-95-core", "couplet-x"]
+    assert ranked.loc[1, "flags"] == "shares 0.62 mi with us-95"
+
+
 def test_districts_on_different_vhd_bases_are_refused():
     """A stale pre-Item 58 table (index VHD, no vhd_per) beside a curve one — or per
     weekday beside per day — would rank two different quantities as one."""

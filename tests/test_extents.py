@@ -1045,3 +1045,55 @@ class TestFacilityNaming:
         _, street, _ = extents.facility_naming(self._chain([1, 2, 3], "20", "US-20"),
                                                self._core([1, 2, 3]), net, net)
         assert street == ""
+
+
+# ─── ROADMAP Item 63: a couplet's legs pair as one facility ──────────
+
+def _couplet_network(sep_deg: float):
+    """US-95 as two one-way legs, NB on Washington St and SB on Jackson St, ``sep_deg``
+    of longitude apart (at 46.7 N, 0.0027 deg ~ 206 m, Moscow's separation)."""
+    rows = []
+    lon = -117.0
+    for i in range(4):
+        rows.append(_seg_row(100 + i, 101 + i if i < 3 else None, "95", "S Washington St",
+                             (lon, 46.70 + i * 0.005), (lon, 46.70 + (i + 1) * 0.005),
+                             bearing="N", group=1))
+        rows.append(_seg_row(200 + i, 201 + i if i < 3 else None, "95", "S Jackson St",
+                             (lon + sep_deg, 46.72 - i * 0.005),
+                             (lon + sep_deg, 46.72 - (i + 1) * 0.005),
+                             bearing="S", group=2))
+    net = gpd.GeoDataFrame(rows, crs="EPSG:4326")
+    net["urban_area"] = "Moscow, ID"
+    net["urban_share"] = 1.0
+    return net
+
+
+class TestCoupletLegPairing:
+    NB, SB = (100, 101, 102, 103), (200, 201, 202, 203)
+    RATIOS = {**{s: 2.5 for s in NB}, **{s: 2.0 for s in SB}}
+
+    def _cores(self, sep_deg, legs=None):
+        net = _couplet_network(sep_deg)
+        ids = list(net["XDSegID"])
+        cat = extents.generate_catalogue(net, _baseline(ids, self.RATIOS),
+                                         observed=set(ids), min_chain_miles=0.5,
+                                         couplet_legs=legs)
+        return [g for g in cat["reporting_corridors"] if g["_tier"] == "core"]
+
+    def test_legs_206_m_apart_are_two_facilities_without_the_couplet(self):
+        """Session 80's finding: over PAIR_MAX_MEAN_SEP_M, so no companion."""
+        cores = self._cores(0.0027)
+        assert sorted(g["_directions"] for g in cores) == [["NB"], ["SB"]]
+
+    def test_couplet_legs_206_m_apart_pair_as_one_facility(self):
+        cores = self._cores(0.0027, {"couplet-95": (self.NB, self.SB)})
+        assert len(cores) == 1
+        assert cores[0]["_directions"] == ["NB", "SB"]
+        assert cores[0]["_couplets"] == ["couplet-95"]
+
+    def test_same_route_chains_5_km_apart_still_do_not_pair(self):
+        """The separation limit still guards everything that is not a detected couplet:
+        a couplet elsewhere on the route changes nothing here."""
+        cores = self._cores(0.065, {"couplet-95": ((999,), (998,))})
+        assert sorted(g["_directions"] for g in cores) == [["NB"], ["SB"]]
+        assert not any("_couplets" in g for g in cores)

@@ -10,9 +10,9 @@ For each district with rows in ``scripts/corridor_hard_stops.csv`` this:
    the one after in orange, the boundary as a dot whose popup carries the note — to
    confirm each stop lands where the owner meant it;
 3. lists every catalogue entry that **steps across** a stop, in
-   ``catalogue_crossings.csv``: the curated D3 catalogue (``d3_corridors.json``, which
-   is never regenerated, so the owner decides what to do with each crossing) and the
-   committed generated catalogues (which a re-run with the stops would re-cut).
+   ``catalogue_crossings.csv``: the committed generated catalogues (which a re-run with
+   the stops would re-cut). The curated D3 catalogue was archived by Item 63
+   (``legacy/d3_curated/``) and is no longer audited.
 
 A row that resolves to nothing stops the script with the row named.
 
@@ -34,16 +34,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from inrix_tools import corridors, hard_stops  # noqa: E402
-from build_statewide_catalogues import GENERATED_D3, load_district  # noqa: E402
-
-CURATED_D3 = "scripts/d3_corridors.json"
+from build_statewide_catalogues import catalogue_name, load_district  # noqa: E402
 
 
 def catalogue_paths(district: int) -> list[tuple[str, Path]]:
     """``(kind, path)`` for each committed catalogue of the district."""
-    if district == 3:
-        return [("curated", Path(CURATED_D3)), ("generated", Path("scripts") / GENERATED_D3)]
-    return [("generated", Path(f"scripts/d{district}_corridors.json"))]
+    return [("generated", Path("scripts") / catalogue_name(district))]
 
 
 def entry_segments(cat: dict, net, repairs) -> dict[str, tuple[int, ...]]:

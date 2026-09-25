@@ -422,7 +422,9 @@ resolving the District 3 catalogue:
 **Consequence for corridor definitions:** a corridor is stated as an endpoint pair
 and resolved, and an extent that will not walk is recorded with its `stop_reason` —
 never completed by sorting the segments in a bounding box by latitude or longitude.
-`scripts/d3_corridors.json` is the District 3 catalogue in that form and
+`scripts/dN_corridors.json` are the district catalogues in that form, all six
+generated (`build_statewide_catalogues.py`; District 3's since Item 63, with the
+hand-curated Item 44 one archived in `legacy/d3_curated/`), and
 `corridors.load_catalogue` / `resolve_catalogue` are the code contract.
 
 ### `XDGroup` is the carriageway key, and it is what makes a repair safe (Item 38)
@@ -487,9 +489,9 @@ reader needs the other:
   works in (the two carriageways of a divided highway carry different counts — the
   whole point of Item 34).
 - **A reporting corridor is both directions of one road**, named the way a district
-  talks about it. `scripts/d3_corridors.json` declares them in a
-  `reporting_corridors` block and each entry carries `corridor` + `direction`;
-  District 3's 20 entries group into **10** roads. `screen.rank_corridor_groups`
+  talks about it. A catalogue declares them in a `reporting_corridors` block and
+  each entry carries `corridor` + `direction`; District 3's first catalogue (Item 40)
+  grouped its 20 entries into **10** roads. `screen.rank_corridor_groups`
   combines, and the per-direction rows are untouched — it is a second view, not a
   replacement.
 
@@ -567,7 +569,9 @@ catalogue so far:
 
 So `one_way_couplet` is **not** a one-off flag for a single quirk of downtown Boise, and
 an earlier note in this repo that called Myrtle/Front "the only couplet in the district"
-was wrong. Any new entry on I-84B through Nampa needs the flag set. Either way it is the distance a round trip covers, which is
+was wrong. Any new entry on I-84B through Nampa needs the flag set. *(Since Item 46
+the couplets are detected, not listed. The table above is the Item 40 state; see
+"Couplets must be one-way pairs" and Item 63's pairing rule below.)* Either way it is the distance a round trip covers, which is
 what every rate divides by, so the ranking stays comparable; the
 `one_way_couplet` flag on the reporting corridor exists so nobody reads the column as
 centre-line mileage for the fifteen-mile freeway. It changes no arithmetic.
@@ -2650,6 +2654,26 @@ cardinal bearings both failed here:
 - Burley's Overland Ave is a southbound SH-27 chain one way and an eastbound I-84 BL
   business-loop chain the other.
 
+**A couplet's legs are one facility's two directions** (Item 63). A companion core on
+the other leg of a detected couplet that the lead core is on pairs whatever the legs'
+separation. With the Item 60 stops, Moscow's Washington St (NB) and Jackson St (SB)
+cores lie ~206 m apart and would otherwise be two one-direction facilities. The 200 m
+limit (`PAIR_MAX_MEAN_SEP_M`) is unchanged for everything else, where it keeps two
+stretches of one route from pairing. The facility lists the couplets its cores run on
+in `_couplets`.
+
+**A couplet is ranked once.** The couplet block's own reporting corridor
+(`couplet-…`, `one_way_couplet`) and a facility whose ranked core covers ≥ 50% of
+**each** leg (`COUPLET_LEG_SHARE`) are the same delay. The couplet group then carries
+`_ranked: false` and `_counted_in: <facility>`, and the statewide aggregate puts it in
+the context table under that facility's rank. It stays in the catalogue because its
+legs are what the AADT one-way fallback reads (`corridors.couplet_segments`). A
+couplet covered in part still ranks, with a `shares <mi> mi with <facility>` flag.
+Twin Falls' westbound-only Kimberly Rd core covers one leg of each US-30 couplet, and
+dropping the couplet would drop the other leg's delay. At Item 63: Moscow, Boise
+(Front / Myrtle) and Nampa (2nd St S / 3rd St S) were deferred; Twin Falls (×2),
+Pocatello (5th / 4th Ave, 1.64 of 4.7 mi) and Blackfoot are flagged.
+
 A mirrored span claims the other direction's ground only where it runs alongside and
 covers ≥ 30% of the footprint. A chain that merely touches it at a junction doesn't
 count: Twin Falls' US-93 on Pole Line Rd ends where US-93 turns onto Blue Lakes Blvd.
@@ -2685,8 +2709,8 @@ each leg is labelled by its own compass direction.
 that decided it. Chubbuck's Quinn Rd / US-91 and SH-43 / E 105 N fail (two-way legs).
 Moscow, Boise, Nampa, Weiser, Twin Falls, Pocatello and Blackfoot pass. Sandpoint is
 out of `KNOWN_COUPLETS`: a divided highway, not a couplet (owner). For the owner:
-Mountain Home's N Main St / 2nd St E (I-84 BL, 35.5 m) survives; D3's catalogue is
-curated and doesn't carry it.
+Mountain Home's N Main St / 2nd St E (I-84 BL, 35.5 m) survives. It is in the generated
+D3 catalogue (`couplet-84-main-st-2nd-st-e`) since that became primary (Item 63).
 
 ## Manual hard stops (`hard_stops.py`, Item 60)
 

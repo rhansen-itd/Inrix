@@ -5,6 +5,7 @@
       "am",
       "pm"
     ],
+    "vhd_basis": "curve",
     "n_chains": 43,
     "n_facilities": 6,
     "tiers": [
@@ -24,8 +25,8 @@
       ],
       "segment_miles_cap": 0.5,
       "min_effective_core_miles": 0.6,
-      "min_core_vhd_per_mile": 10.0,
-      "min_core_vhd": 10.0,
+      "min_core_vhd_per_mile": 0.8,
+      "min_core_vhd": 0.8,
       "min_realtime_share": 0.9,
       "spill_retention": 0.5,
       "episodic": {
@@ -49,7 +50,7 @@
         42.92048,
         -112.46638
       ],
-      "description": "Tier 1 (Congested Core) of US-91: Yellowstone Ave, Pocatello, NB. Recurrent congestion core (5.27 mi): peak/baseline 1.25, 153 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-91: Yellowstone Ave, Pocatello, NB. Recurrent congestion core (5.27 mi): peak/baseline 1.25, 18 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-yellowstone-ave-pocatello-core",
       "direction": "NB",
       "links": [
@@ -60,7 +61,7 @@
       ],
       "_tier": "core",
       "_facility": "us-91-yellowstone-ave-pocatello",
-      "_split_rationale": "Recurrent congestion core (5.27 mi): peak/baseline 1.25, 153 VHD/mi, 99% real-time data",
+      "_split_rationale": "Recurrent congestion core (5.27 mi): peak/baseline 1.25, 18 VHD/mi, 99% real-time data",
       "_generated_miles": 5.27,
       "_segment_ids": [
         119699021,
@@ -103,12 +104,12 @@
         42.8576,
         -112.43494
       ],
-      "description": "Tier 1 (Congested Core) of US-91: Yellowstone Ave, Pocatello, SB. Recurrent congestion core (5.79 mi): peak/baseline 1.19, 122 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-91: Yellowstone Ave, Pocatello, SB. Recurrent congestion core (5.79 mi): peak/baseline 1.19, 12 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-yellowstone-ave-pocatello-core",
       "direction": "SB",
       "_tier": "core",
       "_facility": "us-91-yellowstone-ave-pocatello",
-      "_split_rationale": "Recurrent congestion core (5.79 mi): peak/baseline 1.19, 122 VHD/mi, 99% real-time data",
+      "_split_rationale": "Recurrent congestion core (5.79 mi): peak/baseline 1.19, 12 VHD/mi, 99% real-time data",
       "_generated_miles": 5.79,
       "_segment_ids": [
         1187530687,
@@ -154,7 +155,7 @@
         42.93499,
         -112.46657
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-91: Yellowstone Ave, Pocatello, NB. Congested extent grown from the core (7.12 mi, 119 VHD/mi, 78% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.73 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.51 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-91: Yellowstone Ave, Pocatello, NB. Congested extent grown from the core (7.12 mi, 14 VHD/mi, 78% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.73 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.51 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-yellowstone-ave-pocatello-commuter",
       "direction": "NB",
       "links": [
@@ -165,7 +166,7 @@
       ],
       "_tier": "commuter",
       "_facility": "us-91-yellowstone-ave-pocatello",
-      "_split_rationale": "Congested extent grown from the core (7.12 mi, 119 VHD/mi, 78% of the core's)",
+      "_split_rationale": "Congested extent grown from the core (7.12 mi, 14 VHD/mi, 78% of the core's)",
       "_generated_miles": 7.122,
       "_segment_ids": [
         1187603790,
@@ -211,12 +212,12 @@
         42.85013,
         -112.42624
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-91: Yellowstone Ave, Pocatello, SB. Congested extent grown from the core (7.48 mi, 98 VHD/mi, 80% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.75 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.78 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-91: Yellowstone Ave, Pocatello, SB. Congested extent grown from the core (7.48 mi, 9 VHD/mi, 80% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.75 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.78 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-yellowstone-ave-pocatello-commuter",
       "direction": "SB",
       "_tier": "commuter",
       "_facility": "us-91-yellowstone-ave-pocatello",
-      "_split_rationale": "Congested extent grown from the core (7.48 mi, 98 VHD/mi, 80% of the core's)",
+      "_split_rationale": "Congested extent grown from the core (7.48 mi, 9 VHD/mi, 80% of the core's)",
       "_generated_miles": 7.479,
       "_segment_ids": [
         450147556,
@@ -258,14 +259,14 @@
       "id": "us-91-yellowstone-ave-pocatello-regional-nb",
       "name": "US-91 NB: Yellowstone Ave, Pocatello \u2014 Regional Baseline",
       "start_latlon": [
-        42.83871,
-        -112.40914
+        42.84152,
+        -112.41299
       ],
       "end_latlon": [
         42.95318,
         -112.46654
       ],
-      "description": "Tier 3 (Regional Baseline) of US-91: Yellowstone Ave, Pocatello, NB. Context around the congested extent (9.38 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-91: Yellowstone Ave, Pocatello, NB. Context around the congested extent (9.10 mi; reported, not ranked). Upstream boundary: an AADT step-change (2,750 -> 7,500 vpd, 63%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-yellowstone-ave-pocatello-regional",
       "direction": "NB",
       "links": [
@@ -276,10 +277,9 @@
       ],
       "_tier": "regional",
       "_facility": "us-91-yellowstone-ave-pocatello",
-      "_split_rationale": "Context around the congested extent (9.38 mi; reported, not ranked)",
-      "_generated_miles": 9.38,
+      "_split_rationale": "Context around the congested extent (9.10 mi; reported, not ranked)",
+      "_generated_miles": 9.104,
       "_segment_ids": [
-        1187316897,
         450149097,
         1187603790,
         119699021,
@@ -384,12 +384,12 @@
         43.18804,
         -112.34578
       ],
-      "description": "Tier 1 (Congested Core) of I-15 BL: Bergener Dr, Blackfoot, EB. Recurrent congestion core (1.93 mi): peak/baseline 1.22, 107 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of I-15 BL: Bergener Dr, Blackfoot, EB. Recurrent congestion core (1.93 mi): peak/baseline 1.22, 9 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-15-bl-bergener-dr-blackfoot-core",
       "direction": "EB",
       "_tier": "core",
       "_facility": "i-15-bl-bergener-dr-blackfoot",
-      "_split_rationale": "Recurrent congestion core (1.93 mi): peak/baseline 1.22, 107 VHD/mi, 99% real-time data",
+      "_split_rationale": "Recurrent congestion core (1.93 mi): peak/baseline 1.22, 9 VHD/mi, 99% real-time data",
       "_generated_miles": 1.926,
       "_segment_ids": [
         448689237,
@@ -413,14 +413,81 @@
         43.20393,
         -112.37585
       ],
-      "description": "Tier 1 (Congested Core) of I-15 BL: Bergener Dr, Blackfoot, WB. Recurrent congestion core (1.36 mi): peak/baseline 1.26, 124 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of I-15 BL: Bergener Dr, Blackfoot, WB. Recurrent congestion core (1.36 mi): peak/baseline 1.26, 10 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-15-bl-bergener-dr-blackfoot-core",
       "direction": "WB",
       "_tier": "core",
       "_facility": "i-15-bl-bergener-dr-blackfoot",
-      "_split_rationale": "Recurrent congestion core (1.36 mi): peak/baseline 1.26, 124 VHD/mi, 99% real-time data",
+      "_split_rationale": "Recurrent congestion core (1.36 mi): peak/baseline 1.26, 10 VHD/mi, 99% real-time data",
       "_generated_miles": 1.364,
       "_segment_ids": [
+        440868537,
+        1187606159,
+        1187548910,
+        1187327337,
+        1187639829
+      ]
+    },
+    {
+      "id": "i-15-bl-bergener-dr-blackfoot-commuter-eb",
+      "name": "I-15 BL EB: Bergener Dr, Blackfoot \u2014 Commuter Corridor",
+      "start_latlon": [
+        43.20393,
+        -112.376
+      ],
+      "end_latlon": [
+        43.18804,
+        -112.34578
+      ],
+      "description": "Tier 2 (Commuter Corridor) of I-15 BL: Bergener Dr, Blackfoot, EB. Congested extent grown from the core (1.93 mi, 9 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "i-15-bl-bergener-dr-blackfoot-commuter",
+      "direction": "EB",
+      "_tier": "commuter",
+      "_facility": "i-15-bl-bergener-dr-blackfoot",
+      "_split_rationale": "Congested extent grown from the core (1.93 mi, 9 VHD/mi, 100% of the core's)",
+      "_generated_miles": 1.926,
+      "_segment_ids": [
+        448689237,
+        1187582658,
+        1187578897,
+        461319737,
+        461319738,
+        440870451,
+        1187546355,
+        461319739
+      ]
+    },
+    {
+      "id": "i-15-bl-bergener-dr-blackfoot-commuter-wb",
+      "name": "I-15 BL WB: Bergener Dr, Blackfoot \u2014 Commuter Corridor",
+      "start_latlon": [
+        43.18019,
+        -112.35626
+      ],
+      "end_latlon": [
+        43.20393,
+        -112.37585
+      ],
+      "description": "Tier 2 (Commuter Corridor) of I-15 BL: Bergener Dr, Blackfoot, WB. Congested extent grown from the core (2.78 mi, 7 VHD/mi, 64% of the core's). Upstream boundary: the urban-area boundary (leaving Blackfoot, ID; ratio 1.01 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.63 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "i-15-bl-bergener-dr-blackfoot-commuter",
+      "direction": "WB",
+      "links": [
+        [
+          440857805,
+          461313577
+        ]
+      ],
+      "_tier": "commuter",
+      "_facility": "i-15-bl-bergener-dr-blackfoot",
+      "_split_rationale": "Congested extent grown from the core (2.78 mi, 7 VHD/mi, 64% of the core's)",
+      "_generated_miles": 2.784,
+      "_segment_ids": [
+        461319470,
+        1187609248,
+        440857805,
+        461313577,
+        461313578,
+        461313579,
         440868537,
         1187606159,
         1187548910,
@@ -465,21 +532,34 @@
       "id": "i-15-bl-bergener-dr-blackfoot-regional-wb",
       "name": "I-15 BL WB: Bergener Dr, Blackfoot \u2014 Regional Baseline",
       "start_latlon": [
-        43.19297,
-        -112.3545
+        43.17402,
+        -112.36117
       ],
       "end_latlon": [
         43.22401,
         -112.41786
       ],
-      "description": "Tier 3 (Regional Baseline) of I-15 BL: Bergener Dr, Blackfoot, WB. Context around the congested extent (3.92 mi; reported, not ranked). Upstream boundary: an AADT step-change (8,900 -> 18,000 vpd, 51%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of I-15 BL: Bergener Dr, Blackfoot, WB. Context around the congested extent (5.83 mi; reported, not ranked). Upstream boundary: the urban-area boundary (the edge of the urban area); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-15-bl-bergener-dr-blackfoot-regional",
       "direction": "WB",
+      "links": [
+        [
+          440857805,
+          461313577
+        ]
+      ],
       "_tier": "regional",
       "_facility": "i-15-bl-bergener-dr-blackfoot",
-      "_split_rationale": "Context around the congested extent (3.92 mi; reported, not ranked)",
-      "_generated_miles": 3.918,
+      "_split_rationale": "Context around the congested extent (5.83 mi; reported, not ranked)",
+      "_generated_miles": 5.835,
       "_segment_ids": [
+        1187609203,
+        461319470,
+        1187609248,
+        440857805,
+        461313577,
+        461313578,
+        461313579,
         440868537,
         1187606159,
         1187548910,
@@ -502,12 +582,12 @@
         42.89856,
         -112.43316
       ],
-      "description": "Tier 1 (Congested Core) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Recurrent congestion core (1.14 mi): peak/baseline 1.17, 66 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Recurrent congestion core (1.14 mi): peak/baseline 1.17, 8 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello-core",
       "direction": "NB",
       "_tier": "core",
       "_facility": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello",
-      "_split_rationale": "Recurrent congestion core (1.14 mi): peak/baseline 1.17, 66 VHD/mi, 99% real-time data",
+      "_split_rationale": "Recurrent congestion core (1.14 mi): peak/baseline 1.17, 8 VHD/mi, 99% real-time data",
       "_generated_miles": 1.144,
       "_segment_ids": [
         450149094,
@@ -523,21 +603,29 @@
       "id": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello-commuter-nb",
       "name": "I-15 BL NB: Pocatello Creek Rd / Alameda Rd, Pocatello \u2014 Commuter Corridor",
       "start_latlon": [
-        42.87874,
-        -112.4515
+        42.84888,
+        -112.42311
       ],
       "end_latlon": [
         42.89856,
         -112.43316
       ],
-      "description": "Tier 2 (Commuter Corridor) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Congested extent grown from the core (2.02 mi, 131 VHD/mi, 200% of the core's). Upstream boundary: an AADT step-change (10,000 -> 21,500 vpd, 54%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Congested extent grown from the core (4.60 mi, 13 VHD/mi, 169% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.73 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello-commuter",
       "direction": "NB",
       "_tier": "commuter",
       "_facility": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello",
-      "_split_rationale": "Congested extent grown from the core (2.02 mi, 131 VHD/mi, 200% of the core's)",
-      "_generated_miles": 2.018,
+      "_split_rationale": "Congested extent grown from the core (4.60 mi, 13 VHD/mi, 169% of the core's)",
+      "_generated_miles": 4.597,
       "_segment_ids": [
+        1187603790,
+        119699021,
+        448697112,
+        440869462,
+        428969285,
+        1187545064,
+        440869457,
+        440898794,
         440869459,
         448697115,
         448697116,
@@ -551,104 +639,43 @@
       ]
     },
     {
-      "id": "us-30-garrett-way-pocatello-core-wb",
-      "name": "US-30 WB: Garrett Way, Pocatello \u2014 Congested Core",
+      "id": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello-regional-nb",
+      "name": "I-15 BL NB: Pocatello Creek Rd / Alameda Rd, Pocatello \u2014 Regional Baseline",
       "start_latlon": [
-        42.87677,
-        -112.45165
+        42.84152,
+        -112.41299
       ],
       "end_latlon": [
-        42.88316,
-        -112.46673
+        42.89856,
+        -112.43316
       ],
-      "description": "Tier 1 (Congested Core) of US-30: Garrett Way, Pocatello, WB. Recurrent congestion core (1.01 mi): peak/baseline 1.18, 72 VHD/mi, 96% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-30-garrett-way-pocatello-core",
-      "direction": "WB",
-      "_tier": "core",
-      "_facility": "us-30-garrett-way-pocatello",
-      "_split_rationale": "Recurrent congestion core (1.01 mi): peak/baseline 1.18, 72 VHD/mi, 96% real-time data",
-      "_generated_miles": 1.014,
-      "_segment_ids": [
-        440890736,
-        448720634,
-        440869456,
-        1187359466,
-        440869453,
-        448689247,
-        484355126,
-        484346966,
-        440869451,
-        440857790,
-        440887208
-      ]
-    },
-    {
-      "id": "us-30-garrett-way-pocatello-commuter-wb",
-      "name": "US-30 WB: Garrett Way, Pocatello \u2014 Commuter Corridor",
-      "start_latlon": [
-        42.87677,
-        -112.45165
-      ],
-      "end_latlon": [
-        42.89161,
-        -112.47711
-      ],
-      "description": "Tier 2 (Commuter Corridor) of US-30: Garrett Way, Pocatello, WB. Congested extent grown from the core (1.80 mi, 47 VHD/mi, 66% of the core's). Upstream boundary: a highway junction (15 -> 30); downstream boundary: an AADT step-change (1,300 -> 10,500 vpd, 88%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-30-garrett-way-pocatello-commuter",
-      "direction": "WB",
-      "_tier": "commuter",
-      "_facility": "us-30-garrett-way-pocatello",
-      "_split_rationale": "Congested extent grown from the core (1.80 mi, 47 VHD/mi, 66% of the core's)",
-      "_generated_miles": 1.799,
-      "_segment_ids": [
-        440890736,
-        448720634,
-        440869456,
-        1187359466,
-        440869453,
-        448689247,
-        484355126,
-        484346966,
-        440869451,
-        440857790,
-        440887208,
-        1187658648,
-        1187484948
-      ]
-    },
-    {
-      "id": "us-30-garrett-way-pocatello-regional-wb",
-      "name": "US-30 WB: Garrett Way, Pocatello \u2014 Regional Baseline",
-      "start_latlon": [
-        42.87687,
-        -112.45069
-      ],
-      "end_latlon": [
-        42.89161,
-        -112.47711
-      ],
-      "description": "Tier 3 (Regional Baseline) of US-30: Garrett Way, Pocatello, WB. Context around the congested extent (1.85 mi; reported, not ranked). Upstream boundary: a highway junction (15 -> 30); downstream boundary: an AADT step-change (1,300 -> 10,500 vpd, 88%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "corridor": "us-30-garrett-way-pocatello-regional",
-      "direction": "WB",
+      "description": "Tier 3 (Regional Baseline) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Context around the congested extent (5.32 mi; reported, not ranked). Upstream boundary: an AADT step-change (2,750 -> 7,500 vpd, 63%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello-regional",
+      "direction": "NB",
       "_tier": "regional",
-      "_facility": "us-30-garrett-way-pocatello",
-      "_split_rationale": "Context around the congested extent (1.85 mi; reported, not ranked)",
-      "_generated_miles": 1.848,
+      "_facility": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello",
+      "_split_rationale": "Context around the congested extent (5.32 mi; reported, not ranked)",
+      "_generated_miles": 5.322,
       "_segment_ids": [
-        440857793,
-        440890736,
-        448720634,
-        440869456,
-        1187359466,
-        440869453,
-        448689247,
-        484355126,
-        484346966,
-        440869451,
-        440857790,
-        440887208,
-        1187658648,
-        1187484948
+        450149097,
+        1187603790,
+        119699021,
+        448697112,
+        440869462,
+        428969285,
+        1187545064,
+        440869457,
+        440898794,
+        440869459,
+        448697115,
+        448697116,
+        450149094,
+        440869464,
+        440899814,
+        448691502,
+        448691503,
+        1187381503,
+        384184933
       ]
     },
     {
@@ -662,12 +689,12 @@
         42.65463,
         -111.59151
       ],
-      "description": "Tier 1 (Congested Core) of US-30: 2nd S, Caribou County, EB. Recurrent congestion core (1.30 mi): peak/baseline 1.21, 50 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-30: 2nd S, Caribou County, EB. Recurrent congestion core (1.30 mi): peak/baseline 1.21, 5 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-30-2nd-s-caribou-county-core",
       "direction": "EB",
       "_tier": "core",
       "_facility": "us-30-2nd-s-caribou-county",
-      "_split_rationale": "Recurrent congestion core (1.30 mi): peak/baseline 1.21, 50 VHD/mi, 98% real-time data",
+      "_split_rationale": "Recurrent congestion core (1.30 mi): peak/baseline 1.21, 5 VHD/mi, 98% real-time data",
       "_generated_miles": 1.302,
       "_segment_ids": [
         1187478865,
@@ -706,6 +733,107 @@
       ]
     },
     {
+      "id": "us-30-garrett-way-pocatello-core-wb",
+      "name": "US-30 WB: Garrett Way, Pocatello \u2014 Congested Core",
+      "start_latlon": [
+        42.87677,
+        -112.45165
+      ],
+      "end_latlon": [
+        42.88316,
+        -112.46673
+      ],
+      "description": "Tier 1 (Congested Core) of US-30: Garrett Way, Pocatello, WB. Recurrent congestion core (1.01 mi): peak/baseline 1.18, 7 VHD/mi, 96% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-30-garrett-way-pocatello-core",
+      "direction": "WB",
+      "_tier": "core",
+      "_facility": "us-30-garrett-way-pocatello",
+      "_split_rationale": "Recurrent congestion core (1.01 mi): peak/baseline 1.18, 7 VHD/mi, 96% real-time data",
+      "_generated_miles": 1.014,
+      "_segment_ids": [
+        440890736,
+        448720634,
+        440869456,
+        1187359466,
+        440869453,
+        448689247,
+        484355126,
+        484346966,
+        440869451,
+        440857790,
+        440887208
+      ]
+    },
+    {
+      "id": "us-30-garrett-way-pocatello-commuter-wb",
+      "name": "US-30 WB: Garrett Way, Pocatello \u2014 Commuter Corridor",
+      "start_latlon": [
+        42.87677,
+        -112.45165
+      ],
+      "end_latlon": [
+        42.89161,
+        -112.47711
+      ],
+      "description": "Tier 2 (Commuter Corridor) of US-30: Garrett Way, Pocatello, WB. Congested extent grown from the core (1.80 mi, 4 VHD/mi, 62% of the core's). Upstream boundary: a highway junction (15 -> 30); downstream boundary: an AADT step-change (650 -> 5,250 vpd, 88%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-30-garrett-way-pocatello-commuter",
+      "direction": "WB",
+      "_tier": "commuter",
+      "_facility": "us-30-garrett-way-pocatello",
+      "_split_rationale": "Congested extent grown from the core (1.80 mi, 4 VHD/mi, 62% of the core's)",
+      "_generated_miles": 1.799,
+      "_segment_ids": [
+        440890736,
+        448720634,
+        440869456,
+        1187359466,
+        440869453,
+        448689247,
+        484355126,
+        484346966,
+        440869451,
+        440857790,
+        440887208,
+        1187658648,
+        1187484948
+      ]
+    },
+    {
+      "id": "us-30-garrett-way-pocatello-regional-wb",
+      "name": "US-30 WB: Garrett Way, Pocatello \u2014 Regional Baseline",
+      "start_latlon": [
+        42.87687,
+        -112.45069
+      ],
+      "end_latlon": [
+        42.89161,
+        -112.47711
+      ],
+      "description": "Tier 3 (Regional Baseline) of US-30: Garrett Way, Pocatello, WB. Context around the congested extent (1.85 mi; reported, not ranked). Upstream boundary: a highway junction (15 -> 30); downstream boundary: an AADT step-change (650 -> 5,250 vpd, 88%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "corridor": "us-30-garrett-way-pocatello-regional",
+      "direction": "WB",
+      "_tier": "regional",
+      "_facility": "us-30-garrett-way-pocatello",
+      "_split_rationale": "Context around the congested extent (1.85 mi; reported, not ranked)",
+      "_generated_miles": 1.848,
+      "_segment_ids": [
+        440857793,
+        440890736,
+        448720634,
+        440869456,
+        1187359466,
+        440869453,
+        448689247,
+        484355126,
+        484346966,
+        440869451,
+        440857790,
+        440887208,
+        1187658648,
+        1187484948
+      ]
+    },
+    {
       "id": "us-91-state-st-shelley-core-nb",
       "name": "US-91 NB: State St, Shelley \u2014 Congested Core",
       "start_latlon": [
@@ -716,12 +844,12 @@
         43.38139,
         -112.12343
       ],
-      "description": "Tier 1 (Congested Core) of US-91: State St, Shelley, NB. Recurrent congestion core (1.19 mi): peak/baseline 1.15, 44 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-91: State St, Shelley, NB. Recurrent congestion core (1.19 mi): peak/baseline 1.15, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-state-st-shelley-core",
       "direction": "NB",
       "_tier": "core",
       "_facility": "us-91-state-st-shelley",
-      "_split_rationale": "Recurrent congestion core (1.19 mi): peak/baseline 1.15, 44 VHD/mi, 99% real-time data",
+      "_split_rationale": "Recurrent congestion core (1.19 mi): peak/baseline 1.15, 4 VHD/mi, 99% real-time data",
       "_generated_miles": 1.188,
       "_segment_ids": [
         1187575784,
@@ -739,12 +867,12 @@
         43.36636,
         -112.13493
       ],
-      "description": "Tier 1 (Congested Core) of US-91: State St, Shelley, SB. Recurrent congestion core (1.19 mi): peak/baseline 1.14, 41 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-91: State St, Shelley, SB. Recurrent congestion core (1.19 mi): peak/baseline 1.14, 3 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-state-st-shelley-core",
       "direction": "SB",
       "_tier": "core",
       "_facility": "us-91-state-st-shelley",
-      "_split_rationale": "Recurrent congestion core (1.19 mi): peak/baseline 1.14, 41 VHD/mi, 99% real-time data",
+      "_split_rationale": "Recurrent congestion core (1.19 mi): peak/baseline 1.14, 3 VHD/mi, 99% real-time data",
       "_generated_miles": 1.188,
       "_segment_ids": [
         461319755,
@@ -762,12 +890,12 @@
         43.38139,
         -112.12343
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-91: State St, Shelley, NB. Congested extent grown from the core (1.19 mi, 44 VHD/mi, 100% of the core's). Upstream boundary: the urban-area boundary (leaving Shelley, ID; ratio 1.03 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.68 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-91: State St, Shelley, NB. Congested extent grown from the core (1.19 mi, 4 VHD/mi, 100% of the core's). Upstream boundary: the urban-area boundary (leaving Shelley, ID; ratio 1.03 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.68 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-state-st-shelley-commuter",
       "direction": "NB",
       "_tier": "commuter",
       "_facility": "us-91-state-st-shelley",
-      "_split_rationale": "Congested extent grown from the core (1.19 mi, 44 VHD/mi, 100% of the core's)",
+      "_split_rationale": "Congested extent grown from the core (1.19 mi, 4 VHD/mi, 100% of the core's)",
       "_generated_miles": 1.188,
       "_segment_ids": [
         1187575784,
@@ -785,12 +913,12 @@
         43.36636,
         -112.13493
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-91: State St, Shelley, SB. Congested extent grown from the core (1.87 mi, 38 VHD/mi, 91% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the urban-area boundary (leaving Shelley, ID; ratio 1.01 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-91: State St, Shelley, SB. Congested extent grown from the core (1.87 mi, 3 VHD/mi, 91% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the urban-area boundary (leaving Shelley, ID; ratio 1.01 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-91-state-st-shelley-commuter",
       "direction": "SB",
       "_tier": "commuter",
       "_facility": "us-91-state-st-shelley",
-      "_split_rationale": "Congested extent grown from the core (1.87 mi, 38 VHD/mi, 91% of the core's)",
+      "_split_rationale": "Congested extent grown from the core (1.87 mi, 3 VHD/mi, 91% of the core's)",
       "_generated_miles": 1.87,
       "_segment_ids": [
         461319754,
@@ -913,7 +1041,7 @@
     {
       "id": "us-91-yellowstone-ave-pocatello-core",
       "name": "US-91: Yellowstone Ave, Pocatello \u2014 Tier 1 Congested Core (E Humbolt St to Simplot Rd)",
-      "description": "Tier 1 (Congested Core) of US-91: Yellowstone Ave, Pocatello, NB. Recurrent congestion core (5.27 mi): peak/baseline 1.25, 153 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-91: Yellowstone Ave, Pocatello, NB. Recurrent congestion core (5.27 mi): peak/baseline 1.25, 18 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (E Humbolt St to Simplot Rd)",
@@ -925,8 +1053,9 @@
       "_core": {
         "miles": 5.27,
         "effective_miles": 4.457,
-        "vhd": 808.4,
-        "vhd_per_mile": 153.4,
+        "vhd": 96.0,
+        "vhd_per_mile": 18.2,
+        "vhd_index": 492.4,
         "delay_per_mile": 0.507,
         "realtime_share": 0.993,
         "peak_ratio": 1.249,
@@ -944,20 +1073,23 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 1474.9,
-        "2026-02": 1495.8,
-        "2026-03": 1421.5,
-        "2026-04": 1600.0,
-        "2026-05": 1524.6,
-        "2026-06": 1457.7,
-        "2026-07": 1551.5,
-        "2026-08": 1622.1
-      }
+        "2026-01": 140.1,
+        "2026-02": 142.9,
+        "2026-03": 150.5,
+        "2026-04": 181.7,
+        "2026-05": 177.0,
+        "2026-06": 168.7,
+        "2026-07": 173.1,
+        "2026-08": 183.5
+      },
+      "_couplets": [
+        "couplet-15-5th-ave-4th-ave"
+      ]
     },
     {
       "id": "us-91-yellowstone-ave-pocatello-commuter",
       "name": "US-91: Yellowstone Ave, Pocatello \u2014 Tier 2 Commuter Corridor (Barton Rd to Adams St)",
-      "description": "Tier 2 (Commuter Corridor) of US-91: Yellowstone Ave, Pocatello, NB. Congested extent grown from the core (7.12 mi, 119 VHD/mi, 78% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.73 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.51 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-91: Yellowstone Ave, Pocatello, NB. Congested extent grown from the core (7.12 mi, 14 VHD/mi, 78% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.73 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.51 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Barton Rd to Adams St)",
@@ -969,8 +1101,9 @@
       "_core": {
         "miles": 5.27,
         "effective_miles": 4.457,
-        "vhd": 808.4,
-        "vhd_per_mile": 153.4,
+        "vhd": 96.0,
+        "vhd_per_mile": 18.2,
+        "vhd_index": 492.4,
         "delay_per_mile": 0.507,
         "realtime_share": 0.993,
         "peak_ratio": 1.249,
@@ -988,33 +1121,37 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 1474.9,
-        "2026-02": 1495.8,
-        "2026-03": 1421.5,
-        "2026-04": 1600.0,
-        "2026-05": 1524.6,
-        "2026-06": 1457.7,
-        "2026-07": 1551.5,
-        "2026-08": 1622.1
-      }
+        "2026-01": 140.1,
+        "2026-02": 142.9,
+        "2026-03": 150.5,
+        "2026-04": 181.7,
+        "2026-05": 177.0,
+        "2026-06": 168.7,
+        "2026-07": 173.1,
+        "2026-08": 183.5
+      },
+      "_couplets": [
+        "couplet-15-5th-ave-4th-ave"
+      ]
     },
     {
       "id": "us-91-yellowstone-ave-pocatello-regional",
-      "name": "US-91: Yellowstone Ave, Pocatello \u2014 Tier 3 Regional Baseline (I-15 Nb Ramps Ic No. 67 to Tyhee Rd)",
-      "description": "Tier 3 (Regional Baseline) of US-91: Yellowstone Ave, Pocatello, NB. Context around the congested extent (9.38 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-91: Yellowstone Ave, Pocatello \u2014 Tier 3 Regional Baseline (Beg 1-Way/Restlawn Dr to Tyhee Rd)",
+      "description": "Tier 3 (Regional Baseline) of US-91: Yellowstone Ave, Pocatello, NB. Context around the congested extent (9.10 mi; reported, not ranked). Upstream boundary: an AADT step-change (2,750 -> 7,500 vpd, 63%); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (I-15 Nb Ramps Ic No. 67 to Tyhee Rd)",
+      "_tier_label": "Tier 3 Regional Baseline (Beg 1-Way/Restlawn Dr to Tyhee Rd)",
       "_facility": "us-91-yellowstone-ave-pocatello",
       "_facility_name": "US-91: Yellowstone Ave, Pocatello",
-      "_miles": 9.38,
-      "_n_segments": 34,
+      "_miles": 9.104,
+      "_n_segments": 33,
       "_ranked": false,
       "_core": {
         "miles": 5.27,
         "effective_miles": 4.457,
-        "vhd": 808.4,
-        "vhd_per_mile": 153.4,
+        "vhd": 96.0,
+        "vhd_per_mile": 18.2,
+        "vhd_index": 492.4,
         "delay_per_mile": 0.507,
         "realtime_share": 0.993,
         "peak_ratio": 1.249,
@@ -1032,20 +1169,23 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 1474.9,
-        "2026-02": 1495.8,
-        "2026-03": 1421.5,
-        "2026-04": 1600.0,
-        "2026-05": 1524.6,
-        "2026-06": 1457.7,
-        "2026-07": 1551.5,
-        "2026-08": 1622.1
-      }
+        "2026-01": 140.1,
+        "2026-02": 142.9,
+        "2026-03": 150.5,
+        "2026-04": 181.7,
+        "2026-05": 177.0,
+        "2026-06": 168.7,
+        "2026-07": 173.1,
+        "2026-08": 183.5
+      },
+      "_couplets": [
+        "couplet-15-5th-ave-4th-ave"
+      ]
     },
     {
       "id": "i-15-bl-bergener-dr-blackfoot-core",
       "name": "I-15 BL: Bergener Dr, Blackfoot \u2014 Tier 1 Congested Core (W Collins Rd to Judicial St@S W Main St)",
-      "description": "Tier 1 (Congested Core) of I-15 BL: Bergener Dr, Blackfoot, EB. Recurrent congestion core (1.93 mi): peak/baseline 1.22, 107 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of I-15 BL: Bergener Dr, Blackfoot, EB. Recurrent congestion core (1.93 mi): peak/baseline 1.22, 9 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (W Collins Rd to Judicial St@S W Main St)",
@@ -1057,8 +1197,9 @@
       "_core": {
         "miles": 1.926,
         "effective_miles": 1.095,
-        "vhd": 207.0,
-        "vhd_per_mile": 107.5,
+        "vhd": 17.8,
+        "vhd_per_mile": 9.3,
+        "vhd_index": 109.6,
         "delay_per_mile": 0.465,
         "realtime_share": 0.993,
         "peak_ratio": 1.217,
@@ -1076,15 +1217,66 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 340.2,
-        "2026-02": 355.5,
-        "2026-03": 375.6,
-        "2026-04": 446.0,
-        "2026-05": 364.6,
-        "2026-06": 342.3,
-        "2026-07": 396.2,
-        "2026-08": 382.1
-      }
+        "2026-01": 22.9,
+        "2026-02": 23.8,
+        "2026-03": 28.5,
+        "2026-04": 36.1,
+        "2026-05": 33.1,
+        "2026-06": 32.9,
+        "2026-07": 38.8,
+        "2026-08": 36.9
+      },
+      "_couplets": [
+        "couplet-15-bridge-st-judicial-st"
+      ]
+    },
+    {
+      "id": "i-15-bl-bergener-dr-blackfoot-commuter",
+      "name": "I-15 BL: Bergener Dr, Blackfoot \u2014 Tier 2 Commuter Corridor (W Collins Rd to Judicial St@S W Main St)",
+      "description": "Tier 2 (Commuter Corridor) of I-15 BL: Bergener Dr, Blackfoot, EB. Congested extent grown from the core (1.93 mi, 9 VHD/mi, 100% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.64 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "commuter",
+      "_tier_number": 2,
+      "_tier_label": "Tier 2 Commuter Corridor (W Collins Rd to Judicial St@S W Main St)",
+      "_facility": "i-15-bl-bergener-dr-blackfoot",
+      "_facility_name": "I-15 BL: Bergener Dr, Blackfoot",
+      "_miles": 1.926,
+      "_n_segments": 8,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.926,
+        "effective_miles": 1.095,
+        "vhd": 17.8,
+        "vhd_per_mile": 9.3,
+        "vhd_index": 109.6,
+        "delay_per_mile": 0.465,
+        "realtime_share": 0.993,
+        "peak_ratio": 1.217,
+        "ref_tti": 1.115,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "EB",
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 22.9,
+        "2026-02": 23.8,
+        "2026-03": 28.5,
+        "2026-04": 36.1,
+        "2026-05": 33.1,
+        "2026-06": 32.9,
+        "2026-07": 38.8,
+        "2026-08": 36.9
+      },
+      "_couplets": [
+        "couplet-15-bridge-st-judicial-st"
+      ]
     },
     {
       "id": "i-15-bl-bergener-dr-blackfoot-regional",
@@ -1101,8 +1293,9 @@
       "_core": {
         "miles": 1.926,
         "effective_miles": 1.095,
-        "vhd": 207.0,
-        "vhd_per_mile": 107.5,
+        "vhd": 17.8,
+        "vhd_per_mile": 9.3,
+        "vhd_index": 109.6,
         "delay_per_mile": 0.465,
         "realtime_share": 0.993,
         "peak_ratio": 1.217,
@@ -1120,20 +1313,23 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 340.2,
-        "2026-02": 355.5,
-        "2026-03": 375.6,
-        "2026-04": 446.0,
-        "2026-05": 364.6,
-        "2026-06": 342.3,
-        "2026-07": 396.2,
-        "2026-08": 382.1
-      }
+        "2026-01": 22.9,
+        "2026-02": 23.8,
+        "2026-03": 28.5,
+        "2026-04": 36.1,
+        "2026-05": 33.1,
+        "2026-06": 32.9,
+        "2026-07": 38.8,
+        "2026-08": 36.9
+      },
+      "_couplets": [
+        "couplet-15-bridge-st-judicial-st"
+      ]
     },
     {
       "id": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello-core",
       "name": "I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello \u2014 Tier 1 Congested Core (End 1-Way E Of Us-91 to Beg 1-Way W Of Ramps)",
-      "description": "Tier 1 (Congested Core) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Recurrent congestion core (1.14 mi): peak/baseline 1.17, 66 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Recurrent congestion core (1.14 mi): peak/baseline 1.17, 8 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (End 1-Way E Of Us-91 to Beg 1-Way W Of Ramps)",
@@ -1145,8 +1341,9 @@
       "_core": {
         "miles": 1.144,
         "effective_miles": 0.788,
-        "vhd": 75.3,
-        "vhd_per_mile": 65.9,
+        "vhd": 9.1,
+        "vhd_per_mile": 7.9,
+        "vhd_index": 47.0,
         "delay_per_mile": 0.374,
         "realtime_share": 0.994,
         "peak_ratio": 1.171,
@@ -1163,34 +1360,35 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 78.1,
-        "2026-02": 80.9,
-        "2026-03": 70.4,
-        "2026-04": 83.5,
-        "2026-05": 81.0,
-        "2026-06": 73.7,
-        "2026-07": 71.4,
-        "2026-08": 69.7
+        "2026-01": 7.6,
+        "2026-02": 8.0,
+        "2026-03": 8.0,
+        "2026-04": 10.5,
+        "2026-05": 10.5,
+        "2026-06": 9.9,
+        "2026-07": 9.1,
+        "2026-08": 8.8
       },
-      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 1.19, 103 VHD/mi over the mirrored span)"
+      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 1.15, 7 VHD/mi over the mirrored span)"
     },
     {
       "id": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello-commuter",
-      "name": "I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello \u2014 Tier 2 Commuter Corridor (End 1-Way @ Elm St to Beg 1-Way W Of Ramps)",
-      "description": "Tier 2 (Commuter Corridor) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Congested extent grown from the core (2.02 mi, 131 VHD/mi, 200% of the core's). Upstream boundary: an AADT step-change (10,000 -> 21,500 vpd, 54%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello \u2014 Tier 2 Commuter Corridor (Barton Rd to Beg 1-Way W Of Ramps)",
+      "description": "Tier 2 (Commuter Corridor) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Congested extent grown from the core (4.60 mi, 13 VHD/mi, 169% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.73 mi); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (End 1-Way @ Elm St to Beg 1-Way W Of Ramps)",
+      "_tier_label": "Tier 2 Commuter Corridor (Barton Rd to Beg 1-Way W Of Ramps)",
       "_facility": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello",
       "_facility_name": "I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello",
-      "_miles": 2.018,
-      "_n_segments": 10,
+      "_miles": 4.597,
+      "_n_segments": 18,
       "_ranked": false,
       "_core": {
         "miles": 1.144,
         "effective_miles": 0.788,
-        "vhd": 75.3,
-        "vhd_per_mile": 65.9,
+        "vhd": 9.1,
+        "vhd_per_mile": 7.9,
+        "vhd_index": 47.0,
         "delay_per_mile": 0.374,
         "realtime_share": 0.994,
         "peak_ratio": 1.171,
@@ -1207,156 +1405,66 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 78.1,
-        "2026-02": 80.9,
-        "2026-03": 70.4,
-        "2026-04": 83.5,
-        "2026-05": 81.0,
-        "2026-06": 73.7,
-        "2026-07": 71.4,
-        "2026-08": 69.7
+        "2026-01": 7.6,
+        "2026-02": 8.0,
+        "2026-03": 8.0,
+        "2026-04": 10.5,
+        "2026-05": 10.5,
+        "2026-06": 9.9,
+        "2026-07": 9.1,
+        "2026-08": 8.8
       },
-      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 1.19, 103 VHD/mi over the mirrored span)"
+      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 1.15, 7 VHD/mi over the mirrored span)"
     },
     {
-      "id": "us-30-garrett-way-pocatello-core",
-      "name": "US-30: Garrett Way, Pocatello \u2014 Tier 1 Congested Core (Mckinley Ave to Cedar St)",
-      "description": "Tier 1 (Congested Core) of US-30: Garrett Way, Pocatello, WB. Recurrent congestion core (1.01 mi): peak/baseline 1.18, 72 VHD/mi, 96% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "core",
-      "_tier_number": 1,
-      "_tier_label": "Tier 1 Congested Core (Mckinley Ave to Cedar St)",
-      "_facility": "us-30-garrett-way-pocatello",
-      "_facility_name": "US-30: Garrett Way, Pocatello",
-      "_miles": 1.014,
-      "_n_segments": 11,
-      "_ranked": true,
-      "_core": {
-        "miles": 1.014,
-        "effective_miles": 0.694,
-        "vhd": 72.9,
-        "vhd_per_mile": 71.9,
-        "delay_per_mile": 0.324,
-        "realtime_share": 0.962,
-        "peak_ratio": 1.181,
-        "ref_tti": 1.116,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night",
-          "weekday_tt_p15"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "WB"
-      ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 72.1,
-        "2026-02": 72.5,
-        "2026-03": 76.9,
-        "2026-04": 82.2,
-        "2026-05": 78.5,
-        "2026-06": 70.1,
-        "2026-07": 67.5,
-        "2026-08": 66.9
-      },
-      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.11, 33 VHD/mi over the mirrored span)"
-    },
-    {
-      "id": "us-30-garrett-way-pocatello-commuter",
-      "name": "US-30: Garrett Way, Pocatello \u2014 Tier 2 Commuter Corridor (Mckinley Ave to Garrett Way (Us-30))",
-      "description": "Tier 2 (Commuter Corridor) of US-30: Garrett Way, Pocatello, WB. Congested extent grown from the core (1.80 mi, 47 VHD/mi, 66% of the core's). Upstream boundary: a highway junction (15 -> 30); downstream boundary: an AADT step-change (1,300 -> 10,500 vpd, 88%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
-      "_tier": "commuter",
-      "_tier_number": 2,
-      "_tier_label": "Tier 2 Commuter Corridor (Mckinley Ave to Garrett Way (Us-30))",
-      "_facility": "us-30-garrett-way-pocatello",
-      "_facility_name": "US-30: Garrett Way, Pocatello",
-      "_miles": 1.799,
-      "_n_segments": 13,
-      "_ranked": false,
-      "_core": {
-        "miles": 1.014,
-        "effective_miles": 0.694,
-        "vhd": 72.9,
-        "vhd_per_mile": 71.9,
-        "delay_per_mile": 0.324,
-        "realtime_share": 0.962,
-        "peak_ratio": 1.181,
-        "ref_tti": 1.116,
-        "unknown_miles": 0.0,
-        "n_aadt_missing": 0,
-        "baseline_sources": [
-          "night",
-          "weekday_tt_p15"
-        ],
-        "fails": []
-      },
-      "_directions": [
-        "WB"
-      ],
-      "_flags": [],
-      "_monthly_vhd": {
-        "2026-01": 72.1,
-        "2026-02": 72.5,
-        "2026-03": 76.9,
-        "2026-04": 82.2,
-        "2026-05": 78.5,
-        "2026-06": 70.1,
-        "2026-07": 67.5,
-        "2026-08": 66.9
-      },
-      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.11, 33 VHD/mi over the mirrored span)"
-    },
-    {
-      "id": "us-30-garrett-way-pocatello-regional",
-      "name": "US-30: Garrett Way, Pocatello \u2014 Tier 3 Regional Baseline (Mckinley Ave to Garrett Way (Us-30))",
-      "description": "Tier 3 (Regional Baseline) of US-30: Garrett Way, Pocatello, WB. Context around the congested extent (1.85 mi; reported, not ranked). Upstream boundary: a highway junction (15 -> 30); downstream boundary: an AADT step-change (1,300 -> 10,500 vpd, 88%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "id": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello-regional",
+      "name": "I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello \u2014 Tier 3 Regional Baseline (Beg 1-Way/Restlawn Dr to Beg 1-Way W Of Ramps)",
+      "description": "Tier 3 (Regional Baseline) of I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello, NB. Context around the congested extent (5.32 mi; reported, not ranked). Upstream boundary: an AADT step-change (2,750 -> 7,500 vpd, 63%); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
-      "_tier_label": "Tier 3 Regional Baseline (Mckinley Ave to Garrett Way (Us-30))",
-      "_facility": "us-30-garrett-way-pocatello",
-      "_facility_name": "US-30: Garrett Way, Pocatello",
-      "_miles": 1.848,
-      "_n_segments": 14,
+      "_tier_label": "Tier 3 Regional Baseline (Beg 1-Way/Restlawn Dr to Beg 1-Way W Of Ramps)",
+      "_facility": "i-15-bl-pocatello-creek-rd-alameda-rd-pocatello",
+      "_facility_name": "I-15 BL: Pocatello Creek Rd / Alameda Rd, Pocatello",
+      "_miles": 5.322,
+      "_n_segments": 19,
       "_ranked": false,
       "_core": {
-        "miles": 1.014,
-        "effective_miles": 0.694,
-        "vhd": 72.9,
-        "vhd_per_mile": 71.9,
-        "delay_per_mile": 0.324,
-        "realtime_share": 0.962,
-        "peak_ratio": 1.181,
-        "ref_tti": 1.116,
+        "miles": 1.144,
+        "effective_miles": 0.788,
+        "vhd": 9.1,
+        "vhd_per_mile": 7.9,
+        "vhd_index": 47.0,
+        "delay_per_mile": 0.374,
+        "realtime_share": 0.994,
+        "peak_ratio": 1.171,
+        "ref_tti": 1.106,
         "unknown_miles": 0.0,
         "n_aadt_missing": 0,
         "baseline_sources": [
-          "night",
-          "weekday_tt_p15"
+          "night"
         ],
         "fails": []
       },
       "_directions": [
-        "WB"
+        "NB"
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 72.1,
-        "2026-02": 72.5,
-        "2026-03": 76.9,
-        "2026-04": 82.2,
-        "2026-05": 78.5,
-        "2026-06": 70.1,
-        "2026-07": 67.5,
-        "2026-08": 66.9
+        "2026-01": 7.6,
+        "2026-02": 8.0,
+        "2026-03": 8.0,
+        "2026-04": 10.5,
+        "2026-05": 10.5,
+        "2026-06": 9.9,
+        "2026-07": 9.1,
+        "2026-08": 8.8
       },
-      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.11, 33 VHD/mi over the mirrored span)"
+      "_companion": "SB not catalogued: no qualifying core of its own opposite the NB one (peak/baseline 1.15, 7 VHD/mi over the mirrored span)"
     },
     {
       "id": "us-30-2nd-s-caribou-county-core",
       "name": "US-30: 2nd S, Caribou County \u2014 Tier 1 Congested Core (S 3Rd W St to S 1St W St)",
-      "description": "Tier 1 (Congested Core) of US-30: 2nd S, Caribou County, EB. Recurrent congestion core (1.30 mi): peak/baseline 1.21, 50 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-30: 2nd S, Caribou County, EB. Recurrent congestion core (1.30 mi): peak/baseline 1.21, 5 VHD/mi, 98% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (S 3Rd W St to S 1St W St)",
@@ -1368,8 +1476,9 @@
       "_core": {
         "miles": 1.302,
         "effective_miles": 0.928,
-        "vhd": 65.5,
-        "vhd_per_mile": 50.3,
+        "vhd": 7.0,
+        "vhd_per_mile": 5.3,
+        "vhd_index": 32.7,
         "delay_per_mile": 0.38,
         "realtime_share": 0.983,
         "peak_ratio": 1.21,
@@ -1385,19 +1494,19 @@
         "EB"
       ],
       "_flags": [
-        "seasonal: 68% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months)"
+        "episodic: 73% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months) \u2014 check for a work zone or event before reading it as recurring"
       ],
       "_monthly_vhd": {
-        "2026-01": 27.2,
-        "2026-02": 25.1,
-        "2026-03": 25.3,
-        "2026-04": 35.1,
-        "2026-05": 57.3,
-        "2026-06": 63.5,
-        "2026-07": 87.7,
-        "2026-08": 204.0
+        "2026-01": 2.0,
+        "2026-02": 1.7,
+        "2026-03": 2.1,
+        "2026-04": 3.0,
+        "2026-05": 5.9,
+        "2026-06": 7.2,
+        "2026-07": 10.5,
+        "2026-08": 23.2
       },
-      "_companion": "WB not catalogued: no qualifying core of its own opposite the EB one (peak/baseline 1.12, 28 VHD/mi over the mirrored span)"
+      "_companion": "WB not catalogued: no qualifying core of its own opposite the EB one (peak/baseline 1.12, 3 VHD/mi over the mirrored span)"
     },
     {
       "id": "us-30-2nd-s-caribou-county-regional",
@@ -1414,8 +1523,9 @@
       "_core": {
         "miles": 1.302,
         "effective_miles": 0.928,
-        "vhd": 65.5,
-        "vhd_per_mile": 50.3,
+        "vhd": 7.0,
+        "vhd_per_mile": 5.3,
+        "vhd_index": 32.7,
         "delay_per_mile": 0.38,
         "realtime_share": 0.983,
         "peak_ratio": 1.21,
@@ -1431,24 +1541,162 @@
         "EB"
       ],
       "_flags": [
-        "seasonal: 68% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months)"
+        "episodic: 73% of peak delay in 2026-06, 2026-07, 2026-08 (3 of 8 months) \u2014 check for a work zone or event before reading it as recurring"
       ],
       "_monthly_vhd": {
-        "2026-01": 27.2,
-        "2026-02": 25.1,
-        "2026-03": 25.3,
-        "2026-04": 35.1,
-        "2026-05": 57.3,
-        "2026-06": 63.5,
-        "2026-07": 87.7,
-        "2026-08": 204.0
+        "2026-01": 2.0,
+        "2026-02": 1.7,
+        "2026-03": 2.1,
+        "2026-04": 3.0,
+        "2026-05": 5.9,
+        "2026-06": 7.2,
+        "2026-07": 10.5,
+        "2026-08": 23.2
       },
-      "_companion": "WB not catalogued: no qualifying core of its own opposite the EB one (peak/baseline 1.12, 28 VHD/mi over the mirrored span)"
+      "_companion": "WB not catalogued: no qualifying core of its own opposite the EB one (peak/baseline 1.12, 3 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "us-30-garrett-way-pocatello-core",
+      "name": "US-30: Garrett Way, Pocatello \u2014 Tier 1 Congested Core (Mckinley Ave to Cedar St)",
+      "description": "Tier 1 (Congested Core) of US-30: Garrett Way, Pocatello, WB. Recurrent congestion core (1.01 mi): peak/baseline 1.18, 7 VHD/mi, 96% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "core",
+      "_tier_number": 1,
+      "_tier_label": "Tier 1 Congested Core (Mckinley Ave to Cedar St)",
+      "_facility": "us-30-garrett-way-pocatello",
+      "_facility_name": "US-30: Garrett Way, Pocatello",
+      "_miles": 1.014,
+      "_n_segments": 11,
+      "_ranked": true,
+      "_core": {
+        "miles": 1.014,
+        "effective_miles": 0.694,
+        "vhd": 6.7,
+        "vhd_per_mile": 6.6,
+        "vhd_index": 36.4,
+        "delay_per_mile": 0.324,
+        "realtime_share": 0.962,
+        "peak_ratio": 1.181,
+        "ref_tti": 1.116,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night",
+          "weekday_tt_p15"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 5.7,
+        "2026-02": 6.0,
+        "2026-03": 7.0,
+        "2026-04": 8.2,
+        "2026-05": 7.7,
+        "2026-06": 6.8,
+        "2026-07": 6.4,
+        "2026-08": 6.4
+      },
+      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.11, 3 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "us-30-garrett-way-pocatello-commuter",
+      "name": "US-30: Garrett Way, Pocatello \u2014 Tier 2 Commuter Corridor (Mckinley Ave to Garrett Way (Us-30))",
+      "description": "Tier 2 (Commuter Corridor) of US-30: Garrett Way, Pocatello, WB. Congested extent grown from the core (1.80 mi, 4 VHD/mi, 62% of the core's). Upstream boundary: a highway junction (15 -> 30); downstream boundary: an AADT step-change (650 -> 5,250 vpd, 88%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "commuter",
+      "_tier_number": 2,
+      "_tier_label": "Tier 2 Commuter Corridor (Mckinley Ave to Garrett Way (Us-30))",
+      "_facility": "us-30-garrett-way-pocatello",
+      "_facility_name": "US-30: Garrett Way, Pocatello",
+      "_miles": 1.799,
+      "_n_segments": 13,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.014,
+        "effective_miles": 0.694,
+        "vhd": 6.7,
+        "vhd_per_mile": 6.6,
+        "vhd_index": 36.4,
+        "delay_per_mile": 0.324,
+        "realtime_share": 0.962,
+        "peak_ratio": 1.181,
+        "ref_tti": 1.116,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night",
+          "weekday_tt_p15"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 5.7,
+        "2026-02": 6.0,
+        "2026-03": 7.0,
+        "2026-04": 8.2,
+        "2026-05": 7.7,
+        "2026-06": 6.8,
+        "2026-07": 6.4,
+        "2026-08": 6.4
+      },
+      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.11, 3 VHD/mi over the mirrored span)"
+    },
+    {
+      "id": "us-30-garrett-way-pocatello-regional",
+      "name": "US-30: Garrett Way, Pocatello \u2014 Tier 3 Regional Baseline (Mckinley Ave to Garrett Way (Us-30))",
+      "description": "Tier 3 (Regional Baseline) of US-30: Garrett Way, Pocatello, WB. Context around the congested extent (1.85 mi; reported, not ranked). Upstream boundary: a highway junction (15 -> 30); downstream boundary: an AADT step-change (650 -> 5,250 vpd, 88%). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "_tier": "regional",
+      "_tier_number": 3,
+      "_tier_label": "Tier 3 Regional Baseline (Mckinley Ave to Garrett Way (Us-30))",
+      "_facility": "us-30-garrett-way-pocatello",
+      "_facility_name": "US-30: Garrett Way, Pocatello",
+      "_miles": 1.848,
+      "_n_segments": 14,
+      "_ranked": false,
+      "_core": {
+        "miles": 1.014,
+        "effective_miles": 0.694,
+        "vhd": 6.7,
+        "vhd_per_mile": 6.6,
+        "vhd_index": 36.4,
+        "delay_per_mile": 0.324,
+        "realtime_share": 0.962,
+        "peak_ratio": 1.181,
+        "ref_tti": 1.116,
+        "unknown_miles": 0.0,
+        "n_aadt_missing": 0,
+        "baseline_sources": [
+          "night",
+          "weekday_tt_p15"
+        ],
+        "fails": []
+      },
+      "_directions": [
+        "WB"
+      ],
+      "_flags": [],
+      "_monthly_vhd": {
+        "2026-01": 5.7,
+        "2026-02": 6.0,
+        "2026-03": 7.0,
+        "2026-04": 8.2,
+        "2026-05": 7.7,
+        "2026-06": 6.8,
+        "2026-07": 6.4,
+        "2026-08": 6.4
+      },
+      "_companion": "EB not catalogued: no qualifying core of its own opposite the WB one (peak/baseline 1.11, 3 VHD/mi over the mirrored span)"
     },
     {
       "id": "us-91-state-st-shelley-core",
       "name": "US-91: State St, Shelley \u2014 Tier 1 Congested Core (Robald St to Fir St)",
-      "description": "Tier 1 (Congested Core) of US-91: State St, Shelley, NB. Recurrent congestion core (1.19 mi): peak/baseline 1.15, 44 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-91: State St, Shelley, NB. Recurrent congestion core (1.19 mi): peak/baseline 1.15, 4 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Robald St to Fir St)",
@@ -1460,8 +1708,9 @@
       "_core": {
         "miles": 1.188,
         "effective_miles": 0.689,
-        "vhd": 52.7,
-        "vhd_per_mile": 44.4,
+        "vhd": 4.4,
+        "vhd_per_mile": 3.7,
+        "vhd_index": 26.4,
         "delay_per_mile": 0.259,
         "realtime_share": 0.992,
         "peak_ratio": 1.154,
@@ -1479,20 +1728,20 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 93.0,
-        "2026-02": 96.4,
-        "2026-03": 103.3,
-        "2026-04": 109.7,
-        "2026-05": 108.8,
-        "2026-06": 98.0,
-        "2026-07": 96.0,
-        "2026-08": 108.9
+        "2026-01": 6.9,
+        "2026-02": 7.3,
+        "2026-03": 8.4,
+        "2026-04": 9.5,
+        "2026-05": 9.4,
+        "2026-06": 8.5,
+        "2026-07": 8.0,
+        "2026-08": 9.2
       }
     },
     {
       "id": "us-91-state-st-shelley-commuter",
       "name": "US-91: State St, Shelley \u2014 Tier 2 Commuter Corridor (Robald St to Fir St)",
-      "description": "Tier 2 (Commuter Corridor) of US-91: State St, Shelley, NB. Congested extent grown from the core (1.19 mi, 44 VHD/mi, 100% of the core's). Upstream boundary: the urban-area boundary (leaving Shelley, ID; ratio 1.03 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.68 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-91: State St, Shelley, NB. Congested extent grown from the core (1.19 mi, 4 VHD/mi, 100% of the core's). Upstream boundary: the urban-area boundary (leaving Shelley, ID; ratio 1.03 beyond it); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.68 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Robald St to Fir St)",
@@ -1504,8 +1753,9 @@
       "_core": {
         "miles": 1.188,
         "effective_miles": 0.689,
-        "vhd": 52.7,
-        "vhd_per_mile": 44.4,
+        "vhd": 4.4,
+        "vhd_per_mile": 3.7,
+        "vhd_index": 26.4,
         "delay_per_mile": 0.259,
         "realtime_share": 0.992,
         "peak_ratio": 1.154,
@@ -1523,14 +1773,14 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 93.0,
-        "2026-02": 96.4,
-        "2026-03": 103.3,
-        "2026-04": 109.7,
-        "2026-05": 108.8,
-        "2026-06": 98.0,
-        "2026-07": 96.0,
-        "2026-08": 108.9
+        "2026-01": 6.9,
+        "2026-02": 7.3,
+        "2026-03": 8.4,
+        "2026-04": 9.5,
+        "2026-05": 9.4,
+        "2026-06": 8.5,
+        "2026-07": 8.0,
+        "2026-08": 9.2
       }
     },
     {
@@ -1548,8 +1798,9 @@
       "_core": {
         "miles": 1.188,
         "effective_miles": 0.689,
-        "vhd": 52.7,
-        "vhd_per_mile": 44.4,
+        "vhd": 4.4,
+        "vhd_per_mile": 3.7,
+        "vhd_index": 26.4,
         "delay_per_mile": 0.259,
         "realtime_share": 0.992,
         "peak_ratio": 1.154,
@@ -1567,14 +1818,14 @@
       ],
       "_flags": [],
       "_monthly_vhd": {
-        "2026-01": 93.0,
-        "2026-02": 96.4,
-        "2026-03": 103.3,
-        "2026-04": 109.7,
-        "2026-05": 108.8,
-        "2026-06": 98.0,
-        "2026-07": 96.0,
-        "2026-08": 108.9
+        "2026-01": 6.9,
+        "2026-02": 7.3,
+        "2026-03": 8.4,
+        "2026-04": 9.5,
+        "2026-05": 9.4,
+        "2026-06": 8.5,
+        "2026-07": 8.0,
+        "2026-08": 9.2
       }
     },
     {
@@ -1583,7 +1834,10 @@
       "description": "One-way couplet carrying I-15 BL across 5th Ave (NB) and 4th Ave (SB) in Pocatello (ZIP 83204); 2.34 mi per leg, mean lateral separation 179 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,
-      "_mean_lateral_sep_m": 179.0
+      "_mean_lateral_sep_m": 179.0,
+      "_flags": [
+        "shares 1.64 mi with us-91-yellowstone-ave-pocatello"
+      ]
     },
     {
       "id": "couplet-15-bridge-st-judicial-st",
@@ -1591,7 +1845,10 @@
       "description": "One-way couplet carrying I-15 BL across Bridge St (WB) and Judicial St (EB) in Blackfoot (ZIP 83221); 0.57 mi per leg, mean lateral separation 78 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,
-      "_mean_lateral_sep_m": 77.5
+      "_mean_lateral_sep_m": 77.5,
+      "_flags": [
+        "shares 0.56 mi with i-15-bl-bergener-dr-blackfoot"
+      ]
     }
   ]
 }

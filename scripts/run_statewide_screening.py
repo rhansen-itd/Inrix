@@ -38,8 +38,9 @@ def repairs_path(district: int) -> str:
 
 
 CATALOGUE_OVERRIDES: dict[int, str] = {}
-"""District -> catalogue path, from ``--catalogue-override`` (e.g. District 3's
-generated catalogue instead of its curated one)."""
+"""District -> catalogue path, from ``--catalogue-override`` (e.g. the archived curated
+District 3 catalogue, ``legacy/d3_curated/d3_corridors.json``, instead of the generated
+one, which is the default since Item 63)."""
 
 
 def catalogue_path(district: int) -> str:
@@ -47,7 +48,7 @@ def catalogue_path(district: int) -> str:
 
 
 def parse_overrides(values) -> dict[int, str]:
-    """``["3=scripts/d3_corridors_generated.json"]`` -> ``{3: "scripts/..."}``."""
+    """``["3=legacy/d3_curated/d3_corridors.json"]`` -> ``{3: "legacy/..."}``."""
     out = {}
     for v in values or []:
         d, sep, path = str(v).partition("=")

@@ -602,7 +602,7 @@ def test_chain_description_reads_the_label_off_the_segments():
 # ---------------------------------------------------------------------------
 # The corridor catalogue: load, validate, resolve, account  (Item 36)
 # ---------------------------------------------------------------------------
-D3_CATALOGUE = REPO_ROOT / "scripts" / "d3_corridors.json"
+D3_CATALOGUE = REPO_ROOT / "legacy" / "d3_curated" / "d3_corridors.json"
 
 
 def _entry(**kw):
@@ -1040,7 +1040,7 @@ def test_load_link_repairs_round_trips_with_its_rule_in_the_header(tmp_path):
 
 # --- the real network -------------------------------------------------------
 D3_NETWORK = REPO_ROOT / "geometry_cache" / "d3_network.geoparquet"
-D3_CATALOGUE = REPO_ROOT / "scripts" / "d3_corridors.json"
+D3_CATALOGUE = REPO_ROOT / "legacy" / "d3_curated" / "d3_corridors.json"
 D3_REPAIRS = REPO_ROOT / "scripts" / "d3_link_repairs.csv"
 
 

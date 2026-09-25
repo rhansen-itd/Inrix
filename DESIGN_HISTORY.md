@@ -7291,3 +7291,157 @@ the new reach into the rankings.
   preference, an unknown tier refused, the travelway letter, the real layer loads.
 - `test_hard_stops`: the scope default and validation, `stop_boundaries(use=)`, a
   resolved row carrying its scope.
+
+## Session 82 — Item 63: generated D3 as primary, couplet legs paired, stop-cut catalogues adopted (2026-09-25)
+
+Done before Item 62. That order was scoped: 62's statewide re-run ranks these
+catalogues. Item 62's first box (the membership gap-fill) was also meant to come
+before the catalogues, but it changes only two segments in D1/D2. Item 62 now
+regenerates D1/D2 once that is in (a note on its box).
+
+### 1. What changed
+
+- **`extents.generate_catalogue(couplet_legs=)`** takes `{couplet id: (leg 1 ids,
+  leg 2 ids)}`.
+  - A companion core on the other leg of a detected couplet that the lead core is
+    on pairs **whatever the separation**. It skips `_runs_alongside`; the opposed
+    test (`_opposed_slice`) still applies.
+  - A facility whose cores run on a couplet leg lists it in `_couplets`.
+- **`scripts/build_statewide_catalogues.py`**:
+  - `couplet_block` runs **before** the corridor pass, and returns the legs of every
+    detected pair (observed or not) as well as the catalogued entries.
+  - `defer_covered_couplets` marks a couplet group `_ranked: false`, `_counted_in:
+    <facility>` when one ranked core covers ≥ 50% of **each** leg
+    (`COUPLET_LEG_SHARE`). A partly covered couplet gets `shares <mi> mi with
+    <facility>` in `_flags`.
+  - `DEFAULT_DISTRICTS` = 1–6, and `catalogue_name` = `dN_corridors.json` for every
+    district (`GENERATED_D3` is gone).
+- **`scripts/aggregate_statewide_rankings.load_group_tiers`**: an untiered group with
+  `_ranked: false` is context under its `_counted_in` facility's rank. An untiered
+  group with `_flags` ranks and carries them.
+- **The archive.**
+  - `scripts/d3_corridors.json` → `legacy/d3_curated/`.
+  - `scripts/rebuild_d3_catalogue.py` → the same place, now writing there. A README
+    says what the catalogue was.
+  - `scripts/d3_corridors_generated.json` → `scripts/d3_corridors.json`.
+  - `run_district_screening.py`'s `scripts/dN_corridors.json` default therefore picks
+    the generated D3 up with no change.
+- **Consumers.**
+  - `audit_hard_stops.py` audits the generated catalogues only.
+  - `run_statewide_screening` / the aggregate docstrings now name the legacy path as
+    the override.
+  - The `corridors` comments no longer call `d3_corridors.json` "the D3 one".
+  - `test_d3_catalogue` and the curated-D3 tests in `test_corridors` read the legacy
+    path. They pin chain resolution on a real network, which still holds.
+- **Kept:** `scripts/d3_place_name_routes.json`. The TT Logger validation report reads
+  it (`build_validation_report.py --route-segments`), not the catalogue.
+- **All six catalogues regenerated with the stops** (`--districts 1 2 3 4 5 6`) and
+  committed. All verified, and `audit_hard_stops.py` finds 0 crossings.
+
+### 2. Decisions
+
+- **Pairing by the detected couplet, not by shared stop corners.** The scope offered
+  two rules.
+  - The couplet rule rests on evidence independent of the stops: topology, one-way
+    legs, and a leg within a block of the other.
+  - The stop-corner rule would need "the same place" defined across carriageways.
+    Moscow's two ends are 120 m apart per direction (Session 80), so it would need a
+    tolerance of its own. It would also only ever fix couplets that someone had
+    authored stops for.
+  - Boise's Front St / Myrtle St pairs either way: the two already pass the 200 m test.
+  - `PAIR_MAX_MEAN_SEP_M` is unchanged. The Session 80 comment stands: it keeps two
+    stretches of one route apart everywhere else.
+- **The couplet block's group stays, not ranked, when the facility is the couplet.**
+  Deleting it would lose the AADT one-way fallback's leg list
+  (`corridors.couplet_segments`, Items 53/54). That fallback reads
+  `one_way_couplet` groups. Setting `one_way_couplet` on the extent facility instead
+  would be wrong: its Tier 2/3 run onto two-way pavement. Kept with `_ranked: false`,
+  it shows up in the context table at its facility's rank. The statewide couplet
+  synthesis still lists it.
+- **"Covers" means each leg, ≥ 50%.** The first cut deferred a couplet whenever any
+  ranked core touched it. That also deferred:
+  - Twin Falls' two US-30 couplets, where the westbound-only Kimberly Rd core runs on
+    the westbound legs and no core on the others;
+  - Blackfoot, one leg only;
+  - Pocatello, 0.82 of 2.4 mi on each leg.
+
+  Deferring those drops the uncovered legs' delay from the ranking. They rank as
+  before, flagged with the overlap ("flag, don't exclude"). The three deferred
+  couplets lie wholly inside their cores, both legs.
+
+### 3. Adopted catalogues: before → after (committed vs regenerated)
+
+The committed D1/2/4/5/6 catalogues and `d3_corridors_generated.json` predate Item 58.
+Every `_core.vhd` therefore moves to the curve basis: I-84 Boise 19,112 → 4,181 VHD,
+US-95 Coeur d'Alene 2,212 → 242. Those moves are not listed. Facilities by core:
+- **D1:** 13 → 13, none re-cut.
+- **D2:** 2 → 2.
+  - SH-8 Pullman Rd re-cut (2.14 → 1.67 mi): it now ends at the couplet (Item 60).
+  - "US-95: Main St / Jackson St" (NB+SB, 1.60 mi) is replaced by "US-95: Washington
+    St, Moscow" (NB+SB, 0.65 mi core, 16.9 VHD): the couplet as one facility (this
+    item).
+  - `couplet-95-washington-st-jackson-st` is context under it.
+- **D3:** 26 → 26.
+  - Removed: "US-20: Broadway Ave / Front St" and "US-20: Myrtle St".
+  - Added: "US-20: Broadway Ave" (NB+SB, 2.38 mi) and "US-20: Front St" (NB+EB, 1.07
+    mi, Myrtle as its EB leg), with `couplet-20-front-st-myrtle-st` context under it.
+    This is the Item 60 split Session 80 §5 found.
+  - Re-cut with the same core: Eagle Rd SB (stops at SH-44).
+  - Re-cut by the curve basis: Chinden Blvd (16.38 → 9.81 mi) and SH-44 Middleton
+    (2.01 → 2.04).
+  - `couplet-84-3rd-st-s-2nd-st-s` is context under "I-84 BL: Garrity Blvd, Nampa".
+- **D4:** 8 → 8. SH-75 Hailey re-cut (7.11 → 7.59 mi, curve basis). Both Twin Falls
+  couplets rank, flagged.
+- **D5:** 6 → 6, none re-cut. Pocatello and Blackfoot couplets rank, flagged.
+- **D6:** 5 → 6.
+  - Added: "US-26: Yellowstone Hwy, Idaho Falls (from 25th E Rd (Hitt Rd))" (WB, 0.9 mi,
+    4.2 VHD), the drift Session 80 noted.
+  - Re-cut: SH-33 Teton County (1.93 → 1.28 mi), and US-26 Yellowstone Hwy
+    (EB+WB → EB+SB).
+
+### 4. Coverage of the curated D3 catalogue by the generated one
+
+Each curated corridor was resolved on the D3 network and overlapped by segment miles
+with every generated tier. 20 of 26 have ≥ 50% of their miles in a generated tier.
+- **Fully covered:** I-84 Nampa–Boise, both couplets, Eagle Rd, Karcher Rd (both),
+  SH-45 Nampa, Chinden (all three pieces), McCall town, Broadway, Caldwell Blvd.
+- **Partly covered (50–80%):** Garrity, I-184, US-95 Fruitland/Payette, I-84 full
+  valley, SH-44 rural, SH-69.
+  - I-184 EB is not catalogued: no qualifying core (peak/baseline 1.03, 3 VHD/mi).
+  - The rest is Tier 3 context that the generator caps shorter than the curation
+    drew it.
+
+The six without a counterpart, scored on their own segments with the generator's
+`find_cores`:
+
+| curated | mi/dir | VHD/mi | peak/base | why nothing is catalogued |
+|---|---|---|---|---|
+| `sh55-eagle-hsb` | 18.9 | 0.7–1.3 | 1.01–1.03 | NB's one qualifying piece is under SH-55 Boise's core; SB fails effective miles |
+| `sh55-hsb-cascade` | 51.5 | 0.2–0.3 | ≤ 1.01 | every candidate fails effective miles |
+| `sh55-cascade-mccall` | 29.4 | 0.7–0.8 | 1.04–1.05 | its qualifying pieces are the Valley County core's |
+| `sh55-mccall-newmeadows` | 12.7 | 0.8 | 1.04–1.05 | as above; WB fails effective miles |
+| `sh16` | 12.6 | 0.9–1.1 | 1.06–1.08 | the qualifying pieces are SH-16 Boise / Emmett cores |
+| `sh45-rural` | 13.1 | 0.1 | 0.98–1.01 | no candidate: no recurring congestion |
+
+**For the owner:** `sh45-rural` was the Item 44 **rural control**. It has no congestion
+to find, so no generated catalogue will carry it. If a control is still wanted, it
+should be a separate, explicitly unranked entry. The curation is not a reason to keep
+it. The rest are long rural context runs, and the generator's tiers cover their
+congested parts.
+
+### 5. Tests
+
+1,029 pass (1,020 before), 2 skipped.
+- `test_extents.TestCoupletLegPairing` (3), on a synthetic couplet:
+  - legs 206 m apart are two one-direction facilities without the couplet;
+  - they are one NB+SB facility with it, listing `_couplets`;
+  - same-route chains 5 km apart don't pair, with an unrelated couplet given.
+- `test_build_statewide_catalogues` (4):
+  - D3 is built and named like every district;
+  - a couplet covered on both legs is deferred, keeps `one_way_couplet`, and a Tier 2
+    over a couplet doesn't count;
+  - a one-leg couplet ranks flagged;
+  - an uncovered one is untouched.
+- `test_aggregate_statewide_rankings` (2): a deferred couplet is context at its
+  facility's rank; a flagged one ranks with its flag.
+- `test_d3_catalogue` and `test_corridors` pass unchanged on the legacy path.

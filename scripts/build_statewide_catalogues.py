@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the District 1/2/4/5/6 corridor screening catalogues (ROADMAP Item 46).
+"""Generate the six district corridor screening catalogues (ROADMAP Items 46, 63).
 
 The catalogues are **derived**, not drawn. For each district this walks the XD
 network's numbered mainline chains, cuts them at objectively detected split
@@ -10,7 +10,12 @@ that ended them, detects the one-way couplets topologically
 ``corridors.resolve_catalogue``.
 
 The predecessor — hand-picked lat/lon hints per corridor and hand-authored
-couplet entries — is kept in ``legacy/handbuilt_catalogues/`` for diffing.
+couplet entries — is kept in ``legacy/handbuilt_catalogues/`` for diffing, and
+District 3's hand-curated Item 44 catalogue in ``legacy/d3_curated/`` (Item 63).
+
+A detected couplet's legs pair as one facility whatever their separation, and a
+couplet whose legs a ranked facility's core runs on is not ranked again on its own
+(``_ranked: false``, ``_counted_in``; Item 63).
 
 A catalogue is written **only when it verifies**: a file that ships despite a
 failed verification is a broken catalogue that looks like a good one.
@@ -56,18 +61,14 @@ def apply_membership(net: gpd.GeoDataFrame, district: int) -> gpd.GeoDataFrame:
         raise SystemExit(f"{path} missing — run scripts/build_route_membership.py first")
     return routes.apply_route_membership(net, routes.read_membership(path))
 
-DEFAULT_DISTRICTS = [1, 2, 4, 5, 6]
-"""District 3's primary catalogue is the curated Item 44 rebuild
-(``scripts/d3_corridors.json``, ``scripts/rebuild_d3_catalogue.py``) and is never
-overwritten here. ``--districts 3`` generates D3 the same way as every other district
-into :data:`GENERATED_D3` instead, for comparison and as the automatic alternative."""
-
-GENERATED_D3 = "d3_corridors_generated.json"
+DEFAULT_DISTRICTS = [1, 2, 3, 4, 5, 6]
+"""Every district, District 3 included: its generated catalogue is primary since Item
+63 (the curated Item 44 one is archived in ``legacy/d3_curated/``)."""
 
 
 def catalogue_name(district: int) -> str:
     """The file a district's generated catalogue is written to."""
-    return GENERATED_D3 if district == 3 else f"d{district}_corridors.json"
+    return f"d{district}_corridors.json"
 
 
 def load_district(district: int, *, aadt_source: str | None,
@@ -219,13 +220,17 @@ def load_curves(district: int, screening_dir: Path) -> pd.DataFrame:
 
 def couplet_block(net: gpd.GeoDataFrame, district: int,
                   observed: set[int] | None = None,
-                  review: list | None = None) -> tuple[list[dict], list[dict], list]:
+                  review: list | None = None) -> tuple[list[dict], list[dict], list, dict]:
     """Detected couplets for one district, in catalogue shape.
 
     A couplet whose legs are not in the export is dropped: it resolves on the
     network but has nothing to screen, and would rank as a blank row. ``review``
     collects every detected pair, kept or rejected, with the one-way test that
     decided (Item 51).
+
+    Returns ``(entries, groups, detected, legs)``. ``legs`` is ``{couplet group id:
+    (leg 1 ids, leg 2 ids)}`` for every detected pair, which
+    ``extents.generate_catalogue`` pairs couplet legs by (Item 63).
     """
     rejected: list = []
     detected = couplets.detect_couplets(
@@ -239,20 +244,74 @@ def couplet_block(net: gpd.GeoDataFrame, district: int,
                            "miles": pair.total_miles,
                            "mean_lateral_sep_m": pair.mean_lateral_sep_m,
                            "verdict": verdict})
-    pairs = detected
-    if observed is not None:
-        pairs = [p for p in detected
-                 if all(s in observed for s in p.dir1_segment_ids)
-                 and all(s in observed for s in p.dir2_segment_ids)]
-    entries, groups = [], []
-    for pair in pairs:
+    entries, groups, legs = [], [], {}
+    for pair in detected:
         e1, e2, group = couplets.couplet_catalogue_entries(pair, net)
+        legs[group["id"]] = (pair.dir1_segment_ids, pair.dir2_segment_ids)
+        if observed is not None and not (
+                all(s in observed for s in pair.dir1_segment_ids)
+                and all(s in observed for s in pair.dir2_segment_ids)):
+            continue
         entries.extend([e1, e2])
         groups.append(group)
-    # ``detected`` (not ``pairs``) goes to the registry validation: that table
-    # measures **the detector**, and scoring it on the post-coverage subset would
+    # ``detected`` (not the observed subset) goes to the registry validation: that
+    # table measures **the detector**, and scoring it on the post-coverage subset would
     # blame it for couplets the export simply does not carry.
-    return entries, groups, detected
+    return entries, groups, detected, legs
+
+
+COUPLET_LEG_SHARE = 0.5
+"""A couplet is counted in a facility (Item 63) when that facility's ranked core covers at
+least this share of **each** leg's miles."""
+
+
+def defer_covered_couplets(cat: dict, legs: dict, miles) -> list[str]:
+    """Mark each couplet group a ranked facility's core covers as not ranked (Item 63),
+    naming that facility in ``_counted_in``.
+
+    Covered means at least :data:`COUPLET_LEG_SHARE` of **each** leg lies in the
+    core: Moscow's and Boise's couplets are their facility's core, both directions.
+    The couplet group stays in the catalogue, because its legs are what the AADT
+    one-way fallback reads (``corridors.couplet_segments``, Items 53/54), and the
+    ranking carries it as context under the facility. Ranking both would count the
+    couplet's delay twice in a statewide table.
+
+    A couplet a core covers only in part ranks as before, and is flagged with the
+    miles it shares. One example is Twin Falls, where a westbound-only core runs on
+    the westbound legs. Dropping it would drop the other leg's delay from the ranking.
+
+    Args:
+        legs: ``{couplet group id: (leg 1 ids, leg 2 ids)}`` (:func:`couplet_block`).
+        miles: segment id -> miles.
+
+    Returns the ids deferred."""
+    def _mi(ids) -> float:
+        return float(sum(float(miles.get(s, 0.0)) for s in ids))
+
+    core_segs: dict[str, set[int]] = {}
+    groups = {g["id"]: g for g in cat["reporting_corridors"]}
+    for e in cat["corridors"]:
+        g = groups.get(e.get("corridor"), {})
+        if g.get("_ranked") and g.get("_couplets"):
+            core_segs.setdefault(g.get("_facility", g["id"]), set()).update(
+                int(s) for s in e.get("_segment_ids", []))
+    out = []
+    for g in cat["reporting_corridors"]:
+        if not g.get("_couplet") or g["id"] not in legs:
+            continue
+        l1, l2 = (set(map(int, leg)) for leg in legs[g["id"]])
+        for facility, segs in core_segs.items():
+            shares = [_mi(leg & segs) / _mi(leg) if _mi(leg) > 0 else 0.0
+                      for leg in (l1, l2)]
+            if min(shares) >= COUPLET_LEG_SHARE:
+                g["_ranked"] = False
+                g["_counted_in"] = facility
+                out.append(g["id"])
+                break
+            shared = _mi((l1 | l2) & segs)
+            if shared > 0:
+                g.setdefault("_flags", []).append(f"shares {shared:.2f} mi with {facility}")
+    return out
 
 
 def merge_blocks(base: dict, entries: list[dict], groups: list[dict]) -> dict:
@@ -341,6 +400,11 @@ def main() -> int:
             stops = hard_stops_mod.stop_boundaries(resolved)
             print(f"  {resolved['row'].nunique()} hard stops -> {len(stops)} boundaries")
 
+        # Couplets first: the corridor pass pairs a couplet's legs as one facility
+        # whatever their separation (Item 63).
+        c_entries, c_groups, pairs, legs = ([], [], [], {}) if args.no_couplets else \
+            couplet_block(net, d, observed, couplet_review)
+
         audit: list[dict] = []
         cat = extents.generate_catalogue(
             net, baseline,
@@ -352,6 +416,7 @@ def main() -> int:
             curves=curves,
             profiles=None if curves is None else curves.attrs["library"],
             hard_stops=stops,
+            couplet_legs=legs,
             note=(f"ITD District {d} screening catalogue, generated by "
                   f"inrix_tools.extents.generate_catalogue (cores on recurring peak "
                   f"congestion against each segment's own baseline, ROADMAP Item 50) "
@@ -369,12 +434,14 @@ def main() -> int:
               f"{len(cat['reporting_corridors'])} reporting corridors")
 
         if not args.no_couplets:
-            c_entries, c_groups, pairs = couplet_block(net, d, observed, couplet_review)
             all_pairs.extend(pairs)
             cat = merge_blocks(cat, c_entries, c_groups)
+            deferred = defer_covered_couplets(
+                cat, legs, net.set_index("XDSegID")["Miles"].to_dict())
             print(f"  + {len(pairs)} couplets detected, "
                   f"{len(c_entries) // 2} fully observed and catalogued "
-                  f"({len(c_entries)} legs)")
+                  f"({len(c_entries)} legs); {len(deferred)} not ranked (a facility's core covers "
+                  f"both legs): {', '.join(deferred) or '-'}")
 
         res = verify(cat, net, repairs, d, observed)
         passed = bool(res["reached_target"].all())
@@ -392,9 +459,8 @@ def main() -> int:
 
     if all_pairs and not args.dry_run:
         # The registry spans all six districts, so detection is run on the ones this
-        # invocation did not build too (District 3's catalogue is the Item 44
-        # empirical rebuild and is not regenerated here). Scoring the registry on a
-        # partial statewide sweep would report every unvisited district as a miss.
+        # invocation did not build too. Scoring the registry on a partial statewide
+        # sweep would report every unvisited district as a miss.
         for d in sorted(set(range(1, 7)) - set(args.districts)):
             cache = Path(f"geometry_cache/d{d}_network.geoparquet")
             if not cache.exists():
