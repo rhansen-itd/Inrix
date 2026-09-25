@@ -3052,7 +3052,7 @@ vehicle-hours per average day of the data period, with MADT and DOW factors."
 
 ---
 
-## 58 — Curve-weighted VHD everywhere: consumers, floor rescale, ranking comparison
+## 58 — Curve-weighted VHD everywhere: consumers, floor rescale, ranking comparison ✅ (Session 78)
 
 **Target: Opus.** Scripts + GUI consistency. Depends on 57.
 
@@ -3067,25 +3067,40 @@ windows with the same gate.
 
 Scope:
 
-- [ ] **Switch the consumers to the new metric:**
+- [x] **Switch the consumers to the new metric:**
       `run_district_screening._segment_tti_frame`, the `corridor_peak_totals`
       rankings, `aggregate_statewide_rankings.py`, and the GUI's VHD path
       (`_segment_means`, the KML). This keeps the GUI consistent; it adds no new GUI.
-- [ ] **Rescale the thresholds** by the observed median new/old ratio, with the
+      *The runner computes `screen.segment_curve_vhd` once per run and passes it to
+      `rank_corridors(segment_vhd=)` and the map; it saves it as
+      `segment_{peak,7day}_curve_vhd.parquet`, which the statewide maps read (they no
+      longer join AADT themselves). The totals carry `vhd_per` and refuse mixed gates;
+      the aggregation refuses mixed VHD bases. The catalogue builder passes the bins and
+      curves too. The GUI map and KML use `screen.frame_curve_vhd`, with the slider as
+      the window. `generate_screening_maps.py` (D3-only, index) moved to `legacy/`.*
+- [x] **Rescale the thresholds** by the observed median new/old ratio, with the
       rationale recorded: `MIN_CORE_VHD`, `MIN_CORE_VHD_PER_MILE`, and the map's
       `_VHD_TIERS`. The floors stay noise floors (permissive catalogue).
-- [ ] **Ranking comparison.**
+      *Peak ratio 0.165 (segments and cores alike, every district); 7-day 0.936. Floors
+      5 → 0.8; peak tiers 10/50/150 → 1.5/8/25; the 7-day map gets its own set and
+      keeps 10/50/150 (ratio within its spread of 1). Regenerating to scratch keeps
+      every core except D2's Moscow core (re-cut) and one new D6 core; the committed
+      catalogues were not regenerated.*
+- [x] **Ranking comparison.**
       - Re-run the statewide screening with maps, keeping the pre-run outputs.
       - Record Spearman ρ and top-N churn (`item58_{peak,7day}_ranking_changes.csv`).
       - D3 generated goes alongside; the curated catalogue is never overwritten.
-- [ ] **Update the index-valued tests:**
+      *`scripts/compare_statewide_rankings.py`. Peak ρ 0.988, 7-day 0.988 (D3
+      generated: 0.990 / 0.987); largest move 8; top 20 unchanged in the main run.*
+- [x] **Update the index-valued tests:**
       - `test_screen` AM vhd == 500;
       - `test_extents` `0.5*10000/60`;
       - the GUI/KML VHD tests;
       - the tier tests.
-- [ ] DATA_FORMAT; DESIGN_HISTORY.
+- [x] DATA_FORMAT; DESIGN_HISTORY.
+      *921 pass (907 before); see Session 78.*
 
-*Suggested prompt:* "Do Item 58 of ROADMAP.md — switch every VHD consumer to the
+*Suggested prompt (done):* "Do Item 58 of ROADMAP.md — switch every VHD consumer to the
 curve-weighted metric, rescale the floors, and record the ranking comparison."
 
 ---

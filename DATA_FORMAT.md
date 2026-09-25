@@ -1977,15 +1977,66 @@ volume_days(c, W, cell) = Σ over the period's days d in the cell and in W  bin_
   `vhd_index` (window mean delay × daily dirAADT / 60), which differs from the flat
   curve only in the floor (per window mean vs per cell). Tested on toy data.
 
-**Where it is used (Item 57: opt-in; Item 58 switches the consumers).**
-`screen.rank_corridors(..., bins=, curves=)`, `extents.segment_congestion(..., bins=,
-curves=)` (the VHD read in the segment's `peak_window`) and `generate_catalogue(...,
-bins=, curves=)` (its monthly profile too). Without `bins`, `vhd` is still the index,
-so the floors (`MIN_CORE_VHD*`) and map tiers keep their Item 54 calibration until
-Item 58 rescales them. Every output carries `vhd_index` and `attrs['vhd_basis']`
-(`curve` / `index`). `attrs['aadt_caveat']` changes from "relative index" to "average
-window day of the period, generic curves". `screen.segment_curve_vhd` runs the whole thing
-off the store in segment chunks that share one period.
+**Where it is used.** The core entry points: `screen.rank_corridors(..., bins=,
+curves=)` or `(..., segment_vhd=)` (a precomputed `screen.segment_curve_vhd`),
+`extents.segment_congestion(..., bins=, curves=)` (the VHD read in the segment's
+`peak_window`) and `generate_catalogue(..., bins=, curves=)` (its monthly profile
+too). Without `bins`, `vhd` is the index. Every output carries `vhd_index` and
+`attrs['vhd_basis']` (`curve` / `index`), and `attrs['aadt_caveat']` says "average
+window day of the period, generic curves". `screen.segment_curve_vhd` runs the whole
+thing off the store in segment chunks that share one period.
+
+**Every consumer reads the curve VHD since Item 58.** Nothing that ranks, maps or
+catalogues is on the index any more:
+
+- `run_district_screening.py` computes the curve VHD once per run, for every screened
+  segment against the reference (`Miles / Ref Speed × 60`). It ranks the corridors
+  on it, colours the VHD/mile map by it (the worst-TTI window's value), and saves it
+  as `segment_{peak,7day}_curve_vhd.parquet`. The provenance JSON gains a `vhd` block
+  (basis, `per`, caveat, period, `madt_ratios`). The corridor totals carry `vhd_per`
+  and refuse to total windows that are per different days.
+- `generate_statewide_maps.py` reads those parquets. It no longer joins AADT itself,
+  so the map can't weight by a different AADT than the ranking did (it used to
+  default to `Cumulative_AADT.zip` while the runs used `AADT_2025.zip`).
+- `aggregate_statewide_rankings.py` refuses districts on different VHD bases (a
+  stale index table, or per weekday beside per day). The district summary gains
+  `peak_vhd_per` / `day7_vhd_per`.
+- `build_statewide_catalogues.py` passes a cached peak bin screen
+  (`segment_peak_bins.parquet` + `.json` attrs) and the screening run's curves
+  (`dN_volume_profiles.csv`). So it needs a screening run first.
+- The GUI's vehicle-hours map mode and its KML export use `screen.frame_curve_vhd`.
+  That is the same calculation over the in-memory rows: the time-of-day slider and
+  weekday checklist become the window (`screen.clock_window`), and the cells are 15
+  minutes (or the export's bin, if coarser). The floor is per cell, against
+  `speed.free_flow_travel_time` under the GUI's free-flow choice (Ref Speed or an
+  observed percentile). Curves come from the screening runs' saved assignments, else
+  the default `balanced_urban`. The legend reads "Vehicle-hours of delay / weekday"
+  (or `/ day`).
+
+**The scale, statewide (Session 78).** The curve VHD / index ratio, over segments at
+≥ 10 VHD/mi on the index, from the full 2026 re-run with MADT joined:
+
+| window (map) | median | IQR | by district |
+|---|---|---|---|
+| peak, worse of AM / PM, per weekday | **0.165** (2,262 segments) | 0.126–0.191 | 0.163–0.166 |
+| `day_7d`, per day | **0.936** (1,794) | 0.88–1.04 | 0.889–0.970 |
+
+The peak ratio is the same in every index tier (0.164 / 0.165 / 0.167 for [10, 50),
+[50, 150), ≥ 150), so one factor rescales the whole scale. At the catalogue cores
+(best candidate per chain, index ≥ 5) it is 0.165 (197 cores, IQR 0.154–0.191). The
+thresholds moved by these ratios:
+
+- the core floors `MIN_CORE_VHD[_PER_MILE]` 5 → 0.8 (× 0.165, rounded down), and the
+  unused `VHD_BOTTLENECK` / `VHD_FREEFLOW` 75 / 10 → 12 / 1.5;
+- the **peak** VHD/mi map tiers 10 / 50 / 150 → **1.5 / 8 / 25** (× 0.165 = 1.65 /
+  8.25 / 24.75, the bottom rounded down as Item 54 did);
+- the **7-day** map tiers stay 10 / 50 / 150. × 0.936 gives 9.4 / 47 / 140, and the
+  ratio's spread includes 1. The two maps now have their own tier sets
+  (`run_district_screening._vhd_tiers`, chosen by the frame's `vhd_per`), because a
+  weekday peak is about 2 of a day's hours and the 7-day window 15.
+
+Ratios (spill retention, dilution, the AADT gradient, proration, the episodic share)
+don't care about scale and did not move.
 
 **On D3 (Session 77).** The 2026 export (1 Jan – 31 Aug, 15-minute bins), for the
 1,913 segments with an Item 56 curve and a reference speed, with AADT = 1 and MADT = 1
@@ -2196,8 +2247,10 @@ rural roads whose overnight data is imputed (Galena, Lowell).
 
 **Per-segment measures.** `ratio` = worst peak window ÷ baseline. `weight` = a smooth
 ramp from 0 at 1.05 to 1 at 1.20. `delay_min` = peak − baseline (floored at 0).
-`vhd` = delay × AADT 2025 / 60, on the same relative-weight basis as
-`aadt.vehicle_hours_of_delay`. Session 65's peak/night ratios hold on these data:
+`vhd_index` = delay × AADT 2025 / 60, on the same relative-weight basis as
+`aadt.vehicle_hours_of_delay`; `vhd` is the curve-weighted VHD against the baseline
+in the peak window (Item 58; the builder always passes `bins` / `curves`), per
+weekday. Each core's `_core` stats carry both. Session 65's peak/night ratios hold on these data:
 real hotspots run 1.2–2.4 per segment, geometric roads 0.95–1.05.
 
 **Core floors.** Calibrated on the Session 65 list (Session 69). All of them are in
@@ -2209,8 +2262,8 @@ real hotspots run 1.2–2.4 per segment, geometric roads 0.95–1.05.
 | `CORE_GAP_SEGMENTS` / `_MILES` | 2 / 0.5 mi | a core bridges up to this much in between (so SH-8's 1.199 is inside it) |
 | `SEGMENT_MILES_CAP` | 0.5 mi | a segment counts toward effective miles only up to this |
 | `MIN_EFFECTIVE_CORE_MILES` | 0.6 | Σ min(miles, cap) × weight; one long segment can't pass alone |
-| `MIN_CORE_VHD_PER_MILE` | 5 | a **noise floor**, not a policy cut. VHD is an index (window delay × daily AADT as a weight), so a cut between two real towns would be arbitrary. It removes only the rural geometric and low-volume roads (0.5–2.5); the smallest towns (Blackfoot 22, Bonners Ferry 22.5, Soda Springs 25) stay in and rank low. Thinning to a top-N is the ranking's job (owner, Session 69). 10 on two-way AADT; halved with the per-direction basis (Item 54) |
-| `MIN_CORE_VHD` | 5 | total vehicle-hours, the same noise floor (10 on two-way AADT) |
+| `MIN_CORE_VHD_PER_MILE` | 0.8 | a **noise floor**, not a policy cut: a cut between two real towns would be arbitrary. It removes only the rural geometric and low-volume roads; the smallest towns (Blackfoot, Bonners Ferry, Soda Springs, at 4–5× the floor) stay in and rank low. Thinning to a top-N is the ranking's job (owner, Session 69). 10 on the two-way index, 5 per direction (Item 54), × 0.165 onto the curve VHD per weekday (Item 58: the median core ratio), rounded down |
+| `MIN_CORE_VHD` | 0.8 | total vehicle-hours per weekday, the same noise floor (10 → 5 → × 0.165) |
 | `MIN_REALTIME_SHARE` | 0.90 | mile-weighted, peak window. Keep list ≥ 0.98; Lowell 0.01, Benewah 0.02–0.03, Idaho County 0.16, Gilbert Grade 0.02–0.04, Galena 0.01 |
 | `SPILL_RETENTION` | 0.5 | Tier 2 grows while the grown extent keeps ≥ 50% of the core's VHD/mi |
 | `CONTEXT_PAD_MILES` | 3 mi | Tier 3 goes at most this far past Tier 2 |

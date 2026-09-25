@@ -37,6 +37,7 @@ import dash_bootstrap_components as dbc  # noqa: E402
 from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html, no_update  # noqa: E402
 
 from inrix_tools import aadt, beforeafter, changepoint, geometry, io, kml, names, speed, store  # noqa: E402
+from inrix_tools import profile_assignment, screen  # noqa: E402
 from inrix_tools.io import CORRIDOR_COL, DATETIME_COL, SEGMENT_COL  # noqa: E402
 from inrix_tools.timebins import (  # noqa: E402
     assign_day_group,
@@ -84,8 +85,13 @@ def _agg_metric_key(metric: str) -> str:
 
 
 # Map colour modes: segment mean, before/after Δ, and (Item 18) per-segment
-# vehicle-hours of delay (delay × AADT — the volume-aware impact number).
+# vehicle-hours of delay — since Item 58 the curve-weighted VHD the screening ranks
+# on: each bin's delay × that bin's volume from the segment's volume-profile curve,
+# per average day of the selected window (screen.frame_curve_vhd).
 MAP_MODE_VHD = "vhd"
+# The volume-profile curve per XD segment the district screening runs wrote (Item 56);
+# a segment none of them covers takes the library's default curve.
+VOLUME_PROFILE_FILES = "out/statewide_screening/d*/d*_volume_profiles.csv"
 
 
 def _has_aadt(ds) -> bool:
@@ -151,6 +157,8 @@ class Dataset:
     # it are cheap and cached in _compare_cache.
     _adjusted_cache: dict = field(default_factory=dict)
     _compare_cache: dict = field(default_factory=dict)
+    _vhd_cache: dict = field(default_factory=dict)   # (window, days) -> curve VHD
+    curves: object = None            # Segment ID -> curve_id, resolved on first VHD map
 
     def __post_init__(self):
         if self.full_span is None:
@@ -569,6 +577,63 @@ def _segment_means(ds: Dataset, col: str, window=None, days=None) -> pd.Series:
     return _apply_tod(ds.df, window, days).groupby(SEGMENT_COL, observed=True)[col].mean()
 
 
+def _segment_curves(ds: Dataset) -> pd.Series:
+    """``Segment ID -> curve_id`` for the loaded segments: the screening runs' saved
+    assignments (:data:`VOLUME_PROFILE_FILES`), else the default curve."""
+    if ds.curves is None:
+        ids = pd.Index(sorted(int(s) for s in ds.df[SEGMENT_COL].unique()), name=SEGMENT_COL)
+        curves = pd.Series(profile_assignment.DEFAULT_CURVE, index=ids, dtype=object)
+        for path in sorted(_REPO.glob(VOLUME_PROFILE_FILES)):
+            try:
+                saved = profile_assignment.read_assignment(path)["curve_id"]
+            except (OSError, KeyError, ValueError):
+                continue
+            saved.index = saved.index.astype("int64")
+            hit = saved[saved.index.isin(ids) & saved.notna()]
+            curves.loc[hit.index] = hit
+        ds.curves = curves
+    return ds.curves
+
+
+def _data_bin_minutes(ds: Dataset) -> int:
+    """The cell width for curve VHD: 15 minutes, or the export's own bin when that is
+    coarser (an hourly export has no quarter-hour cells to fill)."""
+    import math
+    minutes = ds.df[DATETIME_COL].dt.hour * 60 + ds.df[DATETIME_COL].dt.minute
+    step = math.gcd(*{int(m) for m in minutes.unique()} | {60})
+    width = math.lcm(max(step, 1), 15)
+    return width if 60 % width == 0 else 60
+
+
+def _segment_vhd(ds: Dataset, window=None, days=None) -> pd.Series:
+    """Per-segment curve-weighted vehicle-hours of delay on an average day of the
+    time-of-day / weekday selection (Item 58: the metric the screening ranks on).
+    ``attrs['vhd_per']`` says what day it is per (``weekday``, ``day``, …)."""
+    key = (_window_key(window), _days_key(days))
+    if key in ds._vhd_cache:
+        return ds._vhd_cache[key]
+    h0, h1 = (0.0, 24.0) if key[0] == "full" else key[0]
+    win = screen.clock_window("map", h0, h1, None if key[1] == "all" else key[1])
+    free_flow = _parse_freeflow((ds.df.attrs.get("delay") or {}).get("free_flow", "ref"))
+    ref_tt = speed.free_flow_travel_time(ds.df, ds.metadata, free_flow=free_flow)
+    volume = (ds.geo if ds.geo is not None and aadt.AADT_COL in getattr(ds.geo, "columns", [])
+              else ds.aadt)
+    cv = screen.frame_curve_vhd(ds.df, ref_tt, volume, _segment_curves(ds), win,
+                                bin_minutes=_data_bin_minutes(ds))
+    out = cv.set_index(SEGMENT_COL)["vhd"]
+    out.attrs = {"vhd_per": cv.attrs["vhd_per"].get("map"),
+                 "aadt_caveat": cv.attrs["aadt_caveat"]}
+    if len(ds._vhd_cache) >= _COMPARE_CACHE_CAP:
+        ds._vhd_cache.clear()
+    ds._vhd_cache[key] = out
+    return out
+
+
+def _vhd_label(vhd: pd.Series) -> str:
+    per = vhd.attrs.get("vhd_per") or "day"
+    return f"Vehicle-hours of delay / {per}"
+
+
 def _window_key(window):
     """A canonical cache key for a ToD window, collapsing every whole-day
     spelling (``None`` / ``[0, 24]`` / equal handles) to one ``"full"`` bucket so
@@ -942,7 +1007,7 @@ def _controls() -> dbc.Card:
                      options=[{"label": "Ref Speed (open road)", "value": "ref"},
                               {"label": "Observed 95th pct", "value": "p95"}]),
         dbc.Label("Colour map by", className="mt-2"),
-        # The vehicle-hours-of-delay option (Item 18, delay × AADT) is added to
+        # The vehicle-hours-of-delay option (Items 18, 58: curve-weighted delay × volume) is added to
         # these options at Load only when an AADT layer resolved (else hidden).
         dcc.Dropdown(id="map-mode", clearable=False, value="mean",
                      options=[{"label": "Segment mean", "value": "mean"},
@@ -1408,11 +1473,10 @@ def _register_callbacks(app: Dash) -> None:
                                        sublabel_col="Combined", uirevision=f"data-{token}")
         label = figures._unit_label(col)
         if mode == MAP_MODE_VHD and _has_aadt(ds) and _metric_col(ds, "delay") is not None:
-            # Vehicle-hours of delay (Item 18): per-segment mean delay (hours) × AADT.
-            delay_col = _metric_col(ds, "delay")
-            mean_delay = _segment_means(ds, delay_col, window, days)
-            values = aadt.vehicle_hours_of_delay(mean_delay, ds.aadt)["vehicle_hours"]
-            label = "Vehicle-hours of delay / day"
+            # Vehicle-hours of delay (Items 18, 58): curve-weighted, per average day
+            # of the selected window — the number the screening ranks on.
+            values = _segment_vhd(ds, window, days)
+            label = _vhd_label(values)
         elif mode == "delta" and all([b0, b1, a0, a1]):
             try:
                 comp = _compare_all(ds, col, (b0, b1), (a0, a1), window, days=days)
@@ -1799,9 +1863,7 @@ def _write_kml(ds, metric, mode, before, after, window=None, days=None) -> Path:
     if mode == MAP_MODE_VHD and _has_aadt(ds) and delay_col is not None:
         # Mirror the map's vehicle-hours colouring so the export really is "the
         # current map colouring", not silently the plain metric mean.
-        mean_delay = _segment_means(ds, delay_col, window, days)
-        vh = aadt.vehicle_hours_of_delay(mean_delay, ds.aadt)["vehicle_hours"]
-        geo["metric"] = vh.reindex(geo.index)
+        geo["metric"] = _segment_vhd(ds, window, days).reindex(geo.index)
         color_by = "metric"
     elif mode == "delta" and all(before) and all(after):
         comp = _compare_all(ds, col, before, after, window, days=days)

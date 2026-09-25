@@ -264,6 +264,28 @@ def assign_volume_profiles(net, scr, catalogue_path, chains, *, membership_path,
     return assignment
 
 
+SEGMENT_VHD_PEAK = "segment_peak_curve_vhd.parquet"
+SEGMENT_VHD_7DAY = "segment_7day_curve_vhd.parquet"
+"""Per-segment curve VHD, saved beside the segment screen for the statewide maps."""
+
+
+def segment_vhd(con, area_key, scr, net, aadt, curves, *, windows, cvalue_threshold,
+                bin_minutes, tz, date_start, date_end):
+    """Curve-weighted VHD (Item 57) for every screened segment with a reference speed,
+    over ``windows``: ``screen.segment_curve_vhd`` against the INRIX reference travel
+    time (``Miles / ref_speed``), the free flow the ranking floors against."""
+    miles = (net.drop_duplicates(subset="XDSegID").set_index("XDSegID")["Miles"]
+             .astype(float))
+    ref_speed = scr["ref_speed"].astype(float)
+    ref_tt = (pd.Series(scr.index.map(miles), index=scr.index, dtype="float64")
+              / ref_speed * 60.0).where(ref_speed > 0)
+    ref_tt.index = ref_tt.index.astype("int64")
+    return screen.segment_curve_vhd(
+        con, area_key, ref_tt, aadt, curves, windows=windows,
+        cvalue_threshold=cvalue_threshold, bin_minutes=bin_minutes, tz=tz,
+        date_start=date_start, date_end=date_end)
+
+
 def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> dict:
     """What this ranking rests on. A ranking with no stated basis cannot be handed to
     anyone, so it travels with the CSV rather than only with the log."""
@@ -390,15 +412,39 @@ _TTI_TIERS = [
     ("Severe Congestion (TTI ≥ 1.50)",      None, "#e53e3e", 5.2),
 ]
 
-# VHD/mile tier definitions: label, upper bound, color, line width. The bounds were
-# 25 / 100 / 300 on two-way AADT, round numbers rather than breaks in the data; halved
-# with the per-direction basis (Item 54), with the bottom one rounded to 10.
-_VHD_TIERS = [
-    ("Low / Free Flow (< 10 VHD/mi)",        10.0,  "#4a5568", 1.8),
-    ("Minor Delay (10–50 VHD/mi)",           50.0,  "#d69e2e", 3.0),
-    ("Moderate Delay (50–150 VHD/mi)",       150.0, "#dd6b20", 4.0),
-    ("Severe Congestion (≥ 150 VHD/mi)",     None,  "#e53e3e", 5.2),
-]
+# VHD/mile tiers: upper bounds of Low / Minor / Moderate (Severe is above the last),
+# per what the map's VHD is *per* (``vhd_per``). History: 25 / 100 / 300 on two-way
+# AADT (round numbers, Session 45), halved with the per-direction basis (Item 54,
+# the bottom one rounded to 10) to 10 / 50 / 150 on the index. Item 58 moved the maps
+# to the curve-weighted VHD, which is on a different scale per window: a weekday peak
+# is ~2 of a day's hours, the 7-day window 15 of them. Each set is 10 / 50 / 150 times
+# its map's observed median curve / index ratio, rounded, so a segment draws in the
+# tier it drew in before (DESIGN_HISTORY Session 78).
+_VHD_TIER_BOUNDS = {
+    # peak map, vehicle-hours per weekday in the worse of AM / PM: x 0.165 (median of
+    # 2,262 segments at >= 10 on the index, IQR 0.126-0.191, the same in every district
+    # and tier) = 1.65 / 8.25 / 24.75; the bottom rounded down as Item 54 did.
+    "weekday": (1.5, 8.0, 25.0),
+    # 7-day map, vehicle-hours per day 6 AM - 9 PM: x 0.936 (1,794 segments, IQR
+    # 0.88-1.04) = 9.4 / 47 / 140 — within the ratio's spread of 1, so unchanged.
+    "day": (10.0, 50.0, 150.0),
+}
+_VHD_TIER_STYLE = [("Low / Free Flow", "#4a5568", 1.8), ("Minor Delay", "#d69e2e", 3.0),
+                   ("Moderate Delay", "#dd6b20", 4.0), ("Severe Congestion", "#e53e3e", 5.2)]
+
+
+def _vhd_tiers(per: str = "weekday") -> list:
+    """``[(label, upper bound, color, width), ...]`` for a map whose VHD is per
+    ``per`` (``weekday`` for the peaks, ``day`` for the 7-day window)."""
+    b = _VHD_TIER_BOUNDS["day" if per == "day" else "weekday"]
+    labels = [f"< {b[0]:g} VHD/mi", f"{b[0]:g}–{b[1]:g} VHD/mi",
+              f"{b[1]:g}–{b[2]:g} VHD/mi", f"≥ {b[2]:g} VHD/mi"]
+    return [(f"{name} ({text})", upper, color, width)
+            for (name, color, width), text, upper in zip(_VHD_TIER_STYLE, labels,
+                                                         (*b, None))]
+
+
+_VHD_TIERS = _vhd_tiers("weekday")
 
 # Segments the AADT join never reached get their own tier rather than being
 # folded into the lowest one — an unvolumed segment is *unknown*, not free-flowing,
@@ -406,12 +452,18 @@ _VHD_TIERS = [
 _VHD_NO_DATA_TIER = ("No AADT Data (unvolumed)", "#9f7aea", 1.4)
 
 
-def _segment_tti_frame(scr, net_indexed, windows, aadt=None):
+def _segment_tti_frame(scr, net_indexed, windows, aadt=None, segment_vhd=None):
     """Build a GeoDataFrame of per-segment worst-window metrics for map rendering.
 
     Each segment gets: ``worst_tti``, ``worst_speed``, ``worst_window``,
-    ``ref_speed``, ``worst_delay_rate`` (min/mi), optional ``worst_vhd_per_mile``,
-    and the network geometry.
+    ``ref_speed``, ``worst_delay_rate`` (min/mi), ``worst_vhd`` /
+    ``worst_vhd_per_mile`` / ``vhd_per`` / ``aadt``, and the network geometry.
+
+    The VHD is the **curve-weighted** one (Item 58): ``segment_vhd`` is the per-segment
+    ``screen.segment_curve_vhd`` frame, read in the worst (highest-TTI) window, and its
+    ``AADT`` column is the volume shown. Without it the VHD columns are NaN; ``aadt``
+    alone is refused, because the Item 54 index it would give is not on the tiers'
+    scale any more.
     """
     import numpy as np
 
@@ -428,6 +480,7 @@ def _segment_tti_frame(scr, net_indexed, windows, aadt=None):
     best_tti = None
     best_speed = None
     best_window = None
+    best_name = None
     best_delay = None
     for name in peak_wins:
         tt_col = f"{name}_travel_time"
@@ -441,12 +494,14 @@ def _segment_tti_frame(scr, net_indexed, windows, aadt=None):
             best_tti = tti
             best_speed = scr[sp_col]
             best_window = pd.Series(peak_wins[name].window, index=scr.index)
+            best_name = pd.Series(name, index=scr.index)
             best_delay = delay
         else:
             worse = tti > best_tti
             best_tti = best_tti.where(~worse, tti)
             best_speed = best_speed.where(~worse, scr[sp_col])
             best_window = best_window.where(~worse, peak_wins[name].window)
+            best_name = best_name.where(~worse, name)
             best_delay = best_delay.where(~worse, delay)
 
     df = pd.DataFrame(index=scr.index)
@@ -456,22 +511,31 @@ def _segment_tti_frame(scr, net_indexed, windows, aadt=None):
     df["ref_speed"] = ref_sp
     df["worst_delay_rate"] = (best_delay / seg_miles) if best_delay is not None else 0.0
 
-    if aadt is not None:
+    df["aadt"] = np.nan
+    df["worst_vhd_per_mile"] = np.nan
+    df["worst_vhd"] = np.nan
+    df["vhd_per"] = None
+    if aadt is not None and segment_vhd is None:
+        raise ValueError("The segment map's VHD is curve-weighted (Item 58): pass "
+                         "segment_vhd (screen.segment_curve_vhd), not aadt alone.")
+    if segment_vhd is not None:
         # A segment the AADT join did not reach stays **NaN**, never 0. A zero here
         # is indistinguishable from free flow on the map, which is exactly how a
         # statewide join that matched nothing once rendered as "everything is fine"
-        # (Session 60). This matches screen.rank_corridors, which leaves vhd NaN and
-        # counts the misses in ``n_aadt_missing`` rather than zero-filling them.
-        aadt_vol = aadt["AADT"] if "AADT" in getattr(aadt, "columns", ()) else aadt
-        seg_aadt = pd.Series(df.index.map(aadt_vol), index=df.index, dtype="float64")
+        # (Session 60). curve_vehicle_hours_of_delay leaves such a segment's vhd NaN.
+        sv = segment_vhd.drop_duplicates(subset=["Segment ID", "window"])
+        sv = sv.set_index(["Segment ID", "window"])
+        seg_aadt = (sv["AADT"].groupby(level=0).first()
+                    .reindex(df.index).astype("float64"))
         df["aadt"] = seg_aadt
-        df["worst_vhd_per_mile"] = (df["worst_delay_rate"] / 60.0) * seg_aadt
-        df["worst_vhd"] = ((best_delay / 60.0) * seg_aadt if best_delay is not None
-                           else pd.Series(np.nan, index=df.index))
-    else:
-        df["aadt"] = np.nan
-        df["worst_vhd_per_mile"] = np.nan
-        df["worst_vhd"] = np.nan
+        if best_name is not None:
+            at = pd.MultiIndex.from_arrays([df.index.astype("int64"),
+                                            best_name.reindex(df.index)])
+            vhd = pd.Series(sv["vhd"].reindex(at).to_numpy(), index=df.index,
+                            dtype="float64")
+            df["worst_vhd"] = vhd
+            df["worst_vhd_per_mile"] = (vhd / seg_miles).where(seg_miles > 0)
+            df["vhd_per"] = sv["vhd_per"].reindex(at).to_numpy()
 
     import geopandas as gpd
 
@@ -564,19 +628,24 @@ def _segment_header(row) -> str:
     return f"<b>{rname}</b> {route_str}<br>"
 
 
-def _build_segment_vhd_traces(merged, window_label="Peak"):
+def _build_segment_vhd_traces(merged, window_label="Peak", tiers=None):
     """Build Plotly Scattermap traces for all segments, tiered by VHD / Mile.
 
     Segments whose ``worst_vhd_per_mile`` is NaN (no AADT joined) get their own
-    ``No AADT Data`` trace instead of falling into the lowest delay tier.
+    ``No AADT Data`` trace instead of falling into the lowest delay tier. ``tiers``
+    defaults to the set for the frame's ``vhd_per`` (:func:`_vhd_tiers`).
     """
     rate = merged["worst_vhd_per_mile"]
+    if tiers is None:
+        per = (merged["vhd_per"].dropna() if "vhd_per" in merged.columns
+               else pd.Series(dtype=object))
+        tiers = _vhd_tiers(per.mode().iloc[0] if len(per) else "weekday")
 
     # Unvolumed segments first, then the delay-density tiers over the rest.
     nd_label, nd_color, nd_width = _VHD_NO_DATA_TIER
     buckets = [(nd_label, merged[rate.isna()], nd_color, nd_width)]
     prev_upper = 0.0
-    for label, upper, color, width in _VHD_TIERS:
+    for label, upper, color, width in tiers:
         mask = rate.notna() & (rate >= prev_upper)
         if upper is not None:
             mask &= rate < upper
@@ -588,14 +657,15 @@ def _build_segment_vhd_traces(merged, window_label="Peak"):
         # "n/a", never "0" — a segment with no joined volume has no delay
         # density, and printing a zero would assert free flow it cannot know.
         aadt_val = _fmt_or_na(row.get("aadt"))
-        vhd_val = _fmt_or_na(row.get("worst_vhd"))
-        vhd_rate = _fmt_or_na(row.get("worst_vhd_per_mile"))
+        vhd_rate = _fmt_or_na(row.get("worst_vhd_per_mile"), ",.1f")
+        per = row.get("vhd_per")
+        per = f" per {per}" if isinstance(per, str) and per else ""
         return (
             _segment_header(row)
             + f"<b>Window:</b> {row.get('worst_window', window_label)} | "
             f"<b>Length:</b> {miles:.2f} mi<br>"
             f"<b>Delay Density:</b> {vhd_rate} VHD/mi "
-            f"({vhd_val} veh-hrs)<br>"
+            f"({_fmt_or_na(row.get('worst_vhd'), ',.1f')} veh-hrs{per})<br>"
             f"<b>AADT:</b> {aadt_val} veh/day<br>"
             f"<b>TTI:</b> {row['worst_tti']:.2f} | "
             f"<b>Delay Rate:</b> {row['worst_delay_rate']:.2f} min/mi<br>"
@@ -1205,7 +1275,7 @@ def _map_viewer_html(map_files: list[tuple[str, str]]) -> str:
 def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
                   *, windows, window_label="Peak", title_prefix="ITD District",
                   delay_label="Total Peak Delay", map_filename="screening_map.html",
-                  metric="tti", aadt=None):
+                  metric="tti", aadt=None, segment_vhd=None):
     """Generate a standalone interactive HTML map of all segments and corridors.
 
     This is **wiring**, not core computation: it reads a segment screen, looks up
@@ -1227,6 +1297,8 @@ def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
         map_filename: output filename for the map HTML.
         metric: ``'tti'`` (speed index) or ``'vhd_per_mile'`` (delay density).
         aadt: optional AADT joined frame or Series for volume weighting.
+        segment_vhd: the per-segment curve VHD (``screen.segment_curve_vhd``) the
+            ``vhd_per_mile`` map colours by (Item 58).
 
     Returns:
         Path to the written map HTML file.
@@ -1235,7 +1307,8 @@ def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
     net_indexed = net.set_index("XDSegID")
     n_segs = len(scr)
 
-    merged = _segment_tti_frame(scr, net_indexed, windows, aadt=aadt)
+    merged = _segment_tti_frame(scr, net_indexed, windows, aadt=aadt,
+                                segment_vhd=segment_vhd)
     c_traces, m_traces = _build_corridor_overlay(
         cat_entries, chains, corridor_ranks, net_indexed,
         delay_label=delay_label)
@@ -1305,7 +1378,7 @@ def summarise(ranking: pd.DataFrame, resolution: pd.DataFrame, top: int,
             vhd = "n/a" if pd.isna(r.vhd) else f"{r.vhd:,.0f}"
             # A rank is <NA> when its metric is — no AADT joined means no vhd and so
             # no vhd ranking, which is reported rather than printed as a zero.
-            vhmi = "n/a" if pd.isna(r.vhd_per_mile) else f"{r.vhd_per_mile:,.0f}"
+            vhmi = "n/a" if pd.isna(r.vhd_per_mile) else f"{r.vhd_per_mile:,.1f}"
             rank = "—" if pd.isna(r.rank) else f"{int(r.rank)}"
             rank_vhd = "—" if pd.isna(r.rank_vhd) else f"{int(r.rank_vhd)}"
             rank_dmi = ("—" if pd.isna(r.rank_delay_per_mile)
@@ -1320,7 +1393,7 @@ def summarise(ranking: pd.DataFrame, resolution: pd.DataFrame, top: int,
             for (direction, window), c in cells.iterrows():
                 cvhd = "n/a" if pd.isna(c["vhd"]) else f"{c['vhd']:,.0f}"
                 cvhmi = ("n/a" if pd.isna(c["vhd_per_mile"])
-                         else f"{c['vhd_per_mile']:,.0f}")
+                         else f"{c['vhd_per_mile']:,.1f}")
                 lines.append(
                     f"{'':>3}  {'':<6}{str(direction):<4}{str(window):<22}"
                     f"{c['miles']:>8.2f}{c['delay_min']:>8.2f}{c['tti']:>6.2f}"
@@ -1416,11 +1489,33 @@ def run(args) -> dict:
                             bbox_margin=BBOX_MARGIN_DEG, shs=shs_source(args.shs),
                             couplet_segments=couplet_ids)
 
+        # A volume-profile curve per segment (Item 56): the hourly shape the VHD is
+        # weighted by (Item 57), so it is assigned before anything is ranked.
+        peak_windows = {w: screen.PEAK_WINDOWS[w] for w in profiles_mod.PEAK_WINDOWS}
+        assignment = assign_volume_profiles(
+            net, scr, args.catalogue, accepted, membership_path=args.membership,
+            urban_context_path=args.urban_context, urban_source=args.urban,
+            overrides_path=args.profile_overrides, centres_path=args.urban_centres,
+            district=args.district,
+            peak_screen=lambda: screen_segments(
+                con, area_key, windows=peak_windows,
+                cvalue_threshold=args.cvalue_threshold, bin_minutes=args.bin_minutes,
+                tz=args.tz, date_start=args.date_start, date_end=args.date_end))
+
+        # Curve-weighted VHD for every screened segment, once (Item 58): the ranking
+        # reads the corridor members, the VHD map every segment.
+        seg_vhd = None
+        if aadt is not None:
+            seg_vhd = segment_vhd(con, area_key, scr, net, aadt, assignment,
+                                  windows=windows, cvalue_threshold=args.cvalue_threshold,
+                                  bin_minutes=args.bin_minutes, tz=args.tz,
+                                  date_start=args.date_start, date_end=args.date_end)
+
         # Keyed on the catalogue **id**, not the name: ids are short and unique,
         # where two names can share their first 20 characters ("SH-44 (State St)
         # WB: ..." names two different halves of one corridor). The full name rides
         # along as its own column so the CSV still says what each id is.
-        ranking = screen.rank_corridors(scr, accepted, aadt)
+        ranking = screen.rank_corridors(scr, accepted, aadt, segment_vhd=seg_vhd)
         names = dict(zip(resolution["id"], resolution["name"]))
         ranking.insert(1, "corridor_name", ranking["corridor"].map(names))
 
@@ -1458,19 +1553,12 @@ def run(args) -> dict:
         is_7day = win_names == ["day_7d"]
 
         prov = provenance(args, area_key, con, scr, resolution, repairs, aadt)
+        prov["vhd"] = {"basis": ranking.attrs.get("vhd_basis"),
+                       "per": (dict(seg_vhd.attrs["vhd_per"]) if seg_vhd is not None
+                               else None),
+                       "caveat": ranking.attrs.get("aadt_caveat"),
+                       "curve_vhd": ranking.attrs.get("curve_vhd")}
 
-        # A volume-profile curve per segment (Item 56). Nothing consumes it yet; Item 57
-        # weights VHD by it.
-        peak_windows = {w: screen.PEAK_WINDOWS[w] for w in profiles_mod.PEAK_WINDOWS}
-        assignment = assign_volume_profiles(
-            net, scr, args.catalogue, accepted, membership_path=args.membership,
-            urban_context_path=args.urban_context, urban_source=args.urban,
-            overrides_path=args.profile_overrides, centres_path=args.urban_centres,
-            district=args.district,
-            peak_screen=lambda: screen_segments(
-                con, area_key, windows=peak_windows,
-                cvalue_threshold=args.cvalue_threshold, bin_minutes=args.bin_minutes,
-                tz=args.tz, date_start=args.date_start, date_end=args.date_end))
         pa_attrs = assignment.attrs["profile_assignment"]
         prov["volume_profiles"] = {**assignment.attrs["inputs"],
                                    "by_source": pa_attrs["by_source"],
@@ -1504,6 +1592,11 @@ def run(args) -> dict:
         scr_path = Path(args.out_dir) / scr_fname
         scr.to_parquet(scr_path)
         written["segment_screen"] = scr_path
+        if seg_vhd is not None:
+            vhd_path = Path(args.out_dir) / (SEGMENT_VHD_7DAY if is_7day
+                                             else SEGMENT_VHD_PEAK)
+            seg_vhd.to_parquet(vhd_path)
+            written["segment_vhd"] = vhd_path
 
         # Interactive HTML maps (--maps). Generated after the CSVs so the run
         # succeeds even if plotly is not installed — the maps are optional.
@@ -1546,7 +1639,7 @@ def run(args) -> dict:
                     delay_label=delay_label,
                     map_filename=vhd_fname,
                     metric="vhd_per_mile",
-                    aadt=aadt)
+                    aadt=aadt, segment_vhd=seg_vhd)
                 written["map_vhd"] = vhd_path
 
             # Generate / update map_viewer.html if multiple maps exist in out_dir
@@ -1567,7 +1660,7 @@ def run(args) -> dict:
 
         return {"ranking": ranking, "grouped": grouped, "totals": totals,
                 "breakout": breakout, "resolution": resolution,
-                "volume_profiles": assignment,
+                "volume_profiles": assignment, "segment_vhd": seg_vhd,
                 "provenance": prov, "written": written, "screen": scr,
                 "net": net}
     finally:

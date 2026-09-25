@@ -14,8 +14,12 @@ Builds four statewide master vector maps:
 5. out/statewide_screening/statewide_map_viewer.html:
    A tabbed browser interface toggling between all four statewide views.
 
-The two VHD/mile maps need a per-segment AADT join (``--aadt``); without it they
-are skipped rather than drawn with zeroed volumes.
+The two VHD/mile maps colour by the **curve-weighted** VHD each district run saved
+beside its segment screen (``segment_{peak,7day}_curve_vhd.parquet``, Item 58), which
+carries its own AADT. A district without one (screened with no AADT) draws as
+unvolumed; with none at all the VHD maps are skipped rather than drawn with zeroed
+volumes. The maps no longer join AADT themselves, so they can never weight by a
+different AADT source than the ranking did.
 """
 from __future__ import annotations
 
@@ -30,13 +34,11 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from inrix_tools import aadt as aadt_mod  # noqa: E402
 from inrix_tools import corridors, screen  # noqa: E402
 from scripts.aggregate_statewide_rankings import load_district_table  # noqa: E402
 from scripts.run_district_screening import (  # noqa: E402
-    BBOX_MARGIN_DEG,
-    join_volumes,
-    shs_source,
+    SEGMENT_VHD_7DAY,
+    SEGMENT_VHD_PEAK,
     _build_corridor_overlay,
     _build_segment_vhd_traces,
     _build_segment_traces,
@@ -52,25 +54,21 @@ from scripts.run_district_screening import (  # noqa: E402
 
 
 def load_statewide_data(districts: list[int], base_dir: Path, *,
-                        aadt_source=None, aadt_year: int = aadt_mod.DEFAULT_YEAR,
                         catalogue_overrides: dict | None = None):
-    """Load combined networks, AADT, catalogues, resolved chains, and screen frames.
+    """Load combined networks, catalogues, resolved chains, screen frames and the
+    per-segment curve VHD each district run saved (Item 58).
 
-    The AADT returned is the **spatially joined, per-segment** frame (indexed by
-    ``Segment ID`` == ``XDSegID``), not the raw ITD route-measure layer. Those are
-    different things: ``geometry_cache/d{N}_aadt.parquet`` caches the *layer*
-    (``load_aadt(cache_path=...)``), whose index is a row number. Handing that to
-    ``_segment_tti_frame`` matches nothing, which is how every statewide segment
-    once rendered at 0 VHD/mi (Session 60). The join per district is cheap because
-    the layer cache short-circuits the shapefile read.
+    Returns ``(net, cat_entries, chains, scr_peak, scr_7d, vhd_peak, vhd_7d)``; a
+    frame no district wrote is ``None``. The VHD frames carry the ``AADT`` the district
+    ranking was weighted by, so the map and the ranking cannot disagree about volume.
     """
     net_parts = []
-    aadt_parts = []
     all_cat_entries = []
     all_chains = {}
-
-    scr_peak_parts = []
-    scr_7d_parts = []
+    parts = {"scr_peak": [], "scr_7d": [], "vhd_peak": [], "vhd_7d": []}
+    files = {"scr_peak": "segment_peak_screen.parquet",
+             "scr_7d": "segment_7day_screen.parquet",
+             "vhd_peak": SEGMENT_VHD_PEAK, "vhd_7d": SEGMENT_VHD_7DAY}
 
     for d in districts:
         net_cache = Path(f"geometry_cache/d{d}_network.geoparquet")
@@ -95,32 +93,15 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
             res = corridors.resolve_catalogue(net_d, entries, repairs=repairs)
             for cid, ch in res.attrs["chains"].items():
                 all_chains[cid] = ch
-            couplet_ids = corridors.couplet_segments(
-                entries, corridors.load_reporting_corridors(cat_path), res.attrs["chains"])
-        else:
-            couplet_ids = set()
 
-        if aadt_source is not None:
-            # After the catalogue: a couplet leg's one-way count is kept whole on the
-            # per-direction basis the rest of the map is on (Items 53, 54).
-            net_geo = net_d.copy()
-            net_geo["Segment ID"] = net_geo["XDSegID"]
-            joined = join_volumes(
-                net_geo, aadt_source, year=aadt_year,
-                cache_path=f"geometry_cache/d{d}_aadt.parquet",
-                max_distance_m=60.0, bbox_margin=BBOX_MARGIN_DEG, shs=shs_source(),
-                couplet_segments=couplet_ids)
-            if joined is not None:
-                aadt_parts.append(joined)
-
-        # Screen parquet files
-        p_peak = base_dir / f"d{d}" / "segment_peak_screen.parquet"
-        if p_peak.exists():
-            scr_peak_parts.append(pd.read_parquet(p_peak))
-
-        p_7d = base_dir / f"d{d}" / "segment_7day_screen.parquet"
-        if p_7d.exists():
-            scr_7d_parts.append(pd.read_parquet(p_7d))
+        for key, fname in files.items():
+            path = base_dir / f"d{d}" / fname
+            if path.exists():
+                parts[key].append(pd.read_parquet(path))
+            elif key.startswith("vhd") and (base_dir / f"d{d}" / files[
+                    "scr" + key[3:]]).exists():
+                print(f"  District {d}: no {fname} (screened without AADT?) — its "
+                      f"segments draw as unvolumed on the VHD map.")
 
     if not net_parts:
         raise SystemExit("No district networks found to assemble statewide maps.")
@@ -129,29 +110,18 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
     # Deduplicate segments if any overlap
     combined_net = combined_net.drop_duplicates(subset=["XDSegID"])
 
-    # Each part is already indexed by Segment ID, so districts sharing a boundary
-    # segment collapse on that index. Deduping on a positional index instead would
-    # throw away every row whose row-number repeats across districts.
-    combined_aadt = pd.concat(aadt_parts) if aadt_parts else None
-    if combined_aadt is not None and not combined_aadt.empty:
-        combined_aadt = combined_aadt[~combined_aadt.index.duplicated(keep="first")]
+    def _combine(key):
+        if not parts[key]:
+            return None
+        frame = pd.concat(parts[key], ignore_index=key.startswith("vhd"))
+        if key.startswith("vhd"):
+            # A boundary segment screened by two districts keeps its first row.
+            return frame.drop_duplicates(subset=["Segment ID", "window"], keep="first")
+        return frame[~frame.index.duplicated(keep="first")]
 
-    combined_scr_peak = pd.concat(scr_peak_parts, ignore_index=False) if scr_peak_parts else None
-    if combined_scr_peak is not None:
-        combined_scr_peak = combined_scr_peak[~combined_scr_peak.index.duplicated(keep="first")]
-
-    combined_scr_7d = pd.concat(scr_7d_parts, ignore_index=False) if scr_7d_parts else None
-    if combined_scr_7d is not None:
-        combined_scr_7d = combined_scr_7d[~combined_scr_7d.index.duplicated(keep="first")]
-
-    return (
-        combined_net,
-        combined_aadt,
-        all_cat_entries,
-        all_chains,
-        combined_scr_peak,
-        combined_scr_7d,
-    )
+    return (combined_net, all_cat_entries, all_chains,
+            _combine("scr_peak"), _combine("scr_7d"),
+            _combine("vhd_peak"), _combine("vhd_7d"))
 
 
 def generate_statewide_map(
@@ -169,7 +139,7 @@ def generate_statewide_map(
     delay_label: str,
     map_filename: str,
     metric: str = "tti",
-    aadt=None,
+    segment_vhd=None,
     center_lat: float = 44.8,
     center_lon: float = -114.7,
     zoom: float = 6.2,
@@ -182,7 +152,8 @@ def generate_statewide_map(
     map_path = out_dir / map_filename
 
     net_indexed = net.set_index("XDSegID")
-    merged = _segment_tti_frame(scr, net_indexed, windows=windows, aadt=aadt)
+    merged = _segment_tti_frame(scr, net_indexed, windows=windows,
+                                segment_vhd=segment_vhd)
 
     if metric == "vhd_per_mile":
         seg_traces = _build_segment_vhd_traces(merged, window_label=window_label)
@@ -308,10 +279,6 @@ def main():
     parser.add_argument("--dir", default="out/statewide_screening",
                         help="Base output directory")
     parser.add_argument("--districts", nargs="*", type=int, default=[1, 2, 3, 4, 5, 6])
-    parser.add_argument("--aadt", default=aadt_mod.DEFAULT_SOURCE,
-                        help="AADT source for the per-segment volume join; "
-                             "omitted skips the two VHD/mile maps")
-    parser.add_argument("--aadt-year", type=int, default=aadt_mod.DEFAULT_YEAR)
     parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
                         help="district D's catalogue is PATH (repeatable)")
     args = parser.parse_args()
@@ -320,21 +287,17 @@ def main():
     base_dir = Path(args.dir)
     t0 = time.time()
 
-    print("Loading statewide network geometries, AADT, and screening frames...")
-    (
-        net,
-        aadt,
-        cat_entries,
-        chains,
-        scr_peak,
-        scr_7d,
-    ) = load_statewide_data(args.districts, base_dir,
-                            aadt_source=args.aadt, aadt_year=args.aadt_year,
-                            catalogue_overrides=overrides)
-    if aadt is None or aadt.empty:
-        print("  WARNING: no AADT joined — the VHD/mile maps will be skipped.")
-    else:
-        print(f"  Joined AADT for {aadt['AADT'].notna().sum():,} of {len(aadt):,} segments.")
+    print("Loading statewide network geometries, screening frames and curve VHD...")
+    (net, cat_entries, chains, scr_peak, scr_7d,
+     vhd_peak, vhd_7d) = load_statewide_data(args.districts, base_dir,
+                                             catalogue_overrides=overrides)
+    for label, frame in (("peak", vhd_peak), ("7-day", vhd_7d)):
+        if frame is None:
+            print(f"  WARNING: no district saved a {label} curve VHD — that VHD/mile "
+                  f"map is skipped.")
+        else:
+            n = frame.drop_duplicates("Segment ID")["AADT"].notna().sum()
+            print(f"  {label} curve VHD for {n:,} volumed segments.")
 
     print(f"  Loaded {len(net):,} network segments and {len(cat_entries)} corridor entries across Idaho.")
 
@@ -387,7 +350,7 @@ def main():
         map_files.append(("Statewide Peak (TTI)", p_path.name))
 
         # Map 2: Statewide Peak VHD / Mile
-        if aadt is not None:
+        if vhd_peak is not None:
             print("Rendering Statewide Peak Delay Density (VHD / Mile) Map...")
             vhd_path = generate_statewide_map(
                 base_dir,
@@ -403,7 +366,7 @@ def main():
                 delay_label="Total Peak Delay",
                 map_filename="statewide_vhd_map.html",
                 metric="vhd_per_mile",
-                aadt=aadt,
+                segment_vhd=vhd_peak,
             )
             print(f"  -> Written {vhd_path}")
             map_files.append(("Statewide Peak (VHD / Mile)", vhd_path.name))
@@ -431,7 +394,7 @@ def main():
         map_files.append(("Statewide 7-Day (TTI)", d7_path.name))
 
         # Map 4: Statewide 7-Day VHD / Mile
-        if aadt is not None:
+        if vhd_7d is not None:
             print("Rendering Statewide 7-Day Delay Density (VHD / Mile) Map...")
             d7_vhd_path = generate_statewide_map(
                 base_dir,
@@ -447,7 +410,7 @@ def main():
                 delay_label="Total 7-Day Delay",
                 map_filename="statewide_7day_vhd_map.html",
                 metric="vhd_per_mile",
-                aadt=aadt,
+                segment_vhd=vhd_7d,
             )
             print(f"  -> Written {d7_vhd_path}")
             map_files.append(("Statewide 7-Day (VHD / Mile)", d7_vhd_path.name))

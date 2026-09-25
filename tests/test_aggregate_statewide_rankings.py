@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -50,3 +51,18 @@ def test_flags_travel_with_the_ranked_row(tmp_path):
     ranked, _ = agg.split_ranked(full, tiers)
     assert ranked.loc[0, "flags"].startswith("episodic")
     assert ranked.loc[1, "flags"] == ""
+
+
+def test_districts_on_different_vhd_bases_are_refused():
+    """A stale pre-Item 58 table (index VHD, no vhd_per) beside a curve one — or per
+    weekday beside per day — would rank two different quantities as one."""
+    curve = pd.DataFrame({"district": [1], "vhd": [10.0], "vhd_per": ["weekday"]})
+    other = pd.DataFrame({"district": [2], "vhd": [20.0], "vhd_per": ["weekday"]})
+    stale = pd.DataFrame({"district": [3], "vhd": [80.0]})
+    day = pd.DataFrame({"district": [4], "vhd": [5.0], "vhd_per": ["day"]})
+    assert agg.check_vhd_basis([curve, other]) == "weekday"
+    assert agg.check_vhd_basis([stale]) == "index"
+    with pytest.raises(SystemExit, match="different VHD bases"):
+        agg.check_vhd_basis([curve, stale])
+    with pytest.raises(SystemExit, match="different VHD bases"):
+        agg.check_vhd_basis([curve, day])

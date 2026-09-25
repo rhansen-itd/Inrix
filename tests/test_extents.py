@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import LineString
 
-from inrix_tools import extents
+from inrix_tools import extents, screen
 
 
 def _linear_chain(n=10, frc_pattern=None, aadt_pattern=None):
@@ -368,6 +368,34 @@ class TestMirrorExtent:
 
 # ─── ROADMAP Item 50: cores on recurring congestion against the own baseline ──
 
+def _curve_path(ids, ratios=None, *, night_tt=1.0, curve="rural_through"):
+    """``bins`` / ``curves`` for :func:`extents.segment_congestion`'s curve-weighted
+    VHD, agreeing with :func:`_baseline`: every weekday PM cell at ``ratio x
+    night_tt``, everything else at ``night_tt``, over one week in 15-minute bins, each
+    segment on the packaged ``curve``."""
+    ratios = ratios or {}
+    wins = {w: screen.PEAK_WINDOWS[w] for w in ("am", "pm")}
+    start, end = "2026-03-30", "2026-04-05"
+    days = pd.date_range(start, end, freq="D")
+    rows = []
+    for sid in ids:
+        for day in days:
+            dt = "sat" if day.dayofweek == 5 else "sun" if day.dayofweek == 6 else "weekday"
+            for tod in list(range(420, 540, 15)) + list(range(960, 1110, 15)):
+                pm = dt == "weekday" and 960 <= tod < 1110
+                rows.append({"Segment ID": sid, "month": day.strftime("%Y-%m"),
+                             "day_type": dt, "tod_min": tod, "n_obs": 1,
+                             "travel_time": ratios.get(sid, 1.0) * night_tt if pm
+                             else night_tt})
+    bins = (pd.DataFrame(rows).groupby(["Segment ID", "month", "day_type", "tod_min"])
+            .agg(travel_time=("travel_time", "mean"), n_obs=("n_obs", "sum"))
+            .reset_index())
+    bins.attrs = {"tz": "America/Boise", "bin_minutes": 15,
+                  "windows": {n: w.to_dict() for n, w in wins.items()},
+                  "period_start": start, "period_end": end}
+    return {"bins": bins, "curves": pd.Series(curve, index=pd.Index(ids, name="XDSegID"))}
+
+
 def _baseline(ids, ratios=None, *, night_tt=1.0, night_obs=1000, weekday_obs=5000,
               p15=None, realtime=0.99, ref_tti=None):
     """A baseline screen: every segment's overnight travel time is ``night_tt`` and
@@ -399,8 +427,11 @@ class TestSegmentCongestion:
         assert seg.loc[1001, "ratio"] == pytest.approx(1.5)
         assert seg.loc[1001, "baseline_source"] == "night"
         assert seg.loc[1001, "peak_window"] == "pm"
-        # 0.5 min of delay x 10,000 AADT / 60
-        assert seg.loc[1001, "vhd"] == pytest.approx(0.5 * 10000 / 60)
+        # 0.5 min of delay x 10,000 AADT / 60 — the index path (no bin screen); the
+        # curve value is asserted in test_curve_vhd (Item 58 floors are on that scale)
+        assert seg.attrs["vhd_basis"] == "index"
+        assert seg.loc[1001, "vhd_index"] == pytest.approx(0.5 * 10000 / 60)
+        assert seg.loc[1001, "vhd"] == seg.loc[1001, "vhd_index"]
 
     def test_a_thin_night_falls_back_to_the_weekday_percentile(self):
         net = _linear_chain(2)
@@ -481,13 +512,25 @@ class TestFindCores:
         assert extents.FAIL_REALTIME in core.fails
 
     def test_a_low_volume_road_fails_the_delay_floor(self):
-        """SH-3 in Benewah County: 460 AADT, 230 per direction (Item 54)."""
+        """SH-3 in Benewah County: 460 AADT, 230 per direction (Item 54). The floor is
+        on the curve-weighted VHD the catalogue builder reads (Item 58), so the check
+        runs on that path; the same queue at 10,000 AADT qualifies."""
+        ratios = {s: 1.4 for s in range(1001, 1005)}
         net = _linear_chain(6, aadt_pattern=[230] * 6)
         ids = list(net.index)
-        seg = extents.segment_congestion(_baseline(ids, {s: 1.4 for s in ids[1:5]}), net)
+        seg = extents.segment_congestion(_baseline(ids, ratios), net,
+                                         **_curve_path(ids, ratios))
+        assert seg.attrs["vhd_basis"] == "curve"
         core = extents.find_cores(ids, seg)[0]
         assert extents.FAIL_VHD_PER_MILE in core.fails
         assert extents.FAIL_EFFECTIVE_MILES not in core.fails
+        # on the index it would have passed the rescaled floor: the scale matters
+        assert core.vhd_index / 2.0 > extents.MIN_CORE_VHD_PER_MILE
+
+        busy = _linear_chain(6)
+        seg = extents.segment_congestion(_baseline(ids, ratios), busy,
+                                         **_curve_path(ids, ratios))
+        assert extents.find_cores(ids, seg)[0].qualifies
 
     def test_an_unknown_segment_inside_a_run_is_bridged_but_not_counted(self):
         net = _linear_chain(6)
@@ -499,8 +542,10 @@ class TestFindCores:
         core = extents.find_cores(ids, seg)[0]
         assert core.segment_ids == (1001, 1002, 1003, 1004)
         assert core.unknown_miles == pytest.approx(0.5)
-        # delay per mile over the *known* miles: unknown is not free flow
+        # delay per mile over the *known* miles: unknown is not free flow (index path)
         assert core.vhd_per_mile == pytest.approx(0.4 * 10000 / 60 / 0.5)
+        assert core.vhd_index == pytest.approx(core.vhd)
+        assert core.metrics()["vhd_index"] == pytest.approx(round(core.vhd, 1))
 
 
 def _urban(net, inside):

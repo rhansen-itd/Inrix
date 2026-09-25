@@ -505,7 +505,11 @@ def multi_day_ds():
               for s in (101, 202)]
     df = pd.concat(frames, ignore_index=True)
     return gapp.Dataset(
-        df=df, metadata=pd.DataFrame(index=pd.Index([101, 202], name=SEGMENT_COL)),
+        # 1 mile at a 60/9 or 10 mph reference: a 9- or 6-minute free flow under a
+        # 10-minute travel time, so seg 101 carries 1 min of delay and seg 202 4 min —
+        # the same as its Delay column.
+        df=df, metadata=pd.DataFrame({"Segment Length(Miles)": [1.0, 1.0]},
+                                     index=pd.Index([101, 202], name=SEGMENT_COL)),
         geo=None, metric_cols=speed.metric_columns(df), tz=TZ, span=(None, None))
 
 
@@ -949,12 +953,17 @@ def _aadt_scope_ds():
     frames = [pd.DataFrame({DATETIME_COL: idx, SEGMENT_COL: np.int64(s),
                             TT_COL: 10 + rng.normal(0, 0.3, len(idx)),
                             SPEED_COL: (50 if s == 101 else 20) + rng.normal(0, 1, len(idx)),
-                            "Delay(Minutes)": (1.0 if s == 101 else 4.0)})
+                            "Delay(Minutes)": (1.0 if s == 101 else 4.0),
+                            "Ref Speed(miles/hour)": (60 / 9 if s == 101 else 10.0)})
               for s in (101, 202)]
     df = pd.concat(frames, ignore_index=True)
     df[CORRIDOR_COL] = "Main"
     return gapp.Dataset(
-        df=df, metadata=pd.DataFrame(index=pd.Index([101, 202], name=SEGMENT_COL)),
+        # 1 mile at a 60/9 or 10 mph reference: a 9- or 6-minute free flow under a
+        # 10-minute travel time, so seg 101 carries 1 min of delay and seg 202 4 min —
+        # the same as its Delay column.
+        df=df, metadata=pd.DataFrame({"Segment Length(Miles)": [1.0, 1.0]},
+                                     index=pd.Index([101, 202], name=SEGMENT_COL)),
         geo=None, metric_cols=speed.metric_columns(df), tz=TZ, span=(None, None),
         aadt=pd.Series({101: 1000.0, 202: 9000.0}))
 
@@ -1001,15 +1010,38 @@ def test_weighted_speed_frame_differs_and_tt_stays_a_sum():
     assert tframe[tt_col].mean() == pytest.approx(20, abs=0.5)   # 10 + 10, a sum
 
 
-def test_vhd_map_colouring_produces_vehicle_hours():
-    """The vehicle-hours map mode colours segments by mean-delay(hrs)×AADT."""
-    from inrix_tools import aadt as aadtmod
+def test_vhd_map_colouring_is_the_curve_weighted_vhd():
+    """The vehicle-hours map mode colours segments by the curve-weighted VHD the
+    screening ranks on (Item 58): per average day of the selected window, each bin's
+    delay against the free flow times that bin's volume."""
     ds = _aadt_scope_ds()
-    md = gapp._segment_means(ds, gapp._metric_col(ds, "delay"), None, None)
-    vh = aadtmod.vehicle_hours_of_delay(md, ds.aadt)["vehicle_hours"]
-    # seg202: 4 min delay × 9000 veh = 600 veh-hr/day dominates seg101 (1×1000/60).
-    assert vh.loc[202] == pytest.approx(4 / 60 * 9000, rel=0.05)
-    assert vh.loc[202] > 30 * vh.loc[101]
+    vh = gapp._segment_vhd(ds, None, None)
+    assert vh.attrs["vhd_per"] == "day"
+    # A flat 1 or 4 min of delay all day: delay x the whole day's volume.
+    assert vh.loc[202] == pytest.approx(4 / 60 * 9000, rel=0.02)
+    assert vh.loc[101] == pytest.approx(1 / 60 * 1000, rel=0.02)
+    # A weekday 7-9 AM selection carries the default curve's 2-hour share, per weekday.
+    am = gapp._segment_vhd(ds, (7, 9), [0, 1, 2, 3, 4])
+    assert am.attrs["vhd_per"] == "weekday"
+    assert 0.05 * vh.loc[202] < am.loc[202] < 0.3 * vh.loc[202]
+    assert gapp._vhd_label(am) == "Vehicle-hours of delay / weekday"
+    assert gapp._segment_vhd(ds, (7, 9), [0, 1, 2, 3, 4]) is am       # cached
+
+
+def test_segment_curves_read_the_saved_assignments(tmp_path, monkeypatch):
+    """A segment a screening run assigned takes that curve; the rest the default."""
+    ds = _aadt_scope_ds()
+    d = tmp_path / "out" / "statewide_screening" / "d3"
+    d.mkdir(parents=True)
+    pa = gapp.profile_assignment
+    saved = pd.DataFrame({c: [None] for c in pa.ASSIGNMENT_COLUMNS},
+                         index=pd.Index([202], name="XDSegID"))
+    saved["curve_id"], saved["curve_source"] = "am_commute_urban", pa.INFERRED
+    pa.write_assignment(saved, d / "d3_volume_profiles.csv")
+    monkeypatch.setattr(gapp, "_REPO", tmp_path)
+    curves = gapp._segment_curves(ds)
+    assert curves.loc[202] == "am_commute_urban"
+    assert curves.loc[101] == gapp.profile_assignment.DEFAULT_CURVE
 
 
 def test_segment_map_hover_shows_aadt():
@@ -1073,8 +1105,8 @@ def test_write_kml_vhd_mode_uses_vehicle_hours(tmp_path, monkeypatch):
     monkeypatch.setattr(gapp, "OUTPUT_DIR", tmp_path)
 
     called = {"n": 0}
-    real = gapp.aadt.vehicle_hours_of_delay
-    monkeypatch.setattr(gapp.aadt, "vehicle_hours_of_delay",
+    real = gapp._segment_vhd
+    monkeypatch.setattr(gapp, "_segment_vhd",
                         lambda *a, **k: (called.__setitem__("n", called["n"] + 1) or real(*a, **k)))
     path = gapp._write_kml(ds, "delay", gapp.MAP_MODE_VHD, (None, None), (None, None))
     assert path.exists() and called["n"] == 1

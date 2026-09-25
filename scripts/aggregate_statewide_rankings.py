@@ -20,6 +20,10 @@ Produces:
    - Multi-scale extent tier comparison (Core Bottleneck vs Commuter Extent).
 5. out/statewide_screening/statewide_district_summary.csv
    - District-level roll-up metrics (Total VHD, Monitored Miles, Top Corridors).
+
+Since Item 58 ``vhd`` is the curve-weighted vehicle-hours of delay on an average day of
+the window (``vhd_per``: per weekday for the peaks, per calendar day for the 7-day
+window). Districts on different bases are refused, not ranked together.
 """
 from __future__ import annotations
 
@@ -157,6 +161,25 @@ def load_district_table(csv_path: Path, district: int) -> pd.DataFrame | None:
     return df
 
 
+def _vhd_basis(frame: pd.DataFrame) -> str:
+    """What a district table's ``vhd`` is: the curve VHD's ``vhd_per`` (Item 57), or
+    ``index`` for a table written before Item 58 (no ``vhd_per`` column, or none set)."""
+    if "vhd_per" not in frame.columns or frame["vhd_per"].isna().all():
+        return "index"
+    return "/".join(sorted(str(p) for p in frame["vhd_per"].dropna().unique()))
+
+
+def check_vhd_basis(frames: list[pd.DataFrame]) -> str:
+    """Refuse to rank districts whose ``vhd`` are different quantities against each
+    other: a stale Item 54 index table beside curve VHD (about 6x larger), or vehicle-
+    hours per weekday beside per calendar day. Returns the shared basis."""
+    bases = {int(f["district"].iloc[0]): _vhd_basis(f) for f in frames}
+    if len(set(bases.values())) > 1:
+        raise SystemExit(f"District tables are on different VHD bases {bases}; re-run "
+                         f"the stale districts' screening before aggregating.")
+    return next(iter(bases.values()))
+
+
 def aggregate_rankings(
     base_dir: Path,
     filename: str,
@@ -173,6 +196,7 @@ def aggregate_rankings(
 
     if not frames:
         return pd.DataFrame()
+    check_vhd_basis(frames)
 
     combined = pd.concat(frames, ignore_index=True)
 
@@ -302,6 +326,8 @@ def build_district_summary(
             continue
 
         n_corridors = len(p_sub)
+        peak_per = _vhd_basis(p_sub)
+        day7_per = _vhd_basis(d7_sub) if not d7_sub.empty else None
         total_miles = p_sub["miles"].sum()
         total_peak_vhd = p_sub["vhd"].sum()
         total_7day_vhd = d7_sub["vhd"].sum() if not d7_sub.empty else 0.0
@@ -315,6 +341,10 @@ def build_district_summary(
             "monitored_centerline_miles": round(total_miles, 2),
             "total_peak_vhd": round(total_peak_vhd, 1),
             "total_7day_vhd": round(total_7day_vhd, 1),
+            # What the totals are per (Item 58): "weekday" for the peaks, "day" for
+            # the 7-day window; "index" for a table from before the curve VHD.
+            "peak_vhd_per": peak_per,
+            "day7_vhd_per": day7_per,
             "top_peak_corridor": top_peak.get("group_name", top_peak.get("corridor_group")),
             "top_peak_vhd_per_mile": round(top_peak.get("vhd_per_mile", 0.0), 1),
             "top_peak_tti": round(top_peak.get("tti", 1.0), 2),

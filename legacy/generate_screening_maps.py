@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Generate standalone interactive HTML map visualizations of District 3 screening.
 
+**Superseded (ROADMAP Item 58), kept for reference; it no longer runs.** It ranked and
+mapped on the Item 54 VHD index with its own AADT join. The curve-weighted VHD needs
+the volume-profile assignment and a bin screen, which ``run_district_screening.py
+--maps`` (run once with ``--windows am,pm`` and once with ``--windows day_7d``; it
+writes the same four maps and ``map_viewer.html``) already composes.
+
 This is the multi-map workflow: it runs two separate screens (typical weekday peak
 and 7-day all-day) and produces a tabbed viewer that switches between them. For a
 single map alongside a ranking run, use ``run_district_screening.py --maps`` instead.

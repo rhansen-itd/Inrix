@@ -6721,3 +6721,130 @@ ahead.
   totals (`vhd × N_W`).
 - Tests: the expectations moved from ÷7 to ÷5 per weekday, and the weights'
   day-count attrs and `vhd_per` are asserted. 907 pass.
+
+## Session 78 — Item 58: curve-weighted VHD everywhere (2026-09-25)
+
+### 1. What changed
+
+Every consumer that ranks, maps or catalogues now reads Item 57's curve-weighted VHD.
+The index survives only as `vhd_index`, beside it.
+- **District runner.** `run_district_screening.run` assigns the volume profiles
+  *before* ranking. It computes `screen.segment_curve_vhd` once, for every screened
+  segment against `Miles / Ref Speed`, and uses it three ways:
+  - it ranks on it through the new `rank_corridors(segment_vhd=)`, so the store is
+    scanned once, not twice;
+  - it colours the VHD/mile map by it, reading the worst-TTI window;
+  - it saves it as `segment_{peak,7day}_curve_vhd.parquet`.
+
+  The provenance JSON gains a `vhd` block. `_segment_tti_frame` refuses `aadt`
+  alone, because that would draw the index on the curve tiers.
+- **Totals.** `corridor_peak_totals` carries `vhd_per`. It raises if the totalled
+  windows are per different days: for example, `--windows am,pm,day_7d` would have
+  added a per-weekday peak to a per-day window.
+- **Statewide maps** read the saved parquets and no longer join AADT themselves.
+  That also fixes a quiet inconsistency: the maps defaulted to `Cumulative_AADT.zip`
+  while the runs weighted by `AADT_2025.zip`.
+- **Aggregation** refuses districts on different VHD bases (`check_vhd_basis`). A
+  stale index table is about 6× a curve one, and would have topped the statewide
+  ranking. The district summary gains `peak_vhd_per` / `day7_vhd_per`.
+- **Catalogue builder.** It passes a cached peak bin screen
+  (`segment_peak_bins.parquet`, attrs in a `.json` beside it) and the screening run's
+  `dN_volume_profiles.csv`. So a screening run must come first; it says so if not.
+  `CoreCandidate` carries `vhd_index`, and so do the audit and the `_core` stats.
+- **GUI.** The vehicle-hours map mode and the KML export use `screen.frame_curve_vhd`
+  (with `frame_bin_screen`: the store's bin screen over in-memory rows, tested cell
+  for cell against it). The time-of-day slider and weekday checklist become the
+  window (`screen.clock_window`). The floor is per cell against
+  `speed.free_flow_travel_time` (new; `segment_delay` now shares its per-row free
+  flow), so the GUI's free-flow choice still applies. The curves come from the saved
+  assignments (`out/statewide_screening/d*/d*_volume_profiles.csv`), else
+  `balanced_urban`. The legend says what the VHD is per. No new controls.
+- **`screen.ranking_changes`** (Spearman ρ, top-N churn, per-corridor moves) and
+  `scripts/compare_statewide_rankings.py`. Items 49–54 built these tables by hand; it
+  reproduces Item 54's (ρ 0.9993, ratio 0.5, one move of 5).
+- **Moved to `legacy/`:** `scripts/generate_screening_maps.py`, a D3-only duplicate
+  of `run_district_screening --maps` that built its own index ranking.
+
+### 2. The rescale
+
+The first statewide pass, without maps, measured the curve / index ratio. The map's
+worst window was compared with the index rebuilt from the same frame (delay rate ×
+miles × AADT / 60):
+
+- **Peak, per weekday:** median 0.165 over 2,262 segments at ≥ 10 VHD/mi on the index
+  (IQR 0.126–0.191). The six districts give 0.163–0.166, and the index tiers
+  0.164 / 0.165 / 0.167, so one factor fits the whole scale.
+- **Cores:** from the builder's audit (best candidate per chain, index ≥ 5), 0.165
+  over 197 cores (IQR 0.154–0.191), 0.161 near the floor.
+- **7-day, per day:** 0.936 over 1,794 segments (IQR 0.88–1.04).
+
+Decisions:
+- `MIN_CORE_VHD` / `_PER_MILE`: 5 × 0.165 = 0.83, rounded **down to 0.8** so they
+  stay noise floors (owner, Session 69: permissive). The unused `VHD_BOTTLENECK` /
+  `VHD_FREEFLOW` got the same factor, 12 / 1.5, so no VHD constant is left on the
+  index.
+- **Peak map tiers 1.5 / 8 / 25** (from 1.65 / 8.25 / 24.75, the bottom rounded down as
+  Item 54 did).
+- **The two maps now have separate tier sets.** Before, both were on the index,
+  window-mean delay × a whole day's volume. Now a weekday peak is about 2 of a day's
+  hours and the 7-day window 15, so one set cannot match both. `_vhd_tiers(per)`
+  picks by the frame's `vhd_per`. The 7-day set **stays 10 / 50 / 150**: × 0.936 is
+  9.4 / 47 / 140, and the ratio's IQR includes 1, so a change would only reshuffle
+  boundary segments with no signal behind it.
+- **Catalogues not regenerated.** A scratch regeneration under the new floors keeps
+  every ranked group in D1, D3 (generated), D4 and D5. D2's Moscow core comes out as
+  `us-95-main-st-washington-st-moscow-core` instead of `...-jackson-st-...` (a re-cut,
+  not a loss). D6 gains `us-26-yellowstone-hwy-idaho-falls-25th-e-rd-hitt-rd-core`.
+  Overwriting the committed catalogues is the owner's call. Their `_core` stats are
+  still on the index basis (and pre-Item 53); Session 73 already listed that.
+
+### 3. Ranking comparison
+
+Pre-run tables are in `pre_item58/` (tables only, as in earlier items: a copy with
+the maps filled the disk). Comparison tables: `item58_{peak,7day}_ranking_changes.csv`.
+
+| run | window | Spearman ρ | median VHD ratio | largest move | top 10 / 20 / 50 kept |
+|---|---|---|---|---|---|
+| curated D3 | peak | 0.988 | 0.164 | 8 | 8 / 20 / 49 |
+| curated D3 | 7-day | 0.988 | 1.024 | 8 | 10 / 20 / 49 |
+| D3 generated | peak | 0.990 | 0.156 | 7 | 10 / 18 / 48 |
+| D3 generated | 7-day | 0.987 | 0.986 | 9 | 10 / 18 / 49 |
+
+- **Peak, who moves.** Corridors whose delay sits in the shoulders or at off-commute
+  hours lose most: the Rathdrum cores (SH-53 #28 → #36, SH-41 #41 → #48, ratio
+  0.137), Twin Falls' US-30 couplet (#27 → #35, #33 → #39), and Moscow's Main St /
+  Jackson St (#10 → #16). Commute-peaked ones gain: US-95 Coeur d'Alene and
+  Chinden enter the top 10. Moscow's Washington St / Jackson St couplet leaves it.
+- **7-day.** Resort and recreation corridors gain, because the weekend days carry real
+  volume: SH-33 Driggs #38 → #30, SH-75 Hailey #35 → #29, SH-75 Ketchum #19 → #13. So
+  does I-184 (#18 → #12, ratio 1.36). The Twin Falls couplet drops again.
+- Every corridor still ranks; the floors thin nothing out that they did not before.
+
+### 4. Tests
+
+921 pass (907 before), 2 skipped.
+- New tests:
+  - `test_screen`: the frame bin screen = the store's, and frame VHD = store VHD;
+    `clock_window`; `segment_vhd` = `bins`, with the errors; totals refuse mixed
+    gates; `ranking_changes`;
+  - `test_speed`: `free_flow_travel_time`;
+  - `test_run_district_screening`: the run ranks, maps and saves on the curve; the
+    map refuses the index; the 7-day tier set;
+  - `test_gui`: the map VHD, its label and cache; the saved curves;
+  - `test_aggregate`: mixed bases are refused;
+  - new files `test_build_statewide_catalogues.py` and
+    `test_compare_statewide_rankings.py`.
+- Updated for the index values (the ROADMAP list):
+  - `test_screen`'s 500 now asserts `vhd_index` and the `index` basis;
+  - `test_extents`' `0.5*10000/60` the same;
+  - the Benewah floor test runs on the curve path, and shows it would pass on the
+    index;
+  - the GUI/KML tests use the curve VHD;
+  - the tier tests use 1.5 / 8 / 25.
+
+### 5. Process note
+
+The first pass lost five district runs because I edited `run_district_screening.py`
+while it was running; each district is a fresh subprocess. Those five were re-run
+with identical arguments. Don't edit the scripts while a statewide run is in
+progress.

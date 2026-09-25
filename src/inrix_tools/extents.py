@@ -58,8 +58,10 @@ TTI_CONGESTED = 1.20           # TTI threshold for "congested" side of discontin
 TTI_FREEFLOW = 1.08            # TTI threshold for "free-flowing" side
 CONGESTION_RUN_MIN_SEGS = 3    # Minimum consecutive segments to confirm discontinuity
 RECURRENCE_DROP = 0.40         # Recurrence rate below which congestion "ends"
-VHD_BOTTLENECK = 75.0          # vhd/mile indicating bottleneck (per-direction AADT)
-VHD_FREEFLOW = 10.0            # vhd/mile indicating free-flow (per-direction AADT)
+VHD_BOTTLENECK = 12.0          # vhd/mile indicating bottleneck (curve VHD per weekday)
+VHD_FREEFLOW = 1.5             # vhd/mile indicating free-flow (curve VHD per weekday)
+# (Unused. 150 / 25 two-way, 75 / 10 per direction (Item 54), then x 0.165 onto the
+# curve-weighted peak VHD with the core floors (Item 58).)
 
 # Dilution
 DILUTION_FACTOR_THRESHOLD = 5.0  # If Tier1 rate / Tier3 rate > 5, must partition
@@ -2136,24 +2138,24 @@ long rural segment cannot be a core by itself."""
 MIN_EFFECTIVE_CORE_MILES = 0.6
 """Floor on ``sum(min(miles, SEGMENT_MILES_CAP) x weight)`` over the core."""
 
-MIN_CORE_VHD_PER_MILE = 5.0
+MIN_CORE_VHD_PER_MILE = 0.8
 """A **noise floor** on the core's vehicle-hours of delay per mile, not a policy cut.
 
-VHD here is an index — mean window delay times a daily AADT used as a weight — so a
-cut placed between two real towns would be arbitrary (owner, Session 69: "be pretty
-permissive ... a later decision can filter them back out if they rank too low").
 The floor only removes what is not delay at all: the rural geometric and low-volume
-cores sit at 0.5–2.5 (Gilbert Grade 0.55–0.7, Lowell ~1, Benewah 1–2, Galena 1–1.5).
-The smallest real town cores (Blackfoot 22, Bonners Ferry 22.5, Soda Springs 25) pass
-and rank at the bottom; thinning to a top-N belongs to the ranking, not the catalogue.
+cores (Gilbert Grade, Lowell, Benewah, Galena). The smallest real town cores (Blackfoot,
+Bonners Ferry, Soda Springs) pass, at 4–5x the floor, and rank at the bottom; thinning
+to a top-N belongs to the ranking, not the catalogue (owner, Session 69: "be pretty
+permissive ... a later decision can filter them back out if they rank too low").
 
-Tuned at 10 on two-way AADT (Session 69); halved with the per-direction basis (Item
-54), which halves every VHD, so the same cores pass. The figures above are the
-Session 69 ones halved."""
+The scale history: 10 on the two-way index (Session 69), halved with the per-direction
+basis (Item 54), then moved onto the **curve-weighted** VHD (Item 58), vehicle-hours per
+weekday in the core's peak window. That VHD is 0.165x the index at the median core
+(197 cores statewide with index >= 5, IQR 0.154-0.191, 0.161 near the floor), so
+5 x 0.165 = 0.83, rounded down to keep it a noise floor. The same cores pass."""
 
-MIN_CORE_VHD = 5.0
-"""Noise floor on the core's total vehicle-hours of delay (10 on two-way AADT, halved
-for the per-direction basis like :data:`MIN_CORE_VHD_PER_MILE`)."""
+MIN_CORE_VHD = 0.8
+"""Noise floor on the core's total vehicle-hours of delay per weekday (10 on two-way
+AADT, 5 per direction, x 0.165 onto the curve VHD like :data:`MIN_CORE_VHD_PER_MILE`)."""
 
 MIN_REALTIME_SHARE = 0.90
 """Floor on the core's mile-weighted ``Pct Score30`` share in its peak window. Every
@@ -2355,6 +2357,9 @@ class CoreCandidate:
     n_aadt_missing: int
     baseline_sources: tuple[str, ...]
     fails: tuple[str, ...]
+    vhd_index: float = float("nan")
+    """The Item 54 index over the same run (window mean delay x daily AADT), beside a
+    curve-weighted ``vhd`` so the two scales can be compared (Item 58)."""
 
     @property
     def qualifies(self) -> bool:
@@ -2367,6 +2372,7 @@ class CoreCandidate:
             "effective_miles": round(self.effective_miles, 3),
             "vhd": round(self.vhd, 1),
             "vhd_per_mile": round(self.vhd_per_mile, 1),
+            "vhd_index": round(self.vhd_index, 1),
             "delay_per_mile": round(self.delay_per_mile, 3),
             "realtime_share": round(self.realtime_share, 3),
             "peak_ratio": round(self.peak_ratio, 3),
@@ -2385,6 +2391,8 @@ def _run_metrics(seg: pd.DataFrame, ids: Sequence[int]) -> dict:
     known = sub["baseline_tt"].notna() & sub["peak_tt"].notna()
     known_miles = float(miles[known].sum())
     vhd = float(sub["vhd"].fillna(0.0).sum())
+    vhd_index = (float(sub["vhd_index"].fillna(0.0).sum()) if "vhd_index" in sub
+                 else float("nan"))
     delay = float(sub["delay_min"].where(known).fillna(0.0).sum())
     rt = sub["realtime_share"]
     rt_w = miles[rt.notna()]
@@ -2397,6 +2405,7 @@ def _run_metrics(seg: pd.DataFrame, ids: Sequence[int]) -> dict:
         "unknown_miles": float(miles[~known].sum()),
         "effective_miles": float((miles.clip(upper=SEGMENT_MILES_CAP) * sub["weight"]).sum()),
         "vhd": vhd,
+        "vhd_index": vhd_index,
         "vhd_per_mile": vhd / known_miles if known_miles > 0 else 0.0,
         "delay_per_mile": delay / known_miles if known_miles > 0 else 0.0,
         "realtime_share": (float((rt[rt.notna()] * rt_w).sum() / rt_w.sum())
@@ -2466,6 +2475,7 @@ def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame, *,
             ref_tti=m["ref_tti"], unknown_miles=m["unknown_miles"],
             n_aadt_missing=m["n_aadt_missing"],
             baseline_sources=m["baseline_sources"], fails=core_fails(m),
+            vhd_index=m["vhd_index"],
         ))
     out.sort(key=lambda c: (-c.vhd, -c.effective_miles))
     return out

@@ -435,43 +435,117 @@ def test_segments_without_aadt_get_their_own_tier_not_free_flow():
     Folding NaN into the "< 10 VHD/mi" tier is what let a statewide join that
     matched nothing render as 17,016 free-flowing segments.
     """
-    frame = _vhd_frame([float("nan"), float("nan"), 5.0, 75.0, 200.0])
+    frame = _vhd_frame([float("nan"), float("nan"), 1.0, 12.0, 30.0])
     counts = _trace_counts(rds._build_segment_vhd_traces(frame))
 
     assert counts["No AADT Data (unvolumed)"] == 2
-    assert counts["Low / Free Flow (< 10 VHD/mi)"] == 1
-    assert counts["Moderate Delay (50–150 VHD/mi)"] == 1
-    assert counts["Severe Congestion (≥ 150 VHD/mi)"] == 1
+    assert counts["Low / Free Flow (< 1.5 VHD/mi)"] == 1
+    assert counts["Moderate Delay (8–25 VHD/mi)"] == 1
+    assert counts["Severe Congestion (≥ 25 VHD/mi)"] == 1
     # Every segment lands in exactly one tier.
     assert sum(counts.values()) == 5
 
 
 def test_vhd_tiers_partition_on_their_boundaries():
-    """Tier edges are half-open [lower, upper), so a boundary value sits high."""
-    frame = _vhd_frame([9.99, 10.0, 49.99, 50.0, 149.99, 150.0])
+    """Tier edges are half-open [lower, upper), so a boundary value sits high. The
+    peak map's tiers are the curve VHD per weekday's (Item 58: 10 / 50 / 150 on the
+    index x 0.165, the bottom rounded down)."""
+    frame = _vhd_frame([1.49, 1.5, 7.99, 8.0, 24.99, 25.0])
     counts = _trace_counts(rds._build_segment_vhd_traces(frame))
 
+    assert counts["Low / Free Flow (< 1.5 VHD/mi)"] == 1
+    assert counts["Minor Delay (1.5–8 VHD/mi)"] == 2
+    assert counts["Moderate Delay (8–25 VHD/mi)"] == 2
+    assert counts["Severe Congestion (≥ 25 VHD/mi)"] == 1
+    assert counts["No AADT Data (unvolumed)"] == 0
+
+
+def test_the_7day_map_has_its_own_vhd_tiers():
+    """Per calendar day over 6 AM – 9 PM the curve VHD is ~0.94x the index, so the
+    7-day map keeps 10 / 50 / 150; the frame's ``vhd_per`` picks the set."""
+    frame = _vhd_frame([9.99, 10.0, 49.99, 50.0, 149.99, 150.0]).assign(vhd_per="day")
+    counts = _trace_counts(rds._build_segment_vhd_traces(frame))
     assert counts["Low / Free Flow (< 10 VHD/mi)"] == 1
     assert counts["Minor Delay (10–50 VHD/mi)"] == 2
     assert counts["Moderate Delay (50–150 VHD/mi)"] == 2
     assert counts["Severe Congestion (≥ 150 VHD/mi)"] == 1
-    assert counts["No AADT Data (unvolumed)"] == 0
+    assert [t[1] for t in rds._vhd_tiers("weekday")] == [1.5, 8.0, 25.0, None]
+    assert rds._VHD_TIERS == rds._vhd_tiers("weekday")
 
 
-def test_unmatched_aadt_stays_nan_through_the_segment_frame(district):
+def _volumes(by_segment):
+    """A stand-in for ``join_volumes``: per-direction AADT for the listed segments."""
+    def fake(*a, **k):
+        return pd.DataFrame({"AADT": list(by_segment.values())},
+                            index=pd.Index(list(by_segment), name="Segment ID"))
+    return fake
+
+
+def test_the_run_ranks_and_maps_on_curve_vhd(district, monkeypatch):
+    """With volumes joined, every VHD the run writes is the curve-weighted one
+    (Item 58): computed once per segment, ranked from, saved for the statewide maps,
+    and its basis stated in the provenance."""
+    monkeypatch.setattr(rds, "join_volumes", _volumes({s: 10_000.0 for s in SEGS}))
+    out = rds.run(_args(district, windows="am,pm"))
+
+    seg = out["segment_vhd"]
+    assert set(seg["Segment ID"]) == set(SEGS) and set(seg["window"]) == {"am", "pm"}
+    am_seg = seg[seg["window"] == "am"].set_index("Segment ID")["vhd"]
+    assert am_seg.nunique() == 1 and am_seg.iloc[0] > 0      # identical segments
+
+    ranking = out["ranking"]
+    assert ranking.attrs["vhd_basis"] == "curve"
+    am = ranking[(ranking["corridor"] == "toy-nb") & (ranking["window"] == "am")].iloc[0]
+    # The chain covers 0.5 + 1 + 1 + 0.5 segments: the same proration as delay.
+    assert am["vhd"] == pytest.approx(3.0 * am_seg.iloc[0])
+    assert am["vhd_per"] == "weekday"
+    # 1 min of delay x 10,000 veh/day is the index; the curve puts ~2 h of the day there.
+    assert am["vhd_index"] == pytest.approx(3.0 * 10_000 / 60)
+    assert 0 < am["vhd"] < am["vhd_index"]
+    assert out["totals"].attrs["rank_by"] == "vhd_per_mile"
+    assert out["totals"].iloc[0]["vhd_per"] == "weekday"
+
+    assert out["written"]["segment_vhd"].name == rds.SEGMENT_VHD_PEAK
+    saved = pd.read_parquet(out["written"]["segment_vhd"])
+    assert saved["vhd"].to_numpy() == pytest.approx(seg["vhd"].to_numpy(), nan_ok=True)
+    prov = json.loads(out["written"]["provenance"].read_text())
+    assert prov["vhd"]["basis"] == "curve"
+    assert prov["vhd"]["per"] == {"am": "weekday", "pm": "weekday"}
+
+    merged = rds._segment_tti_frame(out["screen"], out["net"].set_index("XDSegID"),
+                                    windows={"am": rds.screen.PEAK_WINDOWS["am"]},
+                                    segment_vhd=seg)
+    assert merged.loc[SEGS[1], "worst_vhd"] == pytest.approx(am_seg.iloc[0])
+    assert merged.loc[SEGS[1], "worst_vhd_per_mile"] == pytest.approx(am_seg.iloc[0])
+    assert merged.loc[SEGS[1], "vhd_per"] == "weekday"
+    assert merged.loc[SEGS[1], "aadt"] == 10_000.0
+
+
+def test_the_segment_map_refuses_the_index(district):
+    """AADT alone would colour the map by the Item 54 index, which the tiers are no
+    longer on the scale of."""
+    out = rds.run(_args(district))
+    aadt = pd.Series(10_000.0, index=pd.Index(SEGS, name="Segment ID"))
+    with pytest.raises(ValueError, match="curve-weighted"):
+        rds._segment_tti_frame(out["screen"], out["net"].set_index("XDSegID"),
+                               windows=rds.screen.PEAK_WINDOWS, aadt=aadt)
+
+
+def test_unmatched_aadt_stays_nan_through_the_segment_frame(district, monkeypatch):
     """``_segment_tti_frame`` must not zero-fill an AADT it could not join.
 
     Zero and free-flow are indistinguishable downstream; NaN is not.
     """
+    # AADT for the first segment only; the rest of the district is unjoined.
+    monkeypatch.setattr(rds, "join_volumes", _volumes({SEGS[0]: 12_000.0}))
     out = rds.run(_args(district))
     scr, net = out["screen"], out["net"]
-
-    # AADT for the first segment only; the rest of the district is unjoined.
-    partial = pd.DataFrame({"AADT": [12000.0]}, index=pd.Index([SEGS[0]], name="Segment ID"))
     merged = rds._segment_tti_frame(scr, net.set_index("XDSegID"),
-                                    windows=rds.screen.PEAK_WINDOWS, aadt=partial)
+                                    windows=rds.screen.PEAK_WINDOWS,
+                                    segment_vhd=out["segment_vhd"])
 
     assert merged.loc[SEGS[0], "aadt"] == 12000.0
+    assert merged.loc[SEGS[0], "worst_vhd"] > 0
     missing = merged.drop(index=SEGS[0])
     assert missing["aadt"].isna().all()
     assert missing["worst_vhd_per_mile"].isna().all()
@@ -483,7 +557,7 @@ def test_no_aadt_at_all_yields_all_nan_not_all_zero():
     frame = _vhd_frame([float("nan")] * 4)
     counts = _trace_counts(rds._build_segment_vhd_traces(frame))
     assert counts["No AADT Data (unvolumed)"] == 4
-    assert counts["Low / Free Flow (< 10 VHD/mi)"] == 0
+    assert counts["Low / Free Flow (< 1.5 VHD/mi)"] == 0
 
 
 def test_missing_metrics_render_as_na_not_zero():

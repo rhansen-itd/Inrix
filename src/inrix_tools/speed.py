@@ -106,6 +106,57 @@ def _segment_length(df: pd.DataFrame, geo_or_metadata) -> pd.Series | None:
     return mapped
 
 
+def _free_flow_tt(df: pd.DataFrame, geo_or_metadata, free_flow):
+    """Per-row free-flow travel time (minutes), NaN where the free-flow speed is
+    missing/non-positive, with the free-flow source and the length source.
+    ``Miles / v_ff x 60``, or the speed form ``TravelTime x v_obs / v_ff`` where no
+    length is known (algebraically the same value)."""
+    m = metric_columns(df)
+    tt_col, sp_col = m["travel_time"], m["speed"]
+    v_ff, ff_source = _free_flow_speed(df, free_flow, sp_col)
+    v_ff = v_ff.astype(float)
+    length = _segment_length(df, geo_or_metadata)
+
+    free_tt = None
+    length_source = None
+    if length is not None:
+        free_tt = length / v_ff * 60.0
+        length_source = "length"
+    if sp_col is not None and tt_col is not None:
+        speed_based = df[tt_col].astype(float) * df[sp_col].astype(float) / v_ff
+        if free_tt is None:
+            free_tt, length_source = speed_based, "speed"
+        else:
+            # per-segment missing lengths fall back to the (identical) speed form
+            free_tt = free_tt.fillna(speed_based)
+    if free_tt is None:
+        raise ValueError(
+            "Need segment length (geo_or_metadata) or a 'Speed(...)' column to "
+            "compute free-flow travel time; neither was available."
+        )
+    return free_tt.where(v_ff > 0), ff_source, length_source
+
+
+def free_flow_travel_time(df: pd.DataFrame, geo_or_metadata: pd.DataFrame | None = None,
+                          free_flow="ref") -> pd.Series:
+    """Each segment's free-flow travel time (minutes): the median over its rows of
+    the per-row free-flow time :func:`segment_delay` subtracts. It is constant per
+    segment for ``'ref'`` whenever the export's ``Ref Speed`` is (the usual case).
+
+    The reference curve-weighted VHD (``aadt.curve_vehicle_hours_of_delay``) floors
+    each cell's mean travel time against (Item 58, the GUI's VHD map).
+
+    Returns:
+        A ``Segment ID``-indexed Series, NaN where no row has a free-flow speed.
+        ``attrs['free_flow']`` / ``attrs['length_source']`` as :func:`segment_delay`.
+    """
+    free_tt, ff_source, length_source = _free_flow_tt(df, geo_or_metadata, free_flow)
+    out = free_tt.groupby(df[SEGMENT_COL], observed=True).median().astype(float)
+    out.index.name = SEGMENT_COL
+    out.attrs = {"free_flow": ff_source, "length_source": length_source}
+    return out
+
+
 def segment_delay(
     df: pd.DataFrame,
     geo_or_metadata: pd.DataFrame | None = None,
@@ -143,36 +194,13 @@ def segment_delay(
         (``'length'`` or ``'speed'``).
     """
     m = metric_columns(df)
-    tt_col, sp_col = m["travel_time"], m["speed"]
+    tt_col = m["travel_time"]
     if tt_col is None:
         raise ValueError("No 'Travel Time(...)' column; cannot compute delay.")
 
-    v_ff, ff_source = _free_flow_speed(df, free_flow, sp_col)
-    length = _segment_length(df, geo_or_metadata)
-
+    free_tt, ff_source, length_source = _free_flow_tt(df, geo_or_metadata, free_flow)
     tt_obs = df[tt_col].astype(float)
-    v_ff = v_ff.astype(float)
-    valid = v_ff > 0
-
-    free_tt = None
-    length_source = None
-    if length is not None:
-        free_tt = length / v_ff * 60.0
-        length_source = "length"
-    if sp_col is not None:
-        speed_based = tt_obs * df[sp_col].astype(float) / v_ff
-        if free_tt is None:
-            free_tt, length_source = speed_based, "speed"
-        else:
-            # per-segment missing lengths fall back to the (identical) speed form
-            free_tt = free_tt.fillna(speed_based)
-    if free_tt is None:
-        raise ValueError(
-            "Need segment length (geo_or_metadata) or a 'Speed(...)' column to "
-            "compute free-flow travel time; neither was available."
-        )
-
-    delay = (tt_obs - free_tt).where(valid)
+    delay = tt_obs - free_tt
     if floor:
         delay = delay.clip(lower=0)  # NaN is preserved by clip
 

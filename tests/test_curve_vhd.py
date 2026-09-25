@@ -353,6 +353,10 @@ class TestExtentsCallers:
         plain = extents.segment_congestion(base, net)
         assert plain.attrs["vhd_basis"] == "index"
         assert (plain["vhd"] == plain["vhd_index"]).all()
+        # A core carries both scales, so the floors' rescale can be read off (Item 58).
+        core = extents.find_cores(ids, seg)[0]
+        assert core.vhd == pytest.approx(AADT / 60 * 2.5 / 24)
+        assert core.vhd_index == pytest.approx(AADT / 60)
 
     def test_monthly_profile_is_real_per_month_volume(self):
         ids, net, base, bins, curves = self._setup()

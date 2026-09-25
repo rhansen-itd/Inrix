@@ -396,6 +396,118 @@ def test_segment_curve_vhd_chunks_agree(area):
 
 
 # ---------------------------------------------------------------------------
+# The consumers' curve VHD (Item 58)
+# ---------------------------------------------------------------------------
+def test_frame_bin_screen_matches_the_store(area, export_zip):
+    """The GUI's in-memory bin screen is the store's, cell for cell."""
+    con, key = area
+    store_bins = screen.segment_bin_screen(con, key)
+    raw = io.filter_cvalue(io.to_local(io.load_data(export_zip), TZ), 80)
+    frame_bins = screen.frame_bin_screen(raw, screen.PEAK_WINDOWS, bin_minutes=15)
+    keys = [SEGMENT_COL, "month", "day_type", "tod_min"]
+    a = store_bins.set_index(keys).sort_index()
+    b = frame_bins.set_index(keys).sort_index()
+    assert a.index.equals(b.index)
+    assert b["travel_time"].to_numpy() == pytest.approx(a["travel_time"].to_numpy())
+    assert (b["n_obs"].to_numpy() == a["n_obs"].to_numpy()).all()
+    for k in ("period_start", "period_end", "bin_minutes", "windows"):
+        assert frame_bins.attrs[k] == store_bins.attrs[k]
+
+    ref = pd.Series(1.0, index=pd.Index(SEG_IDS, name=SEGMENT_COL))
+    curves = pd.Series("flat", index=ref.index)
+    from_frame = screen.frame_curve_vhd(raw, ref, _aadt(), curves, screen.PEAK_WINDOWS,
+                                        bin_minutes=15, profiles=_flat_library())
+    from_store = screen.segment_curve_vhd(con, key, ref, _aadt(), curves,
+                                          profiles=_flat_library(), tz=TZ)
+    pd.testing.assert_frame_equal(from_frame.reset_index(drop=True),
+                                  from_store.reset_index(drop=True), check_like=True)
+
+    with pytest.raises(ValueError, match="tz-aware"):
+        screen.frame_bin_screen(raw.assign(**{"Date Time": raw["Date Time"].dt.tz_localize(
+            None)}), screen.PEAK_WINDOWS, bin_minutes=15)
+
+
+def test_clock_window_from_slider_hours():
+    w = screen.clock_window("map", 7, 9.5, [0, 1, 2, 3, 4])
+    assert (w.window, w.dows, w.peak) == ("7:00AM-9:30AM", (0, 1, 2, 3, 4), True)
+    assert screen.clock_window("map", 0, 24).window == "12:00AM-12:00AM"
+    assert screen.clock_window("map", 16, 16).window == "12:00AM-12:00AM"
+    assert screen.clock_window("map", 22, 5).window == "10:00PM-5:00AM"
+    assert screen.clock_window("map", 12, 24).window == "12:00PM-12:00AM"
+    assert screen.clock_window("map", 7, 9, range(7)).dows is None      # every day
+    assert screen.clock_window("map", 7, 9, []).dows is None
+
+
+def test_rank_corridors_takes_a_precomputed_segment_vhd(area):
+    """The run computes the per-segment curve VHD once (for the ranking and the map);
+    ranking on it is ranking on the bins."""
+    con, key = area
+    scr = screen.segment_screen(con, key)
+    bins = screen.segment_bin_screen(con, key)
+    curves = pd.Series("flat", index=pd.Index(SEG_IDS, name=SEGMENT_COL))
+    chains = {"Toy Rd NB": _toy_chain()}
+    via_bins = screen.rank_corridors(scr, chains, _aadt(), bins=bins, curves=curves,
+                                     profiles=_flat_library())
+    ref = pd.Series(1.0, index=pd.Index(SEG_IDS, name=SEGMENT_COL))
+    seg = screen.segment_curve_vhd(con, key, ref, _aadt(), curves,
+                                   profiles=_flat_library(), tz=TZ)
+    via_seg = screen.rank_corridors(scr, chains, _aadt(), segment_vhd=seg)
+    pd.testing.assert_frame_equal(via_bins, via_seg)
+    assert via_seg.attrs["vhd_basis"] == "curve"
+
+    with pytest.raises(ValueError, match="not both"):
+        screen.rank_corridors(scr, chains, _aadt(), bins=bins, curves=curves,
+                              segment_vhd=seg)
+    with pytest.raises(KeyError, match="midday"):
+        screen.rank_corridors(scr, chains, _aadt(),
+                              segment_vhd=seg[seg["window"] != "midday"])
+
+
+def test_peak_totals_refuse_windows_per_different_days(area):
+    """A weekday peak and an ungated window are per different days (Item 57): their
+    VHD does not add, so totalling them is refused rather than done."""
+    con, key = area
+    windows = {"am": screen.PEAK_WINDOWS["am"], "day_7d": screen.ALL_DAY_7D_WINDOW}
+    scr = screen.segment_screen(con, key, windows=windows)
+    bins = screen.segment_bin_screen(con, key, windows=windows)
+    curves = pd.Series("flat", index=pd.Index(SEG_IDS, name=SEGMENT_COL))
+    ranked = screen.rank_corridors(scr, {"toy-nb": _toy_chain()}, _aadt(), bins=bins,
+                                   curves=curves, profiles=_flat_library())
+    member = pd.DataFrame({"id": ["toy-nb"], "corridor": ["toy"], "direction": ["NB"]})
+    with pytest.raises(ValueError, match="different days"):
+        screen.corridor_peak_totals(ranked, member)
+    one = screen.corridor_peak_totals(ranked, member, windows=["am"])
+    assert one.iloc[0]["vhd_per"] == "weekday"
+
+
+def test_ranking_changes():
+    before = pd.DataFrame({
+        "district": [1, 1, 2, 3], "corridor_group": ["a", "b", "c", "d"],
+        "group_name": ["A", "B", "C", "D"], "statewide_rank": [1, 2, 3, 4],
+        "rank": [1, 2, 1, 1], "vhd": [100.0, 80.0, 60.0, 40.0],
+        "vhd_per_mile": [10.0, 8.0, 6.0, 4.0]})
+    after = pd.DataFrame({
+        "district": [1, 1, 2, 4], "corridor_group": ["a", "b", "c", "e"],
+        "group_name": ["A", "B", "C", "E"], "statewide_rank": [1, 3, 2, 4],
+        "rank": [1, 2, 1, 1], "vhd": [15.0, 8.0, 12.0, 1.0],
+        "vhd_per_mile": [1.5, 0.8, 1.2, 0.1]})
+    out = screen.ranking_changes(before, after, top_n=(2,))
+    row = out.set_index("corridor_group")
+    assert row.loc["b", "rank_change"] == -1 and row.loc["c", "rank_change"] == 1
+    assert row.loc["a", "vhd_ratio"] == pytest.approx(0.15)
+    assert pd.isna(row.loc["d", "statewide_rank_after"])
+    assert pd.isna(row.loc["e", "statewide_rank_before"])
+    assert list(out["corridor_group"][:3]) == ["a", "c", "b"]         # by the after rank
+    at = out.attrs
+    assert at["n_common"] == 3 and at["n_before"] == 4 and at["n_after"] == 4
+    assert at["spearman_rho"] == pytest.approx(0.5)     # 1,2,3 -> 1,3,2
+    assert at["top_n"][2] == {"n": 2, "kept": 1, "entered": ["2/c"], "left": ["1/b"]}
+    assert at["max_abs_rank_change"] == 1
+    with pytest.raises(ValueError, match="repeats"):
+        screen.ranking_changes(pd.concat([before, before]), after)
+
+
+# ---------------------------------------------------------------------------
 # rank_corridors
 # ---------------------------------------------------------------------------
 def test_rank_corridors_known_delay(area):
@@ -413,8 +525,12 @@ def test_rank_corridors_known_delay(area):
     assert am["delay_min"] == pytest.approx(3.0)
     assert am["tti"] == pytest.approx(2.0)
     assert am["delay_per_mile"] == pytest.approx(1.0)
-    # vehicle-hours: 3 segments x (1 min / 60) x 10,000 vehicles
-    assert am["vhd"] == pytest.approx(500.0)
+    # vehicle-hours: 3 segments x (1 min / 60) x 10,000 vehicles. With no bin screen
+    # this is the Item 54 index path; the consumers rank on the curve VHD since Item
+    # 58 (test_rank_corridors_curve_vhd, which asserts the curve value).
+    assert ranked.attrs["vhd_basis"] == "index"
+    assert am["vhd_index"] == pytest.approx(500.0)
+    assert am["vhd"] == am["vhd_index"]
     assert am["vhd_per_mile"] == pytest.approx(500.0 / 3.0)
     assert am["n_obs"] == 3 * 5 * 8
 
@@ -498,8 +614,8 @@ def test_rank_corridors_carries_the_aadt_caveat_and_ramp_flag(area):
     ranked = screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()},
                                    _aadt(source="matched_ramp"))
     assert (ranked["n_ramp_weighted"] == 3).all()
-    assert ranked[ranked["window"] == "am"].iloc[0]["vhd"] == pytest.approx(500.0)
-    assert "daily total" in ranked.attrs["aadt_caveat"]
+    assert ranked[ranked["window"] == "am"].iloc[0]["vhd_index"] == pytest.approx(500.0)
+    assert "daily total" in ranked.attrs["aadt_caveat"]       # the index path's caveat
     assert ranked.attrs["cvalue_threshold"] is None
 
 

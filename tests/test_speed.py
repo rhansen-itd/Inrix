@@ -469,6 +469,20 @@ def test_segment_delay_speed_fallback_equals_length(delay_df, delay_meta):
     assert speed_based[DELAY].tolist() == pytest.approx(length_based[DELAY].tolist())
 
 
+def test_free_flow_travel_time_per_segment(delay_df, delay_meta):
+    """The free-flow time segment_delay subtracts, one value per segment (Item 58:
+    the reference the GUI's curve VHD floors each cell against)."""
+    ff = speed.free_flow_travel_time(delay_df, delay_meta)
+    assert ff.to_dict() == pytest.approx({1001: 0.5, 1002: 1.0})
+    assert ff.index.name == "Segment ID"
+    assert ff.attrs == {"free_flow": "ref", "length_source": "length"}
+    # the speed form, with no length source, agrees
+    assert speed.free_flow_travel_time(delay_df).to_dict() == pytest.approx(ff.to_dict())
+    delay = speed.segment_delay(delay_df, geo_or_metadata=delay_meta)
+    tt = delay_df["Travel Time(Minutes)"] - delay_df["Segment ID"].map(ff)
+    assert delay[DELAY].tolist() == pytest.approx(tt.tolist())
+
+
 def test_segment_delay_floor(delay_meta):
     # observed *faster* than free-flow: TT 0.4 < free-flow 0.5 -> raw delay -0.1
     df = pd.DataFrame([_drow(1001, 75, 0.4, 60)])

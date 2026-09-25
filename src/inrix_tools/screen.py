@@ -671,6 +671,94 @@ def segment_curve_vhd(con, area_key: str, ref_tt: pd.Series, volume, curves,
     return out
 
 
+def clock_window(name: str, start_hour: float, end_hour: float, days=None) -> PeakWindow:
+    """A :class:`PeakWindow` from hour-of-day bounds (the GUI's time-of-day slider,
+    ``[start_hour, end_hour)``, hours 0–24) and optional ``dayofweek`` ints (0=Mon).
+    Equal bounds or ``0``–``24`` is the whole day. The minutes are kept, so 7.5 is
+    7:30 AM."""
+    def _clock(h: float) -> str:
+        total = int(round(float(h) * 60)) % (24 * 60)
+        hh, mm = divmod(total, 60)
+        return f"{(hh % 12) or 12}:{mm:02d}{'AM' if hh < 12 else 'PM'}"
+    h0, h1 = float(start_hour), float(end_hour)
+    clock = ("12:00AM-12:00AM" if (h0 <= 0 and h1 >= 24) or h0 == h1
+             else f"{_clock(h0)}-{_clock(h1)}")
+    dset = None if days is None else sorted({int(d) for d in days})
+    if dset is not None and (not dset or len(dset) >= 7):
+        dset = None
+    return PeakWindow(name, clock, None if dset is None else tuple(dset), peak=True)
+
+
+def frame_bin_screen(df: pd.DataFrame, windows, *, bin_minutes: int,
+                     period: tuple[str, str] | None = None,
+                     datetime_col: str = DATETIME_COL) -> pd.DataFrame:
+    """:func:`segment_bin_screen` over an **in-memory** row frame instead of the store
+    (Item 58: the GUI holds its rows in pandas). Same output and ``attrs``.
+
+    Args:
+        df: tz-aware **local** rows (``io.to_local``), already gated as the caller
+            wants (the GUI's CValue filter), with ``Segment ID`` and a
+            ``Travel Time(...)`` column.
+        windows: :class:`PeakWindow` objects (a mapping, a sequence or one). Membership is
+            ``PeakWindow.filter``, the reference semantics of the SQL path.
+        bin_minutes: the bin width of the cells; must divide 60.
+        period: the data period's ``(first, last)`` local dates; default the frame's
+            own first and last dates.
+    """
+    wins = resolve_windows(windows)
+    if bin_minutes <= 0 or 60 % bin_minutes:
+        raise ValueError(f"bin_minutes must divide 60, got {bin_minutes}")
+    tt_col = _speed.metric_columns(df)["travel_time"]
+    if tt_col is None:
+        raise ValueError("The frame carries no 'Travel Time(...)' column.")
+    ts = df[datetime_col]
+    if getattr(ts.dt, "tz", None) is None:
+        raise ValueError(f"{datetime_col!r} must be tz-aware local time (io.to_local).")
+    if period is None and len(df):
+        period = (ts.min().date().isoformat(), ts.max().date().isoformat())
+    keep = pd.Series(False, index=df.index)
+    for w in wins.values():
+        keep[w.filter(df, datetime_col=datetime_col).index] = True
+    rows = df.loc[keep & df[tt_col].notna(), [SEGMENT_COL, datetime_col, tt_col]]
+    t = rows[datetime_col]
+    tod = t.dt.hour * 60 + t.dt.minute
+    cells = pd.DataFrame({
+        SEGMENT_COL: rows[SEGMENT_COL].astype("int64"),
+        "month": t.dt.strftime("%Y-%m"),
+        "day_type": np.select([t.dt.dayofweek == 5, t.dt.dayofweek == 6],
+                              ["sat", "sun"], "weekday"),
+        "tod_min": (tod // bin_minutes * bin_minutes).astype("int64"),
+        "travel_time": rows[tt_col].astype(float),
+    })
+    keys = [SEGMENT_COL, "month", "day_type", "tod_min"]
+    out = (cells.groupby(keys, sort=True)["travel_time"].agg(["mean", "size"])
+           .rename(columns={"mean": "travel_time", "size": "n_obs"}).reset_index())
+    out["n_obs"] = out["n_obs"].astype("int64")
+    out.attrs = {
+        "tz": str(ts.dt.tz),
+        "bin_minutes": int(bin_minutes),
+        "windows": {n: w.to_dict() for n, w in wins.items()},
+        "units": {"travel_time": tt_col[tt_col.find("(") + 1:-1] or None},
+        "period_start": None if period is None else period[0],
+        "period_end": None if period is None else period[1],
+    }
+    return out
+
+
+def frame_curve_vhd(df: pd.DataFrame, ref_tt: pd.Series, volume, curves, windows, *,
+                    bin_minutes: int, period: tuple[str, str] | None = None,
+                    profiles=None, datetime_col: str = DATETIME_COL) -> pd.DataFrame:
+    """Curve-weighted VHD (``aadt.curve_vehicle_hours_of_delay``) for an in-memory row
+    frame: :func:`frame_bin_screen`, the volume weights over its period, and the VHD.
+    One row per segment of ``ref_tt`` × window; see that function for the output."""
+    bins = frame_bin_screen(df, windows, bin_minutes=bin_minutes, period=period,
+                            datetime_col=datetime_col)
+    if bins.attrs.get("period_start") is None:
+        raise ValueError("No rows: the frame has no data period.")
+    weights = bin_weights(bins, profiles)
+    return _aadt.curve_vehicle_hours_of_delay(bins, ref_tt, volume, curves, weights)
+
+
 def _quantile_name(q: float) -> str:
     """``0.15`` -> ``"tt_p15"``; ``0.025`` -> ``"tt_p2.5"``."""
     pct = round(100.0 * float(q), 6)
@@ -783,7 +871,7 @@ def window_delay(screen: pd.DataFrame, lengths: pd.Series, windows=("am", "pm"),
 
 def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
                    free_flow="ref", bins: pd.DataFrame | None = None, curves=None,
-                   profiles=None) -> pd.DataFrame:
+                   profiles=None, segment_vhd: pd.DataFrame | None = None) -> pd.DataFrame:
     """Rank assembled corridors on a :func:`segment_screen`, one row per corridor ×
     window.
 
@@ -814,6 +902,11 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
             Without it ``vhd`` is the Item 54 index, as before.
         curves: ``Segment ID -> curve_id`` (or the ``profile_assignment`` frame).
         profiles: the curve library (default: the packaged one).
+        segment_vhd: instead of ``bins``, the per-segment curve VHD already computed
+            (:func:`segment_curve_vhd` or ``aadt.curve_vehicle_hours_of_delay``, one row
+            per segment × window, covering the ranked windows). A run that also maps
+            every segment computes it once and passes it here (Item 58). ``aadt`` is
+            still needed for ``vhd_index``.
 
     Returns:
         One row per corridor × window, columns:
@@ -879,7 +972,18 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
     tt_wide = piv[f"Travel Time({tt_unit})"]
 
     seg_vhd = None
-    if bins is not None:
+    if bins is not None and segment_vhd is not None:
+        raise ValueError("pass bins or segment_vhd, not both.")
+    if segment_vhd is not None:
+        have = set(segment_vhd[WINDOW_COL].unique())
+        missing = [n for n in names if n not in have]
+        if missing:
+            raise KeyError(f"segment_vhd has no window(s) {missing}; it carries "
+                           f"{sorted(have)}.")
+        seg_vhd = segment_vhd
+        curve_piv = seg_vhd.pivot(index=SEGMENT_COL, columns=WINDOW_COL,
+                                  values=["vhd", "vhd_annual", "coverage"])
+    elif bins is not None:
         if aadt is None or curves is None:
             raise ValueError("curve-weighted VHD (bins=...) needs aadt and curves.")
         if free_flow != "ref":
@@ -1304,6 +1408,13 @@ def corridor_peak_totals(ranking: pd.DataFrame, membership, *, names=None, windo
     if ranking.empty:
         raise ValueError("Nothing to total: the ranking frame is empty.")
     cells, used, ungrouped = _peak_cells(ranking, membership, windows)
+    if "vhd_per" in cells.columns:
+        # Curve VHD is per average day *of the window's gate* (Item 57): a weekday
+        # peak and the 7-day window are per different days and do not add.
+        pers = sorted({p for p in cells["vhd_per"].dropna().unique()})
+        if len(pers) > 1:
+            raise ValueError(f"The totalled windows {list(used)} are per different days "
+                             f"({pers}); total windows that share a day gate.")
 
     name_map, couplet_ids = dict(names or {}), set(couplets or ())
     records = []
@@ -1338,6 +1449,8 @@ def corridor_peak_totals(ranking: pd.DataFrame, membership, *, names=None, windo
             "vhd": vhd,
             "vhd_per_mile": (vhd / directional_miles
                              if directional_miles > 0 and pd.notna(vhd) else float("nan")),
+            "vhd_per": (block["vhd_per"].dropna().iloc[0]
+                        if "vhd_per" in block and block["vhd_per"].notna().any() else None),
             "n_ramp_weighted": int(dirs["n_ramp_weighted"].sum()),
             "n_aadt_missing": int(dirs["n_aadt_missing"].sum()),
         })
@@ -1450,6 +1563,104 @@ def _aadt_source_lookup(aadt):
     if aadt.index.name != SEGMENT_COL and SEGMENT_COL in aadt.columns:
         return aadt.set_index(SEGMENT_COL)[_aadt.AADT_SOURCE_COL]
     return aadt[_aadt.AADT_SOURCE_COL]
+
+
+# ---------------------------------------------------------------------------
+# Comparing two rankings of the same corridors  (Item 58)
+# ---------------------------------------------------------------------------
+RANKING_CHANGE_TOP_N = (10, 20, 50)
+
+
+def ranking_changes(before: pd.DataFrame, after: pd.DataFrame, *,
+                    keys: Sequence[str] = ("district", GROUP_COL),
+                    rank_col: str = "statewide_rank",
+                    value_cols: Sequence[str] = ("vhd", "vhd_per_mile"),
+                    top_n: Sequence[int] = RANKING_CHANGE_TOP_N) -> pd.DataFrame:
+    """How a ranking moved between two runs of the same catalogue.
+
+    Args:
+        before / after: ranked tables (e.g. ``statewide_peak_corridor_rankings.csv``),
+            one row per ``keys``, each carrying ``rank_col`` (1 = worst) and
+            ``value_cols``. ``rank`` (the within-district rank) and ``group_name`` are
+            carried when present.
+        keys: the columns that identify a corridor in both tables.
+        top_n: the cut-offs whose churn is reported.
+
+    Returns:
+        One row per corridor in either table (outer join): ``keys``,
+        ``group_name_before``, ``<rank_col>_before`` / ``_after``, ``rank_change``
+        (before − after: positive moved up), ``rank_before`` / ``rank_after`` when
+        present, each value column ``_before`` / ``_after`` and ``<first value>_ratio``
+        (after / before), sorted by the after rank. A corridor in only one table has
+        NaN on the other side. ``attrs``:
+
+        - ``spearman_rho`` — Spearman's rank correlation of ``rank_col`` over the
+          corridors in both tables, and ``n_common``;
+        - ``top_n`` — per cut-off ``{"n": N, "kept": k, "entered": [...],
+          "left": [...]}`` (the corridor keys, as ``"district/id"`` strings);
+        - ``max_abs_rank_change``, ``median_ratio``.
+    """
+    keys = list(keys)
+    carry = [c for c in ("group_name", "rank") if c in before.columns or c in after.columns]
+    cols = keys + [rank_col] + [c for c in value_cols] + carry
+
+    def _pick(frame):
+        missing = [c for c in keys + [rank_col] if c not in frame.columns]
+        if missing:
+            raise KeyError(f"The ranking has no column(s) {missing}.")
+        if frame.duplicated(subset=keys).any():
+            raise ValueError(f"The ranking repeats a corridor on {keys}.")
+        return frame[[c for c in cols if c in frame.columns]]
+
+    out = _pick(before).merge(_pick(after), on=keys, how="outer",
+                              suffixes=("_before", "_after"))
+    out[f"{rank_col}_before"] = pd.to_numeric(out[f"{rank_col}_before"], errors="coerce")
+    out[f"{rank_col}_after"] = pd.to_numeric(out[f"{rank_col}_after"], errors="coerce")
+    out["rank_change"] = out[f"{rank_col}_before"] - out[f"{rank_col}_after"]
+    first = value_cols[0] if value_cols else None
+    if first is not None:
+        b = pd.to_numeric(out[f"{first}_before"], errors="coerce")
+        a = pd.to_numeric(out[f"{first}_after"], errors="coerce")
+        out[f"{first}_ratio"] = a / b.where(b != 0)
+    if "group_name_after" in out.columns:
+        out = out.drop(columns="group_name_after")
+    order = (keys + [c for c in ("group_name_before",) if c in out.columns]
+             + [f"{rank_col}_before", f"{rank_col}_after", "rank_change"]
+             + [c for c in ("rank_before", "rank_after") if c in out.columns]
+             + [f"{v}_{side}" for v in value_cols for side in ("before", "after")]
+             + ([f"{first}_ratio"] if first is not None else []))
+    out = out[order].sort_values([f"{rank_col}_after", f"{rank_col}_before"],
+                                 na_position="last", ignore_index=True)
+
+    both = out.dropna(subset=[f"{rank_col}_before", f"{rank_col}_after"])
+    rho = (float(both[f"{rank_col}_before"].corr(both[f"{rank_col}_after"],
+                                                  method="spearman"))
+           if len(both) > 1 else float("nan"))
+
+    def _ids(frame):
+        return ["/".join(str(frame.loc[i, k]) for k in keys) for i in frame.index]
+
+    churn = {}
+    for n in top_n:
+        was = out[out[f"{rank_col}_before"] <= n]
+        now = out[out[f"{rank_col}_after"] <= n]
+        was_ids, now_ids = set(_ids(was)), set(_ids(now))
+        churn[int(n)] = {"n": int(n), "kept": len(was_ids & now_ids),
+                         "entered": sorted(now_ids - was_ids),
+                         "left": sorted(was_ids - now_ids)}
+    out.attrs = {
+        "rank_col": rank_col,
+        "spearman_rho": rho,
+        "n_common": int(len(both)),
+        "n_before": int(out[f"{rank_col}_before"].notna().sum()),
+        "n_after": int(out[f"{rank_col}_after"].notna().sum()),
+        "top_n": churn,
+        "max_abs_rank_change": (float(both["rank_change"].abs().max())
+                                if len(both) else float("nan")),
+        "median_ratio": (float(out[f"{first}_ratio"].median())
+                         if first is not None else float("nan")),
+    }
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2422,6 +2633,9 @@ __all__ = [
     "segment_screen", "segment_monthly_screen", "rank_corridors",
     # Item 57 — curve-weighted VHD
     "data_period", "segment_bin_screen", "bin_weights", "segment_curve_vhd",
+    "clock_window", "frame_bin_screen", "frame_curve_vhd",
+    # Item 58 — comparing two rankings
+    "ranking_changes", "RANKING_CHANGE_TOP_N",
     # Item 43 — recurring-congestion corridor extraction
     "segment_recurrence", "CongestionRun", "extract_congestion_runs",
     "tidy_run_endpoints", "pair_directions", "emit_candidates",
