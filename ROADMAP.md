@@ -3816,28 +3816,28 @@ selectable scenarios."
 
 ---
 
-## 68 — Regenerate the typed catalogues and the statewide scenario run (owner-run)
+## 68 — Regenerate the typed catalogues and the statewide scenario run (owner-run) ✅ (Session 88)
 
 **Target: Opus, on the owner's machine** (the stores, the XD network cache and the
 AADT layer are not in the cloud container). Depends on 67.
 
 Scope:
 
-- [ ] `build_statewide_catalogues.py --districts 1 2 3 4 5 6 --refresh-baseline`,
+- [x] `build_statewide_catalogues.py --districts 1 2 3 4 5 6 --refresh-baseline`,
       then commit the six typed catalogues. Record per district: facilities by type,
       how many recreational/retail facilities merged into a commute one, and which
       stand alone. Compare against the retired `legacy/rec_catalogues_2026-09-29/`
       (review F1–F6: same floors now, so expect fewer rural rec cores).
-- [ ] Sanity-check the classes: I-84 Treasure Valley → `commute`; Eagle Rd and US-95
+- [x] Sanity-check the classes: I-84 Treasure Valley → `commute`; Eagle Rd and US-95
       Coeur d'Alene → `urban_hybrid`; SH-55 north of Eagle, SH-75 Ketchum and US-20
       Island Park → `recreational`. If they aren't, revisit the retail windows or the
       summer season (Item 65 constants) before changing any floor.
-- [ ] `run_statewide_screening.py --scenarios peak,day_7d,fri:summer,sat:summer,sun:summer,weekend:summer --maps`,
+- [x] `run_statewide_screening.py --scenarios peak,day_7d,fri:summer,sat:summer,sun:summer,weekend:summer --maps`,
       the aggregate, and the statewide maps. DESIGN_HISTORY with the headline
       rankings per scenario.
 
-*Suggested prompt:* "Do Item 68 of ROADMAP.md — regenerate the typed catalogues and
-run the statewide scenarios."
+*Session 88 delivered: all 6 catalogues regenerated and verified, bug fixed in `screen.bin_weights`,
+statewide scenario matrix and maps rendered across all 6 scenarios, 1,138 tests pass.*
 
 ---
 

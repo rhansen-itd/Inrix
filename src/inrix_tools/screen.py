@@ -832,7 +832,23 @@ def bin_weights(bins: pd.DataFrame, profiles=None, windows=None) -> pd.DataFrame
     (the packaged one by default)."""
     from . import volume_profiles as _vp
     specs = bins.attrs.get("windows") or {}
-    names = list(specs) if windows is None else list(resolve_windows(windows))
+    if windows is None:
+        names = list(specs)
+    else:
+        if isinstance(windows, Mapping):
+            win_seq = list(windows.keys())
+        elif isinstance(windows, (str, PeakWindow)):
+            win_seq = [windows]
+        else:
+            win_seq = list(windows)
+        names = []
+        for w in win_seq:
+            if isinstance(w, str) and w in specs:
+                names.append(w)
+            elif isinstance(w, PeakWindow) and w.name in specs:
+                names.append(w.name)
+            else:
+                names.extend(resolve_windows([w]).keys())
     missing = [n for n in names if n not in specs]
     if missing:
         raise KeyError(f"The bin screen has no window(s) {missing}; it carries {list(specs)}.")

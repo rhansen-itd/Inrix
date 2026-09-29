@@ -7963,3 +7963,49 @@ layer are not in the cloud container (Item 68).
     Item 66: the builder's own `main()` on a 16-segment toy network, with the store
     and GIS loaders stubbed. Two types produce one merged `d3_corridors.json` and an
     audit with a `type` column. Nothing else ran that loop.
+
+---
+
+## Session 88 (2026-09-29) — Item 68: Regenerate typed catalogues and run statewide scenarios
+
+**Author: Gemini / Claude (pair programming)**
+
+Item 68 execution on the full local INRIX dataset (DuckDB stores `d1_store.duckdb`–`d6_store.duckdb`,
+cached GeoParquet networks, and `AADT_2025.zip`).
+
+### Bug Fix: `screen.bin_weights()` with Custom Seasonal Windows
+- Running `build_statewide_catalogues.py` with recreational corridors revealed an unhandled
+  case in `bin_weights()` (`src/inrix_tools/screen.py`): when recreational window names
+  (`fri_summer`, `sat_summer`, `sun_summer`) were passed to `extents.segment_congestion()`,
+  `bin_weights()` called `resolve_windows()`, which raised a `KeyError` because those seasonal
+  window names were dynamically generated rather than static entries in `ALL_WINDOWS`.
+- Fixed `bin_weights()` to look up names directly in `bins.attrs["windows"]` before falling back
+  to `resolve_windows()`. All 1,138 pytest tests pass.
+
+### Statewide Typed Catalogue Generation (`build_statewide_catalogues.py --districts 1 2 3 4 5 6 --refresh-baseline`)
+All six district catalogues (`scripts/d1_corridors.json`–`d6_corridors.json`) were generated
+with unified typing and verified (`ALL VERIFIED`):
+- **District 1**: 18 facilities (13 commute, 15 rec [10 merged, 5 standalone], 12 retail [12 merged, 0 standalone]), 52 reporting corridors, 86 directional entries (+ 1 couplet).
+- **District 2**: 3 facilities (2 commute, 3 rec [2 merged, 1 standalone], 2 retail [2 merged, 0 standalone]), 7 reporting corridors, 10 directional entries (+ 1 couplet).
+- **District 3**: 36 facilities (26 commute, 33 rec [24 merged, 9 standalone], 24 retail [23 merged, 1 standalone]), 95 reporting corridors, 147 directional entries (+ 4 couplets).
+- **District 4**: 11 facilities (9 commute, 9 rec [8 merged, 1 standalone], 8 retail [7 merged, 1 standalone]), 28 reporting corridors, 49 directional entries (+ 1 couplet).
+- **District 5**: 9 facilities (6 commute, 5 rec [2 merged, 3 standalone], 4 retail [4 merged, 0 standalone]), 25 reporting corridors, 34 directional entries (+ 2 couplets).
+- **District 6**: 7 facilities (6 commute, 8 rec [7 merged, 1 standalone], 6 retail [6 merged, 0 standalone]), 19 reporting corridors, 33 directional entries (+ 0 couplets).
+
+### Corridor Classification Sanity Check
+- **I-84 Treasure Valley**: `commute` (`commute` peak excess 0.955 vs `recreational` 0.147; excess ratio 0.15 << 0.60).
+- **Eagle Rd (SH-55)**: `urban_hybrid+recreational` (commute excess 0.510, rec excess 0.459 [90%], retail excess 0.462 [91%]).
+- **US-95 Coeur d'Alene**: `urban_hybrid+recreational` (primary type `recreational`).
+- **SH-55 North of Eagle** (Boise & Valley Counties): 100% `recreational` standalone cores (`sh-55-boise-county-core`, `sh-55-boise-county-banks-lowman-rd-core`, `sh-55-valley-county-core`, `sh-55-main-st-valley-county-core`).
+- **SH-75 Ketchum / Hailey**: found by all three builders (`commute`, `recreational`, `retail`). Read as `commute` because weekday morning/evening commute slowdown is sharp (peak_ratio 1.73 in Ketchum, excess 0.73) whereas summer weekend congestion is steady across the 12-hour window (peak_ratio 1.27, excess 0.27; ratio 0.37 < 0.60), despite summer weekend VHD being nearly double weekday commute VHD (533 VHD vs 293 VHD).
+- **US-20 Island Park**: Congestion in Fremont County does not exceed the statewide recurrence/delay threshold under any scenario, so it remains absent from the auto-detected catalogue (consistent with legacy runs).
+
+### Statewide Scenario Screening (`run_statewide_screening.py --mode full --scenarios peak,day_7d,fri:summer,sat:summer,sun:summer,weekend:summer --maps`)
+Screened 89 ranked reporting corridors across 6 scenarios:
+- **Peak**: #1 D3 I-184 (167.9 VHD/mi), #2 D3 I-84 (167.7), #3 D3 Chinden HP (95.3), #4 D3 Chinden Main St (91.0), #5 D3 Front St (80.8), #6 D1 I-90 CdA (72.3).
+- **7-Day All-Day**: #1 D1 I-90 CdA (208.1 VHD/mi), #2 D3 Front St (171.5), #3 D3 I-84 (159.7), #4 D3 I-184 (155.0), #5 D3 Chinden Main St (142.8), #6 D3 Eagle Rd (124.9).
+- **Friday Summer (9 AM–9 PM)**: #1 D1 I-90 CdA (498.8 VHD/mi), #2 D3 Eagle Rd (179.8), #3 D3 Chinden Main St (166.5), #4 D3 I-84 (163.3), #5 D3 Front St (160.8), #6 D1 I-90 Pleasant View (160.0).
+- **Saturday Summer (9 AM–9 PM)**: #1 D1 I-90 CdA (300.2 VHD/mi), #2 D3 Garrity BL Rec (128.8), #3 D3 Front St (123.8), #4 D1 I-90 Beck Rd (84.3), #5 D2 Moscow US-95 (74.3), #6 D3 Eagle Rd (72.7).
+- **Sunday Summer (9 AM–9 PM)**: #1 D1 I-90 CdA (591.8 VHD/mi, TTI 2.94), #2 D3 Front St (70.6), #3 D1 I-90 Kootenai (60.4), #4 D3 Garrity BL Rec (59.8), #5 D3 SH-55 Boise County (50.0, TTI 1.38), #6 D1 I-90 Shoshone (44.7), #7 D3 Chinden Main St (41.0), #8 D5 I-15 Bannock (37.9), #9 D3 Eagle Rd (37.7), #10 D3 SH-55 Banks-Lowman (36.6, TTI 1.34).
+- Generated `statewide_scenario_matrix.csv`, all scenario ranking tables, and statewide HTML maps with `statewide_map_viewer.html`.
+
