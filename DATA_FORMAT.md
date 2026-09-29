@@ -1138,7 +1138,7 @@ season's days (109 for summer). Holidays are not modelled.
 
 | scenario | windows | file tag |
 |---|---|---|
-| `peak` | `am` + `pm` | *(none — `corridor_peak_totals.csv`)* |
+| `peak` | `am` + `pm` (+ `midday`, `night` as unranked context) | *(none — `corridor_peak_totals.csv`)* |
 | `day_7d` | `day_7d` | `7day` |
 | `fri` / `sat` / `sun` | that day, 09:00–21:00 | the name |
 | `weekend` | Sat–Sun as **one** window (per average weekend day) | `weekend` |
@@ -1148,6 +1148,18 @@ season's days (109 for summer). Holidays are not modelled.
 season and suffixes the season onto the window names, the tag and the scenario name
 (`sat_summer`). So a summer Saturday and an all-year Saturday never share a column or
 a file.
+
+A district run (`run_district_screening.py --scenario`, Item 67) writes each
+scenario's tables under its tag: `corridor_<tag>_totals.csv`, `_breakout`,
+`_rankings`, `segment_<tag>_screen.parquet`, `segment_<tag>_curve_vhd.parquet` and
+`screening_<tag>_map.html`. The peak keeps its un-tagged historic names. Each run also
+records itself in the directory's `screening_scenarios.json` (`{tag: {label,
+scenario, files}}`), which is how the aggregate and the statewide maps find the
+scenarios. Every corridor table carries `corridor_types` / `corridor_class` /
+`primary_type` from a typed catalogue. `statewide_scenario_matrix.csv` puts each
+ranked corridor's rank, VHD/mile, VHD and TTI under every scenario side by side.
+A scenario's VHD is per average day of its own window. So compare **ranks** across
+scenarios, not VHD totals.
 
 **Windows that would pool delay cells are refused (Item 65).** The bin screen keys its
 cells by month × day type × bin, not by window. So two windows covering one cell on

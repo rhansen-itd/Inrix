@@ -808,3 +808,86 @@ def test_count_fitted_curves_reach_the_assignment(district, tmp_path):
     out2 = rds.run(_args(district, membership=mem))
     assert out2["provenance"]["volume_profiles"]["count_profiles"] is None
     assert pa.STATION not in out2["provenance"]["volume_profiles"]["by_source"]
+
+
+# ---------------------------------------------------------------------------
+# Item 67: scenarios, the scenario registry, and the corridor-type tags
+# ---------------------------------------------------------------------------
+def test_the_default_run_is_the_peak_scenario_untagged():
+    from inrix_tools import screen
+    sc = rds.parse_args(["--db", "x"]).scenario
+    assert (sc.name, sc.tag, sc.file_tag) == ("peak", None, "peak")
+    assert sc.window_map == screen.PEAK_WINDOWS
+
+
+def test_scenario_flag_sets_windows_and_tag():
+    sc = rds.parse_args(["--db", "x", "--scenario", "sat:summer"]).scenario
+    assert (sc.name, sc.tag) == ("sat_summer", "sat_summer")
+    assert list(sc.window_map) == ["sat_summer"]
+    assert rds.parse_args(["--db", "x", "--scenario", "weekend",
+                           "--window-tag", "wknd"]).scenario.tag == "wknd"
+
+
+def test_explicit_windows_take_a_presets_identity_when_they_match():
+    assert rds.parse_args(["--db", "x", "--windows", "day_7d"]).scenario.tag == "7day"
+    assert rds.parse_args(["--db", "x", "--windows", "sun"]).scenario.tag == "sun"
+    custom = rds.parse_args(["--db", "x", "--windows", "am,pm"]).scenario
+    assert custom.tag is None and custom.label == "Windows AM / PM"
+    with pytest.raises(SystemExit):
+        rds.parse_args(["--db", "x", "--windows", "sat", "--scenario", "sat"])
+    with pytest.raises(KeyError):
+        rds.parse_args(["--db", "x", "--windows", "sat,tuesday"])
+
+
+def test_scenario_files_follow_the_tag():
+    assert rds.scenario_file("corridor", None, "_totals.csv",
+                             "corridor_peak_totals.csv") == "corridor_peak_totals.csv"
+    assert rds.scenario_file("corridor", "7day", "_totals.csv") == "corridor_7day_totals.csv"
+    # The 7-day VHD file keeps the name the statewide maps read (review F9).
+    assert rds.scenario_file("segment", "7day", "_curve_vhd.parquet") == \
+        rds.SEGMENT_VHD_7DAY
+
+
+def test_a_seasonal_scenario_run_writes_its_own_files_and_registers(district):
+    rds.run(_args(district))
+    out = rds.run(_args(district, scenario="day_7d:03-01..03-31"))
+    tag = "7day_0301_0331"
+    assert list(out["ranking"]["window"].unique()) == ["day_7d_0301_0331"]
+    d = district["out"]
+    for name in (f"corridor_{tag}_totals.csv", f"corridor_{tag}_breakout.csv",
+                 f"corridor_{tag}_rankings.csv", f"segment_{tag}_screen.parquet",
+                 f"screening_{tag}_provenance.json", "corridor_peak_totals.csv"):
+        assert (d / name).exists(), name
+    prov = json.loads((d / f"screening_{tag}_provenance.json").read_text())
+    assert prov["scenario"]["season"] == ["03-01", "03-31"]
+    reg = json.loads((d / rds.SCENARIO_REGISTRY).read_text())
+    assert set(reg) == {"peak", tag}
+    assert reg[tag]["files"]["totals"] == f"corridor_{tag}_totals.csv"
+    assert reg["peak"]["files"]["totals"] == "corridor_peak_totals.csv"
+    assert "2026-03-01..2026-03-31" not in reg[tag]["label"]     # month-days, not dates
+    assert "03-01..03-31" in reg[tag]["label"]
+
+
+def test_the_corridor_types_ride_into_every_table(district):
+    cat = json.loads(district["catalogue"].read_text())
+    for row in cat["corridors"] + cat["reporting_corridors"]:
+        row["_types"] = ["commute", "retail"]
+        row["_class"] = "urban_hybrid"
+        row["_primary_type"] = "commute"
+    district["catalogue"].write_text(json.dumps(cat))
+    out = rds.run(_args(district))
+    for key in ("ranking", "totals", "grouped"):
+        frame = out[key]
+        assert set(frame["corridor_class"]) == {"urban_hybrid"}, key
+        assert set(frame["corridor_types"]) == {"commute+retail"}, key
+    assert set(out["breakout"]["corridor_class"]) == {"urban_hybrid"}
+    path = district["out"] / "corridor_peak_totals.csv"
+    lines = path.read_text().splitlines()
+    header = sum(1 for line in lines if line.startswith("#"))
+    totals = pd.read_csv(path, skiprows=header)
+    assert totals["corridor_class"].tolist() == ["urban_hybrid"]
+
+
+def test_an_untyped_catalogue_adds_no_columns(district):
+    out = rds.run(_args(district))
+    assert "corridor_class" not in out["totals"].columns

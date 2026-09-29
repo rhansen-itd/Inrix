@@ -319,7 +319,8 @@ class Scenario:
 
 
 SCENARIO_PRESETS: dict[str, tuple[str, tuple[str, ...], str | None]] = {
-    "peak":    ("Weekday peaks (AM 7–9 + PM 4–6:30)", ("am", "pm"), None),
+    "peak":    ("Weekday peaks (AM 7–9 + PM 4–6:30)", ("am", "pm", "midday", "night"),
+                None),
     "day_7d":  ("7-day all-day (6 AM – 9 PM)", ("day_7d",), "7day"),
     "fri":     ("Friday (9 AM – 9 PM)", ("fri",), "fri"),
     "sat":     ("Saturday (9 AM – 9 PM)", ("sat",), "sat"),
@@ -328,7 +329,9 @@ SCENARIO_PRESETS: dict[str, tuple[str, tuple[str, ...], str | None]] = {
     "fri_sun": ("Friday–Sunday (9 AM – 9 PM)", ("fri_sun",), "fri_sun"),
 }
 """``name -> (label, window preset names, file tag)``. ``peak`` and ``day_7d`` keep the
-file names they had before scenarios existed; every other tag is the name."""
+file names they had before scenarios existed; every other tag is the name. ``peak``
+carries ``midday`` and ``night`` as it always has: not peak windows, so they are
+reported for context and never totalled or ranked (:data:`PEAK_WINDOWS`)."""
 
 DEFAULT_SCENARIOS = ("peak", "day_7d")
 

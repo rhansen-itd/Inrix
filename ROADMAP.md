@@ -3777,31 +3777,41 @@ catalogue per district."
 
 ---
 
-## 67 — One ranking, selectable scenarios
+## 67 — One ranking, selectable scenarios ✅ (Session 88)
 
 **Target: Opus.** Scripts. Depends on 66.
 
 Scope:
 
-- [ ] **`run_district_screening.py --scenario NAME`** (a `screen.SCENARIOS` name,
+- [x] **`run_district_screening.py --scenario NAME`** (a `screen.SCENARIOS` name,
       with an optional `:season`). It sets the windows, the output tag and the
       labels. `--windows` / `--window-tag` stay as a low-level override. Each
       corridor table (totals, breakout, rankings) gains `corridor_types` /
       `corridor_class` from the catalogue.
-- [ ] **`run_statewide_screening.py --scenarios peak,day_7d,...`** (default
+- [x] **`run_statewide_screening.py --scenarios peak,day_7d,...`** (default
       `peak,day_7d`; `--windows both|rec` stays as an alias). Screens every
       district on the one catalogue per scenario.
-- [ ] **`aggregate_statewide_rankings.py`**: aggregates every scenario present (or
+- [x] **`aggregate_statewide_rankings.py`**: aggregates every scenario present (or
       the `--scenarios` list), and the types ride into the ranked and context
       tables. **`statewide_scenario_matrix.csv`**: one row per ranked corridor, with
       rank, VHD/mile and TTI under each scenario. It replaces the retired comparison
       script, because every scenario ranks the *same* corridors.
-- [ ] **`generate_statewide_maps.py`**: a loop over the scenarios present (no
+- [x] **`generate_statewide_maps.py`**: a loop over the scenarios present (no
       path-name magic, no hard-coded "May–August"; review S4, S5).
-- [ ] pytest: scenario → tag/label/windows in the district runner; aggregate
+- [x] pytest: scenario → tag/label/windows in the district runner; aggregate
       discovery and the matrix; types carried through. DESIGN_HISTORY.
 
-*Suggested prompt:* "Do Item 67 of ROADMAP.md — rank every corridor together under
+*Delivered as scoped. `run_district_screening.run_scenario` / `scenario_file` /
+`register_scenario` (`screening_scenarios.json`) / `attach_type_tags`;
+`run_statewide_screening.scenario_list` (validated before any district runs; `--windows
+both` still works, other `--windows` values are refused with a pointer);
+`aggregate_statewide_rankings.scenario_tables` / `load_group_types` / `attach_types` /
+`scenario_matrix`; `generate_statewide_maps` loops over `scenario_tables`. One naming
+rule for every tag fixes review F9, the 7-day VHD file the branch renamed. The `peak`
+scenario keeps `midday`/`night` as context, so the default run ranks exactly as before. Tests:
++7 district runner, +4 aggregate, `tests/test_statewide_scenarios.py` (3). Session 88.*
+
+*Suggested prompt (done):* "Do Item 67 of ROADMAP.md — rank every corridor together under
 selectable scenarios."
 
 ---

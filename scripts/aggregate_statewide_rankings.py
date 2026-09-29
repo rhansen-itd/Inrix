@@ -22,6 +22,16 @@ Produces:
 5. out/statewide_screening/statewide_district_summary.csv
    - District-level roll-up metrics (Total VHD, Monitored Miles, Top Corridors).
 
+**Scenarios (ROADMAP Item 67).** Items 1 and 2 are written for **every** scenario the
+districts were screened under: ``statewide_<tag>_corridor_rankings.csv`` and
+``statewide_<tag>_context_extents.csv``, where ``<tag>`` is ``peak``, ``7day`` or the
+scenario's own tag (``sat_summer``). The scenarios come from ``--scenarios``, else from
+each district's ``screening_scenarios.json``. With more than one, 6.
+``statewide_scenario_matrix.csv`` lists each ranked corridor's rank, VHD/mile, VHD and
+TTI under every scenario side by side. It is one catalogue, so the rows join exactly.
+Every table carries the corridor-type columns (``corridor_types``,
+``corridor_class``, ``primary_type``; Item 66).
+
 Since Item 58 ``vhd`` is the curve-weighted vehicle-hours of delay on an average day of
 the window (``vhd_per``: per weekday for the peaks, per calendar day for the 7-day
 window). Districts on different bases are refused, not ranked together.
@@ -30,11 +40,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from inrix_tools import screen  # noqa: E402
+
 DEFAULT_CATALOGUE = "scripts/d{district}_corridors.json"
+SCENARIO_REGISTRY = "screening_scenarios.json"
+"""Written by ``run_district_screening.py`` in each district's directory (Item 67)."""
+TYPE_COLUMNS = ("corridor_types", "corridor_class", "primary_type")
 
 
 def catalogue_file(pattern: str, district: int, overrides: dict | None = None) -> Path:
@@ -109,6 +127,107 @@ def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE,
             out[(d, grp["id"])] = (grp["_tier_number"], bool(ranked), grp.get("_facility"),
                                    "; ".join(grp.get("_flags", [])))
     return out
+
+
+def load_group_types(districts, pattern: str = DEFAULT_CATALOGUE,
+                     overrides: dict | None = None) -> dict:
+    """``(district, corridor_group) -> {corridor_types, corridor_class, primary_type}``
+    from the typed catalogues (ROADMAP Item 66); absent for an untyped group."""
+    out = {}
+    for d in districts:
+        path = catalogue_file(pattern, d, overrides)
+        if not path.exists():
+            continue
+        cat = json.loads(path.read_text())
+        for grp in cat.get("reporting_corridors", []):
+            if "_types" in grp:
+                out[(d, grp["id"])] = {"corridor_types": "+".join(grp["_types"]),
+                                       "corridor_class": grp.get("_class", ""),
+                                       "primary_type": grp.get("_primary_type", "")}
+    return out
+
+
+def attach_types(frame: pd.DataFrame, group_types: dict) -> pd.DataFrame:
+    """``frame`` with the type columns after ``corridor_group``, from the catalogues,
+    unless the district tables already carried them (Item 67's runner writes them)."""
+    if frame.empty or not group_types or all(c in frame.columns for c in TYPE_COLUMNS):
+        return frame
+    out = frame.copy()
+    keys = list(zip(out["district"], out["corridor_group"]))
+    at = list(out.columns).index("corridor_group") + 1
+    for i, col in enumerate(TYPE_COLUMNS):
+        if col not in out.columns:
+            out.insert(at + i, col, [group_types.get(k, {}).get(col, "") for k in keys])
+    return out
+
+
+def scenario_tables(base_dir: Path, districts, specs=None) -> list[dict]:
+    """The scenarios to aggregate, as ``{tag, label, windows, totals, breakout}``
+    (Item 67); ``windows`` is ``{name: screen.PeakWindow}``.
+
+    Named by ``specs`` (``screen.resolve_scenarios``), else discovered from each
+    district's ``screening_scenarios.json``, the peak first. With no registry at all
+    (tables written before scenarios), the historic peak and 7-day pair."""
+    def _entry(sc: screen.Scenario):
+        tag = sc.file_tag
+        totals = "corridor_peak_totals.csv" if tag == "peak" else f"corridor_{tag}_totals.csv"
+        breakout = "corridor_breakout.csv" if tag == "peak" else f"corridor_{tag}_breakout.csv"
+        return {"tag": tag, "label": sc.label, "windows": sc.window_map,
+                "totals": totals, "breakout": breakout}
+
+    if specs:
+        return [_entry(sc) for sc in screen.resolve_scenarios(specs)]
+    found: dict[str, dict] = {}
+    for d in districts:
+        path = Path(base_dir) / f"d{d}" / SCENARIO_REGISTRY
+        if not path.exists():
+            continue
+        for tag, info in json.loads(path.read_text()).items():
+            if tag in found:
+                continue
+            spec = info.get("scenario") or {}
+            windows = tuple(
+                screen.PeakWindow(w["name"], w["window"],
+                                  None if w.get("days") is None else tuple(w["days"]),
+                                  bool(w.get("peak")),
+                                  None if not w.get("season") else tuple(w["season"]))
+                for w in (spec.get("windows") or {}).values())
+            e = _entry(screen.Scenario(spec.get("name", tag), info.get("label", tag),
+                                       windows, None if tag == "peak" else tag))
+            e["totals"] = info.get("files", {}).get("totals", e["totals"])
+            e["breakout"] = info.get("files", {}).get("breakout", e["breakout"])
+            found[tag] = e
+    if not found:
+        return [_entry(screen.resolve_scenario("peak")),
+                _entry(screen.resolve_scenario("day_7d"))]
+    order = ["peak", "7day"]
+    return sorted(found.values(), key=lambda e: (e["tag"] not in order,
+                                                 order.index(e["tag"]) if e["tag"] in order
+                                                 else 0))
+
+
+def scenario_matrix(ranked: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """One row per ranked corridor, its rank, VHD/mile, VHD and TTI under every
+    scenario side by side (Item 67). Every scenario ranks the same typed catalogue, so
+    the rows join on ``(district, corridor_group)`` exactly — what the retired
+    rec-vs-commute comparison could not do across two catalogues."""
+    key = ["district", "corridor_group"]
+    ident = ["group_name", "miles", "facility", *TYPE_COLUMNS]
+    frames = [df for df in ranked.values() if not df.empty]
+    if not frames:
+        return pd.DataFrame()
+    base = pd.concat([df[key + [c for c in ident if c in df.columns]] for df in frames],
+                     ignore_index=True).drop_duplicates(subset=key, keep="first")
+    out = base
+    for tag, df in ranked.items():
+        if df.empty:
+            continue
+        cols = {"statewide_rank": f"{tag}_rank", "vhd_per_mile": f"{tag}_vhd_per_mile",
+                "vhd": f"{tag}_vhd", "tti": f"{tag}_tti"}
+        part = df[key + [c for c in cols if c in df.columns]].rename(columns=cols)
+        out = out.merge(part, on=key, how="left")
+    first = next(f"{t}_rank" for t, df in ranked.items() if not df.empty)
+    return out.sort_values(first, na_position="last").reset_index(drop=True)
 
 
 def split_ranked(combined: pd.DataFrame, group_tiers: dict,
@@ -376,6 +495,9 @@ def main():
                         help="catalogue path pattern the extent tiers are read from")
     parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
                         help="district D's catalogue is PATH (repeatable)")
+    parser.add_argument("--scenarios", default=None,
+                        help="comma-separated scenarios to aggregate (default: every "
+                             "scenario the districts' screening_scenarios.json lists)")
     args = parser.parse_args()
     overrides = {}
     for v in args.catalogue_override:
@@ -384,6 +506,7 @@ def main():
 
     base_dir = Path(args.dir)
     group_tiers = load_group_tiers(args.districts, args.catalogue, overrides)
+    group_types = load_group_types(args.districts, args.catalogue, overrides)
 
     def _write(label: str, filename: str, stem: str) -> pd.DataFrame:
         """Aggregate, split ranked/context, write both; return the **full** table
@@ -392,7 +515,9 @@ def main():
         full = aggregate_rankings(base_dir, filename, args.districts, rank_col="vhd_per_mile")
         if full.empty:
             return full
+        full = attach_types(full, group_types)
         ranked, context = split_ranked(full, group_tiers)
+        ranked_by_tag[stem] = ranked
         r_path = base_dir / f"statewide_{stem}_corridor_rankings.csv"
         ranked.to_csv(r_path, index=False)
         print(f"  -> Written {r_path} ({len(ranked)} ranked corridors)")
@@ -403,12 +528,19 @@ def main():
                           on=["district", "corridor_group"], how="left",
                           suffixes=("_all", ""))
 
-    peak_rankings = _write("peak", "corridor_peak_totals.csv", "peak")
-    day7_rankings = _write("7-day all-day", "corridor_7day_totals.csv", "7day")
-    rec_rankings = _write("recreational (combined)", "corridor_rec_totals.csv", "rec")
-    fri_rankings = _write("Friday recreational", "corridor_fri_totals.csv", "fri")
-    sat_rankings = _write("Saturday recreational", "corridor_sat_totals.csv", "sat")
-    sun_rankings = _write("Sunday recreational", "corridor_sun_totals.csv", "sun")
+    ranked_by_tag: dict[str, pd.DataFrame] = {}
+    written = {e["tag"]: _write(e["label"], e["totals"], e["tag"])
+               for e in scenario_tables(base_dir, args.districts, args.scenarios)}
+    peak_rankings = written.get("peak", pd.DataFrame())
+    day7_rankings = written.get("7day", pd.DataFrame())
+
+    if len(ranked_by_tag) > 1:
+        print("Generating the cross-scenario matrix...")
+        matrix = scenario_matrix(ranked_by_tag)
+        m_path = base_dir / "statewide_scenario_matrix.csv"
+        matrix.to_csv(m_path, index=False)
+        print(f"  -> Written {m_path} ({len(matrix)} corridors x "
+              f"{len(ranked_by_tag)} scenarios)")
 
     if not peak_rankings.empty:
         print("Generating statewide couplet synthesis...")

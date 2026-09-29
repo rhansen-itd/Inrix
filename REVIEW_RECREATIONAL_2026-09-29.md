@@ -85,6 +85,15 @@ The docstring still says "share of weekdays", and `<name>_n_weekdays` now counts
 Saturdays. **Kept and documented (Item 65).** The only production caller
 (`triage_candidates.py`) passes `am, pm`, which are unaffected.
 
+### F9 — The 7-day VHD file was renamed out from under the statewide maps
+*(found while doing Item 67)* `run_district_screening.py` now writes a tagged run's
+per-segment VHD as `segment_vhd_<tag>.parquet`, which makes a `day_7d` run write
+`segment_vhd_7day.parquet`. `generate_statewide_maps.py` still reads
+`SEGMENT_VHD_7DAY` = `segment_7day_curve_vhd.parquet`. So after the branch, the
+statewide **7-day VHD/mile map is silently skipped** ("no district saved a 7-day
+curve VHD"). **Fixed (Item 67):** one naming rule for every tag,
+`segment_<tag>_curve_vhd.parquet`, which gives back the historic 7-day name.
+
 ## 2. Structural and hygiene findings
 
 - **S1 — A parallel catalogue can't be joined.** `compare_recreational_vs_commute.py`
@@ -125,6 +134,7 @@ Saturdays. **Kept and documented (Item 65).** The only production caller
 | `extents` threshold kwargs, `curve_vhd`, `--relaxed`, `--rec-screen`, `--filename-pattern` | **Reverted/removed** (F1–F4, F6, S6) |
 | `dN_rec_corridors.json` ×6, `compare_recreational_vs_commute.py` | **Moved to `legacy/rec_catalogues_2026-09-29/`** with a README (F1, S1) |
 | Per-window map/aggregate blocks | **Replaced** by loops over scenarios (S4, S5) |
+| `segment_vhd_<tag>.parquet` naming | **Fixed** back to `segment_<tag>_curve_vhd.parquet` (F9) |
 
 ## 4. Items
 
@@ -136,6 +146,6 @@ Saturdays. **Kept and documented (Item 65).** The only production caller
   on 65.
 - **67 — One ranking, selectable scenarios.** `--scenarios` through the district
   and statewide runners, the aggregate and the maps. The type tags ride into every
-  table, plus a cross-scenario matrix. S4, S5. Depends on 66.
+  table, plus a cross-scenario matrix. F9, S4, S5. Depends on 66.
 - **68 — Regenerate and review on the real data** (owner-run: the exports are not
   in the cloud container). Depends on 67.

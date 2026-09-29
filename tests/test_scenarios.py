@@ -247,7 +247,9 @@ class TestWindowCells:
 class TestScenarios:
     def test_presets(self):
         peak = screen.resolve_scenario("peak")
-        assert [w.name for w in peak.windows] == ["am", "pm"]
+        assert [w.name for w in peak.windows] == ["am", "pm", "midday", "night"]
+        assert [w.name for w in peak.windows if w.peak] == ["am", "pm"]
+        assert peak.window_map == screen.PEAK_WINDOWS
         assert (peak.tag, peak.file_tag) == (None, "peak")
         assert screen.resolve_scenario("day_7d").file_tag == "7day"
         assert screen.resolve_scenario("weekend").window_map["weekend"].dows == (5, 6)
@@ -266,7 +268,7 @@ class TestScenarios:
     def test_explicit_season_and_peak(self):
         sc = screen.resolve_scenario("peak:06-01..08-31")
         assert sc.file_tag == "peak_0601_0831"
-        assert [w.name for w in sc.windows] == ["am_0601_0831", "pm_0601_0831"]
+        assert [w.name for w in sc.windows if w.peak] == ["am_0601_0831", "pm_0601_0831"]
 
     def test_unknown_and_duplicates(self):
         with pytest.raises(KeyError):

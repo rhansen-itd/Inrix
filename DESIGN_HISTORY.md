@@ -7893,3 +7893,69 @@ Tested: passing it in gives the identical catalogue.
 
 Not run here: the real regeneration. The district stores, network caches and AADT
 layer are not in the cloud container (Item 68).
+
+---
+
+## Session 88 — Item 67: one ranking under selectable scenarios (2026-09-29)
+
+- **The district runner takes `--scenario`** (a `screen.SCENARIO_PRESETS` name, with
+  an optional `:season`). `run_scenario` resolves it, sets the windows, the file tag
+  and the labels, and `sc.to_dict()` goes into the provenance.
+  - `--windows` stays as the low-level override, and is exclusive with
+    `--scenario`. Explicit windows that are exactly a preset's take its identity:
+    `--windows day_7d` is still `7day`, `--windows sun` is `sun`. Anything else is a
+    custom, untagged scenario.
+  - `--windows` with an unknown name now raises. It used to drop the name silently.
+- **`peak` keeps `midday` and `night`.** The default run screened
+  `screen.PEAK_WINDOWS` (am, pm, midday, night), with the last two carried as
+  unranked context. Item 65's `peak` preset had only am + pm, which would have
+  changed the default ranking table's rows. It now carries all four, and only the
+  `peak=True` windows are totalled. The default run screens the same windows and
+  writes the same tables under the same names. What changes is additions: a
+  `scenario` record in the provenance header, the registry file, and the map titles
+  now use the scenario label.
+- **One naming rule** (`scenario_file`): `<stem>_<tag><suffix>`, or the historic name
+  for the untagged peak. This restores `segment_7day_curve_vhd.parquet`. The branch's
+  `segment_vhd_7day.parquet` had silently skipped the statewide 7-day VHD map (review
+  F9, found here).
+  - KML is written only by the untagged run, since the corridors are the same in
+    every scenario.
+- **`screening_scenarios.json`** per output directory: each run registers `{tag:
+  {label, scenario, files}}`. The aggregate and the maps discover scenarios from it,
+  with no path-name magic (review S4). The district map viewer lists every
+  registered map.
+- **Type tags in every table.** `catalogue_type_tags` / `attach_type_tags` add
+  `corridor_types`, `corridor_class` and `primary_type` after the id column: to the
+  directional ranking, the grouped table, the totals and the breakout. The breakout
+  is (group, direction, window)-indexed, so the tags come from its index level. An
+  untyped catalogue adds no columns.
+- **Statewide runner.** `--scenarios` (default `peak,day_7d`) is validated by
+  `scenario_list` before six districts are screened. `--windows both` still means the
+  default. Other `--windows` values, and the branch's `rec` aliases, exit with a
+  pointer to `--scenarios`: `rec` meant three summed windows, a different quantity
+  from `fri_sun`'s one, so it is not silently re-mapped. `--catalogue-pattern` is
+  gone, since there is one catalogue.
+- **Aggregate.**
+  - `scenario_tables` gives each scenario's `{tag, label, windows, totals,
+    breakout}` from `--scenarios`, else the registries (the peak first), else the
+    historic pair.
+  - `_write` runs once per scenario. The type columns come from the tables, or from
+    the catalogue for tables written before Item 67.
+  - `scenario_matrix` joins every scenario's ranked table on `(district,
+    corridor_group)`. This is the comparison the retired script attempted across two
+    catalogues (review S1). The couplet, tier and district summaries still read the
+    peak and 7-day tables.
+- **Statewide maps.** Main's version, then rewritten to loop over `scenario_tables`:
+  two maps per scenario, with the historic names for the peak and `7day`. The
+  branch's six copy-pasted blocks and its hard-coded "May–August" subtitles went
+  (review S5).
+- **Tests.**
+  - `test_run_district_screening` +7: default = untagged peak; `--scenario` and
+    `--window-tag`; windows taking a preset's identity and unknown names raising;
+    file names; a seasonal run on the toy district writing its own files and
+    registering beside the peak; type tags in all four tables and the CSV; untyped
+    adds nothing.
+  - `test_aggregate_statewide_rankings` +4: discovery, type columns, the matrix, and
+    `main()` over two districts × two scenarios.
+  - `tests/test_statewide_scenarios.py` (3): the statewide runner's list, file names,
+    and the maps' loop with rendering monkeypatched.
