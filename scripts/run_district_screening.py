@@ -44,6 +44,7 @@ Needs the ``geo`` extra (the chains are assembled from the XD shapefile).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import re
 import sys
@@ -460,29 +461,116 @@ def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> 
     return out
 
 
+def run_scenario(scenario=None, windows=None, window_tag=None) -> screen.Scenario:
+    """The run's :class:`screen.Scenario` (ROADMAP Item 67).
+
+    ``--scenario`` names one (``screen.resolve_scenario``; ``sat:summer``); explicit
+    ``--windows`` build one instead (the two are exclusive), taking a preset's label
+    and tag when they are exactly its windows, else ``--window-tag`` or none. With
+    neither, the ``peak`` scenario: ``screen.PEAK_WINDOWS``, un-tagged file names —
+    the run as it was before scenarios. ``window_tag`` overrides the tag."""
+    if scenario is not None and windows:
+        raise SystemExit("--scenario and --windows are exclusive.")
+    if windows:
+        wins = screen.resolve_windows(windows)
+        sc = next((screen.resolve_scenario(n) for n in screen.SCENARIO_PRESETS
+                   if screen.resolve_scenario(n).window_map == wins), None)
+        if sc is None:
+            sc = screen.Scenario(window_tag or "custom",
+                                 "Windows " + " / ".join(w.upper() for w in wins),
+                                 tuple(wins.values()), window_tag)
+    else:
+        sc = screen.resolve_scenario(scenario or "peak")
+    if window_tag:
+        sc = dataclasses.replace(sc, tag=window_tag)
+    return sc
+
+
+def scenario_file(stem: str, tag: str | None, suffix: str,
+                  untagged: str | None = None) -> str:
+    """``<stem>_<tag><suffix>``, or the historic ``untagged`` name for the peak run."""
+    if tag is None:
+        return untagged or f"{stem}{suffix}"
+    return f"{stem}_{tag}{suffix}"
+
+
+SCENARIO_REGISTRY = "screening_scenarios.json"
+"""Per output directory: every scenario run into it, ``{file tag: {label, scenario,
+files}}``. The aggregate and the statewide maps discover scenarios from it."""
+
+
+def register_scenario(out_dir, sc: screen.Scenario, files: dict) -> Path:
+    path = Path(out_dir) / SCENARIO_REGISTRY
+    try:
+        reg = json.loads(path.read_text()) if path.exists() else {}
+    except json.JSONDecodeError:
+        reg = {}
+    reg[sc.file_tag] = {"label": sc.label, "scenario": sc.to_dict(),
+                        "files": {k: Path(v).name for k, v in files.items()}}
+    path.write_text(json.dumps(reg, indent=2, default=str) + "\n")
+    return path
+
+
+def catalogue_type_tags(catalogue_path) -> dict[str, dict]:
+    """``{entry or group id: {corridor_types, corridor_class, primary_type}}`` from a
+    typed catalogue (ROADMAP Item 66); empty for an untyped one."""
+    try:
+        cat = json.loads(Path(catalogue_path).read_text())
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for row in cat.get("corridors", []) + cat.get("reporting_corridors", []):
+        if "_types" in row:
+            out[row["id"]] = {"corridor_types": "+".join(row["_types"]),
+                              "corridor_class": row.get("_class", ""),
+                              "primary_type": row.get("_primary_type", "")}
+    return out
+
+
+def attach_type_tags(frame, tags: dict, id_col: str):
+    """``frame`` with ``corridor_types`` / ``corridor_class`` / ``primary_type`` after
+    ``id_col`` (index or column), blank for ids the catalogue does not tag."""
+    if frame is None or not tags:
+        return frame
+    if id_col in frame.columns:
+        ids = frame[id_col]
+    elif id_col in (frame.index.names or []):
+        ids = frame.index.get_level_values(id_col)
+    else:
+        ids = frame.index
+    out = frame.copy()
+    at = (list(out.columns).index(id_col) + 1) if id_col in out.columns else 0
+    for i, col in enumerate(("corridor_types", "corridor_class", "primary_type")):
+        out.insert(at + i, col, [tags.get(str(x), {}).get(col, "") for x in ids])
+    out.attrs = dict(frame.attrs)
+    return out
+
+
 def write_outputs(out_dir, ranking, resolution, prov, geo, *, grouped=None,
-                  totals=None, breakout=None, write_kml=True, is_7day: bool = False) -> dict:
+                  totals=None, breakout=None, write_kml=True, is_7day: bool = False,
+                  window_tag: str | None = None) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written = {}
 
-    prov_fname = "screening_7day_provenance.json" if is_7day else "screening_provenance.json"
+    tag = window_tag or ("7day" if is_7day else None)
+    prov_fname = f"screening_{tag}_provenance.json" if tag else "screening_provenance.json"
     prov_path = out_dir / prov_fname
     prov_path.write_text(json.dumps(prov, indent=2, default=str) + "\n")
     written["provenance"] = prov_path
 
     header = "".join(f"# {k}: {json.dumps(v, default=str)}\n" for k, v in prov.items())
-    ranking_fname = "corridor_7day_rankings.csv" if is_7day else "corridor_rankings.csv"
+    ranking_fname = f"corridor_{tag}_rankings.csv" if tag else "corridor_rankings.csv"
     tables = [(ranking_fname, ranking, False),
               ("corridor_resolution.csv", resolution, False)]
     if grouped is not None:
-        grouped_fname = "reporting_corridor_7day_rankings.csv" if is_7day else "reporting_corridor_rankings.csv"
+        grouped_fname = f"reporting_corridor_{tag}_rankings.csv" if tag else "reporting_corridor_rankings.csv"
         tables.insert(0, (grouped_fname, grouped, False))
     if breakout is not None:
-        breakout_fname = "corridor_7day_breakout.csv" if is_7day else "corridor_breakout.csv"
+        breakout_fname = f"corridor_{tag}_breakout.csv" if tag else "corridor_breakout.csv"
         tables.insert(0, (breakout_fname, breakout, True))
     if totals is not None:
-        totals_fname = "corridor_7day_totals.csv" if is_7day else "corridor_peak_totals.csv"
+        totals_fname = f"corridor_{tag}_totals.csv" if tag else "corridor_peak_totals.csv"
         tables.insert(0, (totals_fname, totals, False))
     for name, frame, with_index in tables:
         path = out_dir / name
@@ -491,7 +579,7 @@ def write_outputs(out_dir, ranking, resolution, prov, geo, *, grouped=None,
             frame.to_csv(fh, index=with_index)
         written[name.split(".")[0]] = path
 
-    if write_kml and not geo.empty and not is_7day:
+    if write_kml and not geo.empty and tag is None:
         path = out_dir / "corridors.kml"
         drawable = geo.dropna(subset=["geometry"]).set_index("Segment ID")
         kml.geometry_to_kml(drawable, path, color_by="corridor", folder_by="corridor",
@@ -1584,7 +1672,11 @@ def run(args) -> dict:
     try:
         area_key = resolve_area(con, args.area)
         repairs = load_repairs(args.repairs, not args.no_repairs)
-        windows = args.windows or screen.PEAK_WINDOWS
+        sc = getattr(args, "scenario", None)
+        if not isinstance(sc, screen.Scenario):
+            sc = run_scenario(sc, getattr(args, "windows", None),
+                              getattr(args, "window_tag", None))
+        windows = sc.window_map
         scr = screen_segments(
             con, area_key, windows=windows, cvalue_threshold=args.cvalue_threshold,
             bin_minutes=args.bin_minutes, tz=args.tz,
@@ -1681,10 +1773,16 @@ def run(args) -> dict:
                 ranking, membership, names=gnames,
                 order=totals[screen.GROUP_COL].tolist())
 
-        win_names = list((windows or screen.PEAK_WINDOWS).keys())
-        is_7day = win_names == ["day_7d"]
+        window_tag = sc.tag
+        # The corridor types (Item 66) ride into every corridor table.
+        tags = catalogue_type_tags(args.catalogue)
+        ranking = attach_type_tags(ranking, tags, "corridor")
+        grouped = attach_type_tags(grouped, tags, screen.GROUP_COL)
+        totals = attach_type_tags(totals, tags, screen.GROUP_COL)
+        breakout = attach_type_tags(breakout, tags, screen.GROUP_COL)
 
         prov = provenance(args, area_key, con, scr, resolution, repairs, aadt)
+        prov["scenario"] = sc.to_dict()
         prov["vhd"] = {"basis": ranking.attrs.get("vhd_basis"),
                        "per": (dict(seg_vhd.attrs["vhd_per"]) if seg_vhd is not None
                                else None),
@@ -1715,7 +1813,7 @@ def run(args) -> dict:
             }
         written = write_outputs(args.out_dir, ranking, resolution, prov, geo,
                                 grouped=grouped, totals=totals, breakout=breakout,
-                                write_kml=not args.no_kml, is_7day=is_7day)
+                                write_kml=not args.no_kml, window_tag=window_tag)
         vp_name = (f"d{args.district}_volume_profiles.csv" if args.district
                    else "volume_profiles.csv")
         written["volume_profiles"] = profiles_mod.write_assignment(
@@ -1729,13 +1827,15 @@ def run(args) -> dict:
             written[name] = path
 
         # Save segment screen results for fast statewide vector map aggregation
-        scr_fname = "segment_7day_screen.parquet" if is_7day else "segment_peak_screen.parquet"
-        scr_path = Path(args.out_dir) / scr_fname
+        scr_path = Path(args.out_dir) / scenario_file(
+            "segment", window_tag, "_screen.parquet", "segment_peak_screen.parquet")
         scr.to_parquet(scr_path)
         written["segment_screen"] = scr_path
         if seg_vhd is not None:
-            vhd_path = Path(args.out_dir) / (SEGMENT_VHD_7DAY if is_7day
-                                             else SEGMENT_VHD_PEAK)
+            # segment_7day_curve_vhd.parquet for day_7d, as before the branch renamed
+            # it and the statewide 7-day VHD map lost its input (review F9).
+            vhd_path = Path(args.out_dir) / scenario_file(
+                "segment", window_tag, "_curve_vhd.parquet", SEGMENT_VHD_PEAK)
             seg_vhd.to_parquet(vhd_path)
             written["segment_vhd"] = vhd_path
 
@@ -1746,36 +1846,26 @@ def run(args) -> dict:
             corridor_ranks = attach_direction_totals(
                 totals.set_index(screen.GROUP_COL).to_dict(orient="index"), breakout)
 
-            # Build a human-readable window label from the windows that were run.
             dist_label = f"District {args.district}" if args.district else "District"
-            if is_7day:
-                window_label = "7-Day All-Day (6 AM – 9 PM)"
-                delay_label = "Total 7-Day Delay"
-                map_fname = "screening_7day_map.html"
-            else:
-                peak_names = [n for n, w in (windows or screen.PEAK_WINDOWS).items()
-                              if w.peak]
-                window_label = ("Typical Weekday Peak ("
-                                + " / ".join(n.upper() for n in peak_names) + ")")
-                delay_label = "Total Peak Delay"
-                map_fname = "screening_peak_map.html"
-
+            map_fname = scenario_file("screening", window_tag, "_map.html",
+                                      "screening_peak_map.html")
+            vhd_fname = scenario_file("screening", window_tag, "_vhd_map.html",
+                                      "screening_vhd_map.html")
+            delay_label = f"Total delay, {sc.label}"
             map_path = generate_maps(
                 args.out_dir, scr, net, cat_entries, chains, corridor_ranks,
-                windows=windows or screen.PEAK_WINDOWS,
-                window_label=window_label,
+                windows=windows,
+                window_label=sc.label,
                 title_prefix=f"ITD {dist_label}",
                 delay_label=delay_label,
                 map_filename=map_fname)
             written["map"] = map_path
 
             if aadt is not None:
-                vhd_fname = ("screening_7day_vhd_map.html" if is_7day
-                             else "screening_vhd_map.html")
                 vhd_path = generate_maps(
                     args.out_dir, scr, net, cat_entries, chains, corridor_ranks,
-                    windows=windows or screen.PEAK_WINDOWS,
-                    window_label=window_label,
+                    windows=windows,
+                    window_label=sc.label,
                     title_prefix=f"ITD {dist_label}",
                     delay_label=delay_label,
                     map_filename=vhd_fname,
@@ -1783,17 +1873,25 @@ def run(args) -> dict:
                     aadt=aadt, segment_vhd=seg_vhd)
                 written["map_vhd"] = vhd_path
 
-            # Generate / update map_viewer.html if multiple maps exist in out_dir
-            candidates = [
-                ("Typical Peak (TTI)", "screening_peak_map.html"),
-                ("Typical Peak (VHD / Mile)", "screening_vhd_map.html"),
-                ("7-Day All-Day (TTI)", "screening_7day_map.html"),
-                ("7-Day All-Day (VHD / Mile)", "screening_7day_vhd_map.html"),
-            ]
-            available_maps = [
-                (lbl, fn) for lbl, fn in candidates
-                if (Path(args.out_dir) / fn).exists()
-            ]
+        out_files = {
+            "totals": scenario_file("corridor", window_tag, "_totals.csv",
+                                    "corridor_peak_totals.csv"),
+            "breakout": scenario_file("corridor", window_tag, "_breakout.csv"),
+            "ranking": scenario_file("corridor", window_tag, "_rankings.csv"),
+            "segment_screen": scr_path,
+            **({"segment_vhd": written["segment_vhd"]} if "segment_vhd" in written else {}),
+            **{k: written[k] for k in ("map", "map_vhd") if k in written},
+        }
+        written["scenarios"] = register_scenario(args.out_dir, sc, out_files)
+        if getattr(args, "maps", False):
+            # One viewer over every scenario's maps in this directory.
+            reg = json.loads((Path(args.out_dir) / SCENARIO_REGISTRY).read_text())
+            available_maps = []
+            for info in reg.values():
+                for key, kind in (("map", "TTI"), ("map_vhd", "VHD / Mile")):
+                    fn = info["files"].get(key)
+                    if fn and (Path(args.out_dir) / fn).exists():
+                        available_maps.append((f"{info['label']} ({kind})", fn))
             if len(available_maps) > 1:
                 viewer_path = Path(args.out_dir) / "map_viewer.html"
                 viewer_path.write_text(_map_viewer_html(available_maps), encoding="utf-8")
@@ -1864,12 +1962,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--aadt-max-distance-m", type=float, default=60.0)
     p.add_argument("--cvalue-threshold", type=float, default=DEFAULT_CVALUE,
                    help="keep CValue > threshold; 'none' disables the gate")
+    p.add_argument("--scenario", default=None,
+                   help="the ranking scenario (ROADMAP Items 65, 67): one of "
+                        + ", ".join(screen.SCENARIO_PRESETS)
+                        + ", optionally ':summer' or ':MM-DD..MM-DD' "
+                        "(default: peak). Sets the windows, the output file tag and "
+                        "the labels")
     p.add_argument("--windows", default=None,
-                   help="comma-separated window preset names — any of: "
-                        + ", ".join(sorted(screen.ALL_WINDOWS))
-                        + " (default: am,pm,midday,night)")
+                   help="low-level alternative to --scenario: comma-separated window "
+                        "preset names — any of: " + ", ".join(sorted(screen.ALL_WINDOWS)))
     p.add_argument("--date-start", default=None)
     p.add_argument("--date-end", default=None)
+    p.add_argument("--window-tag", default=None,
+                   help="override the output file tag (default: the scenario's)")
     p.add_argument("--tz", default=DEFAULT_TZ)
     p.add_argument("--min-coverage", type=float, default=corridors.DEFAULT_MIN_COVERAGE)
     p.add_argument("--out-dir", default="out/district_screening")
@@ -1891,9 +1996,9 @@ def parse_args(argv=None):
     if isinstance(args.cvalue_threshold, float) and args.cvalue_threshold < 0:
         args.cvalue_threshold = None
     if args.windows:
-        args.windows = {n: screen.ALL_WINDOWS[n]
-                        for n in (w.strip() for w in args.windows.split(","))
-                        if n in screen.ALL_WINDOWS} or None
+        args.windows = screen.resolve_windows(
+            [w for w in (x.strip() for x in args.windows.split(",")) if w])
+    args.scenario = run_scenario(args.scenario, args.windows, args.window_tag)
 
     if args.district is not None:
         DISTRICT_TZ = {

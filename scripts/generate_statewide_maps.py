@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """Generate statewide interactive HTML map visualizations across all ITD districts.
 
-Builds four statewide master vector maps:
-1. out/statewide_screening/statewide_peak_map.html:
-   All segments colored by Typical Weekday Peak TTI (AM/PM), with statewide
-   ranked corridors overlaid and start/end termini delineated.
-2. out/statewide_screening/statewide_vhd_map.html:
-   All segments colored by Typical Weekday Peak Delay Density (VHD / Mile).
-3. out/statewide_screening/statewide_7day_map.html:
-   All segments colored by 7-Day All-Day TTI (6 AM – 9 PM, 7 days/week).
-4. out/statewide_screening/statewide_7day_vhd_map.html:
-   All segments colored by 7-Day All-Day Delay Density (VHD / Mile).
-5. out/statewide_screening/statewide_map_viewer.html:
-   A tabbed browser interface toggling between all four statewide views.
+Builds two statewide master vector maps **per scenario** (ROADMAP Item 67):
 
-The two VHD/mile maps colour by the **curve-weighted** VHD each district run saved
-beside its segment screen (``segment_{peak,7day}_curve_vhd.parquet``, Item 58), which
+1. ``statewide_<tag>_map.html``: all segments coloured by the scenario's TTI, with the
+   statewide ranked corridors overlaid and their termini delineated;
+2. ``statewide_<tag>_vhd_map.html``: the same by delay density (VHD / mile);
+
+plus ``statewide_map_viewer.html``, a tabbed viewer over all of them. The weekday peak
+keeps its historic names (``statewide_peak_map.html``, ``statewide_vhd_map.html``), and
+the 7-day window is ``7day``. The scenarios come from ``--scenarios``, else from the
+districts' ``screening_scenarios.json`` (the same discovery the aggregate uses), else
+the historic peak + 7-day pair.
+
+The VHD/mile maps colour by the **curve-weighted** VHD each district run saved
+beside its segment screen (``segment_<tag>_curve_vhd.parquet``, Item 58), which
 carries its own AADT. A district without one (screened with no AADT) draws as
 unvolumed; with none at all the VHD maps are skipped rather than drawn with zeroed
 volumes. The maps no longer join AADT themselves, so they can never weight by a
@@ -34,10 +33,12 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from inrix_tools import corridors, screen  # noqa: E402
-from scripts.aggregate_statewide_rankings import load_district_table  # noqa: E402
+from inrix_tools import corridors  # noqa: E402
+from scripts.aggregate_statewide_rankings import (  # noqa: E402
+    load_district_table,
+    scenario_tables,
+)
 from scripts.run_district_screening import (  # noqa: E402
-    SEGMENT_VHD_7DAY,
     SEGMENT_VHD_PEAK,
     _build_corridor_overlay,
     _build_segment_vhd_traces,
@@ -47,28 +48,35 @@ from scripts.run_district_screening import (  # noqa: E402
     attach_direction_totals,
     _map_viewer_html,
     _segment_tti_frame,
+    scenario_file,
     _CORRIDOR_OUTLINE_LIGHT,
     _CORRIDOR_OUTLINE_DARK,
     _TERMINI_ZOOM_JS,
 )
 
 
-def load_statewide_data(districts: list[int], base_dir: Path, *,
-                        catalogue_overrides: dict | None = None):
-    """Load combined networks, catalogues, resolved chains, screen frames and the
-    per-segment curve VHD each district run saved (Item 58).
+def scenario_frames(tag: str | None) -> tuple[str, str]:
+    """``(segment screen, segment curve VHD)`` file names a district run wrote for a
+    scenario tag (``run_district_screening.scenario_file``); ``None``/``"peak"`` is the
+    un-tagged peak run."""
+    tag = None if tag in (None, "peak") else tag
+    return (scenario_file("segment", tag, "_screen.parquet", "segment_peak_screen.parquet"),
+            scenario_file("segment", tag, "_curve_vhd.parquet", SEGMENT_VHD_PEAK))
 
-    Returns ``(net, cat_entries, chains, scr_peak, scr_7d, vhd_peak, vhd_7d)``; a
-    frame no district wrote is ``None``. The VHD frames carry the ``AADT`` the district
+
+def load_statewide_data(districts: list[int], base_dir: Path, tags=("peak", "7day"), *,
+                        catalogue_overrides: dict | None = None):
+    """Load combined networks, catalogues, resolved chains, and per scenario tag the
+    screen frames and the per-segment curve VHD each district run saved (Item 58).
+
+    Returns ``(net, cat_entries, chains, frames)`` with ``frames[tag] = (scr, vhd)``;
+    a frame no district wrote is ``None``. The VHD frames carry the ``AADT`` the district
     ranking was weighted by, so the map and the ranking cannot disagree about volume.
     """
     net_parts = []
     all_cat_entries = []
     all_chains = {}
-    parts = {"scr_peak": [], "scr_7d": [], "vhd_peak": [], "vhd_7d": []}
-    files = {"scr_peak": "segment_peak_screen.parquet",
-             "scr_7d": "segment_7day_screen.parquet",
-             "vhd_peak": SEGMENT_VHD_PEAK, "vhd_7d": SEGMENT_VHD_7DAY}
+    parts = {(tag, kind): [] for tag in tags for kind in ("scr", "vhd")}
 
     for d in districts:
         net_cache = Path(f"geometry_cache/d{d}_network.geoparquet")
@@ -94,14 +102,17 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
             for cid, ch in res.attrs["chains"].items():
                 all_chains[cid] = ch
 
-        for key, fname in files.items():
-            path = base_dir / f"d{d}" / fname
-            if path.exists():
-                parts[key].append(pd.read_parquet(path))
-            elif key.startswith("vhd") and (base_dir / f"d{d}" / files[
-                    "scr" + key[3:]]).exists():
-                print(f"  District {d}: no {fname} (screened without AADT?) — its "
-                      f"segments draw as unvolumed on the VHD map.")
+        for tag in tags:
+            scr_name, vhd_name = scenario_frames(tag)
+            scr_path = base_dir / f"d{d}" / scr_name
+            if scr_path.exists():
+                parts[(tag, "scr")].append(pd.read_parquet(scr_path))
+            vhd_path = base_dir / f"d{d}" / vhd_name
+            if vhd_path.exists():
+                parts[(tag, "vhd")].append(pd.read_parquet(vhd_path))
+            elif scr_path.exists():
+                print(f"  District {d}: no {vhd_name} (screened without AADT?) — its "
+                      f"segments draw as unvolumed on the {tag} VHD map.")
 
     if not net_parts:
         raise SystemExit("No district networks found to assemble statewide maps.")
@@ -113,15 +124,15 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
     def _combine(key):
         if not parts[key]:
             return None
-        frame = pd.concat(parts[key], ignore_index=key.startswith("vhd"))
-        if key.startswith("vhd"):
+        if key[1] == "vhd":
+            frame = pd.concat(parts[key], ignore_index=True)
             # A boundary segment screened by two districts keeps its first row.
             return frame.drop_duplicates(subset=["Segment ID", "window"], keep="first")
+        frame = pd.concat(parts[key])
         return frame[~frame.index.duplicated(keep="first")]
 
-    return (combined_net, all_cat_entries, all_chains,
-            _combine("scr_peak"), _combine("scr_7d"),
-            _combine("vhd_peak"), _combine("vhd_7d"))
+    frames = {tag: (_combine((tag, "scr")), _combine((tag, "vhd"))) for tag in tags}
+    return combined_net, all_cat_entries, all_chains, frames
 
 
 def generate_statewide_map(
@@ -274,11 +285,22 @@ def generate_statewide_map(
     return map_path
 
 
+def statewide_map_names(tag: str) -> tuple[str, str]:
+    """The (TTI, VHD/mile) map files for a scenario tag; the peak keeps its historic
+    names."""
+    if tag == "peak":
+        return "statewide_peak_map.html", "statewide_vhd_map.html"
+    return f"statewide_{tag}_map.html", f"statewide_{tag}_vhd_map.html"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dir", default="out/statewide_screening",
                         help="Base output directory")
     parser.add_argument("--districts", nargs="*", type=int, default=[1, 2, 3, 4, 5, 6])
+    parser.add_argument("--scenarios", default=None,
+                        help="comma-separated scenarios to map (default: every scenario "
+                             "the districts' screening_scenarios.json lists)")
     parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
                         help="district D's catalogue is PATH (repeatable)")
     args = parser.parse_args()
@@ -286,134 +308,64 @@ def main():
 
     base_dir = Path(args.dir)
     t0 = time.time()
+    scenarios = scenario_tables(base_dir, args.districts, args.scenarios)
 
     print("Loading statewide network geometries, screening frames and curve VHD...")
-    (net, cat_entries, chains, scr_peak, scr_7d,
-     vhd_peak, vhd_7d) = load_statewide_data(args.districts, base_dir,
-                                             catalogue_overrides=overrides)
-    for label, frame in (("peak", vhd_peak), ("7-day", vhd_7d)):
-        if frame is None:
-            print(f"  WARNING: no district saved a {label} curve VHD — that VHD/mile "
-                  f"map is skipped.")
-        else:
-            n = frame.drop_duplicates("Segment ID")["AADT"].notna().sum()
-            print(f"  {label} curve VHD for {n:,} volumed segments.")
-
+    net, cat_entries, chains, frames = load_statewide_data(
+        args.districts, base_dir, [e["tag"] for e in scenarios],
+        catalogue_overrides=overrides)
     print(f"  Loaded {len(net):,} network segments and {len(cat_entries)} corridor entries across Idaho.")
 
-    # Load statewide rankings
-    p_rank_csv = base_dir / "statewide_peak_corridor_rankings.csv"
-    d7_rank_csv = base_dir / "statewide_7day_corridor_rankings.csv"
-
-    peak_ranks = {}
-    if p_rank_csv.exists():
-        df_p = pd.read_csv(p_rank_csv)
-        df_p["rank"] = df_p["statewide_rank"]
-        peak_ranks = df_p.set_index("corridor_group").to_dict(orient="index")
-
-    d7_ranks = {}
-    if d7_rank_csv.exists():
-        df_7d = pd.read_csv(d7_rank_csv)
-        df_7d["rank"] = df_7d["statewide_rank"]
-        d7_ranks = df_7d.set_index("corridor_group").to_dict(orient="index")
-
-    # Per-direction figures for the corridor tooltips, from each district's breakout.
     def _breakouts(fname):
         parts = [load_district_table(base_dir / f"d{d}" / fname, d) for d in args.districts]
         parts = [p for p in parts if p is not None]
         return pd.concat(parts, ignore_index=True) if parts else None
 
-    attach_direction_totals(peak_ranks, _breakouts("corridor_breakout.csv"))
-    attach_direction_totals(d7_ranks, _breakouts("corridor_7day_breakout.csv"))
-
     map_files = []
+    for e in scenarios:
+        tag, label = e["tag"], e["label"]
+        scr, vhd = frames[tag]
+        if scr is None:
+            print(f"  No district saved a {tag} segment screen — its maps are skipped.")
+            continue
+        if vhd is None:
+            print(f"  WARNING: no district saved a {tag} curve VHD — that VHD/mile map "
+                  f"is skipped.")
+        else:
+            n = vhd.drop_duplicates("Segment ID")["AADT"].notna().sum()
+            print(f"  {tag} curve VHD for {n:,} volumed segments.")
 
-    # Map 1: Statewide Peak TTI
-    if scr_peak is not None:
-        print("Rendering Statewide Peak TTI Map...")
-        p_path = generate_statewide_map(
-            base_dir,
-            scr_peak,
-            net,
-            cat_entries,
-            chains,
-            peak_ranks,
-            windows=screen.PEAK_WINDOWS,
-            window_label="Typical Weekday Peak (AM / PM)",
-            title="ITD Statewide Corridor Screening — Weekday Peak Congestion (TTI)",
-            subtitle="Statewide XD Network Colored by Peak Travel Time Index (AM/PM) with Ranked Corridors",
-            delay_label="Total Peak Delay",
-            map_filename="statewide_peak_map.html",
-            metric="tti",
-        )
-        print(f"  -> Written {p_path}")
-        map_files.append(("Statewide Peak (TTI)", p_path.name))
+        ranks = {}
+        rank_csv = base_dir / f"statewide_{tag}_corridor_rankings.csv"
+        if rank_csv.exists():
+            df = pd.read_csv(rank_csv)
+            df["rank"] = df["statewide_rank"]
+            ranks = df.set_index("corridor_group").to_dict(orient="index")
+        # Per-direction figures for the corridor tooltips, from each district's breakout.
+        attach_direction_totals(ranks, _breakouts(e["breakout"]))
 
-        # Map 2: Statewide Peak VHD / Mile
-        if vhd_peak is not None:
-            print("Rendering Statewide Peak Delay Density (VHD / Mile) Map...")
-            vhd_path = generate_statewide_map(
-                base_dir,
-                scr_peak,
-                net,
-                cat_entries,
-                chains,
-                peak_ranks,
-                windows=screen.PEAK_WINDOWS,
-                window_label="Typical Weekday Peak (AM / PM)",
-                title="ITD Statewide Corridor Screening — Peak Delay Density (VHD / Mile)",
-                subtitle="Volume-Weighted Vehicle-Hours of Delay per Mile Across All Monitored Highway Segments",
-                delay_label="Total Peak Delay",
-                map_filename="statewide_vhd_map.html",
-                metric="vhd_per_mile",
-                segment_vhd=vhd_peak,
+        tti_name, vhd_name = statewide_map_names(tag)
+        for metric, fname, kind in (("tti", tti_name, "TTI"),
+                                    ("vhd_per_mile", vhd_name, "VHD / Mile")):
+            if metric == "vhd_per_mile" and vhd is None:
+                continue
+            print(f"Rendering Statewide {label} ({kind}) Map...")
+            path = generate_statewide_map(
+                base_dir, scr, net, cat_entries, chains, ranks,
+                windows=e["windows"],
+                window_label=label,
+                title=f"ITD Statewide Corridor Screening — {label} ({kind})",
+                subtitle=("Statewide XD network coloured by "
+                          + ("travel time index" if metric == "tti"
+                             else "volume-weighted vehicle-hours of delay per mile")
+                          + ", with the ranked corridors"),
+                delay_label=f"Total delay, {label}",
+                map_filename=fname,
+                metric=metric,
+                segment_vhd=vhd if metric == "vhd_per_mile" else None,
             )
-            print(f"  -> Written {vhd_path}")
-            map_files.append(("Statewide Peak (VHD / Mile)", vhd_path.name))
-
-    # Map 3: Statewide 7-Day TTI
-    if scr_7d is not None:
-        day7_windows = {"day_7d": screen.ALL_DAY_7D_WINDOW}
-        print("Rendering Statewide 7-Day All-Day TTI Map...")
-        d7_path = generate_statewide_map(
-            base_dir,
-            scr_7d,
-            net,
-            cat_entries,
-            chains,
-            d7_ranks,
-            windows=day7_windows,
-            window_label="7-Day All-Day (6 AM – 9 PM)",
-            title="ITD Statewide Corridor Screening — 7-Day All-Day Congestion (TTI)",
-            subtitle="Continuous 7-Day All-Day Congestion Profile (6:00 AM – 9:00 PM, 7 Days/Week)",
-            delay_label="Total 7-Day Delay",
-            map_filename="statewide_7day_map.html",
-            metric="tti",
-        )
-        print(f"  -> Written {d7_path}")
-        map_files.append(("Statewide 7-Day (TTI)", d7_path.name))
-
-        # Map 4: Statewide 7-Day VHD / Mile
-        if vhd_7d is not None:
-            print("Rendering Statewide 7-Day Delay Density (VHD / Mile) Map...")
-            d7_vhd_path = generate_statewide_map(
-                base_dir,
-                scr_7d,
-                net,
-                cat_entries,
-                chains,
-                d7_ranks,
-                windows=day7_windows,
-                window_label="7-Day All-Day (6 AM – 9 PM)",
-                title="ITD Statewide Corridor Screening — 7-Day Delay Density (VHD / Mile)",
-                subtitle="Continuous 7-Day Volume-Weighted Delay Density (VHD / Mile) Across Idaho Highways",
-                delay_label="Total 7-Day Delay",
-                map_filename="statewide_7day_vhd_map.html",
-                metric="vhd_per_mile",
-                segment_vhd=vhd_7d,
-            )
-            print(f"  -> Written {d7_vhd_path}")
-            map_files.append(("Statewide 7-Day (VHD / Mile)", d7_vhd_path.name))
+            print(f"  -> Written {path}")
+            map_files.append((f"{label} ({kind})", path.name))
 
     if map_files:
         viewer_path = base_dir / "statewide_map_viewer.html"

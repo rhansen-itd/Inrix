@@ -1121,7 +1121,53 @@ assert the two paths agree row for row. The presets:
 | `night` | 22:00–05:00 | every day | no (the closest thing to an observed free-flow window) |
 
 Only `peak` windows compete for a corridor's `worst_peak`. They are **presets, not
-constants** — pass your own.
+constants** — pass your own. Item 65 added the weekend presets `fri`, `sat`, `sun`,
+`weekend` (Sat–Sun) and `fri_sun`, all **09:00–21:00**, and `sat_midday` (Sat
+11:00–17:00, the retail type's).
+
+**Seasons (Item 65).** `PeakWindow.season` is an optional recurring `("MM-DD",
+"MM-DD")` range, inclusive at both ends, that may wrap the year end. It is read on the
+row's **local** date, like the day gate. The SQL predicate reads a `mmdd = month × 100
++ day` column that every screen query computes. `screen.SEASONS["summer"]` is
+**05-22..09-07**: the earliest Friday of Memorial Day weekend to the latest Labor Day,
+as fixed month-days, so a few days wide at each end in most years. A seasonal window's
+VHD is per average **in-season** day of its gate, and `vhd_annual` counts only the
+season's days (109 for summer). Holidays are not modelled.
+
+**Scenarios (Item 65).** A `screen.Scenario` is a window set ranked as one table:
+
+| scenario | windows | file tag |
+|---|---|---|
+| `peak` | `am` + `pm` (+ `midday`, `night` as unranked context) | *(none — `corridor_peak_totals.csv`)* |
+| `day_7d` | `day_7d` | `7day` |
+| `fri` / `sat` / `sun` | that day, 09:00–21:00 | the name |
+| `weekend` | Sat–Sun as **one** window (per average weekend day) | `weekend` |
+| `fri_sun` | Fri–Sun as one window | `fri_sun` |
+
+`resolve_scenario("sat:summer")` or `("sat:06-01..08-31")` gates every window to a
+season and suffixes the season onto the window names, the tag and the scenario name
+(`sat_summer`). So a summer Saturday and an all-year Saturday never share a column or
+a file.
+
+A district run (`run_district_screening.py --scenario`, Item 67) writes each
+scenario's tables under its tag: `corridor_<tag>_totals.csv`, `_breakout`,
+`_rankings`, `segment_<tag>_screen.parquet`, `segment_<tag>_curve_vhd.parquet` and
+`screening_<tag>_map.html`. The peak keeps its un-tagged historic names. Each run also
+records itself in the directory's `screening_scenarios.json` (`{tag: {label,
+scenario, files}}`), which is how the aggregate and the statewide maps find the
+scenarios. Every corridor table carries `corridor_types` / `corridor_class` /
+`primary_type` from a typed catalogue. `statewide_scenario_matrix.csv` puts each
+ranked corridor's rank, VHD/mile, VHD and TTI under every scenario side by side.
+A scenario's VHD is per average day of its own window. So compare **ranks** across
+scenarios, not VHD totals.
+
+**Windows that would pool delay cells are refused (Item 65).** The bin screen keys its
+cells by month × day type × bin, not by window. So two windows covering one cell on
+different days (`pm` Mon–Fri and `fri` at 4 PM; `sat` and `sat:summer` in May) would
+each read the other's travel times. `screen.check_window_cells` raises on such a pair
+in `segment_bin_screen` and `frame_bin_screen`. Same-coverage overlaps (`am` inside
+`day_7d`; `weekend` beside `sat`, whose cells are the Saturday type) pass. Run such
+windows as separate scenarios.
 
 **The CValue gate is applied, recorded, and costed.** `CValue > 80` by default (the
 strict comparison `io.filter_cvalue` uses), recorded on `attrs['cvalue_threshold']`,
@@ -1198,6 +1244,11 @@ as a commuter facility congested every single weekday at TTI = 1.30.
    (`DEFAULT_TTI_THRESHOLD = 1.25`, 25% longer than free-flow).
 3. **Recurrence rate**: Share of observed weekdays meeting the congestion criterion
    (`am_recurrence = n_congested / n_weekdays`).
+
+   Since Item 65 the days are **the window's own**: its day gate and season. That is
+   the weekdays for `am`/`pm`, Saturdays for `sat`, every day for an ungated window.
+   Before, every window counted weekdays only, so `sat` had none and `night` skipped
+   its weekends. The column keeps the name `<w>_n_weekdays`.
 
 Under `DEFAULT_RECURRENCE_THRESHOLD = 0.50` ("congested most days"):
 - The construction fortnight segment: 3/20 days = 0.15 recurrence → **rejected**.
@@ -1957,16 +2008,18 @@ volume_days(c, W, cell) = Σ over the period's days d in the cell and in W  bin_
 - `volume_days` (`volume_profiles.window_volume_weights`) sums the curve's bin factor
   over each real day of the cell, so each day carries its own DOW factor and day-type
   shape, and the DST days their 23/25 hours. The cell's mean delay stands for every
-  day of the cell. Within the weekday type the delay is pooled over Mon–Fri; a window
-  gated to part of a day type gets the type's pooled delay with only its own days'
-  volume.
+  day of the cell. Within the weekday type the delay is pooled over the weekdays the
+  run's windows cover. Since Item 65, windows that would pool **different** days into
+  one cell (`pm` + `fri`) are refused (`screen.check_window_cells`), so a
+  Friday-only window reads Friday rows.
 - **`N_W` counts the days the window's gate covers** (owner, 2026-09-25: weekday for
   the peaks). So windows with the **same gate** add up as VHD: AM + PM is their union,
   per weekday, which is all the peak totals sum. Windows with **different gates** add
   only as totals, `vhd × N_W`: a weekday AM (per weekday) + its weekend twin (per
   weekend day) is not the ungated AM (per day). Don't add a peak to `night` or
   `day_7d`, or compare their shares of the day. `vhd_annual = vhd × 365 × gate
-  days / 7` (about 261 weekdays). The period is the area's first to last local date
+  days / 7` (about 261 weekdays), times the season's share of the year for a seasonal
+  window (Item 65). The period is the area's first to last local date
   (`screen.data_period`), the same for every segment.
   - The alternative considered and dropped was dividing every window by all the
     period's days. All windows then add up, but a weekday peak is shrunk by 5/7
@@ -2625,6 +2678,71 @@ of 0.43 is real. Look at weekday 16:00–18:30 travel time over the five core se
 A permanent step on one day, affecting daytime and weekends but not nights, looks
 like a daytime work zone rather than recurring commute congestion. It stays in the
 ranking, carrying the `episodic` flag.
+
+## Corridor types: one catalogue, every corridor tagged (`extents.py`, Item 66)
+
+Each district has **one** catalogue. Every corridor in it is tagged with the
+**types** whose builder found it:
+
+| type | windows it is cored on |
+|---|---|
+| `commute` | `am` + `pm` (weekday), all year — the Item 50 catalogue |
+| `recreational` | `fri`/`sat`/`sun` 09:00–21:00, **summer** (`SEASONS["summer"]` = 05-22..09-07) |
+| `retail` | `midday` (weekday 10:00–14:00) + `sat_midday` (Sat 11:00–17:00), all year |
+
+- **One chaining and one set of floors.** Only the days and hours differ between
+  types. A segment is judged at its worst window, so a multi-window type is the
+  **union** of its days: a summer-weekend core is congested on Friday, Saturday
+  *or* Sunday.
+- **Each type has its own baseline and bin screens.** The baseline screen carries
+  the type's windows + `night` + `weekday` (the p15 fallback). The bin screen
+  carries the type's windows only, for the curve VHD against the segment's own
+  baseline, which is the Item 50 basis for every type. The builder caches them
+  beside the commute ones as `segment_baseline_screen_<type>.parquet` and
+  `segment_peak_bins_<type>.parquet`. The commute type keeps the old names.
+- **The merge (`merge_typed_catalogues`).** Types are taken in the order given; the
+  default order is commute, recreational, retail. A later type's facility whose
+  ranked core lies **≥ 50% by miles** inside an earlier facility's core or Tier 2
+  is the same corridor. The earlier extents stand, and the type is added.
+  Otherwise the facility stands on its own, flagged `shares X mi with <id>
+  (<types>)` where its core overlaps an earlier core. A taken id gets a `-<type>`
+  suffix, and `_flags` / `_companion` text naming a renamed or merged facility is
+  rewritten.
+- **Fields.** Every entry and reporting group carries `_types` (the finding types,
+  in priority order), `_class` and `_primary_type`. Groups also carry `_type_cores`
+  (`{type: [core metrics]}`, one per finding facility, with `share_in` for a merged
+  one) and `_profile`. `_profile` is the core's `peak_ratio`, `vhd_per_mile`,
+  `delay_per_mile` and `vhd` under **every** type's windows, whether or not that
+  type found it. `_generated` gains `types` (each type's windows plus
+  `n_facilities` / `n_merged` / `n_standalone`), `type_order`, `type_merge_share`,
+  `class_secondary_share` and `classes`. `peak_windows` becomes `{type:
+  [windows]}`.
+- **`_types` vs `_class`.** `_types` says which builders found the corridor.
+  `_class` says what it is: the found type with the largest peak/baseline excess
+  (`peak_ratio − 1`) is primary. Another found type joins the class only if its
+  excess is ≥ **0.6×** the primary's (`CLASS_SECONDARY_SHARE`). `commute` + `retail`
+  reads as **`urban_hybrid`** (`CORRIDOR_CLASSES`), and the rest join with `+`.
+  - This matters because busy urban arterials also queue on summer Saturdays. On
+    the retired separate rec catalogues, 22 of D3's 26 commute facilities had a
+    summer-weekend core too.
+  - **Recreational is covered by retail** (`CLASS_SUBSUMED`, Item 68 follow-up).
+    Retail's windows include Saturday daytime, so a retail corridor is busy on
+    weekends. Recreational drops out of a class that has retail unless it is the
+    **primary** type. On the Item 68 catalogues, 37 of 39 hybrids had read
+    `urban_hybrid+recreational`; now 7 do, the places where summer weekends are the
+    strongest signal (Driggs, US-95 CdA). `extents.reclassify_catalogue` re-applies
+    the rule to a catalogue from its stored `_types` / `_profile`, and the
+    statewide aggregate takes the class from the catalogue, not the district tables.
+  - **`peak_ratio` depends on the window's length** (Item 68): it is a window mean,
+    so a 12-hour weekend window dilutes a sharp peak that a 2-hour commute window
+    keeps. SH-75 Ketchum reads `commute` although its summer-weekend delay per mile
+    is nearly double its weekday one. Until Item 69 compares equal-length windows,
+    read `_class` as indicative. The 0.6 and the summer bounds are still starting
+    values.
+- **The monthly flags** (`seasonal` / `episodic`) come from each facility's own
+  type. For a summer-only type they describe the distribution **within** the
+  season, over its 4–5 months. So a `seasonal` flag on a recreational-only facility
+  means "peaks in part of the summer", not "summer-heavy".
 
 ## Chains across route-numbering changes (`extents.py`, Item 51)
 

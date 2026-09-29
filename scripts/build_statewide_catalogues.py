@@ -30,6 +30,17 @@ Usage:
 The manual hard stops (``scripts/corridor_hard_stops.csv``, ROADMAP Item 60) are
 resolved on each district's network and cut into the chains before cores are found;
 ``--hard-stops ''`` builds without them.
+
+**Corridor types (ROADMAP Item 66).** Each type in ``--types`` (default
+``commute,recreational,retail``, ``extents.CORRIDOR_TYPES``) is cored on its own
+windows: the weekday peaks, summer Fri/Sat/Sun, weekday midday + Saturday daytime.
+Every type uses the same chains, floors, hard stops and couplet legs. The per-type
+catalogues are merged into **one** ``dN_corridors.json``
+(``extents.merge_typed_catalogues``). A corridor several types find is one corridor
+whose ``_types`` lists them, and ``_class`` says what it is (``urban_hybrid`` for
+commute + retail). Each type caches its own baseline and bin screens beside the
+commute ones (``segment_baseline_screen_<type>.parquet``). ``--types commute``
+rebuilds the pre-Item 66 catalogue.
 """
 from __future__ import annotations
 
@@ -118,31 +129,55 @@ DISTRICT_TZ = {1: "America/Los_Angeles", 2: "America/Los_Angeles", 3: "America/B
 BASELINE_FILE = "segment_baseline_screen.parquet"
 
 
+COMMUTE = extents.CORRIDOR_TYPES["commute"]
+
+
+def type_file(filename: str, ctype: extents.CorridorType) -> str:
+    """A per-type cache file. The commute type keeps the names it had before types
+    existed (``segment_baseline_screen.parquet``), so its caches still hit; any other
+    type inserts its name before the suffix (``segment_baseline_screen_retail.parquet``)."""
+    if ctype.name == "commute":
+        return filename
+    stem, dot, ext = filename.rpartition(".")
+    return f"{stem}_{ctype.name}{dot}{ext}"
+
+
+def _district_area(con, district: int) -> str:
+    areas = store.list_areas(con)
+    if len(areas) != 1:
+        raise SystemExit(f"d{district}_store.duckdb holds {len(areas)} areas; expected 1")
+    return str(areas.iloc[0]["area_key"])
+
+
 def load_baseline(district: int, screening_dir: Path, *, refresh: bool = False,
-                  cvalue_threshold: float = 80) -> pd.DataFrame:
-    """The district's baseline screen (ROADMAP Item 50): the AM/PM peaks, the night,
-    weekday travel-time percentiles and the real-time share, one row per segment.
+                  cvalue_threshold: float = 80,
+                  ctype: extents.CorridorType = COMMUTE) -> pd.DataFrame:
+    """The district's baseline screen for one corridor type (ROADMAP Items 50, 66): the
+    type's windows, the night, weekday travel-time percentiles and the real-time share,
+    one row per segment.
 
     Computed from the district store on first use and cached next to the peak screen;
-    ``refresh`` recomputes it (after an ingest)."""
-    path = screening_dir / f"d{district}" / BASELINE_FILE
+    ``refresh`` recomputes it (after an ingest), and so does a cache that lacks one of
+    the type's windows."""
+    windows = ctype.baseline_windows()
+    path = screening_dir / f"d{district}" / type_file(BASELINE_FILE, ctype)
     if path.exists() and not refresh:
-        return pd.read_parquet(path)
+        cached = pd.read_parquet(path)
+        if all(f"{w}_travel_time" in cached.columns for w in windows):
+            return cached
+        print(f"  {path} lacks some of {list(windows)}; recomputing")
     con = store.connect(f"d{district}_store.duckdb")
     con.execute("SET enable_progress_bar = false")
     try:
-        areas = store.list_areas(con)
-        if len(areas) != 1:
-            raise SystemExit(f"d{district}_store.duckdb holds {len(areas)} areas; expected 1")
         scr = screen.segment_screen(
-            con, str(areas.iloc[0]["area_key"]), windows=screen.BASELINE_WINDOWS,
+            con, _district_area(con, district), windows=windows,
             cvalue_threshold=cvalue_threshold, tz=DISTRICT_TZ[district],
             quantiles=extents.BASELINE_QUANTILES)
     finally:
         con.close()
     path.parent.mkdir(parents=True, exist_ok=True)
     scr.to_parquet(path)
-    print(f"  Baseline screen -> {path} ({len(scr)} segments)")
+    print(f"  Baseline screen ({ctype.name}) -> {path} ({len(scr)} segments)")
     return scr
 
 
@@ -150,24 +185,24 @@ MONTHLY_FILE = "segment_monthly_screen.parquet"
 
 
 def load_monthly(district: int, screening_dir: Path, *, refresh: bool = False,
-                 cvalue_threshold: float = 80) -> pd.DataFrame:
-    """Per segment, per month AM/PM travel time (Item 50's episodic flag), cached
-    next to the baseline screen."""
-    path = screening_dir / f"d{district}" / MONTHLY_FILE
+                 cvalue_threshold: float = 80,
+                 ctype: extents.CorridorType = COMMUTE) -> pd.DataFrame:
+    """Per segment, per month travel time in the type's windows (Item 50's episodic
+    flag), cached next to the baseline screen."""
+    path = screening_dir / f"d{district}" / type_file(MONTHLY_FILE, ctype)
     if path.exists() and not refresh:
         return pd.read_parquet(path)
     con = store.connect(f"d{district}_store.duckdb")
     con.execute("SET enable_progress_bar = false")
     try:
-        areas = store.list_areas(con)
         mon = screen.segment_monthly_screen(
-            con, str(areas.iloc[0]["area_key"]), windows=["am", "pm"],
+            con, _district_area(con, district), windows=ctype.window_map(),
             cvalue_threshold=cvalue_threshold, tz=DISTRICT_TZ[district])
     finally:
         con.close()
     path.parent.mkdir(parents=True, exist_ok=True)
     mon.to_parquet(path)
-    print(f"  Monthly screen -> {path} ({len(mon)} segment-months)")
+    print(f"  Monthly screen ({ctype.name}) -> {path} ({len(mon)} segment-months)")
     return mon
 
 
@@ -176,23 +211,26 @@ PROFILES_FILE = "d{district}_volume_profiles.csv"
 
 
 def load_bins(district: int, screening_dir: Path, *, refresh: bool = False,
-              cvalue_threshold: float = 80) -> pd.DataFrame:
-    """The district's AM/PM delay cells, segment x month x day type x bin (Item 57's
-    ``screen.segment_bin_screen``), cached next to the baseline screen: the curve-
-    weighted VHD the core floors read (Item 58)."""
-    path = screening_dir / f"d{district}" / BINS_FILE
+              cvalue_threshold: float = 80,
+              ctype: extents.CorridorType = COMMUTE) -> pd.DataFrame:
+    """The district's delay cells in the type's windows, segment x month x day type x
+    bin (Item 57's ``screen.segment_bin_screen``), cached next to the baseline screen:
+    the curve-weighted VHD the core floors read (Item 58). A cache built over other
+    windows than the type's is recomputed."""
+    path = screening_dir / f"d{district}" / type_file(BINS_FILE, ctype)
+    want = {n: w.to_dict() for n, w in ctype.window_map().items()}
     if path.exists() and not refresh:
         bins = pd.read_parquet(path)
         meta = path.with_suffix(".json")
         bins.attrs = json.loads(meta.read_text()) if meta.exists() else {}
-        return bins
+        if not bins.attrs.get("windows") or bins.attrs["windows"] == want:
+            return bins
+        print(f"  {path} was built over {list(bins.attrs['windows'])}; recomputing")
     con = store.connect(f"d{district}_store.duckdb")
     con.execute("SET enable_progress_bar = false")
     try:
-        areas = store.list_areas(con)
         bins = screen.segment_bin_screen(
-            con, str(areas.iloc[0]["area_key"]),
-            windows={w: screen.PEAK_WINDOWS[w] for w in extents.PEAK_WINDOWS},
+            con, _district_area(con, district), windows=ctype.window_map(),
             cvalue_threshold=cvalue_threshold, tz=DISTRICT_TZ[district])
     finally:
         con.close()
@@ -200,7 +238,7 @@ def load_bins(district: int, screening_dir: Path, *, refresh: bool = False,
     bins.to_parquet(path)
     # The period, zone, bin width and windows the weights are built from.
     path.with_suffix(".json").write_text(json.dumps(bins.attrs, default=str) + "\n")
-    print(f"  Bin screen -> {path} ({len(bins):,} cells)")
+    print(f"  Bin screen ({ctype.name}) -> {path} ({len(bins):,} cells)")
     return bins
 
 
@@ -362,6 +400,9 @@ def main() -> int:
                         help="manual hard stops (Item 60); '' = none")
     parser.add_argument("--audit-dir", default=None,
                         help="where dN/core_audit.csv goes (default: --screening-dir)")
+    parser.add_argument("--types", default=",".join(extents.DEFAULT_CORRIDOR_TYPES),
+                        help="corridor types to discover, in merge priority order "
+                             f"(ROADMAP Item 66; presets: {', '.join(extents.CORRIDOR_TYPES)})")
     parser.add_argument("--no-couplets", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
                         help="generate and verify, but write nothing")
@@ -371,6 +412,7 @@ def main() -> int:
     report_dir = Path(args.report_dir)
     stop_table = (hard_stops_mod.read_hard_stops(args.hard_stops)
                   if args.hard_stops else None)
+    ctypes = extents.resolve_corridor_types(args.types)
     all_pairs, all_ok = [], True
     couplet_review: list[dict] = []
 
@@ -380,20 +422,16 @@ def main() -> int:
                                      shs=(args.shs if args.shs and Path(args.shs).exists()
                                           else None),
                                      aadt_year=args.aadt_year)
-        baseline = load_baseline(d, Path(args.screening_dir),
-                                 refresh=args.refresh_baseline)
+        net = join_urban_context(net, d)
+        sdir = Path(args.screening_dir)
+        baselines = {t.name: load_baseline(d, sdir, refresh=args.refresh_baseline, ctype=t)
+                     for t in ctypes}
+        # A segment is observed if it carries a gated row in any type's screen.
+        observed = {int(s) for b in baselines.values() for s in b.index[b["n_obs"] > 0]}
         # Curve-weighted VHD (Items 57, 58): the core floors and the monthly profile
         # read each bin's delay times that bin's volume. It needs the AADT join.
-        bins = curves = None
-        monthly = None
-        if args.aadt:
-            bins = load_bins(d, Path(args.screening_dir), refresh=args.refresh_baseline)
-            curves = load_curves(d, Path(args.screening_dir))
-        else:
-            monthly = load_monthly(d, Path(args.screening_dir),
-                                   refresh=args.refresh_baseline)
-        net = join_urban_context(net, d)
-        observed = {int(s) for s in baseline.index[baseline["n_obs"] > 0]}
+        curves = load_curves(d, sdir) if args.aadt else None
+        profiles = None if curves is None else curves.attrs["library"]
         stops = None
         if stop_table is not None:
             resolved = hard_stops_mod.resolve_hard_stops(stop_table, net, d)
@@ -405,33 +443,65 @@ def main() -> int:
         c_entries, c_groups, pairs, legs = ([], [], [], {}) if args.no_couplets else \
             couplet_block(net, d, observed, couplet_review)
 
+        # One catalogue per corridor type, on the same chains, floors, stops and
+        # couplet legs; only the windows differ (Item 66). Then one merged catalogue.
         audit: list[dict] = []
-        cat = extents.generate_catalogue(
-            net, baseline,
-            max_facilities=args.max_facilities,
-            observed=observed,
-            audit=audit,
-            monthly=monthly,
-            bins=bins,
-            curves=curves,
-            profiles=None if curves is None else curves.attrs["library"],
-            hard_stops=stops,
-            couplet_legs=legs,
-            note=(f"ITD District {d} screening catalogue, generated by "
-                  f"inrix_tools.extents.generate_catalogue (cores on recurring peak "
-                  f"congestion against each segment's own baseline, ROADMAP Item 50) "
-                  f"and inrix_tools.couplets.detect_couplets. Item 46/49 predecessor in "
-                  f"legacy/item46_catalogues/."),
+        per_type: dict[str, dict] = {}
+        congestion: dict[str, pd.DataFrame] = {}
+        for t in ctypes:
+            bins = monthly = None
+            if curves is not None:
+                bins = load_bins(d, sdir, refresh=args.refresh_baseline, ctype=t)
+            else:
+                monthly = load_monthly(d, sdir, refresh=args.refresh_baseline, ctype=t)
+            congestion[t.name] = extents.segment_congestion(
+                baselines[t.name], net, peak_windows=t.window_names, bins=bins,
+                curves=curves, profiles=profiles)
+            t_audit: list[dict] = []
+            per_type[t.name] = extents.generate_catalogue(
+                net, baselines[t.name],
+                peak_windows=t.window_names,
+                max_facilities=args.max_facilities,
+                observed=observed,
+                audit=t_audit,
+                monthly=monthly,
+                bins=bins,
+                curves=curves,
+                profiles=profiles,
+                hard_stops=stops,
+                couplet_legs=legs,
+                congestion=congestion[t.name],
+            )
+            audit.extend({"type": t.name, **row} for row in t_audit)
+            gen = per_type[t.name]["_generated"]
+            print(f"  [{t.name}] {gen['n_chains']} mainline chains -> "
+                  f"{gen['n_facilities']} facilities")
+        cat = extents.merge_typed_catalogues(
+            per_type, miles=net.set_index("XDSegID")["Miles"].astype(float).to_dict(),
+            types=ctypes, congestion=congestion,
+            note=(f"ITD District {d} screening catalogue: corridor types "
+                  f"{', '.join(t.name for t in ctypes)} (ROADMAP Item 66), each generated "
+                  f"by inrix_tools.extents.generate_catalogue on its own windows (cores on "
+                  f"recurring congestion against each segment's own baseline, Item 50), "
+                  f"merged by extents.merge_typed_catalogues; couplets by "
+                  f"inrix_tools.couplets.detect_couplets. Item 46/49 predecessor in "
+                  f"legacy/item46_catalogues/; the separate 2026-09-29 recreational "
+                  f"catalogues in legacy/rec_catalogues_2026-09-29/."),
         )
         audit_path = Path(args.audit_dir or args.screening_dir) / f"d{d}" / "core_audit.csv"
         if not args.dry_run:
             audit_path.parent.mkdir(parents=True, exist_ok=True)
             pd.DataFrame(audit).to_csv(audit_path, index=False)
             print(f"  Core audit -> {audit_path}")
-        gen = cat["_generated"]
-        print(f"  {gen['n_chains']} mainline chains -> {gen['n_facilities']} facilities "
-              f"-> {len(cat['corridors'])} directional entries, "
-              f"{len(cat['reporting_corridors'])} reporting corridors")
+        for name, info in cat["_generated"]["types"].items():
+            print(f"  [{name}] {info['n_facilities']} facilities: {info['n_merged']} merged "
+                  f"into an earlier type's, {info['n_standalone']} standalone")
+        classes = pd.Series([g["_class"] for g in cat["reporting_corridors"]
+                             if g.get("_tier") == extents.ExtentTier.CORE.value])
+        print(f"  {cat['_generated']['n_facilities']} facilities -> "
+              f"{len(cat['corridors'])} directional entries, "
+              f"{len(cat['reporting_corridors'])} reporting corridors; classes: "
+              + ", ".join(f"{k} {v}" for k, v in classes.value_counts().items()))
 
         if not args.no_couplets:
             all_pairs.extend(pairs)

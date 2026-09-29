@@ -1001,3 +1001,19 @@ def test_monthly_screen_splits_by_local_month(area):
     assert len(mon) == mon["Segment ID"].nunique()
     assert mon["pm_travel_time"].eq(TT_PM).all()
     assert mon["am_travel_time"].eq(TT_AM).all()
+
+
+def test_rank_corridors_takes_a_seasonal_window_name(area):
+    """Item 68 follow-up: ``sat_summer``-style names exist only on the screen built over
+    them; ``rank_corridors(windows=)`` selects them by name, as ``bin_weights`` does."""
+    con, key = area
+    am_march = screen.PEAK_WINDOWS["am"].with_season("03-01..03-31", "am_march")
+    scr = screen.segment_screen(con, key, windows=[am_march, screen.PEAK_WINDOWS["pm"]])
+    ranked = screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()}, _aadt(),
+                                   windows=["am_march"])
+    assert ranked["window"].tolist() == ["am_march"]
+    full = screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()}, _aadt())
+    assert ranked.iloc[0]["tti"] == pytest.approx(
+        full.set_index("window").loc["am_march", "tti"])
+    with pytest.raises(KeyError, match="no window"):
+        screen.rank_corridors(scr, {"Toy Rd NB": _toy_chain()}, _aadt(), windows=["am"])

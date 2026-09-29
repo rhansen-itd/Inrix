@@ -7669,3 +7669,425 @@ largest gains now come from station curves directly. A targeted change to
     sites; routes kept apart;
   - the flat daily-total day.
 - `test_itd_layers`: `station_mileposts` (own route, business loop, out of reach).
+
+---
+
+## Session 85 — Review of the recreational-corridor branch; Items 65–68 scoped (2026-09-29)
+
+A commit written outside the session process (`2f99514`, "Support recreational corridor
+screening, catalogue derivation, and multi-day comparison") added Fri/Sat/Sun windows,
+a relaxed catalogue builder, six `dN_rec_corridors.json`, and scenario-tagged outputs.
+It had no ROADMAP item, no DESIGN_HISTORY entry, and one test. The full review is
+[REVIEW_RECREATIONAL_2026-09-29.md](REVIEW_RECREATIONAL_2026-09-29.md). The headlines:
+
+- **The committed rec catalogues can't be regenerated** (F1). Their recorded
+  thresholds match neither the default nor the `--relaxed` path.
+- **`--relaxed` tightens two limits** (F2): turn 110° against the 120° default, bridge
+  1.5 mi against 2.0. **`--min-effective-miles` is never passed** (F3).
+- **The rec cores are gated on ref-speed delay** (F4), where every other catalogue
+  and every floor uses each segment's own night baseline. They also lose their
+  monthly profile and seasonal flag (F5).
+- **A latent pooling bug** (F7): the bin screen keys delay cells by month × day type
+  × bin, not by window. So `pm` + `fri` in one run gives Friday the Mon–Fri mean.
+  Pre-existing, but the branch's `--windows` makes it reachable.
+- The `segment_recurrence` day-gate fix is right, and kept (F8).
+
+**Owner direction (2026-09-29):** no separate files. One analysis, with corridors
+tagged by type: commute from Monday–Friday, recreational from summer weekends as the
+union of the recreation-heavy days, and optional further types (a hybrid urban
+corridor like Eagle Rd / US-95 CdA). The types and the ranking scenarios (weekday
+peak, each weekend day, combined weekend, 7-day) are arguments. The owner also
+offered either an end-to-end session with a PR, or a scoping session first. This
+session scoped the work as session-sized items (65–68) per CLAUDE.md, then ran
+65–67 in sequence on the same branch (Sessions 86–88). 68 needs the real exports,
+which are not in the cloud container.
+
+Decisions taken in scoping:
+
+1. **One chaining, one set of floors for every type** (review F6). A type differs
+   only in the days and hours it is discovered on. Relaxing the floors per type would
+   rank cores admitted under different rules against each other. Relaxing the
+   stitching would build the types on different networks.
+2. **A season is a window property, not a date range.** `PeakWindow.season` (recurring
+   month-day bounds) keeps "summer Saturday" and "all-year Saturday" distinct in every
+   column name, file tag and provenance record.
+3. **A corridor found by two types is one corridor**, carrying both tags. Earlier
+   types win the extent. The owner's type order decides, and the default puts
+   commute first.
+4. **The hybrid is a class, not a builder.** The builder types are commute,
+   recreational and retail (weekday midday + Saturday daytime). A corridor found by
+   both commute and retail is classed `urban_hybrid`. This answers the owner's Eagle
+   Rd / US-95 CdA example without a builder that must itself detect "both".
+
+---
+
+## Session 86 — Item 65: season-gated windows, named scenarios, the window-overlap guard (2026-09-29)
+
+- **`PeakWindow.season`**: recurring `("MM-DD", "MM-DD")` bounds, normalised on
+  construction, inclusive, and wrapping the year end when start > end. The parsing
+  lives in `timebins` (`parse_season`, `season_contains`, `season_days_per_year`) so
+  `volume_profiles` can read a season without importing `screen`.
+  - Every screen query's `tagged` CTE now carries `mmdd = month(local_dt) * 100 +
+    day(local_dt)`. The predicate reads it only for a seasonal window, so the SQL of
+    every existing window is unchanged apart from parenthesisation.
+  - `volume_profiles._window_spec` returns the season as a fourth element.
+    `_window_mask` gates on it, `window_days` counts in-season days (the same mask on
+    whole days), and `window_per` says `"… in season"`.
+  - `aadt.curve_vehicle_hours_of_delay` scales `vhd_annual` by the season's share of
+    the year (review S8). A season covering the whole data period leaves the per-day
+    VHD unchanged; its annual figure is 109/365 of the all-year one (tested).
+- **Summer = 05-22..09-07.** As fixed month-days, this covers every year's Memorial Day
+  weekend and Labor Day, at the cost of a few days at each end in most years. A
+  floating holiday calendar would need a per-year date list in every predicate and
+  in the weights, which is more than the ranking needs. It is recorded as a constant
+  the owner can move, and holidays go to Future.
+- **Weekend presets.** `fri`, `sat`, `sun`, `weekend`, `fri_sun`: all 09:00–21:00, as
+  on the branch. The duplicate pair (`weekend_rec` = `fri_sun`) and `sat_sun` went;
+  `weekend` is Sat–Sun. The combined weekends are **one** gated window, so their VHD is
+  per average day of the set and compares directly with a single day's.
+  `sat_midday` (Sat 11:00–17:00) is for Item 66's retail type.
+- **Scenarios.** `Scenario(name, label, windows, tag, season)`, with presets `peak`,
+  `day_7d`, `fri`, `sat`, `sun`, `weekend`, `fri_sun`. `resolve_scenario("x:summer")`
+  or `("x:MM-DD..MM-DD")` suffixes the season onto the window names, the tag and the
+  name, so seasonal and all-year runs never share a column or a file.
+  `resolve_scenarios` refuses two with one tag. `peak` and `day_7d` keep their historic
+  file names (no tag, `7day`).
+- **The overlap guard** (review F7). `check_window_cells` lays every window over a
+  leap calendar year at the bin width and finds each (month × day type × bin) cell
+  both windows touch. It raises if their timestamp sets differ inside any such cell.
+  - That is exactly the pooling condition: same-coverage overlaps (`am` ⊂ `day_7d`,
+    the baseline set, `weekend` vs `sat`) pass, and `pm` + `fri` or `sat` + `sat:summer`
+    raise.
+  - It runs in `segment_bin_screen` and `frame_bin_screen`, in about 0.3 s for a
+    handful of windows at 5-minute bins.
+- **`segment_recurrence`** (review F8). The branch's `date_dow IN (...)` filter was
+  redundant: the `daily` CTE already keeps only rows passing the window predicate, so
+  every counted day is a window day. It is dropped, and `n_weekdays` is `COUNT(*)`.
+  The behaviour is the branch's (a window's own days), and the docstring and
+  DATA_FORMAT now say so.
+- **Scripts.** Only the renamed constant (`RECREATIONAL_WINDOWS` → `WEEKEND_WINDOWS`)
+  was touched, so the branch's scripts still import. Item 67 replaces them.
+- **Tests.** `tests/test_scenarios.py` (38):
+  - season parsing, containment and year length;
+  - PeakWindow normalisation, `with_season` and the predicate;
+  - SQL = pandas parity over a store spanning 26 Dec – 6 Jan: three seasons (one
+    wrapping) × three day gates;
+  - the bin screen's in-season row counts;
+  - volume-weight day counts and the annual scaling;
+  - the guard (six passing sets, two raising, both bin screens refusing);
+  - scenario resolution.
+
+  `test_recurrence`'s weekend test is renamed onto `fri_sun`.
+
+---
+
+## Session 87 — Item 66: corridor types in one tagged catalogue per district (2026-09-29)
+
+### 1. What was reverted
+
+`extents.py` and `build_statewide_catalogues.py` went back to their pre-branch (Item 64
+/ `e2f7452`) versions before anything was added. That removed:
+
+- the thirteen threshold kwargs threaded through six functions, and `curve_vhd`;
+- `--relaxed`, `--rec-screen`, `--windows`, `--filename-pattern` and the dropped
+  `--min-effective-miles` (review F1–F4, F6, S6).
+
+The six `dN_rec_corridors.json` and `compare_recreational_vs_commute.py` moved to
+`legacy/rec_catalogues_2026-09-29/`, with a README saying why.
+
+### 2. Types
+
+`extents.CorridorType(name, label, windows, description)`. `baseline_windows()` adds
+`night` and `weekday` to the type's own windows, which is what `segment_congestion`
+needs. Presets (`CORRIDOR_TYPES`):
+
+- **commute**: `am`, `pm`. Its baseline windows are exactly
+  `screen.BASELINE_WINDOWS`, so the commute caches are unchanged and still hit.
+- **recreational**: `fri_summer`, `sat_summer`, `sun_summer`, each 09:00–21:00 in
+  `SEASONS["summer"]`. Worst-window judging makes the type the union of the three
+  days, which is the owner's "union of recreation-heavy traffic days".
+- **retail**: `midday` (weekday 10–14) + `sat_midday` (Sat 11–17). The owner's
+  hybrid example (Eagle Rd, US-95 CdA) is a *class*, commute + retail, rather than
+  a builder of its own. A builder that had to detect "both" would need its own
+  rule for how much of each; the class reuses the two builders' floors.
+
+Every type's windows pass `check_window_cells`, so its bin screen can't pool
+(tested). The baseline set would not pass (`fri_summer` vs `weekday`), but it goes to
+`segment_screen`, whose averages are keyed by window, not to the bin screen.
+
+### 3. The merge
+
+`merge_typed_catalogues({type: catalogue}, miles=, types=, congestion=)` is pure, over
+catalogue dicts:
+
+- **Facilities.** Each is read back from `_facility`: core segments from the core
+  tier, reach from core ∪ commuter, over both directions.
+- **Merge or stand.** A later type's facility with ≥ 50% of its core miles in one
+  earlier facility's core or reach merges. `_types` gains the type, and
+  `_type_cores[type]` keeps its core metrics and `share_in`. Otherwise it stands,
+  flagged `shares X mi with <id> (<types>)` where it overlaps an earlier core.
+  - 50% is the same majority rule `SHARED_CORE_MAX` applies within a type. A
+    facility is never compared with its own type's: those are disjoint by
+    construction.
+- **Ids.** A taken id gets `-<type>` on its facility, group and entry ids. `_flags`
+  and `_companion` text is rewritten token by token through a per-type id map, so a
+  flag naming a facility that was renamed, or merged into another type's, names
+  where it went.
+- **Loose groups** (a couplet block, no `_facility`) are carried once. The builder
+  merges couplets after the typed merge anyway.
+- **`--types commute`** reproduces the pre-Item 66 catalogue exactly, apart from the
+  added tag keys (tested).
+
+### 4. Found-by is not the class (the design change)
+
+Run on the real D3 catalogues, commute plus the retired recreational one as a proxy,
+the merge gave **22 `commute+recreational`**, 4 `commute` and 7 `recreational`
+facilities. Twenty-two of D3's twenty-six commute corridors (I-84, Eagle Rd,
+Chinden, State St …) had a summer-weekend core too, so a "found-by" class would
+call nearly every urban road recreational. The owner's intent was the opposite:
+I-84 commute, Eagle Rd a hybrid.
+
+- **`_types` stays "found by".** It is what the owner asked the builders to produce.
+- **`_class` reads the profile.** `type_profile` runs `_run_metrics` over the core
+  (both directions) in every type's congestion frame. `profile_class` picks the found
+  type with the largest `peak_ratio − 1` as primary. The others join only at ≥ 0.6×
+  its excess.
+  - `peak_ratio` is dimensionless, so a 12-hour weekend window and a 2-hour peak
+    compare. *(Wrong, found in Session 90: it is a window mean, so a long window
+    dilutes a short peak. Item 69.)*
+  - VHD per mile would not compare: a longer window carries more hours.
+- **A type that did not find the corridor can't join its class**, even if its
+  profile is high. It failed that type's floors.
+- **0.6 is a starting value.** The docstring says what it is meant to do (I-84 →
+  commute, Eagle Rd → urban_hybrid), not that it has been shown to. Item 68 checks
+  it on the real catalogues.
+
+`generate_catalogue(congestion=)` takes a precomputed `segment_congestion` frame. The
+builder computes each type's once and uses it for both the catalogue and the profile.
+Tested: passing it in gives the identical catalogue.
+
+### 5. The builder
+
+- `--types` (default `commute,recreational,retail`).
+- Per-type caches via `type_file`. The commute names are unchanged. A baseline cache
+  lacking the type's windows, or a bin cache built over other windows, is recomputed
+  rather than cored on the wrong windows.
+- `observed` is the union over the types' screens. It is the same set in practice:
+  `n_obs` counts every gated row, whatever the window.
+- One audit CSV with a `type` column, and one merged, verified catalogue per
+  district. A per-type and per-class summary is printed.
+
+### 6. Tests
+
+- `tests/test_corridor_types.py` (22): presets and resolution; classes (found-by and
+  profile-based); the merge (merged, standalone, partial share, miles vs count, id
+  collision with flag and companion rewrites, a flag naming a merged facility, no
+  self-merge, three types → `urban_hybrid+recreational`, loose groups once,
+  `_generated`); end to end on a 16-segment chain (commute core + mild summer
+  Saturday → `commute`; a distant Saturday-only core → its own facility, `weekend`);
+  the `congestion=` passthrough; `--types commute` = the old catalogue.
+- `test_build_statewide_catalogues` (+3): type file names, and baseline/bin cache
+  reuse and invalidation. The loaders are monkeypatched away from the store. An
+  early version of the test opened `d3_store.duckdb` by relative path and created an
+  empty store in the repo root; it was removed, and the tests now fail loudly
+  instead.
+
+Not run here: the real regeneration. The district stores, network caches and AADT
+layer are not in the cloud container (Item 68).
+
+---
+
+## Session 88 — Item 67: one ranking under selectable scenarios (2026-09-29)
+
+- **The district runner takes `--scenario`** (a `screen.SCENARIO_PRESETS` name, with
+  an optional `:season`). `run_scenario` resolves it, sets the windows, the file tag
+  and the labels, and `sc.to_dict()` goes into the provenance.
+  - `--windows` stays as the low-level override, and is exclusive with
+    `--scenario`. Explicit windows that are exactly a preset's take its identity:
+    `--windows day_7d` is still `7day`, `--windows sun` is `sun`. Anything else is a
+    custom, untagged scenario.
+  - `--windows` with an unknown name now raises. It used to drop the name silently.
+- **`peak` keeps `midday` and `night`.** The default run screened
+  `screen.PEAK_WINDOWS` (am, pm, midday, night), with the last two carried as
+  unranked context. Item 65's `peak` preset had only am + pm, which would have
+  changed the default ranking table's rows. It now carries all four, and only the
+  `peak=True` windows are totalled. The default run screens the same windows and
+  writes the same tables under the same names. What changes is additions: a
+  `scenario` record in the provenance header, the registry file, and the map titles
+  now use the scenario label.
+- **One naming rule** (`scenario_file`): `<stem>_<tag><suffix>`, or the historic name
+  for the untagged peak. This restores `segment_7day_curve_vhd.parquet`. The branch's
+  `segment_vhd_7day.parquet` had silently skipped the statewide 7-day VHD map (review
+  F9, found here).
+  - KML is written only by the untagged run, since the corridors are the same in
+    every scenario.
+- **`screening_scenarios.json`** per output directory: each run registers `{tag:
+  {label, scenario, files}}`. The aggregate and the maps discover scenarios from it,
+  with no path-name magic (review S4). The district map viewer lists every
+  registered map.
+- **Type tags in every table.** `catalogue_type_tags` / `attach_type_tags` add
+  `corridor_types`, `corridor_class` and `primary_type` after the id column: to the
+  directional ranking, the grouped table, the totals and the breakout. The breakout
+  is (group, direction, window)-indexed, so the tags come from its index level. An
+  untyped catalogue adds no columns.
+- **Statewide runner.** `--scenarios` (default `peak,day_7d`) is validated by
+  `scenario_list` before six districts are screened. `--windows both` still means the
+  default. Other `--windows` values, and the branch's `rec` aliases, exit with a
+  pointer to `--scenarios`: `rec` meant three summed windows, a different quantity
+  from `fri_sun`'s one, so it is not silently re-mapped. `--catalogue-pattern` is
+  gone, since there is one catalogue.
+- **Aggregate.**
+  - `scenario_tables` gives each scenario's `{tag, label, windows, totals,
+    breakout}` from `--scenarios`, else the registries (the peak first), else the
+    historic pair.
+  - `_write` runs once per scenario. The type columns come from the tables, or from
+    the catalogue for tables written before Item 67.
+  - `scenario_matrix` joins every scenario's ranked table on `(district,
+    corridor_group)`. This is the comparison the retired script attempted across two
+    catalogues (review S1). The couplet, tier and district summaries still read the
+    peak and 7-day tables.
+- **Statewide maps.** Main's version, then rewritten to loop over `scenario_tables`:
+  two maps per scenario, with the historic names for the peak and `7day`. The
+  branch's six copy-pasted blocks and its hard-coded "May–August" subtitles went
+  (review S5).
+- **Tests.**
+  - `test_run_district_screening` +7: default = untagged peak; `--scenario` and
+    `--window-tag`; windows taking a preset's identity and unknown names raising;
+    file names; a seasonal run on the toy district writing its own files and
+    registering beside the peak; type tags in all four tables and the CSV; untyped
+    adds nothing.
+  - `test_aggregate_statewide_rankings` +4: discovery, type columns, the matrix, and
+    `main()` over two districts × two scenarios.
+  - `tests/test_statewide_scenarios.py` (3): the statewide runner's list, file names,
+    and the maps' loop with rendering monkeypatched.
+  - Before opening the PR, `test_build_statewide_catalogues` gained one more test for
+    Item 66: the builder's own `main()` on a 16-segment toy network, with the store
+    and GIS loaders stubbed. Two types produce one merged `d3_corridors.json` and an
+    audit with a `type` column. Nothing else ran that loop.
+
+---
+
+## Session 89 — Item 68: Regenerate typed catalogues and run statewide scenarios (2026-09-29)
+
+**Author: Gemini / Claude (pair programming)**
+
+Item 68 execution on the full local INRIX dataset (DuckDB stores `d1_store.duckdb`–`d6_store.duckdb`,
+cached GeoParquet networks, and `AADT_2025.zip`).
+
+### Bug Fix: `screen.bin_weights()` with Custom Seasonal Windows
+- Running `build_statewide_catalogues.py` with recreational corridors revealed an unhandled
+  case in `bin_weights()` (`src/inrix_tools/screen.py`): when recreational window names
+  (`fri_summer`, `sat_summer`, `sun_summer`) were passed to `extents.segment_congestion()`,
+  `bin_weights()` called `resolve_windows()`, which raised a `KeyError` because those seasonal
+  window names were dynamically generated rather than static entries in `ALL_WINDOWS`.
+- Fixed `bin_weights()` to look up names directly in `bins.attrs["windows"]` before falling back
+  to `resolve_windows()`. All 1,138 pytest tests pass.
+
+### Statewide Typed Catalogue Generation (`build_statewide_catalogues.py --districts 1 2 3 4 5 6 --refresh-baseline`)
+All six district catalogues (`scripts/d1_corridors.json`–`d6_corridors.json`) were generated
+with unified typing and verified (`ALL VERIFIED`):
+- **District 1**: 18 facilities (13 commute, 15 rec [10 merged, 5 standalone], 12 retail [12 merged, 0 standalone]), 52 reporting corridors, 86 directional entries (+ 1 couplet).
+- **District 2**: 3 facilities (2 commute, 3 rec [2 merged, 1 standalone], 2 retail [2 merged, 0 standalone]), 7 reporting corridors, 10 directional entries (+ 1 couplet).
+- **District 3**: 36 facilities (26 commute, 33 rec [24 merged, 9 standalone], 24 retail [23 merged, 1 standalone]), 95 reporting corridors, 147 directional entries (+ 4 couplets).
+- **District 4**: 11 facilities (9 commute, 9 rec [8 merged, 1 standalone], 8 retail [7 merged, 1 standalone]), 28 reporting corridors, 49 directional entries (+ 1 couplet).
+- **District 5**: 9 facilities (6 commute, 5 rec [2 merged, 3 standalone], 4 retail [4 merged, 0 standalone]), 25 reporting corridors, 34 directional entries (+ 2 couplets).
+- **District 6**: 7 facilities (6 commute, 8 rec [7 merged, 1 standalone], 6 retail [6 merged, 0 standalone]), 19 reporting corridors, 33 directional entries (+ 0 couplets).
+
+### Corridor Classification Sanity Check
+- **I-84 Treasure Valley**: `commute` (`commute` peak excess 0.955 vs `recreational` 0.147; excess ratio 0.15 << 0.60).
+- **Eagle Rd (SH-55)**: `urban_hybrid+recreational` (commute excess 0.510, rec excess 0.459 [90%], retail excess 0.462 [91%]).
+- **US-95 Coeur d'Alene**: `urban_hybrid+recreational` (primary type `recreational`).
+- **SH-55 North of Eagle** (Boise & Valley Counties): 100% `recreational` standalone cores (`sh-55-boise-county-core`, `sh-55-boise-county-banks-lowman-rd-core`, `sh-55-valley-county-core`, `sh-55-main-st-valley-county-core`).
+- **SH-75 Ketchum / Hailey**: found by all three builders (`commute`, `recreational`, `retail`). Read as `commute` because weekday morning/evening commute slowdown is sharp (peak_ratio 1.73 in Ketchum, excess 0.73) whereas summer weekend congestion is steady across the 12-hour window (peak_ratio 1.27, excess 0.27; ratio 0.37 < 0.60), despite summer weekend VHD being nearly double weekday commute VHD (533 VHD vs 293 VHD).
+- **US-20 Island Park**: Congestion in Fremont County does not exceed the statewide recurrence/delay threshold under any scenario, so it remains absent from the auto-detected catalogue (consistent with legacy runs).
+
+### Statewide Scenario Screening (`run_statewide_screening.py --mode full --scenarios peak,day_7d,fri:summer,sat:summer,sun:summer,weekend:summer --maps`)
+Screened 89 ranked reporting corridors across 6 scenarios:
+- **Peak**: #1 D3 I-184 (167.9 VHD/mi), #2 D3 I-84 (167.7), #3 D3 Chinden HP (95.3), #4 D3 Chinden Main St (91.0), #5 D3 Front St (80.8), #6 D1 I-90 CdA (72.3).
+- **7-Day All-Day**: #1 D1 I-90 CdA (208.1 VHD/mi), #2 D3 Front St (171.5), #3 D3 I-84 (159.7), #4 D3 I-184 (155.0), #5 D3 Chinden Main St (142.8), #6 D3 Eagle Rd (124.9).
+- **Friday Summer (9 AM–9 PM)**: #1 D1 I-90 CdA (498.8 VHD/mi), #2 D3 Eagle Rd (179.8), #3 D3 Chinden Main St (166.5), #4 D3 I-84 (163.3), #5 D3 Front St (160.8), #6 D1 I-90 Pleasant View (160.0).
+- **Saturday Summer (9 AM–9 PM)**: #1 D1 I-90 CdA (300.2 VHD/mi), #2 D3 Garrity BL Rec (128.8), #3 D3 Front St (123.8), #4 D1 I-90 Beck Rd (84.3), #5 D2 Moscow US-95 (74.3), #6 D3 Eagle Rd (72.7).
+- **Sunday Summer (9 AM–9 PM)**: #1 D1 I-90 CdA (591.8 VHD/mi, TTI 2.94), #2 D3 Front St (70.6), #3 D1 I-90 Kootenai (60.4), #4 D3 Garrity BL Rec (59.8), #5 D3 SH-55 Boise County (50.0, TTI 1.38), #6 D1 I-90 Shoshone (44.7), #7 D3 Chinden Main St (41.0), #8 D5 I-15 Bannock (37.9), #9 D3 Eagle Rd (37.7), #10 D3 SH-55 Banks-Lowman (36.6, TTI 1.34).
+- Generated `statewide_scenario_matrix.csv`, all scenario ranking tables, and statewide HTML maps with `statewide_map_viewer.html`.
+
+
+---
+
+## Session 90 — Review of Item 68; `+recreational` folded into the hybrid; the window-name fix generalised (2026-09-29)
+
+A review of the owner's Item 68 run (`dcd5326`, Session 89), then the owner-directed
+follow-ups.
+
+### 1. The review
+
+- **The `bin_weights` fix is right, and it was a bug in Item 66.** `segment_congestion`
+  hands `bin_weights` the type's window names. A seasonal name (`sat_summer`) exists
+  only on the bin screen, so `resolve_windows` raised. Item 66's end-to-end tests ran
+  the index VHD path, never curve VHD with seasonal windows, so they missed it.
+  `rank_corridors(windows=)` and `_peak_cells` looked names up the same way; the
+  runners pass `windows=None`, so they were never hit.
+- **The catalogues are valid.** All six parse and resolve.
+- **The class metric doesn't separate** (see 2 and Item 69):
+  - 37 of 39 hybrids read `urban_hybrid+recreational`;
+  - SH-75 Ketchum reads `commute`, though its summer-weekend delay per mile is 85
+    against 47 on weekdays and it is flagged `seasonal`.
+- **I-90 Coeur d'Alene heads four summer scenarios, but its core is flagged
+  `episodic: 96% of peak delay in 2026-06…08`.** That matches the I-90 WB period the
+  Item 50 notes record (at its overnight level until 22 June 2026). Four other D1
+  I-90 cores are flagged episodic in July–August. The summer rankings in Session 89
+  don't mention the flags, and the D1 figures shouldn't be quoted until they are
+  checked (Item 69).
+- **Records.** The Session 89 entry was headed "Session 88", which is Item 67's, and
+  is renumbered. Its 1,138 tests against 1109 here is consistent with the real-data
+  tests running locally and skipping in the cloud.
+
+### 2. `+recreational` under the hybrid (owner, 2026-09-29)
+
+The owner asked whether `+recreational` is needed on a hybrid, since retail already
+implies weekends. Measured on the Item 68 catalogues: only **2 of 39** hybrids lack
+it (US-2 Sandpoint, I-15 BL Pocatello Creek Rd), and both pass the recreational
+threshold anyway (0.16 vs 0.157; 0.151 vs 0.171). The recreational builder simply
+didn't find them. Across the hybrids, the recreational and retail excesses sit within
+a few hundredths of each other. The suffix carried no information.
+
+- **`extents.CLASS_SUBSUMED = {"recreational": "retail"}`.** Recreational drops out
+  of a class retail is in, **unless it is the primary type**. So it still marks the
+  places where summer weekends are the strongest signal: Driggs (SH-33 Teton County),
+  US-95 Coeur d'Alene, Ontario/Payette's 16th St, Burley, Jerome. McCall's Lake St
+  and Soda Springs stay `recreational+retail`. The Garrity BL facility found only by
+  recreational and retail, whose primary is retail, becomes `retail`.
+  - Dropping it everywhere was the alternative, but it would erase Driggs and McCall.
+    `_primary_type` would still say so, but nobody reads that column first.
+- **`extents.reclassify_catalogue`** recomputes `_class` / `_primary_type` from each
+  group's stored `_types` and `_profile`, so the rule could be applied to the six
+  committed catalogues without the stores. Only those two fields and a
+  `_generated.class_subsumed` record changed (checked on the diff). Core classes
+  statewide:
+  - before: `urban_hybrid+recreational` 37, `urban_hybrid` 2, `recreational+retail`
+    5, `retail` 1;
+  - after: 7, 32, 4, 2.
+  - `commute` (15), `recreational` (18) and `commute+recreational` (5) are unchanged.
+- **The aggregate now takes the type columns from the catalogue**, overriding
+  whatever an older district table carried. So re-running
+  `aggregate_statewide_rankings.py` picks up a reclassification without
+  re-screening. Before this it deferred to the tables, which would have kept the
+  stale classes.
+
+### 3. Window names
+
+`screen.window_names(windows)` returns the names in a windows argument without
+resolving them against the presets. `bin_weights`, `rank_corridors` and `_peak_cells`
+use it and check the names against the frame they select from, as before. It
+replaces the Session 89 special case in `bin_weights`.
+
+### 4. Tests
+
+1117 pass, 31 skip (1109 before).
+- `test_scenarios` `TestSeasonalNames`: `window_names`; `bin_weights` with a
+  seasonal name in four argument shapes, and an unknown one refused; the
+  `segment_congestion` curve path with the recreational window, which is exactly what
+  the Item 68 builder ran; `_peak_cells` by name and by window.
+- `test_screen`: `rank_corridors(windows=["am_march"])` on a seasonal screen.
+- `test_corridor_types`: the cover rule on the real profiles of Eagle Rd, Driggs,
+  McCall and Garrity; `reclassify_catalogue`.
+- `test_aggregate_statewide_rankings`: the catalogue overriding stale table columns.

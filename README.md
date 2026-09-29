@@ -239,6 +239,29 @@ catalogues for `statewide_extent_tiers_comparison.csv`, and
 `couplets.KNOWN_COUPLETS` — it reports rather than asserts, because several registry
 entries name a leg the XD network carries no route number for.
 
+## Corridor types and ranking scenarios
+
+A district has **one** catalogue, and each corridor in it is tagged by the types
+that found it (ROADMAP Item 66). The builder runs one discovery per type on the same
+chains and floors. `commute` uses the weekday AM/PM peaks, `recreational` summer
+Fri/Sat/Sun 9 AM–9 PM, and `retail` weekday midday + Saturday daytime. It then
+merges the results. `_class` says what a corridor is: commute + retail reads as
+`urban_hybrid` (Eagle Rd), and a commute road that also queues on summer weekends
+stays `commute`.
+
+Every corridor is then ranked under whichever **scenarios** you ask for (Item 67):
+
+```bash
+python scripts/build_statewide_catalogues.py --types commute,recreational,retail
+python scripts/run_statewide_screening.py --mode full --maps \
+    --scenarios peak,day_7d,fri:summer,sat:summer,sun:summer,weekend:summer
+```
+
+Scenario presets are `peak`, `day_7d`, `fri`, `sat`, `sun`, `weekend` (Sat–Sun) and
+`fri_sun`, each optionally `:summer` or `:MM-DD..MM-DD`. The aggregate writes one
+statewide table per scenario, plus `statewide_scenario_matrix.csv` (each corridor's
+rank under every scenario). The default, `peak,day_7d`, is the run as it was before.
+
 ## Documents
 
 - [ROADMAP.md](ROADMAP.md) — planned work as named, numbered, session-sized
