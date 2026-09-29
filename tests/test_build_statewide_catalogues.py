@@ -30,8 +30,7 @@ def test_the_cached_bin_screen_keeps_its_attrs(tmp_path):
                          "tod_min": [420], "travel_time": [2.0], "n_obs": [5]})
     attrs = {"tz": "America/Boise", "bin_minutes": 15, "period_start": "2026-01-01",
              "period_end": "2026-08-31",
-             "windows": {"am": {"name": "am", "window": "7:00AM-9:00AM",
-                                "days": ["Mon"], "peak": True}}}
+             "windows": {n: w.to_dict() for n, w in bsc.COMMUTE.window_map().items()}}
     bins.to_parquet(d / bsc.BINS_FILE)
     (d / bsc.BINS_FILE).with_suffix(".json").write_text(json.dumps(attrs))
     got = bsc.load_bins(3, tmp_path)
@@ -105,3 +104,55 @@ def test_a_couplet_no_core_runs_on_ranks_as_before():
     assert bsc.defer_covered_couplets(cat, LEGS, MILES) == []
     assert all("_ranked" not in g and "_flags" not in g
                for g in cat["reporting_corridors"][2:])
+
+
+# ─── Item 66: one cache per corridor type; the commute caches keep their names ──
+
+def test_type_files_keep_the_commute_names():
+    rec = bsc.extents.CORRIDOR_TYPES["recreational"]
+    assert bsc.type_file(bsc.BASELINE_FILE, bsc.COMMUTE) == bsc.BASELINE_FILE
+    assert bsc.type_file(bsc.BASELINE_FILE, rec) == \
+        "segment_baseline_screen_recreational.parquet"
+    assert bsc.type_file(bsc.BINS_FILE, rec) == "segment_peak_bins_recreational.parquet"
+
+
+def _no_store(monkeypatch):
+    """Fail loudly instead of opening (and creating) a store in the working directory."""
+    monkeypatch.setattr(bsc.store, "connect",
+                        lambda *_: (_ for _ in ()).throw(RuntimeError("store read")))
+
+
+def test_a_baseline_cache_is_read_only_if_it_carries_the_types_windows(tmp_path,
+                                                                        monkeypatch):
+    _no_store(monkeypatch)
+    d = tmp_path / "d3"
+    d.mkdir()
+    cols = {f"{w}_travel_time": [1.0] for w in bsc.COMMUTE.baseline_windows()}
+    cached = pd.DataFrame(cols, index=pd.Index([7], name="Segment ID"))
+    cached.to_parquet(d / bsc.BASELINE_FILE)
+    got = bsc.load_baseline(3, tmp_path)
+    pd.testing.assert_frame_equal(got, cached)
+    # The same columns under the recreational name lack its windows: the loader goes
+    # to the store (absent here) rather than coring on the wrong windows.
+    rec = bsc.extents.CORRIDOR_TYPES["recreational"]
+    cached.to_parquet(d / bsc.type_file(bsc.BASELINE_FILE, rec))
+    with pytest.raises(RuntimeError, match="store read"):
+        bsc.load_baseline(3, tmp_path, ctype=rec)
+
+
+def test_a_bin_cache_over_other_windows_is_not_used(tmp_path, monkeypatch):
+    d = tmp_path / "d3"
+    d.mkdir()
+    rec = bsc.extents.CORRIDOR_TYPES["recreational"]
+    bins = pd.DataFrame({"Segment ID": [1], "month": ["2026-07"], "day_type": ["sat"],
+                         "tod_min": [600], "travel_time": [2.0], "n_obs": [5]})
+    path = d / bsc.type_file(bsc.BINS_FILE, rec)
+    bins.to_parquet(path)
+    good = {"windows": {n: w.to_dict() for n, w in rec.window_map().items()}}
+    path.with_suffix(".json").write_text(json.dumps(good))
+    assert bsc.load_bins(3, tmp_path, ctype=rec).attrs == good
+    stale = {"windows": {"sat": bsc.screen.ALL_WINDOWS["sat"].to_dict()}}
+    path.with_suffix(".json").write_text(json.dumps(stale))
+    _no_store(monkeypatch)
+    with pytest.raises(RuntimeError, match="store read"):
+        bsc.load_bins(3, tmp_path, ctype=rec)

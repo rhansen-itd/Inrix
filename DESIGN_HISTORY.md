@@ -7778,3 +7778,118 @@ Decisions taken in scoping:
   - scenario resolution.
 
   `test_recurrence`'s weekend test is renamed onto `fri_sun`.
+
+---
+
+## Session 87 — Item 66: corridor types in one tagged catalogue per district (2026-09-29)
+
+### 1. What was reverted
+
+`extents.py` and `build_statewide_catalogues.py` went back to their pre-branch (Item 64
+/ `e2f7452`) versions before anything was added. That removed:
+
+- the thirteen threshold kwargs threaded through six functions, and `curve_vhd`;
+- `--relaxed`, `--rec-screen`, `--windows`, `--filename-pattern` and the dropped
+  `--min-effective-miles` (review F1–F4, F6, S6).
+
+The six `dN_rec_corridors.json` and `compare_recreational_vs_commute.py` moved to
+`legacy/rec_catalogues_2026-09-29/`, with a README saying why.
+
+### 2. Types
+
+`extents.CorridorType(name, label, windows, description)`. `baseline_windows()` adds
+`night` and `weekday` to the type's own windows, which is what `segment_congestion`
+needs. Presets (`CORRIDOR_TYPES`):
+
+- **commute**: `am`, `pm`. Its baseline windows are exactly
+  `screen.BASELINE_WINDOWS`, so the commute caches are unchanged and still hit.
+- **recreational**: `fri_summer`, `sat_summer`, `sun_summer`, each 09:00–21:00 in
+  `SEASONS["summer"]`. Worst-window judging makes the type the union of the three
+  days, which is the owner's "union of recreation-heavy traffic days".
+- **retail**: `midday` (weekday 10–14) + `sat_midday` (Sat 11–17). The owner's
+  hybrid example (Eagle Rd, US-95 CdA) is a *class*, commute + retail, rather than
+  a builder of its own. A builder that had to detect "both" would need its own
+  rule for how much of each; the class reuses the two builders' floors.
+
+Every type's windows pass `check_window_cells`, so its bin screen can't pool
+(tested). The baseline set would not pass (`fri_summer` vs `weekday`), but it goes to
+`segment_screen`, whose averages are keyed by window, not to the bin screen.
+
+### 3. The merge
+
+`merge_typed_catalogues({type: catalogue}, miles=, types=, congestion=)` is pure, over
+catalogue dicts:
+
+- **Facilities.** Each is read back from `_facility`: core segments from the core
+  tier, reach from core ∪ commuter, over both directions.
+- **Merge or stand.** A later type's facility with ≥ 50% of its core miles in one
+  earlier facility's core or reach merges. `_types` gains the type, and
+  `_type_cores[type]` keeps its core metrics and `share_in`. Otherwise it stands,
+  flagged `shares X mi with <id> (<types>)` where it overlaps an earlier core.
+  - 50% is the same majority rule `SHARED_CORE_MAX` applies within a type. A
+    facility is never compared with its own type's: those are disjoint by
+    construction.
+- **Ids.** A taken id gets `-<type>` on its facility, group and entry ids. `_flags`
+  and `_companion` text is rewritten token by token through a per-type id map, so a
+  flag naming a facility that was renamed, or merged into another type's, names
+  where it went.
+- **Loose groups** (a couplet block, no `_facility`) are carried once. The builder
+  merges couplets after the typed merge anyway.
+- **`--types commute`** reproduces the pre-Item 66 catalogue exactly, apart from the
+  added tag keys (tested).
+
+### 4. Found-by is not the class (the design change)
+
+Run on the real D3 catalogues, commute plus the retired recreational one as a proxy,
+the merge gave **22 `commute+recreational`**, 4 `commute` and 7 `recreational`
+facilities. Twenty-two of D3's twenty-six commute corridors (I-84, Eagle Rd,
+Chinden, State St …) had a summer-weekend core too, so a "found-by" class would
+call nearly every urban road recreational. The owner's intent was the opposite:
+I-84 commute, Eagle Rd a hybrid.
+
+- **`_types` stays "found by".** It is what the owner asked the builders to produce.
+- **`_class` reads the profile.** `type_profile` runs `_run_metrics` over the core
+  (both directions) in every type's congestion frame. `profile_class` picks the found
+  type with the largest `peak_ratio − 1` as primary. The others join only at ≥ 0.6×
+  its excess.
+  - `peak_ratio` is dimensionless, so a 12-hour weekend window and a 2-hour peak
+    compare.
+  - VHD per mile would not compare: a longer window carries more hours.
+- **A type that did not find the corridor can't join its class**, even if its
+  profile is high. It failed that type's floors.
+- **0.6 is a starting value.** The docstring says what it is meant to do (I-84 →
+  commute, Eagle Rd → urban_hybrid), not that it has been shown to. Item 68 checks
+  it on the real catalogues.
+
+`generate_catalogue(congestion=)` takes a precomputed `segment_congestion` frame. The
+builder computes each type's once and uses it for both the catalogue and the profile.
+Tested: passing it in gives the identical catalogue.
+
+### 5. The builder
+
+- `--types` (default `commute,recreational,retail`).
+- Per-type caches via `type_file`. The commute names are unchanged. A baseline cache
+  lacking the type's windows, or a bin cache built over other windows, is recomputed
+  rather than cored on the wrong windows.
+- `observed` is the union over the types' screens. It is the same set in practice:
+  `n_obs` counts every gated row, whatever the window.
+- One audit CSV with a `type` column, and one merged, verified catalogue per
+  district. A per-type and per-class summary is printed.
+
+### 6. Tests
+
+- `tests/test_corridor_types.py` (22): presets and resolution; classes (found-by and
+  profile-based); the merge (merged, standalone, partial share, miles vs count, id
+  collision with flag and companion rewrites, a flag naming a merged facility, no
+  self-merge, three types → `urban_hybrid+recreational`, loose groups once,
+  `_generated`); end to end on a 16-segment chain (commute core + mild summer
+  Saturday → `commute`; a distant Saturday-only core → its own facility, `weekend`);
+  the `congestion=` passthrough; `--types commute` = the old catalogue.
+- `test_build_statewide_catalogues` (+3): type file names, and baseline/bin cache
+  reuse and invalidation. The loaders are monkeypatched away from the store. An
+  early version of the test opened `d3_store.duckdb` by relative path and created an
+  empty store in the repo root; it was removed, and the tests now fail loudly
+  instead.
+
+Not run here: the real regeneration. The district stores, network caches and AADT
+layer are not in the cloud container (Item 68).

@@ -43,9 +43,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import timebins as _timebins
 from .geometry import WGS84, _resolve_shp_path
 from .io import DATETIME_COL, SEGMENT_COL
-from . import timebins as _timebins
 
 # AADT layer attribute fields we keep. The layer's ``.dbf`` carries proper numeric
 # types already (unlike the all-C(255) XD shapefile), so no casting is needed — we

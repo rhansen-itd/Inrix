@@ -3725,16 +3725,16 @@ scenarios, and the window-overlap guard."
 
 ---
 
-## 66 — Corridor types: one catalogue per district, every corridor tagged
+## 66 — Corridor types: one catalogue per district, every corridor tagged ✅ (Session 87)
 
 **Target: Opus.** Core (`extents`) + the catalogue builder. Depends on 65.
 
 Scope:
 
-- [ ] **Revert the branch's `extents` threshold plumbing, `curve_vhd`, `--relaxed`,
+- [x] **Revert the branch's `extents` threshold plumbing, `curve_vhd`, `--relaxed`,
       `--rec-screen`, `--windows` and `--filename-pattern`** (review F1–F4, F6, S6).
       One set of floors and one chaining for every type.
-- [ ] **`extents.CorridorType`** (name, label, discovery windows, description) and
+- [x] **`extents.CorridorType`** (name, label, discovery windows, description) and
       `CORRIDOR_TYPES` presets:
       - `commute`: weekday AM + PM peaks, all year (today's catalogue).
       - `recreational`: Fri, Sat and Sun 9 AM–9 PM, **summer** only. A segment is
@@ -3742,28 +3742,37 @@ Scope:
       - `retail`: weekday midday (10 AM–2 PM) + Saturday daytime (11 AM–5 PM), all
         year. A corridor found by both `commute` and `retail` is classed
         **`urban_hybrid`** (Eagle Rd, US-95 in Coeur d'Alene).
-- [ ] **Per-type discovery**: `generate_catalogue` per type on the same chains,
+- [x] **Per-type discovery**: `generate_catalogue` per type on the same chains,
       floors, hard stops and couplet legs, with a type-specific baseline screen
       (the type's windows + night + weekday fallback) and bin screen (curve VHD
       against the segment's own baseline; the Item 50 basis, review F4). The
       monthly profile and seasonal flag come back (F5).
-- [ ] **`extents.merge_typed_catalogues`** (pure, on catalogue dicts). Types are
+- [x] **`extents.merge_typed_catalogues`** (pure, on catalogue dicts). Types are
       taken in the order given. A later type's facility whose core lies ≥ 50%
       (by miles) inside an earlier facility's core or Tier 2 **merges** into it:
       the earlier extent stands, `_types` gains the type, and `_type_cores` keeps
       each type's core metrics. Otherwise it is added as its own facility, with
       `shares … mi with …` where it partly overlaps. Id collisions get a type
       suffix. Every entry and group carries `_types` and `_class`.
-- [ ] **Builder**: `--types commute,recreational,retail` (default: all three);
+- [x] **Builder**: `--types commute,recreational,retail` (default: all three);
       per-type baseline/bin caches; one `dN_corridors.json` per district with
       `_generated.types`. The six `dN_rec_corridors.json` and
       `compare_recreational_vs_commute.py` move to
       `legacy/rec_catalogues_2026-09-29/` with a README.
-- [ ] pytest: the merge (absorbed, new, partial share, id collision, class), type
+- [x] pytest: the merge (absorbed, new, partial share, id collision, class), type
       presets, and the builder's per-type windows. DESIGN_HISTORY, DATA_FORMAT (the
       catalogue's `_types` / `_class` / `_type_cores`).
 
-*Suggested prompt:* "Do Item 66 of ROADMAP.md — corridor types in one tagged
+*Delivered as scoped, plus one change of design found by running the merge on the real
+D3 catalogues: the retired rec catalogue would have tagged 22 of D3's 26 commute
+facilities "recreational" as well, because busy arterials also queue on summer
+Saturdays. So `_types` ("found by") and `_class` ("what it is") are separate. The
+class keeps a found type only if the core's peak/baseline excess in that type's
+windows is ≥ 0.6× the strongest type's (`profile_class`, `_profile` on every group).
+`generate_catalogue(congestion=)` lets the builder reuse each type's frame. Tests:
+`tests/test_corridor_types.py` (22) and 3 builder tests. Session 87.*
+
+*Suggested prompt (done):* "Do Item 66 of ROADMAP.md — corridor types in one tagged
 catalogue per district."
 
 ---

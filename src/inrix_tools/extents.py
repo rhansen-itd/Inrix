@@ -42,6 +42,7 @@ import pandas as pd
 from shapely.geometry import Point
 from shapely.ops import linemerge
 
+from . import screen as _screen
 
 # ─── Constants ────────────────────────────────────────────────────────
 
@@ -1140,36 +1141,30 @@ def _turn(a: float | None, b: float | None) -> float:
     return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
-def _join_candidate(cg: _ChainGeometry, tail: int, head: int,
-                    *, join_tol_m: float = ROUTE_JOIN_TOL_M,
-                    max_turn_deg: float = ROUTE_JOIN_MAX_TURN_DEG,
-                    min_fraction: float = ROUTE_JOIN_MIN_FRACTION,
-                    mp_tol: float = ROUTE_JOIN_MP_TOL) -> dict | None:
+def _join_candidate(cg: _ChainGeometry, tail: int, head: int) -> dict | None:
     """Does ``head`` continue the route from ``tail``'s last segment? ``None``, or
     ``{gap_m, turn_deg, at}`` — ``at`` is how far along ``tail`` the head leaves."""
     g, s = cg.geom.get(tail), cg.start.get(head)
     if g is None or s is None or g.length <= 0:
         return None
     gap = float(g.distance(s))
-    if gap > join_tol_m:
+    if gap > ROUTE_JOIN_TOL_M:
         return None
     at = float(g.project(s))
-    if at < min_fraction * g.length:
+    if at < ROUTE_JOIN_MIN_FRACTION * g.length:
         return None
     turn = _turn(cg.bearing_at(tail, at), cg.in_brg.get(head))
-    if turn > max_turn_deg:
+    if turn > ROUTE_JOIN_MAX_TURN_DEG:
         return None
     rid_t, rid_h = cg.route_id.get(tail), cg.route_id.get(head)
     if rid_t and rid_t == rid_h and tail in cg.mp0 and tail in cg.mp1 and head in cg.mp0:
         mp_at = cg.mp0[tail] + (cg.mp1[tail] - cg.mp0[tail]) * (at / g.length)
-        if abs(cg.mp0[head] - mp_at) > mp_tol:
+        if abs(cg.mp0[head] - mp_at) > ROUTE_JOIN_MP_TOL:
             return None
     return {"gap_m": round(gap, 1), "turn_deg": round(turn, 0), "at": at}
 
 
-def _returns_to_line(cg: _ChainGeometry, a: int, run: Sequence[int],
-                     *, bridge_max_miles: float = ROUTE_BRIDGE_MAX_MILES,
-                     mp_tol: float = ROUTE_JOIN_MP_TOL) -> float | None:
+def _returns_to_line(cg: _ChainGeometry, a: int, run: Sequence[int]) -> float | None:
     """Mileposts past ``a`` on ``a``'s own SHS line, reached within the bridge limit.
 
     The milepost evidence for a stub join: SH-8 eastbound leaves its line at mp 1.79
@@ -1183,11 +1178,11 @@ def _returns_to_line(cg: _ChainGeometry, a: int, run: Sequence[int],
         return None
     walked = 0.0
     for s in run:
-        if walked > bridge_max_miles:
+        if walked > ROUTE_BRIDGE_MAX_MILES:
             return None
         if cg.route_id.get(s) == rid and s in cg.mp0:
             ahead = (cg.mp0[s] - cg.mp1[a]) * sense
-            return cg.mp0[s] if ahead >= -mp_tol else None
+            return cg.mp0[s] if ahead >= -ROUTE_JOIN_MP_TOL else None
         walked += cg.miles.get(s, 0.0)
     return None
 
@@ -1219,12 +1214,7 @@ def _walk_route(members: set[int], nxt_raw: dict[int, int]) -> list[list[int]]:
 
 def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
                       linked_into: set[int],
-                      blocked: Collection[tuple[int, int]] = (),
-                      *, join_tol_m: float = ROUTE_JOIN_TOL_M,
-                      max_turn_deg: float = ROUTE_JOIN_MAX_TURN_DEG,
-                      stub_miles: float = ROUTE_STUB_MILES,
-                      bridge_max_miles: float = ROUTE_BRIDGE_MAX_MILES,
-                      mp_tol: float = ROUTE_JOIN_MP_TOL
+                      blocked: Collection[tuple[int, int]] = ()
                       ) -> list[tuple[list[int], list[dict]]]:
     """Join one route's walks where the route turns off the link (see the section note).
 
@@ -1249,8 +1239,7 @@ def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
             for j, head in _heads(i):
                 if head in walk or (tail, head) in blocked:
                     continue
-                c = _join_candidate(cg, tail, head, join_tol_m=join_tol_m,
-                                    max_turn_deg=max_turn_deg, mp_tol=mp_tol)
+                c = _join_candidate(cg, tail, head)
                 if c is not None and (best is None or (c["gap_m"], c["turn_deg"])
                                       < (best[1]["gap_m"], best[1]["turn_deg"])):
                     best = (j, c)
@@ -1273,19 +1262,17 @@ def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
                 continue
             for k in range(len(walk) - 2, -1, -1):
                 stub = walk[k + 1:]
-                if cg.run_miles(stub) > stub_miles:
+                if cg.run_miles(stub) > ROUTE_STUB_MILES:
                     break
                 a = walk[k]
                 best = None
                 for j, head in _heads(i):
                     if head in walk or (a, head) in blocked:
                         continue
-                    c = _join_candidate(cg, a, head, join_tol_m=join_tol_m,
-                                        max_turn_deg=max_turn_deg, mp_tol=mp_tol)
+                    c = _join_candidate(cg, a, head)
                     if c is None:
                         continue
-                    mp = _returns_to_line(cg, a, items[j][0], bridge_max_miles=bridge_max_miles,
-                                          mp_tol=mp_tol)
+                    mp = _returns_to_line(cg, a, items[j][0])
                     if mp is None:
                         continue
                     if best is None or (c["gap_m"], c["turn_deg"]) < (best[1]["gap_m"],
@@ -1456,11 +1443,6 @@ def enumerate_mainline_chains(
     route_numbers: Sequence[str] | None = None,
     join: bool = True,
     hard_stops: Mapping[tuple[int, int], str] | None = None,
-    join_tol_m: float = ROUTE_JOIN_TOL_M,
-    max_turn_deg: float = ROUTE_JOIN_MAX_TURN_DEG,
-    stub_miles: float = ROUTE_STUB_MILES,
-    bridge_max_miles: float = ROUTE_BRIDGE_MAX_MILES,
-    mp_tol: float = ROUTE_JOIN_MP_TOL,
 ) -> list[MainlineChain]:
     """Walk every state route in ``network`` into maximal directional chains.
 
@@ -1542,11 +1524,7 @@ def enumerate_mainline_chains(
         walks = _walk_route(members, nxt_walk)
         if join and cg is not None and cg.geom:
             linked_into = {n for s in members if (n := nxt_raw.get(s)) in members}
-            joined = _join_route_walks(
-                route, walks, cg, linked_into, blocked,
-                join_tol_m=join_tol_m, max_turn_deg=max_turn_deg,
-                stub_miles=stub_miles, bridge_max_miles=bridge_max_miles,
-                mp_tol=mp_tol)
+            joined = _join_route_walks(route, walks, cg, linked_into, blocked)
         else:
             joined = [(w, []) for w in walks]
         raw.extend({"route": route, "ids": w, "joins": log} for w, log in joined)
@@ -2329,7 +2307,6 @@ def segment_congestion(
     bins: pd.DataFrame | None = None,
     curves=None,
     profiles=None,
-    curve_vhd: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Each segment's peak congestion **against its own baseline**, one row per segment.
 
@@ -2411,16 +2388,7 @@ def segment_congestion(
     out["vhd"] = out["vhd_index"]
     out["vhd_coverage"] = float("nan")
     out.attrs["vhd_basis"] = "index"
-    if curve_vhd is not None:
-        at = pd.MultiIndex.from_arrays([out.index.astype("int64"),
-                                        out["peak_window"].fillna("")])
-        cv = curve_vhd.set_index(["Segment ID", "window"])
-        out["vhd"] = cv["vhd"].reindex(at).to_numpy()
-        out["vhd_coverage"] = cv["coverage"].reindex(at).to_numpy() if "coverage" in cv.columns else float("nan")
-        out.attrs["vhd_basis"] = "curve"
-        out.attrs["aadt_caveat"] = None
-        out.attrs["curve_vhd"] = True
-    elif bins is not None:
+    if bins is not None:
         from . import aadt as _aadt
         from . import screen as _screen
         if curves is None:
@@ -2546,33 +2514,22 @@ def _run_metrics(seg: pd.DataFrame, ids: Sequence[int]) -> dict:
     }
 
 
-def core_fails(m: dict, *,
-               min_effective_miles: float = MIN_EFFECTIVE_CORE_MILES,
-               min_core_vhd_per_mile: float = MIN_CORE_VHD_PER_MILE,
-               min_core_vhd: float = MIN_CORE_VHD,
-               min_realtime_share: float = MIN_REALTIME_SHARE) -> tuple[str, ...]:
+def core_fails(m: dict) -> tuple[str, ...]:
     """Which floors a run's metrics (:func:`_run_metrics`) miss."""
     fails = []
-    if m["effective_miles"] < min_effective_miles:
+    if m["effective_miles"] < MIN_EFFECTIVE_CORE_MILES:
         fails.append(FAIL_EFFECTIVE_MILES)
-    if m["vhd_per_mile"] < min_core_vhd_per_mile:
+    if m["vhd_per_mile"] < MIN_CORE_VHD_PER_MILE:
         fails.append(FAIL_VHD_PER_MILE)
-    if m["vhd"] < min_core_vhd:
+    if m["vhd"] < MIN_CORE_VHD:
         fails.append(FAIL_VHD)
-    if not (m["realtime_share"] >= min_realtime_share):     # NaN fails too
+    if not (m["realtime_share"] >= MIN_REALTIME_SHARE):     # NaN fails too
         fails.append(FAIL_REALTIME)
     return tuple(fails)
 
 
 def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame, *,
-               exclude: set[int] | frozenset[int] = frozenset(),
-               core_seed_ratio: float = CORE_SEED_RATIO,
-               core_gap_segments: int = CORE_GAP_SEGMENTS,
-               core_gap_miles: float = CORE_GAP_MILES,
-               min_effective_miles: float = MIN_EFFECTIVE_CORE_MILES,
-               min_core_vhd_per_mile: float = MIN_CORE_VHD_PER_MILE,
-               min_core_vhd: float = MIN_CORE_VHD,
-               min_realtime_share: float = MIN_REALTIME_SHARE) -> list[CoreCandidate]:
+               exclude: set[int] | frozenset[int] = frozenset()) -> list[CoreCandidate]:
     """Every congested run on a chain, scored — qualifying or not.
 
     A run starts and ends on a segment at :data:`CORE_SEED_RATIO` or worse and bridges
@@ -2589,14 +2546,14 @@ def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame, *,
     ratio = seg["ratio"].reindex(ids)
     miles = seg["miles"].reindex(ids).fillna(0.0)
     seeds = [i for i, r in enumerate(ratio)
-             if pd.notna(r) and r >= core_seed_ratio and ids[i] not in exclude]
+             if pd.notna(r) and r >= CORE_SEED_RATIO and ids[i] not in exclude]
     runs: list[tuple[int, int]] = []
     for i in seeds:
         if runs:
             lo, hi = runs[-1]
             gap = range(hi, i)
-            if (len(gap) <= core_gap_segments
-                    and float(miles.iloc[list(gap)].sum()) <= core_gap_miles
+            if (len(gap) <= CORE_GAP_SEGMENTS
+                    and float(miles.iloc[list(gap)].sum()) <= CORE_GAP_MILES
                     and not any(ids[g] in exclude for g in gap)):
                 runs[-1] = (lo, i + 1)
                 continue
@@ -2613,11 +2570,7 @@ def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame, *,
             realtime_share=m["realtime_share"], peak_ratio=m["peak_ratio"],
             ref_tti=m["ref_tti"], unknown_miles=m["unknown_miles"],
             n_aadt_missing=m["n_aadt_missing"],
-            baseline_sources=m["baseline_sources"],
-            fails=core_fails(m, min_effective_miles=min_effective_miles,
-                             min_core_vhd_per_mile=min_core_vhd_per_mile,
-                             min_core_vhd=min_core_vhd,
-                             min_realtime_share=min_realtime_share),
+            baseline_sources=m["baseline_sources"], fails=core_fails(m),
             vhd_index=m["vhd_index"],
         ))
     out.sort(key=lambda c: (-c.vhd, -c.effective_miles))
@@ -2710,12 +2663,6 @@ def grow_congested_extent(
     seg: pd.DataFrame,
     core: CoreCandidate,
     split_points: Sequence[SplitPoint] = (),
-    *,
-    core_gap_segments: int = CORE_GAP_SEGMENTS,
-    core_gap_miles: float = CORE_GAP_MILES,
-    spill_retention: float = SPILL_RETENTION,
-    ratio_onset: float = RATIO_ONSET,
-    urban_share_inside: float = URBAN_SHARE_INSIDE,
 ) -> tuple[int, int, SplitPoint | None, SplitPoint | None]:
     """Tier 2: grow outward from a core while the congestion continues.
 
@@ -2765,8 +2712,8 @@ def grow_congested_extent(
                 return (lo if step < 0 else hi), split
             r = ratio.iloc[i]
             outside = (core_urban and pd.notna(urban.iloc[i])
-                       and urban.iloc[i] < urban_share_inside)
-            congested = pd.notna(r) and r >= ratio_onset
+                       and urban.iloc[i] < URBAN_SHARE_INSIDE)
+            congested = pd.notna(r) and r >= RATIO_ONSET
             if not congested:
                 if outside:
                     return (lo if step < 0 else hi), _stop(
@@ -2774,21 +2721,21 @@ def grow_congested_extent(
                         f"leaving {area or 'the urban area'}; ratio "
                         f"{'unknown' if pd.isna(r) else f'{r:.2f}'} beyond it")
                 pending.append(i)
-                if len(pending) > core_gap_segments or \
-                        float(miles.iloc[pending].sum()) > core_gap_miles:
+                if len(pending) > CORE_GAP_SEGMENTS or \
+                        float(miles.iloc[pending].sum()) > CORE_GAP_MILES:
                     return (lo if step < 0 else hi), _stop(
                         SplitKind.CONGESTION_END, ids, pending[0],
-                        f"peak/baseline under {ratio_onset} for "
+                        f"peak/baseline under {RATIO_ONSET} for "
                         f"{float(miles.iloc[pending].sum()):.2f} mi")
                 i += step
                 continue
             new_lo, new_hi = (i, hi) if step < 0 else (lo, i + 1)
             m = _run_metrics(seg, ids[new_lo:new_hi])
-            if m["vhd_per_mile"] < spill_retention * core_rate:
+            if m["vhd_per_mile"] < SPILL_RETENTION * core_rate:
                 return (lo if step < 0 else hi), _stop(
                     SplitKind.DILUTION, ids, i,
                     f"extending would fall to {m['vhd_per_mile']:.0f} VHD/mi, under "
-                    f"{spill_retention:.0%} of the core's {core_rate:.0f}")
+                    f"{SPILL_RETENTION:.0%} of the core's {core_rate:.0f}")
             lo, hi = new_lo, new_hi
             pending = []
             i += step
@@ -2895,16 +2842,8 @@ def _chain_end(chain: MainlineChain, split: SplitPoint | None, at: str) -> Split
 
 
 def _tiers_for(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
-               splits: Sequence[SplitPoint], net_idx, *,
-               core_gap_segments: int = CORE_GAP_SEGMENTS,
-               core_gap_miles: float = CORE_GAP_MILES,
-               spill_retention: float = SPILL_RETENTION,
-               pad_miles: float = CONTEXT_PAD_MILES) -> dict[ExtentTier, ExtentAlternative]:
-    tiers = _tiers_within(chain, core, seg, splits, net_idx,
-                          core_gap_segments=core_gap_segments,
-                          core_gap_miles=core_gap_miles,
-                          spill_retention=spill_retention,
-                          pad_miles=pad_miles)
+               splits: Sequence[SplitPoint], net_idx) -> dict[ExtentTier, ExtentAlternative]:
+    tiers = _tiers_within(chain, core, seg, splits, net_idx)
     if not chain.stops:
         return tiers
     return {t: dataclasses.replace(alt, bounding_splits=(
@@ -2914,11 +2853,7 @@ def _tiers_for(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
 
 
 def _tiers_within(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
-                  splits: Sequence[SplitPoint], net_idx, *,
-                  core_gap_segments: int = CORE_GAP_SEGMENTS,
-                  core_gap_miles: float = CORE_GAP_MILES,
-                  spill_retention: float = SPILL_RETENTION,
-                  pad_miles: float = CONTEXT_PAD_MILES) -> dict[ExtentTier, ExtentAlternative]:
+                  splits: Sequence[SplitPoint], net_idx) -> dict[ExtentTier, ExtentAlternative]:
     ids = list(chain.segment_ids)
     core_alt = _alternative(
         ExtentTier.CORE, ids, net_idx, core.start, core.stop,
@@ -2932,11 +2867,7 @@ def _tiers_within(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
               f"no segment at peak/baseline >= {CORE_SEED_RATIO} downstream")
         if core.stop < len(ids) else None,
     )
-    lo, hi, up, down = grow_congested_extent(
-        ids, seg, core, splits,
-        core_gap_segments=core_gap_segments,
-        core_gap_miles=core_gap_miles,
-        spill_retention=spill_retention)
+    lo, hi, up, down = grow_congested_extent(ids, seg, core, splits)
     m = _run_metrics(seg, ids[lo:hi])
     commuter = _alternative(
         ExtentTier.COMMUTER, ids, net_idx, lo, hi,
@@ -2946,8 +2877,7 @@ def _tiers_within(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
          if core.vhd_per_mile > 0 else f"Congested extent ({m['miles']:.2f} mi)"),
         up, down)
     c_lo, c_hi, c_up, c_down = context_extent(
-        ids, seg, lo, hi, splits, urban=_core_is_urban(seg, core.segment_ids),
-        pad_miles=pad_miles)
+        ids, seg, lo, hi, splits, urban=_core_is_urban(seg, core.segment_ids))
     cm = _run_metrics(seg, ids[c_lo:c_hi])
     context = _alternative(
         ExtentTier.REGIONAL, ids, net_idx, c_lo, c_hi,
@@ -3113,22 +3043,9 @@ def generate_catalogue(
     bins: pd.DataFrame | None = None,
     curves=None,
     profiles=None,
-    curve_vhd: pd.DataFrame | None = None,
     hard_stops: Mapping[tuple[int, int], str] | None = None,
     couplet_legs: Mapping[str, tuple[Sequence[int], Sequence[int]]] | None = None,
-    join_tol_m: float = ROUTE_JOIN_TOL_M,
-    max_turn_deg: float = ROUTE_JOIN_MAX_TURN_DEG,
-    stub_miles: float = ROUTE_STUB_MILES,
-    bridge_max_miles: float = ROUTE_BRIDGE_MAX_MILES,
-    mp_tol: float = ROUTE_JOIN_MP_TOL,
-    core_seed_ratio: float = CORE_SEED_RATIO,
-    core_gap_segments: int = CORE_GAP_SEGMENTS,
-    core_gap_miles: float = CORE_GAP_MILES,
-    min_effective_miles: float = MIN_EFFECTIVE_CORE_MILES,
-    min_core_vhd_per_mile: float = MIN_CORE_VHD_PER_MILE,
-    min_core_vhd: float = MIN_CORE_VHD,
-    min_realtime_share: float = MIN_REALTIME_SHARE,
-    spill_retention: float = SPILL_RETENTION,
+    congestion: pd.DataFrame | None = None,
 ) -> dict:
     """Build a whole corridor catalogue from a district network (Items 46, 50).
 
@@ -3177,6 +3094,9 @@ def generate_catalogue(
             :data:`PAIR_MAX_MEAN_SEP_M`, which stays as it is for everything else.
             A facility whose core lies on a couplet leg lists it in ``_couplets``,
             so the couplet's own reporting corridor is not ranked a second time.
+        congestion: the :func:`segment_congestion` frame, when the caller already has
+            it (Item 66's builder keeps each type's for the class profile); it must
+            have been built from ``baseline`` / ``peak_windows`` / ``bins``.
 
     Returns:
         ``{"_note", "_generated", "corridors", "reporting_corridors"}``, ready for
@@ -3188,8 +3108,9 @@ def generate_catalogue(
     except Exception:
         metric_crs = "EPSG:3857"
 
-    seg = segment_congestion(baseline, network, peak_windows=peak_windows, bins=bins,
-                             curves=curves, profiles=profiles, curve_vhd=curve_vhd)
+    seg = congestion if congestion is not None else segment_congestion(
+        baseline, network, peak_windows=peak_windows, bins=bins, curves=curves,
+        profiles=profiles)
     if bins is not None:
         from . import aadt as _aadt
         from . import screen as _screen
@@ -3197,25 +3118,14 @@ def generate_catalogue(
             bins, seg["baseline_tt"], net_idx, curves,
             _screen.bin_weights(bins, profiles, windows=list(peak_windows)),
             by_month=True)
-    chains = enumerate_mainline_chains(
-        network, min_miles=min_chain_miles, hard_stops=hard_stops,
-        join_tol_m=join_tol_m, max_turn_deg=max_turn_deg,
-        stub_miles=stub_miles, bridge_max_miles=bridge_max_miles,
-        mp_tol=mp_tol)
+    chains = enumerate_mainline_chains(network, min_miles=min_chain_miles,
+                                       hard_stops=hard_stops)
     route_sets = segment_route_sets(network)
     pairs = pair_chains(chains, network, metric_crs=metric_crs)
     junctions = incoming_route_map(network)
 
     def _analyse(chain: MainlineChain) -> DirectionAnalysis:
-        cands = find_cores(
-            chain.segment_ids, seg,
-            core_seed_ratio=core_seed_ratio,
-            core_gap_segments=core_gap_segments,
-            core_gap_miles=core_gap_miles,
-            min_effective_miles=min_effective_miles,
-            min_core_vhd_per_mile=min_core_vhd_per_mile,
-            min_core_vhd=min_core_vhd,
-            min_realtime_share=min_realtime_share)
+        cands = find_cores(chain.segment_ids, seg)
         if observed is not None:
             cands = [c if any(s in observed for s in c.segment_ids)
                      else dataclasses.replace(c, fails=c.fails + (FAIL_UNOBSERVED,))
@@ -3334,15 +3244,7 @@ def generate_catalogue(
         ids = d.chain.segment_ids
         held = {ids[i] for lo, hi in claimed[id(d)] + mirrored[id(d)] for i in range(lo, hi)}
         taken = set(core_owner) | set(t2_owner) | held
-        pieces = [c for c in find_cores(
-            ids, seg, exclude=taken,
-            core_seed_ratio=core_seed_ratio,
-            core_gap_segments=core_gap_segments,
-            core_gap_miles=core_gap_miles,
-            min_effective_miles=min_effective_miles,
-            min_core_vhd_per_mile=min_core_vhd_per_mile,
-            min_core_vhd=min_core_vhd,
-            min_realtime_share=min_realtime_share)
+        pieces = [c for c in find_cores(ids, seg, exclude=taken)
                   if c.qualifies and c.start < core.stop and c.stop > core.start]
         if observed is not None:
             pieces = [c for c in pieces if any(s in observed for s in c.segment_ids)]
@@ -3372,11 +3274,7 @@ def generate_catalogue(
         splits = detect_split_points(list(d.chain.segment_ids), network,
                                      incoming_routes=junctions)
         lead = DirectionAnalysis(d.chain, d.candidates, core)
-        lead.tiers = _tiers_for(
-            d.chain, core, seg, splits, net_idx,
-            core_gap_segments=core_gap_segments,
-            core_gap_miles=core_gap_miles,
-            spill_retention=spill_retention)
+        lead.tiers = _tiers_for(d.chain, core, seg, splits, net_idx)
         t2 = lead.tiers[ExtentTier.COMMUTER]
         pos = {s: i for i, s in enumerate(d.chain.segment_ids)}
         claimed[id(d)].append((pos[t2.segment_ids[0]], pos[t2.segment_ids[-1]] + 1))
@@ -3432,10 +3330,7 @@ def generate_catalogue(
             companion.tiers = _tiers_for(
                 companion.chain, companion.core, seg,
                 detect_split_points(list(companion.chain.segment_ids), network,
-                                    incoming_routes=junctions), net_idx,
-                core_gap_segments=core_gap_segments,
-                core_gap_miles=core_gap_miles,
-                spill_retention=spill_retention)
+                                    incoming_routes=junctions), net_idx)
             c2 = companion.tiers[ExtentTier.COMMUTER]
             opos = {s: i for i, s in enumerate(companion.chain.segment_ids)}
             claimed[id(other)].append((opos[c2.segment_ids[0]], opos[c2.segment_ids[-1]] + 1))
@@ -3629,25 +3524,18 @@ def generate_catalogue(
                 "baseline": f"night mean with >= {BASELINE_MIN_OBS} gated obs, else "
                             f"{BASELINE_FALLBACK_COL}",
                 "ratio_onset": RATIO_ONSET, "ratio_full": RATIO_FULL,
-                "core_seed_ratio": core_seed_ratio,
-                "core_gap": [core_gap_segments, core_gap_miles],
+                "core_seed_ratio": CORE_SEED_RATIO,
+                "core_gap": [CORE_GAP_SEGMENTS, CORE_GAP_MILES],
                 "segment_miles_cap": SEGMENT_MILES_CAP,
-                "min_effective_core_miles": min_effective_miles,
-                "min_core_vhd_per_mile": min_core_vhd_per_mile,
-                "min_core_vhd": min_core_vhd,
-                "min_realtime_share": min_realtime_share,
-                "spill_retention": spill_retention,
+                "min_effective_core_miles": MIN_EFFECTIVE_CORE_MILES,
+                "min_core_vhd_per_mile": MIN_CORE_VHD_PER_MILE,
+                "min_core_vhd": MIN_CORE_VHD,
+                "min_realtime_share": MIN_REALTIME_SHARE,
+                "spill_retention": SPILL_RETENTION,
                 "episodic": {"top_fraction_of_months": round(EPISODIC_TOP_FRACTION, 3),
                              "share": EPISODIC_SHARE, "seasonal_share": SEASONAL_SHARE,
                              "min_months": EPISODIC_MIN_MONTHS},
                 "context_pad_miles": CONTEXT_PAD_MILES,
-                "route_stitching": {
-                    "join_tol_m": join_tol_m,
-                    "max_turn_deg": max_turn_deg,
-                    "stub_miles": stub_miles,
-                    "bridge_max_miles": bridge_max_miles,
-                    "mp_tol": mp_tol,
-                },
             },
         },
         "corridors": entries,
@@ -3719,3 +3607,395 @@ def route_junction_repairs(network: gpd.GeoDataFrame) -> pd.DataFrame:
         out["new_next"] = out["new_next"].astype("int64")
         out["old_next"] = out["old_next"].astype("Int64")
     return out
+
+
+# ─── Corridor types: one catalogue, every corridor tagged (ROADMAP Item 66) ──
+#
+# The owner's direction (2026-09-29): one analysis, not a commute catalogue and a
+# recreational one beside it. Each **type** of corridor is discovered on its own days
+# and hours — commute on the weekday peaks, recreational on summer weekends — but on
+# the **same chains and the same floors** (review F6: a type that relaxed either would
+# rank cores admitted under a different rule, or built on a different network). The
+# per-type catalogues are then merged: a corridor two types find is one corridor
+# carrying both tags, so every scenario ranks the same set.
+
+
+@dataclass(frozen=True)
+class CorridorType:
+    """One kind of corridor and the windows it is discovered on.
+
+    A segment is judged at its worst of ``windows`` (:func:`segment_congestion`), so a
+    type with several windows finds a core congested in **any** of them — the union of
+    its days. ``windows`` are :class:`screen.PeakWindow` objects, seasons included.
+    """
+
+    name: str
+    label: str
+    windows: tuple
+    description: str = ""
+
+    @property
+    def window_names(self) -> tuple[str, ...]:
+        return tuple(w.name for w in self.windows)
+
+    def window_map(self) -> dict:
+        return {w.name: w for w in self.windows}
+
+    def baseline_windows(self) -> dict:
+        """What the type's baseline screen must carry (:func:`segment_congestion`): its
+        own windows, plus the overnight baseline and the all-weekday fallback."""
+        out = self.window_map()
+        for name in ("night", "weekday"):
+            out.setdefault(name, _screen.BASELINE_WINDOWS[name])
+        return out
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "label": self.label, "description": self.description,
+                "windows": {w.name: w.to_dict() for w in self.windows}}
+
+
+_SUMMER = _screen.SEASONS["summer"]
+
+CORRIDOR_TYPES: dict[str, CorridorType] = {
+    "commute": CorridorType(
+        "commute", "Commute",
+        (_screen.PEAK_WINDOWS["am"], _screen.PEAK_WINDOWS["pm"]),
+        "Weekday AM and PM peaks, all year: the Item 50 catalogue."),
+    "recreational": CorridorType(
+        "recreational", "Recreational",
+        tuple(_screen.WEEKEND_WINDOWS[d].with_season(_SUMMER, name=f"{d}_summer")
+              for d in ("fri", "sat", "sun")),
+        "Friday, Saturday and Sunday 9 AM - 9 PM in summer (screen.SEASONS); a segment "
+        "is judged at its worst day, so the type is the union of the recreation days."),
+    "retail": CorridorType(
+        "retail", "Retail / all-day",
+        (_screen.PEAK_WINDOWS["midday"], _screen.SAT_MIDDAY_WINDOW),
+        "Weekday midday (10 AM - 2 PM) and Saturday daytime (11 AM - 5 PM), all year: "
+        "shopping corridors busy when commute corridors are not. With commute it is an "
+        "urban hybrid."),
+}
+"""The type presets. Pass your own :class:`CorridorType` s for anything else."""
+
+DEFAULT_CORRIDOR_TYPES = ("commute", "recreational", "retail")
+
+CORRIDOR_CLASSES: tuple[tuple[frozenset, str], ...] = (
+    (frozenset({"commute", "retail"}), "urban_hybrid"),
+)
+"""Type combinations that read as one class. Eagle Rd and US-95 through Coeur d'Alene
+queue at the commute peaks **and** at midday and on Saturdays: found by both
+builders, they are an ``urban_hybrid``."""
+
+CLASS_SECONDARY_SHARE = 0.6
+"""A type that found a corridor joins its **class** only if the corridor's core is at
+least this congested in that type's windows, relative to its strongest type: the
+peak/baseline excess (``peak_ratio - 1``) at least this share of the primary's.
+
+``_types`` records every type whose builder found the corridor; ``_class`` says what
+the corridor *is*. They differ because a busy urban arterial also queues on a summer
+Saturday: on the retired 2026-09-29 catalogues, 22 of D3's 26 commute facilities had a
+summer-weekend core too, so "found by" alone would call nearly every urban road
+recreational. The intent: a freeway whose summer-weekend excess is a fraction of its
+weekday one (I-84 in the Treasure Valley) stays ``commute``, and an arterial whose
+midday/Saturday excess is close to its peak one (Eagle Rd) is ``urban_hybrid``. The
+0.6 is a starting value, to be checked on the real catalogues (ROADMAP Item 68)."""
+
+TYPE_MERGE_SHARE = 0.5
+"""A later type's facility merges into an earlier one when at least this share of its
+core's miles lies in the earlier facility's core or Tier 2 — the same majority rule
+:data:`SHARED_CORE_MAX` applies between facilities of one type."""
+
+
+def resolve_corridor_types(types) -> list[CorridorType]:
+    """Corridor types from names (``"commute,recreational"`` or a sequence), objects,
+    or a mix, in the order given — which is the merge priority."""
+    if isinstance(types, str):
+        types = [t for t in (x.strip() for x in types.split(",")) if t]
+    out = []
+    for t in types:
+        if isinstance(t, CorridorType):
+            out.append(t)
+        elif t in CORRIDOR_TYPES:
+            out.append(CORRIDOR_TYPES[t])
+        else:
+            raise KeyError(f"Unknown corridor type {t!r}; presets: {sorted(CORRIDOR_TYPES)}.")
+    names = [t.name for t in out]
+    if len(set(names)) != len(names):
+        raise ValueError(f"Duplicate corridor type in {names}.")
+    if not out:
+        raise ValueError("No corridor types given.")
+    return out
+
+
+def corridor_class(types: Sequence[str]) -> str:
+    """The class a set of types reads as: :data:`CORRIDOR_CLASSES` first (commute +
+    retail = ``urban_hybrid``), the rest joined with ``+`` in the order given."""
+    left = list(dict.fromkeys(types))
+    parts = []
+    for combo, name in CORRIDOR_CLASSES:
+        if combo <= set(left):
+            parts.append(name)
+            left = [t for t in left if t not in combo]
+    return "+".join(parts + left)
+
+
+def type_profile(core_ids: Sequence[int],
+                 congestion: Mapping[str, pd.DataFrame]) -> dict[str, dict]:
+    """A corridor core's congestion under **every** type's windows: ``{type:
+    {peak_ratio, vhd_per_mile, delay_per_mile, vhd}}`` from each type's
+    :func:`segment_congestion` frame, over the core's segments (both directions)."""
+    out = {}
+    for t, seg in congestion.items():
+        m = _run_metrics(seg, list(core_ids))
+        out[t] = {k: (None if pd.isna(m[k]) else round(float(m[k]), 3))
+                  for k in ("peak_ratio", "vhd_per_mile", "delay_per_mile", "vhd")}
+    return out
+
+
+def profile_class(found: Sequence[str], profile: Mapping[str, Mapping] | None,
+                  *, share: float = CLASS_SECONDARY_SHARE) -> tuple[str, str]:
+    """``(primary type, class)`` for a corridor ``found`` by these types (priority
+    order), given its :func:`type_profile`.
+
+    The primary is the found type with the largest peak/baseline excess. The others
+    join the class when their excess is at least ``share`` of the primary's
+    (:data:`CLASS_SECONDARY_SHARE`). With no profile (or no finite ratio) every
+    finding type is in the class and the first is primary."""
+    found = list(dict.fromkeys(found))
+    excess = {}
+    for t in found:
+        r = (profile or {}).get(t, {}).get("peak_ratio")
+        if r is not None and np.isfinite(r):
+            excess[t] = max(float(r) - 1.0, 0.0)
+    if not excess:
+        return found[0], corridor_class(found)
+    primary = max(excess, key=lambda t: (excess[t], -found.index(t)))
+    top = excess[primary]
+    members = [t for t in found
+               if t == primary or (t in excess and top > 0 and excess[t] >= share * top)]
+    return primary, corridor_class(members)
+
+
+_ID_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*[a-z0-9]")
+
+
+def _facilities(cat: Mapping) -> list[dict]:
+    """A generated catalogue's facilities, in catalogue order: their entries, groups,
+    and the core and reach (core ∪ Tier 2) segment sets over both directions."""
+    order: list[str] = []
+    facs: dict[str, dict] = {}
+    for g in cat.get("reporting_corridors", []):
+        fid = g.get("_facility")
+        if not fid:
+            continue
+        if fid not in facs:
+            order.append(fid)
+            facs[fid] = {"id": fid, "entries": [], "groups": [], "core": set(),
+                         "reach": set(), "meta": g}
+        facs[fid]["groups"].append(g)
+    for e in cat.get("corridors", []):
+        fid = e.get("_facility")
+        if fid not in facs:
+            continue
+        f = facs[fid]
+        f["entries"].append(e)
+        ids = {int(s) for s in e.get("_segment_ids", [])}
+        if e.get("_tier") == ExtentTier.CORE.value:
+            f["core"] |= ids
+            f["reach"] |= ids
+        elif e.get("_tier") == ExtentTier.COMMUTER.value:
+            f["reach"] |= ids
+    for f in facs.values():
+        core_groups = [g for g in f["groups"] if g.get("_tier") == ExtentTier.CORE.value]
+        if core_groups:
+            f["meta"] = core_groups[0]
+    return [facs[k] for k in order]
+
+
+def _renamed(text, id_map: Mapping[str, str]):
+    """``text`` with every catalogue id token in ``id_map`` replaced (flags and notes
+    name other facilities)."""
+    if not isinstance(text, str) or not id_map:
+        return text
+    return _ID_TOKEN.sub(lambda m: id_map.get(m.group(0), m.group(0)), text)
+
+
+def merge_typed_catalogues(
+    catalogues: Mapping[str, Mapping],
+    *,
+    miles: Mapping[int, float] | None = None,
+    types: Sequence[CorridorType] | None = None,
+    merge_share: float = TYPE_MERGE_SHARE,
+    congestion: Mapping[str, pd.DataFrame] | None = None,
+    class_share: float = CLASS_SECONDARY_SHARE,
+    note: str = "",
+) -> dict:
+    """One catalogue from per-type :func:`generate_catalogue` runs (Item 66).
+
+    ``catalogues`` maps a type name to that type's catalogue, **in priority order**
+    (the first type's extents win). Each later facility is compared by miles of its
+    ranked core against every facility already kept from an **earlier** type:
+
+    - at least ``merge_share`` of it inside one facility's core or Tier 2: it is the
+      same corridor. It **merges**: the earlier extents stand, the type is added to
+      ``_types``, and its core metrics go under ``_type_cores[type]``;
+    - otherwise it is **added** as its own facility, flagged ``shares X mi with …``
+      for any core pavement it has in common with one (the Item 51 flag: its delay is
+      in both rows).
+
+    Ids are kept. A later facility whose id is already taken (same road and place,
+    a different extent) takes a ``-<type>`` suffix on its facility, group and entry
+    ids, and flags and notes naming a renamed or merged facility are rewritten.
+
+    Every entry and reporting group carries ``_types`` (the types that found the
+    corridor, in priority order), ``_class`` and ``_primary_type``
+    (:func:`profile_class`) and, on the groups, ``_type_cores`` (``{type: [core
+    metrics, ...]}``) and, given ``congestion``, ``_profile`` (:func:`type_profile`
+    under every type's windows).
+
+    Args:
+        catalogues: ``{type name: catalogue dict}``; untiered groups (a couplet block)
+            are carried from each catalogue only if not already present by id.
+        miles: segment miles for the overlap shares; each segment counts 1 without.
+        types: the :class:`CorridorType` objects, recorded in ``_generated.types``.
+        congestion: ``{type: segment_congestion frame}``, the frames each type's
+            catalogue was cored on. Without it the class is every finding type.
+        class_share: :data:`CLASS_SECONDARY_SHARE`.
+    """
+    names = list(catalogues)
+    if not names:
+        raise ValueError("No catalogues to merge.")
+    by_name = {t.name: t for t in (types or [])}
+
+    def _mi(ids) -> float:
+        return float(sum(miles.get(s, 0.0) for s in ids)) if miles is not None \
+            else float(len(ids))
+
+    kept: list[dict] = []
+    used_ids: set[str] = set()
+    counts: dict[str, dict] = {}
+    id_maps: dict[str, dict[str, str]] = {}
+    for tname in names:
+        cat = catalogues[tname]
+        n_merged = n_added = 0
+        id_map: dict[str, str] = {}
+        for f in _facilities(cat):
+            core_mi = _mi(f["core"])
+            best, best_ov = None, 0.0
+            for k in kept:
+                if k["origin"] == tname:
+                    continue
+                ov = _mi(f["core"] & (k["core"] | k["reach"]))
+                if ov > best_ov:
+                    best, best_ov = k, ov
+            meta = f["meta"].get("_core")
+            if best is not None and core_mi > 0 and best_ov >= merge_share * core_mi:
+                if tname not in best["types"]:
+                    best["types"].append(tname)
+                best["type_cores"].setdefault(tname, []).append(
+                    {"facility": f["id"], "share_in": round(best_ov / core_mi, 3),
+                     **(meta or {})})
+                id_map[f["id"]] = best["id"]
+                n_merged += 1
+                continue
+            new_id = f["id"]
+            if new_id in used_ids:
+                new_id = f"{f['id']}-{tname}"
+                n = 2
+                while new_id in used_ids:
+                    new_id = f"{f['id']}-{tname}-{n}"
+                    n += 1
+            id_map[f["id"]] = new_id
+            shares = []
+            for k in kept:
+                if k["origin"] == tname:
+                    continue
+                ov = _mi(f["core"] & k["core"])
+                if ov > 0:
+                    shares.append(f"shares {ov:.2f} mi with {k['id']} ({'+'.join(k['types'])})")
+            kept.append({"id": new_id, "old": f["id"], "origin": tname, "types": [tname],
+                         "type_cores": {tname: [{"facility": f["id"], **(meta or {})}]},
+                         "entries": f["entries"], "groups": f["groups"],
+                         "core": f["core"], "reach": f["reach"], "shares": shares})
+            used_ids.add(new_id)
+            n_added += 1
+        id_maps[tname] = id_map
+        counts[tname] = {"n_facilities": n_merged + n_added, "n_merged": n_merged,
+                         "n_standalone": n_added}
+
+    entries: list[dict] = []
+    groups: list[dict] = []
+    for k in kept:
+        id_map = id_maps[k["origin"]]
+        old, new = k["old"], k["id"]
+
+        def _swap(text: str, old: str = old, new: str = new) -> str:
+            return new + text[len(old):] if old != new and text.startswith(old) else text
+
+        types_now = list(k["types"])
+        profile = type_profile(sorted(k["core"]), congestion) if congestion else None
+        primary, cls = profile_class(types_now, profile, share=class_share)
+        for g in k["groups"]:
+            g = dict(g)
+            g["id"] = _swap(g["id"])
+            g["_facility"] = new
+            g["_types"] = types_now
+            g["_class"] = cls
+            g["_primary_type"] = primary
+            g["_type_cores"] = k["type_cores"]
+            if profile is not None:
+                g["_profile"] = profile
+            flags = [_renamed(x, id_map) for x in g.get("_flags", [])]
+            if k["shares"] and g.get("_tier") == ExtentTier.CORE.value:
+                flags += k["shares"]
+            if flags or "_flags" in g:
+                g["_flags"] = flags
+            if "_companion" in g:
+                g["_companion"] = _renamed(g["_companion"], id_map)
+            groups.append(g)
+        for e in k["entries"]:
+            e = dict(e)
+            e["id"] = _swap(e["id"])
+            e["corridor"] = _swap(e["corridor"])
+            e["_facility"] = new
+            e["_types"] = types_now
+            e["_class"] = cls
+            e["_primary_type"] = primary
+            entries.append(e)
+
+    # Groups without a facility (a couplet block built into a type catalogue): once.
+    seen = {g["id"] for g in groups}
+    for tname in names:
+        cat = catalogues[tname]
+        loose = [g for g in cat.get("reporting_corridors", [])
+                 if not g.get("_facility") and g["id"] not in seen]
+        loose_ids = {g["id"] for g in loose}
+        groups.extend(loose)
+        entries.extend(e for e in cat.get("corridors", []) if e.get("corridor") in loose_ids)
+        seen |= loose_ids
+
+    first = catalogues[names[0]]
+    generated = {k: v for k, v in first.get("_generated", {}).items()
+                 if k not in ("peak_windows", "n_facilities")}
+    generated["peak_windows"] = {t: list(catalogues[t].get("_generated", {})
+                                         .get("peak_windows", [])) for t in names}
+    generated["n_facilities"] = len(kept)
+    generated["type_order"] = names
+    generated["types"] = {
+        t: {**(by_name[t].to_dict() if t in by_name else {"name": t}),
+            **counts[t],
+            "vhd_basis": catalogues[t].get("_generated", {}).get("vhd_basis")}
+        for t in names}
+    generated["type_merge_share"] = merge_share
+    generated["class_secondary_share"] = class_share if congestion else None
+    generated["classes"] = {name: sorted(combo) for combo, name in CORRIDOR_CLASSES}
+    return {
+        "_note": note or (
+            "Generated by inrix_tools.extents.generate_catalogue per corridor type and "
+            "merged by merge_typed_catalogues (ROADMAP Items 46, 50, 66): each type's "
+            "cores are found on its own windows, on the same chains and floors; a "
+            "corridor several types find is one corridor carrying every type in "
+            "_types. Do not hand-edit; re-run the builder."),
+        "_generated": generated,
+        "corridors": entries,
+        "reporting_corridors": groups,
+    }

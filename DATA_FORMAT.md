@@ -2667,6 +2667,59 @@ A permanent step on one day, affecting daytime and weekends but not nights, look
 like a daytime work zone rather than recurring commute congestion. It stays in the
 ranking, carrying the `episodic` flag.
 
+## Corridor types: one catalogue, every corridor tagged (`extents.py`, Item 66)
+
+Each district has **one** catalogue. Every corridor in it is tagged with the
+**types** whose builder found it:
+
+| type | windows it is cored on |
+|---|---|
+| `commute` | `am` + `pm` (weekday), all year — the Item 50 catalogue |
+| `recreational` | `fri`/`sat`/`sun` 09:00–21:00, **summer** (`SEASONS["summer"]` = 05-22..09-07) |
+| `retail` | `midday` (weekday 10:00–14:00) + `sat_midday` (Sat 11:00–17:00), all year |
+
+- **One chaining and one set of floors.** Only the days and hours differ between
+  types. A segment is judged at its worst window, so a multi-window type is the
+  **union** of its days: a summer-weekend core is congested on Friday, Saturday
+  *or* Sunday.
+- **Each type has its own baseline and bin screens.** The baseline screen carries
+  the type's windows + `night` + `weekday` (the p15 fallback). The bin screen
+  carries the type's windows only, for the curve VHD against the segment's own
+  baseline, which is the Item 50 basis for every type. The builder caches them
+  beside the commute ones as `segment_baseline_screen_<type>.parquet` and
+  `segment_peak_bins_<type>.parquet`. The commute type keeps the old names.
+- **The merge (`merge_typed_catalogues`).** Types are taken in the order given; the
+  default order is commute, recreational, retail. A later type's facility whose
+  ranked core lies **≥ 50% by miles** inside an earlier facility's core or Tier 2
+  is the same corridor. The earlier extents stand, and the type is added.
+  Otherwise the facility stands on its own, flagged `shares X mi with <id>
+  (<types>)` where its core overlaps an earlier core. A taken id gets a `-<type>`
+  suffix, and `_flags` / `_companion` text naming a renamed or merged facility is
+  rewritten.
+- **Fields.** Every entry and reporting group carries `_types` (the finding types,
+  in priority order), `_class` and `_primary_type`. Groups also carry `_type_cores`
+  (`{type: [core metrics]}`, one per finding facility, with `share_in` for a merged
+  one) and `_profile`. `_profile` is the core's `peak_ratio`, `vhd_per_mile`,
+  `delay_per_mile` and `vhd` under **every** type's windows, whether or not that
+  type found it. `_generated` gains `types` (each type's windows plus
+  `n_facilities` / `n_merged` / `n_standalone`), `type_order`, `type_merge_share`,
+  `class_secondary_share` and `classes`. `peak_windows` becomes `{type:
+  [windows]}`.
+- **`_types` vs `_class`.** `_types` says which builders found the corridor.
+  `_class` says what it is: the found type with the largest peak/baseline excess
+  (`peak_ratio − 1`) is primary. Another found type joins the class only if its
+  excess is ≥ **0.6×** the primary's (`CLASS_SECONDARY_SHARE`). `commute` + `retail`
+  reads as **`urban_hybrid`** (`CORRIDOR_CLASSES`), and the rest join with `+`.
+  - This matters because busy urban arterials also queue on summer Saturdays. On
+    the retired separate rec catalogues, 22 of D3's 26 commute facilities had a
+    summer-weekend core too.
+  - The 0.6 and the summer bounds are starting values, to be checked on the real
+    catalogues (ROADMAP Item 68).
+- **The monthly flags** (`seasonal` / `episodic`) come from each facility's own
+  type. For a summer-only type they describe the distribution **within** the
+  season, over its 4–5 months. So a `seasonal` flag on a recreational-only facility
+  means "peaks in part of the summer", not "summer-heavy".
+
 ## Chains across route-numbering changes (`extents.py`, Item 51)
 
 Until Item 51 a chain was one `RoadNumber` walked along `NextXDSegI`. A road whose number

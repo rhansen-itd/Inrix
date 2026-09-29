@@ -110,7 +110,7 @@ class PeakWindow:
                                (f"{start // 100:02d}-{start % 100:02d}",
                                 f"{end // 100:02d}-{end % 100:02d}"))
 
-    def with_season(self, season, name: str | None = None) -> "PeakWindow":
+    def with_season(self, season, name: str | None = None) -> PeakWindow:
         """This window gated to ``season`` (``None`` lifts the gate), renamed."""
         return PeakWindow(name or self.name, self.window, self.days, self.peak, season)
 
