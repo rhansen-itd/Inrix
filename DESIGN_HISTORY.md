@@ -7669,3 +7669,52 @@ largest gains now come from station curves directly. A targeted change to
     sites; routes kept apart;
   - the flat daily-total day.
 - `test_itd_layers`: `station_mileposts` (own route, business loop, out of reach).
+
+---
+
+## Session 85 — Review of the recreational-corridor branch; Items 65–68 scoped (2026-09-29)
+
+A commit written outside the session process (`2f99514`, "Support recreational corridor
+screening, catalogue derivation, and multi-day comparison") added Fri/Sat/Sun windows,
+a relaxed catalogue builder, six `dN_rec_corridors.json`, and scenario-tagged outputs.
+It had no ROADMAP item, no DESIGN_HISTORY entry, and one test. The full review is
+[REVIEW_RECREATIONAL_2026-09-29.md](REVIEW_RECREATIONAL_2026-09-29.md). The headlines:
+
+- **The committed rec catalogues can't be regenerated** (F1). Their recorded
+  thresholds match neither the default nor the `--relaxed` path.
+- **`--relaxed` tightens two limits** (F2): turn 110° against the 120° default, bridge
+  1.5 mi against 2.0. **`--min-effective-miles` is never passed** (F3).
+- **The rec cores are gated on ref-speed delay** (F4), where every other catalogue
+  and every floor uses each segment's own night baseline. They also lose their
+  monthly profile and seasonal flag (F5).
+- **A latent pooling bug** (F7): the bin screen keys delay cells by month × day type
+  × bin, not by window. So `pm` + `fri` in one run gives Friday the Mon–Fri mean.
+  Pre-existing, but the branch's `--windows` makes it reachable.
+- The `segment_recurrence` day-gate fix is right, and kept (F8).
+
+**Owner direction (2026-09-29):** no separate files. One analysis, with corridors
+tagged by type: commute from Monday–Friday, recreational from summer weekends as the
+union of the recreation-heavy days, and optional further types (a hybrid urban
+corridor like Eagle Rd / US-95 CdA). The types and the ranking scenarios (weekday
+peak, each weekend day, combined weekend, 7-day) are arguments. The owner also
+offered either an end-to-end session with a PR, or a scoping session first. This
+session scoped the work as session-sized items (65–68) per CLAUDE.md, then ran
+65–67 in sequence on the same branch (Sessions 86–88). 68 needs the real exports,
+which are not in the cloud container.
+
+Decisions taken in scoping:
+
+1. **One chaining, one set of floors for every type** (review F6). A type differs
+   only in the days and hours it is discovered on. Relaxing the floors per type would
+   rank cores admitted under different rules against each other. Relaxing the
+   stitching would build the types on different networks.
+2. **A season is a window property, not a date range.** `PeakWindow.season` (recurring
+   month-day bounds) keeps "summer Saturday" and "all-year Saturday" distinct in every
+   column name, file tag and provenance record.
+3. **A corridor found by two types is one corridor**, carrying both tags. Earlier
+   types win the extent. The owner's type order decides, and the default puts
+   commute first.
+4. **The hybrid is a class, not a builder.** The builder types are commute,
+   recreational and retail (weekday midday + Saturday daytime). A corridor found by
+   both commute and retail is classed `urban_hybrid`. This answers the owner's Eagle
+   Rd / US-95 CdA example without a builder that must itself detect "both".

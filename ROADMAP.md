@@ -188,6 +188,16 @@ state-route junctions with distance reported; `screen.pair_directions` checks op
 carriageways; and `screen.emit_candidates` produces catalogue candidates with description
 omitted to mandate human review. **Item 44 is the next open item.**
 
+**Items 65–68 are a new batch** scoped 2026-09-29 (DESIGN_HISTORY Session 85) after a
+review of the recreational-corridor branch
+([REVIEW_RECREATIONAL_2026-09-29.md](REVIEW_RECREATIONAL_2026-09-29.md)). The owner
+wants **one** analysis: every corridor tagged by type (commute from Monday–Friday,
+recreational from summer weekends, and a retail type whose overlap with commute marks
+an urban hybrid), each type discovered on its own days but on the same chains and
+floors, then ranked together under selectable scenarios. **65** adds season-gated
+windows and named scenarios; **66** adds the typed catalogue; **67** adds the scenario
+rankings; **68** is the owner's real-data regeneration.
+
 ---
 
 ## Completed (build record in DESIGN_HISTORY.md)
@@ -3648,6 +3658,160 @@ Scope:
 *Suggested prompt (done):* "Do Item 63 of ROADMAP.md — pair couplet legs into one facility,
 archive the curated D3 catalogue and make the generated one primary, and adopt the
 regenerated stop-cut catalogues."
+
+---
+
+# Corridor-type batch — commute, recreational and other types in one ranked analysis (Items 65–68, scoped 2026-09-29)
+
+Owner, 2026-09-29, after the recreational-corridor branch (commit `2f99514`,
+reviewed in [REVIEW_RECREATIONAL_2026-09-29.md](REVIEW_RECREATIONAL_2026-09-29.md),
+DESIGN_HISTORY Session 85). Don't keep separate corridor files. Keep **one analysis**
+whose corridors are **tagged by type**. The corridor builder should build commute
+corridors from Monday–Friday data and recreational corridors from summer weekends
+(the union of the recreation-heavy days), with the types to build given as an
+argument. Other types are welcome: a hybrid urban corridor such as Eagle Rd or US-95
+in Coeur d'Alene, with commute peaks *and* heavy midday and weekend retail traffic.
+Then rank **all** corridors together under several time scenarios: the weekday peak,
+each weekend day, the combined weekend, and the 7-day window. The scenarios to run
+are an argument too, so not every analysis runs every time.
+
+Run them in order: 66 needs 65's season-gated windows; 67 needs 66's tags; 68 is
+the owner's real-data run.
+
+---
+
+## 65 — Season-gated windows, named scenarios, and the window-overlap guard
+
+**Target: Opus.** Core (`screen`, `volume_profiles`, `aadt`) + tests. No script changes.
+
+Scope:
+
+- [ ] **`PeakWindow.season`**: an optional `("MM-DD", "MM-DD")` inclusive
+      recurring date range, which may wrap the year end. Honour it everywhere a
+      window is: `sql_predicate` (every `tagged` CTE carries an `mmdd` column), the
+      pandas `filter`, `to_dict`, and `volume_profiles._window_spec` /
+      `_window_mask` / `window_days`. A seasonal window's VHD is then per average
+      in-season day. Its `vhd_annual` counts in-season days only (review S8).
+- [ ] **`screen.SEASONS`** (`"summer"`: Friday before Memorial Day ≈ 22 May through
+      Labor Day ≈ 7 Sep, as fixed month-days). The owner can move it.
+- [ ] **Weekend presets** (review S2): `fri`, `sat`, `sun`, `weekend` (Sat–Sun),
+      `fri_sun`, all 9 AM–9 PM. The duplicate `weekend_rec` / `fri_sun` pair and
+      `sat_sun` go.
+- [ ] **`screen.Scenario` + `SCENARIOS` + `resolve_scenario`**: a named window set
+      ranked as one table. `peak` (am+pm), `day_7d`, `fri`, `sat`, `sun`, `weekend`,
+      `fri_sun`. `"sat:summer"` or `"sat:05-22..09-07"` applies a season. The file
+      tag and label come from the name (`sat_summer`); `peak` and `day_7d` keep
+      their historic file names.
+- [ ] **Window-overlap guard** (review F7): `segment_bin_screen` / `frame_bin_screen`
+      refuse windows that share a delay cell (month × day type × bin) but cover
+      different days in it (`pm` + `fri`, `sat` + `sat:summer`). Same-coverage
+      overlaps (`am` inside `day_7d`) stay legal.
+- [ ] **`segment_recurrence`** (review F8): keep the gated-day fix and document the
+      contract as the share of the window's own days (weekdays for the commute
+      pair, every day for an ungated window).
+- [ ] pytest: season SQL = pandas parity, including a wrapping season;
+      volume-weight day counts; the guard (raises and passes); scenario resolution;
+      weekend recurrence. DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 65 of ROADMAP.md — season-gated windows, named
+scenarios, and the window-overlap guard."
+
+---
+
+## 66 — Corridor types: one catalogue per district, every corridor tagged
+
+**Target: Opus.** Core (`extents`) + the catalogue builder. Depends on 65.
+
+Scope:
+
+- [ ] **Revert the branch's `extents` threshold plumbing, `curve_vhd`, `--relaxed`,
+      `--rec-screen`, `--windows` and `--filename-pattern`** (review F1–F4, F6, S6).
+      One set of floors and one chaining for every type.
+- [ ] **`extents.CorridorType`** (name, label, discovery windows, description) and
+      `CORRIDOR_TYPES` presets:
+      - `commute`: weekday AM + PM peaks, all year (today's catalogue).
+      - `recreational`: Fri, Sat and Sun 9 AM–9 PM, **summer** only. A segment is
+        judged at its worst of the three, which is the union of the recreation days.
+      - `retail`: weekday midday (10 AM–2 PM) + Saturday daytime (11 AM–5 PM), all
+        year. A corridor found by both `commute` and `retail` is classed
+        **`urban_hybrid`** (Eagle Rd, US-95 in Coeur d'Alene).
+- [ ] **Per-type discovery**: `generate_catalogue` per type on the same chains,
+      floors, hard stops and couplet legs, with a type-specific baseline screen
+      (the type's windows + night + weekday fallback) and bin screen (curve VHD
+      against the segment's own baseline; the Item 50 basis, review F4). The
+      monthly profile and seasonal flag come back (F5).
+- [ ] **`extents.merge_typed_catalogues`** (pure, on catalogue dicts). Types are
+      taken in the order given. A later type's facility whose core lies ≥ 50%
+      (by miles) inside an earlier facility's core or Tier 2 **merges** into it:
+      the earlier extent stands, `_types` gains the type, and `_type_cores` keeps
+      each type's core metrics. Otherwise it is added as its own facility, with
+      `shares … mi with …` where it partly overlaps. Id collisions get a type
+      suffix. Every entry and group carries `_types` and `_class`.
+- [ ] **Builder**: `--types commute,recreational,retail` (default: all three);
+      per-type baseline/bin caches; one `dN_corridors.json` per district with
+      `_generated.types`. The six `dN_rec_corridors.json` and
+      `compare_recreational_vs_commute.py` move to
+      `legacy/rec_catalogues_2026-09-29/` with a README.
+- [ ] pytest: the merge (absorbed, new, partial share, id collision, class), type
+      presets, and the builder's per-type windows. DESIGN_HISTORY, DATA_FORMAT (the
+      catalogue's `_types` / `_class` / `_type_cores`).
+
+*Suggested prompt:* "Do Item 66 of ROADMAP.md — corridor types in one tagged
+catalogue per district."
+
+---
+
+## 67 — One ranking, selectable scenarios
+
+**Target: Opus.** Scripts. Depends on 66.
+
+Scope:
+
+- [ ] **`run_district_screening.py --scenario NAME`** (a `screen.SCENARIOS` name,
+      with an optional `:season`). It sets the windows, the output tag and the
+      labels. `--windows` / `--window-tag` stay as a low-level override. Each
+      corridor table (totals, breakout, rankings) gains `corridor_types` /
+      `corridor_class` from the catalogue.
+- [ ] **`run_statewide_screening.py --scenarios peak,day_7d,...`** (default
+      `peak,day_7d`; `--windows both|rec` stays as an alias). Screens every
+      district on the one catalogue per scenario.
+- [ ] **`aggregate_statewide_rankings.py`**: aggregates every scenario present (or
+      the `--scenarios` list), and the types ride into the ranked and context
+      tables. **`statewide_scenario_matrix.csv`**: one row per ranked corridor, with
+      rank, VHD/mile and TTI under each scenario. It replaces the retired comparison
+      script, because every scenario ranks the *same* corridors.
+- [ ] **`generate_statewide_maps.py`**: a loop over the scenarios present (no
+      path-name magic, no hard-coded "May–August"; review S4, S5).
+- [ ] pytest: scenario → tag/label/windows in the district runner; aggregate
+      discovery and the matrix; types carried through. DESIGN_HISTORY.
+
+*Suggested prompt:* "Do Item 67 of ROADMAP.md — rank every corridor together under
+selectable scenarios."
+
+---
+
+## 68 — Regenerate the typed catalogues and the statewide scenario run (owner-run)
+
+**Target: Opus, on the owner's machine** (the stores, the XD network cache and the
+AADT layer are not in the cloud container). Depends on 67.
+
+Scope:
+
+- [ ] `build_statewide_catalogues.py --districts 1 2 3 4 5 6 --refresh-baseline`,
+      then commit the six typed catalogues. Record per district: facilities by type,
+      how many recreational/retail facilities merged into a commute one, and which
+      stand alone. Compare against the retired `legacy/rec_catalogues_2026-09-29/`
+      (review F1–F6: same floors now, so expect fewer rural rec cores).
+- [ ] Sanity-check the classes: I-84 Treasure Valley → `commute`; Eagle Rd and US-95
+      Coeur d'Alene → `urban_hybrid`; SH-55 north of Eagle, SH-75 Ketchum and US-20
+      Island Park → `recreational`. If they aren't, revisit the retail windows or the
+      summer season (Item 65 constants) before changing any floor.
+- [ ] `run_statewide_screening.py --scenarios peak,day_7d,fri:summer,sat:summer,sun:summer,weekend:summer --maps`,
+      the aggregate, and the statewide maps. DESIGN_HISTORY with the headline
+      rankings per scenario.
+
+*Suggested prompt:* "Do Item 68 of ROADMAP.md — regenerate the typed catalogues and
+run the statewide scenarios."
 
 ---
 
