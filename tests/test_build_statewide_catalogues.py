@@ -156,3 +156,42 @@ def test_a_bin_cache_over_other_windows_is_not_used(tmp_path, monkeypatch):
     _no_store(monkeypatch)
     with pytest.raises(RuntimeError, match="store read"):
         bsc.load_bins(3, tmp_path, ctype=rec)
+
+
+def test_main_builds_one_typed_catalogue(tmp_path, monkeypatch):
+    """The builder's own loop, on a toy network with the store and GIS loaders
+    stubbed: two types, one merged catalogue on disk, an audit with a type column."""
+    from test_extents import _baseline, _linear_chain
+
+    net = _linear_chain(16)
+    ids = list(net.index)
+    weekend = {1011: 1.6, 1012: 1.6, 1013: 1.6, 1002: 1.3, 1003: 1.3}
+
+    def _base(district, sdir, *, refresh=False, ctype=bsc.COMMUTE, **_):
+        b = _baseline(ids, {1001: 2.0, 1002: 2.0, 1003: 2.0})
+        for w in ctype.window_names:
+            if f"{w}_travel_time" not in b.columns:
+                b[f"{w}_travel_time"] = [weekend.get(s, 1.0) for s in ids]
+                b[f"{w}_n_obs"] = 500
+                b[f"{w}_realtime_share"] = 0.99
+        return b
+
+    monkeypatch.setattr(bsc, "load_district", lambda d, **kw: (net, None))
+    monkeypatch.setattr(bsc, "join_urban_context", lambda n, d: n)
+    monkeypatch.setattr(bsc, "load_baseline", _base)
+    monkeypatch.setattr(bsc, "load_monthly", lambda *a, **k: None)
+    monkeypatch.setattr(bsc, "verify", lambda cat, *a: pd.DataFrame(
+        {"reached_target": [True] * len(cat["corridors"])}))
+    monkeypatch.setattr(sys, "argv", [
+        "bsc", "--districts", "3", "--out-dir", str(tmp_path), "--screening-dir",
+        str(tmp_path), "--aadt", "", "--hard-stops", "", "--no-couplets",
+        "--types", "commute,recreational"])
+    assert bsc.main() == 0
+    cat = json.loads((tmp_path / "d3_corridors.json").read_text())
+    cores = [g for g in cat["reporting_corridors"] if g["_tier"] == "core"]
+    assert sorted(tuple(g["_types"]) for g in cores) == [("commute", "recreational"),
+                                                         ("recreational",)]
+    assert {g["_class"] for g in cores} == {"commute", "recreational"}
+    assert cat["_generated"]["type_order"] == ["commute", "recreational"]
+    audit = pd.read_csv(tmp_path / "d3" / "core_audit.csv")
+    assert set(audit["type"]) == {"commute", "recreational"}

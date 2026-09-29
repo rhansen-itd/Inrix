@@ -7959,3 +7959,7 @@ layer are not in the cloud container (Item 68).
     `main()` over two districts × two scenarios.
   - `tests/test_statewide_scenarios.py` (3): the statewide runner's list, file names,
     and the maps' loop with rendering monkeypatched.
+  - Before opening the PR, `test_build_statewide_catalogues` gained one more test for
+    Item 66: the builder's own `main()` on a 16-segment toy network, with the store
+    and GIS loaders stubbed. Two types produce one merged `d3_corridors.json` and an
+    audit with a `type` column. Nothing else ran that loop.
