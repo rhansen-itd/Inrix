@@ -79,6 +79,32 @@ class TestClass:
         prof = {"commute": {"peak_ratio": 1.6}, "retail": {"peak_ratio": 1.6}}
         assert extents.profile_class(["commute"], prof) == ("commute", "commute")
 
+    def test_retail_covers_recreational_unless_it_is_primary(self):
+        """Owner, 2026-09-29: a hybrid is busy on weekends by definition; the summer
+        weekend adds to the class only where it is the strongest signal."""
+        eagle = {"commute": {"peak_ratio": 1.51}, "recreational": {"peak_ratio": 1.459},
+                 "retail": {"peak_ratio": 1.462}}
+        assert extents.profile_class(["commute", "recreational", "retail"], eagle) == \
+            ("commute", "urban_hybrid")
+        driggs = {"commute": {"peak_ratio": 1.307}, "recreational": {"peak_ratio": 1.343},
+                  "retail": {"peak_ratio": 1.225}}
+        assert extents.profile_class(["commute", "recreational", "retail"], driggs) == \
+            ("recreational", "urban_hybrid+recreational")
+        mccall = {"commute": {"peak_ratio": 1.153}, "recreational": {"peak_ratio": 1.264},
+                  "retail": {"peak_ratio": 1.225}}
+        assert extents.profile_class(["commute", "recreational", "retail"], mccall) == \
+            ("recreational", "recreational+retail")
+        garrity = {"recreational": {"peak_ratio": 1.466}, "retail": {"peak_ratio": 1.544}}
+        assert extents.profile_class(["recreational", "retail"], garrity) == \
+            ("retail", "retail")
+        # Without retail in the class, recreational joins as before.
+        freeway = {"commute": {"peak_ratio": 1.5}, "recreational": {"peak_ratio": 1.4}}
+        assert extents.profile_class(["commute", "recreational"], freeway) == \
+            ("commute", "commute+recreational")
+        # The same cover without a profile.
+        assert extents.profile_class(["commute", "retail", "recreational"], None) == \
+            ("commute", "urban_hybrid")
+
     def test_no_profile_is_every_finding_type(self):
         assert extents.profile_class(["commute", "retail"], None) == \
             ("commute", "urban_hybrid")
@@ -220,7 +246,8 @@ class TestMerge:
             {"commute": commute, "retail": retail, "recreational": rec})
         core = _core_group(out, "eagle")
         assert core["_types"] == ["commute", "retail", "recreational"]
-        assert core["_class"] == "urban_hybrid+recreational"
+        # Found by all three; retail covers the weekend, so it reads as the hybrid.
+        assert core["_class"] == "urban_hybrid"
 
     def test_loose_groups_are_carried_once(self):
         commute = _catalogue(_facility("a", core=[1]), loose=["couplet-x"])
@@ -336,3 +363,34 @@ class TestEndToEnd:
         assert prof["weekend"]["peak_ratio"] == pytest.approx(1.25)
         assert set(prof["commute"]) == {"peak_ratio", "vhd_per_mile", "delay_per_mile",
                                         "vhd"}
+
+
+class TestReclassify:
+    def test_classes_are_recomputed_from_the_stored_profile(self):
+        commute = _catalogue(_facility("eagle", core=[1, 2, 3, 4], reach=[1, 2, 3, 4, 5]))
+        rec = _catalogue(_facility("eagle-sat", core=[1, 2, 3]))
+        retail = _catalogue(_facility("eagle-mid", core=[2, 3, 4]))
+        cat = extents.merge_typed_catalogues(
+            {"commute": commute, "recreational": rec, "retail": retail})
+        profile = {"commute": {"peak_ratio": 1.51}, "recreational": {"peak_ratio": 1.46},
+                   "retail": {"peak_ratio": 1.46}}
+        for g in cat["reporting_corridors"]:
+            g["_profile"] = profile
+            g["_class"] = "stale"
+        for e in cat["corridors"]:
+            e["_class"] = "stale"
+        before = [dict(g) for g in cat["reporting_corridors"]]
+        out = extents.reclassify_catalogue(cat)
+        assert {g["_class"] for g in out["reporting_corridors"]} == {"urban_hybrid"}
+        assert {e["_class"] for e in out["corridors"]} == {"urban_hybrid"}
+        assert {e["_primary_type"] for e in out["corridors"]} == {"commute"}
+        assert out["_generated"]["class_subsumed"] == {"recreational": "retail"}
+        # Only the class fields change, and the input is left alone.
+        assert [dict(g, _class="stale") for g in out["reporting_corridors"]] == before
+        assert {g["_class"] for g in cat["reporting_corridors"]} == {"stale"}
+        corridors.parse_catalogue(out)
+
+    def test_an_untyped_catalogue_passes_through(self):
+        cat = _catalogue(_facility("a", core=[1]))
+        assert extents.reclassify_catalogue(cat)["reporting_corridors"] == \
+            cat["reporting_corridors"]

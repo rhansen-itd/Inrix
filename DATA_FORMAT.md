@@ -2725,8 +2725,20 @@ Each district has **one** catalogue. Every corridor in it is tagged with the
   - This matters because busy urban arterials also queue on summer Saturdays. On
     the retired separate rec catalogues, 22 of D3's 26 commute facilities had a
     summer-weekend core too.
-  - The 0.6 and the summer bounds are starting values, to be checked on the real
-    catalogues (ROADMAP Item 68).
+  - **Recreational is covered by retail** (`CLASS_SUBSUMED`, Item 68 follow-up).
+    Retail's windows include Saturday daytime, so a retail corridor is busy on
+    weekends. Recreational drops out of a class that has retail unless it is the
+    **primary** type. On the Item 68 catalogues, 37 of 39 hybrids had read
+    `urban_hybrid+recreational`; now 7 do, the places where summer weekends are the
+    strongest signal (Driggs, US-95 CdA). `extents.reclassify_catalogue` re-applies
+    the rule to a catalogue from its stored `_types` / `_profile`, and the
+    statewide aggregate takes the class from the catalogue, not the district tables.
+  - **`peak_ratio` depends on the window's length** (Item 68): it is a window mean,
+    so a 12-hour weekend window dilutes a sharp peak that a 2-hour commute window
+    keeps. SH-75 Ketchum reads `commute` although its summer-weekend delay per mile
+    is nearly double its weekday one. Until Item 69 compares equal-length windows,
+    read `_class` as indicative. The 0.6 and the summer bounds are still starting
+    values.
 - **The monthly flags** (`seasonal` / `episodic`) come from each facility's own
   type. For a summer-only type they describe the distribution **within** the
   season, over its 4–5 months. So a `seasonal` flag on a recreational-only facility

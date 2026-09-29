@@ -175,6 +175,9 @@
         "commute",
         "retail"
       ]
+    },
+    "class_subsumed": {
+      "recreational": "retail"
     }
   },
   "corridors": [
@@ -824,7 +827,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -857,7 +860,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -897,7 +900,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -932,7 +935,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -972,7 +975,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1008,7 +1011,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1044,7 +1047,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1078,7 +1081,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1117,7 +1120,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1154,7 +1157,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1192,7 +1195,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1230,7 +1233,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1272,7 +1275,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1310,7 +1313,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1354,7 +1357,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1395,7 +1398,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1593,7 +1596,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail"
     },
     {
@@ -1623,7 +1626,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail"
     },
     {
@@ -1656,7 +1659,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail"
     },
     {
@@ -1690,7 +1693,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail"
     },
     {
@@ -1733,7 +1736,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail"
     },
     {
@@ -1775,7 +1778,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail"
     },
     {
@@ -1805,7 +1808,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1835,7 +1838,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1873,7 +1876,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1911,7 +1914,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -1941,7 +1944,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail"
     },
     {
@@ -1975,7 +1978,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail"
     },
     {
@@ -2107,7 +2110,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -2140,7 +2143,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -2172,7 +2175,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -2210,7 +2213,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -2248,7 +2251,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -2286,7 +2289,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -4298,7 +4301,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -4434,7 +4437,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -4570,7 +4573,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -4706,7 +4709,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -4842,7 +4845,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -4980,7 +4983,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -5118,7 +5121,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -5256,7 +5259,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -5902,7 +5905,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail",
       "_type_cores": {
         "commute": [
@@ -6038,7 +6041,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail",
       "_type_cores": {
         "commute": [
@@ -6174,7 +6177,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail",
       "_type_cores": {
         "commute": [
@@ -6310,7 +6313,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -6446,7 +6449,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -6582,7 +6585,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail",
       "_type_cores": {
         "commute": [
@@ -6718,7 +6721,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "retail",
       "_type_cores": {
         "commute": [
@@ -7262,7 +7265,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -7398,7 +7401,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -7534,7 +7537,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [

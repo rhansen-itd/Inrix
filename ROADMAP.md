@@ -196,7 +196,7 @@ recreational from summer weekends, and a retail type whose overlap with commute 
 an urban hybrid), each type discovered on its own days but on the same chains and
 floors, then ranked together under selectable scenarios. **65** adds season-gated
 windows and named scenarios; **66** adds the typed catalogue; **67** adds the scenario
-rankings; **68** is the owner's real-data regeneration.
+rankings; **68** is the owner's real-data regeneration. **65–68 are done** (Sessions 86–89); **69**, from the review of the real run (Session 90), is next.
 
 ---
 
@@ -3816,7 +3816,7 @@ selectable scenarios."
 
 ---
 
-## 68 — Regenerate the typed catalogues and the statewide scenario run (owner-run) ✅ (Session 88)
+## 68 — Regenerate the typed catalogues and the statewide scenario run (owner-run) ✅ (Session 89)
 
 **Target: Opus, on the owner's machine** (the stores, the XD network cache and the
 AADT layer are not in the cloud container). Depends on 67.
@@ -3836,8 +3836,51 @@ Scope:
       the aggregate, and the statewide maps. DESIGN_HISTORY with the headline
       rankings per scenario.
 
-*Session 88 delivered: all 6 catalogues regenerated and verified, bug fixed in `screen.bin_weights`,
+*Session 89 delivered: all 6 catalogues regenerated and verified, bug fixed in `screen.bin_weights`,
 statewide scenario matrix and maps rendered across all 6 scenarios, 1,138 tests pass.*
+
+*Review (Session 90): the class sanity check only partly passed. I-84 is `commute`, but
+Eagle Rd read `urban_hybrid+recreational` and SH-75 Ketchum `commute`; US-20 Island
+Park has no core. `+recreational` is now folded into the hybrid (`CLASS_SUBSUMED`,
+catalogues reclassified in place). The window-length bias and the I-90 CdA episodic
+flag carry into **Item 69**.*
+
+---
+
+## 69 — Compare corridor types on equal-length windows; check the summer I-90 work zone
+
+**Target: Opus.** Core (`extents`) + a re-run on the owner's machine. Depends on 68.
+
+From the Session 90 review. The class threshold compares each type's **window-mean**
+peak/baseline ratio. Those depend on the window's length: 12 summer-weekend hours
+dilute a sharp afternoon peak that the 2-hour commute windows keep. So SH-75 Ketchum
+reads `commute` although its summer-weekend VHD per mile is nearly double its weekday
+one, while arterials busy all day keep high weekend means.
+
+Scope:
+
+- [ ] **An equal-length intensity per type** for `type_profile`. For example, the
+      worst *k*-hour mean (k = 2) within each type's windows, from the bin screens
+      the builder already caches (`segment_peak_bins_<type>.parquet`). Record it
+      beside the window mean and classify on it. Keep `CLASS_SECONDARY_SHARE` and
+      `CLASS_SUBSUMED` unless the re-run says otherwise.
+      - Alternative to weigh: a *seasonal lift* for recreational (summer-weekend
+        vs all-year-weekend ratio), which isolates tourism from general weekend
+        traffic.
+- [ ] Re-check the Item 68 sanity list: I-84 → `commute`, Eagle Rd →
+      `urban_hybrid`, SH-75 Ketchum and SH-55 north → `recreational`. US-20
+      Island Park: confirm it really has no qualifying core under any type, or say
+      which floor it fails (core audit).
+- [ ] **I-90 Coeur d'Alene in summer.** Its core is flagged `episodic: 96% of peak
+      delay in 2026-06…08`, and four more D1 I-90 cores are flagged episodic in
+      July–August. Confirm or rule out the work zone (the Item 50 notes put I-90 WB
+      at its overnight level until 22 June 2026). If it is a work zone, the summer
+      scenario tables should say so beside the row; don't drop the row.
+- [ ] pytest on the new intensity (a toy segment with a sharp 2-hour peak inside a
+      12-hour window), DESIGN_HISTORY, DATA_FORMAT.
+
+*Suggested prompt:* "Do Item 69 of ROADMAP.md — compare corridor types on
+equal-length windows, and check the summer I-90 work zone."
 
 ---
 

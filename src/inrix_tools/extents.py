@@ -3696,8 +3696,28 @@ Saturday: on the retired 2026-09-29 catalogues, 22 of D3's 26 commute facilities
 summer-weekend core too, so "found by" alone would call nearly every urban road
 recreational. The intent: a freeway whose summer-weekend excess is a fraction of its
 weekday one (I-84 in the Treasure Valley) stays ``commute``, and an arterial whose
-midday/Saturday excess is close to its peak one (Eagle Rd) is ``urban_hybrid``. The
-0.6 is a starting value, to be checked on the real catalogues (ROADMAP Item 68)."""
+midday/Saturday excess is close to its peak one (Eagle Rd) is ``urban_hybrid``.
+
+**Known limitation (Item 68, ROADMAP Item 69).** ``peak_ratio`` is a window's
+*mean* travel time over the baseline, so it depends on the window's length. A 12-hour
+summer-weekend window averages a sharp afternoon peak away that a 2-hour commute peak
+keeps. SH-75 Ketchum reads ``commute`` (excess 0.73 vs 0.27) although its
+summer-weekend delay per mile is nearly double its weekday one. The comparison needs
+equal-length windows before this threshold means what it says."""
+
+CLASS_SUBSUMED: dict[str, str] = {"recreational": "retail"}
+"""``{type: covering type}``: a type that drops out of a class the covering type is in,
+unless it is the corridor's **primary** type.
+
+The retail windows include Saturday daytime, so a corridor busy at retail hours is
+busy on weekends too, and the summer-weekend (recreational) builder finds it as well.
+On the Item 68 catalogues, 37 of the 39 ``urban_hybrid`` cores also read as
+recreational. The two that don't (US-2 Sandpoint, I-15 BL Pocatello Creek Rd) pass
+the recreational threshold too; the recreational builder just didn't find them.
+Across those arterials the recreational and retail excesses track each other within
+a few hundredths. ``+recreational`` therefore said nothing a hybrid didn't already
+say (owner, 2026-09-29). It stays where summer weekends are the corridor's
+**strongest** signal (primary): Driggs, McCall's Lake St, Soda Springs."""
 
 TYPE_MERGE_SHARE = 0.5
 """A later type's facility merges into an earlier one when at least this share of its
@@ -3758,8 +3778,10 @@ def profile_class(found: Sequence[str], profile: Mapping[str, Mapping] | None,
 
     The primary is the found type with the largest peak/baseline excess. The others
     join the class when their excess is at least ``share`` of the primary's
-    (:data:`CLASS_SECONDARY_SHARE`). With no profile (or no finite ratio) every
-    finding type is in the class and the first is primary."""
+    (:data:`CLASS_SECONDARY_SHARE`), except a type another member covers
+    (:data:`CLASS_SUBSUMED`: recreational under retail) unless it is the primary.
+    With no profile (or no finite ratio) every finding type is in the class, subject
+    to the same cover, and the first is primary."""
     found = list(dict.fromkeys(found))
     excess = {}
     for t in found:
@@ -3767,12 +3789,45 @@ def profile_class(found: Sequence[str], profile: Mapping[str, Mapping] | None,
         if r is not None and np.isfinite(r):
             excess[t] = max(float(r) - 1.0, 0.0)
     if not excess:
-        return found[0], corridor_class(found)
+        members = [t for t in found
+                   if t == found[0] or CLASS_SUBSUMED.get(t) not in found]
+        return found[0], corridor_class(members)
     primary = max(excess, key=lambda t: (excess[t], -found.index(t)))
     top = excess[primary]
     members = [t for t in found
                if t == primary or (t in excess and top > 0 and excess[t] >= share * top)]
+    members = [t for t in members
+               if t == primary or CLASS_SUBSUMED.get(t) not in members]
     return primary, corridor_class(members)
+
+
+def reclassify_catalogue(cat: Mapping, *, share: float = CLASS_SECONDARY_SHARE) -> dict:
+    """``cat`` with ``_class`` / ``_primary_type`` recomputed (:func:`profile_class`)
+    from each facility's stored ``_types`` and ``_profile``, on its groups and its
+    entries. Nothing else changes, so a class rule can be applied to generated
+    catalogues without the stores they were built from."""
+    out = dict(cat)
+    by_facility: dict[str, tuple[str, str]] = {}
+    groups = []
+    for g in cat.get("reporting_corridors", []):
+        g = dict(g)
+        if "_types" in g:
+            primary, cls = profile_class(g["_types"], g.get("_profile"), share=share)
+            g["_primary_type"], g["_class"] = primary, cls
+            if g.get("_facility"):
+                by_facility[g["_facility"]] = (primary, cls)
+        groups.append(g)
+    entries = []
+    for e in cat.get("corridors", []):
+        e = dict(e)
+        if e.get("_facility") in by_facility:
+            e["_primary_type"], e["_class"] = by_facility[e["_facility"]]
+        entries.append(e)
+    out["reporting_corridors"], out["corridors"] = groups, entries
+    if "_generated" in cat:
+        out["_generated"] = {**cat["_generated"],
+                             "class_subsumed": dict(CLASS_SUBSUMED)}
+    return out
 
 
 _ID_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*[a-z0-9]")
@@ -3988,6 +4043,7 @@ def merge_typed_catalogues(
     generated["type_merge_share"] = merge_share
     generated["class_secondary_share"] = class_share if congestion else None
     generated["classes"] = {name: sorted(combo) for combo, name in CORRIDOR_CLASSES}
+    generated["class_subsumed"] = dict(CLASS_SUBSUMED)
     return {
         "_note": note or (
             "Generated by inrix_tools.extents.generate_catalogue per corridor type and "

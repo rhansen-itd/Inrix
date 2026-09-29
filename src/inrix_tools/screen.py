@@ -285,6 +285,29 @@ def resolve_windows(windows) -> dict[str, PeakWindow]:
     return out
 
 
+def window_names(windows) -> list[str]:
+    """The names in a ``windows`` argument, **without** resolving them against the
+    presets: a name, a :class:`PeakWindow`, a mapping (its keys) or a sequence of
+    either. For callers that select from a frame that already carries its windows (a
+    bin screen's or a screen's ``attrs['windows']``, a ranking's ``window`` column)
+    and check the names against it themselves. A seasonal window's name
+    (``sat_summer``) exists only there, never in :data:`ALL_WINDOWS`, so
+    :func:`resolve_windows` would refuse it (ROADMAP Item 68's ``bin_weights`` bug)."""
+    if isinstance(windows, Mapping):
+        return [str(k) for k in windows]
+    if isinstance(windows, (str, PeakWindow)):
+        windows = [windows]
+    out = []
+    for w in windows:
+        if isinstance(w, PeakWindow):
+            out.append(w.name)
+        elif isinstance(w, str):
+            out.append(w)
+        else:
+            raise TypeError(f"Not a PeakWindow or window name: {w!r}")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Named scenarios: a window set ranked as one table (ROADMAP Item 65)
 # ---------------------------------------------------------------------------
@@ -832,23 +855,7 @@ def bin_weights(bins: pd.DataFrame, profiles=None, windows=None) -> pd.DataFrame
     (the packaged one by default)."""
     from . import volume_profiles as _vp
     specs = bins.attrs.get("windows") or {}
-    if windows is None:
-        names = list(specs)
-    else:
-        if isinstance(windows, Mapping):
-            win_seq = list(windows.keys())
-        elif isinstance(windows, (str, PeakWindow)):
-            win_seq = [windows]
-        else:
-            win_seq = list(windows)
-        names = []
-        for w in win_seq:
-            if isinstance(w, str) and w in specs:
-                names.append(w)
-            elif isinstance(w, PeakWindow) and w.name in specs:
-                names.append(w.name)
-            else:
-                names.extend(resolve_windows([w]).keys())
+    names = list(specs) if windows is None else window_names(windows)
     missing = [n for n in names if n not in specs]
     if missing:
         raise KeyError(f"The bin screen has no window(s) {missing}; it carries {list(specs)}.")
@@ -1186,7 +1193,7 @@ def rank_corridors(screen: pd.DataFrame, chains, aadt=None, *, windows=None,
     if windows is None:
         names = screen_windows
     else:
-        names = list(resolve_windows(windows).keys())
+        names = window_names(windows)
         missing = [n for n in names if n not in screen_windows]
         if missing:
             raise KeyError(f"Screen has no window(s) {missing}; it carries {screen_windows}.")
@@ -1563,7 +1570,7 @@ def _peak_cells(ranking, membership, windows):
         cells = joined[joined["is_peak"]]
         used = sorted(cells[WINDOW_COL].unique())
     else:
-        used = list(resolve_windows(windows).keys())
+        used = window_names(windows)
         cells = joined[joined[WINDOW_COL].isin(used)]
     if cells.empty:
         raise ValueError(f"No rows for window(s) {used or 'flagged is_peak'}.")
@@ -2878,5 +2885,9 @@ __all__ = [
     "DEFAULT_TTI_THRESHOLD", "DEFAULT_RECURRENCE_THRESHOLD",
     "DEFAULT_GAP_TOLERANCE_SEGS", "DEFAULT_GAP_TOLERANCE_MILES",
     "DEFAULT_SNAP_TOLERANCE_MILES",
+    # Items 65, 68 — seasons, scenarios, the cell guard, window names
+    "WEEKEND_WINDOWS", "SAT_MIDDAY_WINDOW", "SEASONS", "Scenario", "SCENARIO_PRESETS",
+    "DEFAULT_SCENARIOS", "resolve_scenario", "resolve_scenarios", "check_window_cells",
+    "window_names",
 ]
 

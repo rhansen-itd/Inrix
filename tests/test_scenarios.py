@@ -284,3 +284,78 @@ class TestScenarios:
         for name in screen.SCENARIO_PRESETS:
             screen.check_window_cells(screen.resolve_scenario(name).windows)
             screen.check_window_cells(screen.resolve_scenario(f"{name}:summer").windows)
+
+
+# ---------------------------------------------------------------------------
+# Item 68 follow-up: seasonal window names select from a frame's own windows
+# ---------------------------------------------------------------------------
+class TestSeasonalNames:
+    """``sat_summer`` exists only on the frames built over it, never in the presets.
+    The Item 68 run hit this in ``bin_weights``; ``rank_corridors(windows=)`` and the
+    reporting totals looked names up the same way."""
+
+    SAT = screen.ALL_WINDOWS["sat"].with_season("05-22..09-07", "sat_summer")
+
+    def test_window_names(self):
+        assert screen.window_names("sat_summer") == ["sat_summer"]
+        assert screen.window_names([self.SAT, "am"]) == ["sat_summer", "am"]
+        assert screen.window_names({"sat_summer": self.SAT}) == ["sat_summer"]
+        with pytest.raises(TypeError):
+            screen.window_names([3])
+
+    def test_bin_weights_takes_a_seasonal_name(self):
+        rows = [{"Segment ID": 1, "month": "2026-06", "day_type": "sat",
+                 "tod_min": m, "travel_time": 2.0, "n_obs": 4}
+                for m in range(9 * 60, 21 * 60, 60)]
+        bins = pd.DataFrame(rows)
+        bins.attrs = {"windows": {"sat_summer": self.SAT.to_dict()}, "tz": TZ,
+                      "bin_minutes": 60, "period_start": "2026-06-01",
+                      "period_end": "2026-06-30"}
+        for arg in ("sat_summer", ["sat_summer"], [self.SAT], {"sat_summer": self.SAT}):
+            w = screen.bin_weights(bins, _flat_library(), windows=arg)
+            assert set(w["window"]) == {"sat_summer"}
+            assert w.attrs["window_days"] == {"sat_summer": 4}
+        with pytest.raises(KeyError, match="no window"):
+            screen.bin_weights(bins, _flat_library(), windows=["sat"])
+
+    def test_the_extents_congestion_path_reads_seasonal_bins(self):
+        """What the Item 68 builder ran: ``segment_congestion`` with the recreational
+        type's window names and curve-weighted bins."""
+        import geopandas as gpd
+        from shapely.geometry import LineString
+
+        from inrix_tools import extents
+        net = gpd.GeoDataFrame({"XDSegID": [1], "Miles": [1.0], "AADT": [1000.0]},
+                               geometry=[LineString([(0, 0), (0, 0.01)])],
+                               crs="EPSG:4326").set_index("XDSegID", drop=False)
+        base = pd.DataFrame({"n_obs": [1000], "sat_summer_travel_time": [2.0],
+                             "sat_summer_n_obs": [500], "sat_summer_realtime_share": [0.99],
+                             "night_travel_time": [1.0], "night_n_obs": [1000],
+                             "weekday_n_obs": [1000], "weekday_tt_p15": [1.0],
+                             "ref_speed": [60.0]},
+                            index=pd.Index([1], name="Segment ID"))
+        rows = [{"Segment ID": 1, "month": "2026-06", "day_type": "sat",
+                 "tod_min": m, "travel_time": 2.0, "n_obs": 4}
+                for m in range(9 * 60, 21 * 60, 60)]
+        bins = pd.DataFrame(rows)
+        bins.attrs = {"windows": {"sat_summer": self.SAT.to_dict()}, "tz": TZ,
+                      "bin_minutes": 60, "period_start": "2026-06-01",
+                      "period_end": "2026-06-30"}
+        curves = pd.Series(["flat"], index=pd.Index([1], name="Segment ID"))
+        seg = extents.segment_congestion(base, net, peak_windows=("sat_summer",),
+                                         bins=bins, curves=curves,
+                                         profiles=_flat_library())
+        assert seg.attrs["vhd_basis"] == "curve"
+        assert seg.loc[1, "vhd"] > 0 and seg.loc[1, "peak_window"] == "sat_summer"
+
+    def test_rank_corridors_and_totals_take_seasonal_names(self):
+        ranking = pd.DataFrame({
+            "corridor": ["c-nb", "c-nb"], "window": ["sat_summer", "am"],
+            "is_peak": [True, True], "miles": [1.0, 1.0], "delay_min": [1.0, 0.5],
+            "vhd": [10.0, 5.0], "vhd_index": [10.0, 5.0], "tti": [1.5, 1.2]})
+        membership = pd.DataFrame({"id": ["c-nb"], "corridor": ["c"],
+                                   "direction": ["NB"]})
+        cells, used, _ = screen._peak_cells(ranking, membership, ["sat_summer"])
+        assert used == ["sat_summer"] and cells["window"].tolist() == ["sat_summer"]
+        cells, used, _ = screen._peak_cells(ranking, membership, [self.SAT])
+        assert used == ["sat_summer"]

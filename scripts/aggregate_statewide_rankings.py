@@ -148,16 +148,24 @@ def load_group_types(districts, pattern: str = DEFAULT_CATALOGUE,
 
 
 def attach_types(frame: pd.DataFrame, group_types: dict) -> pd.DataFrame:
-    """``frame`` with the type columns after ``corridor_group``, from the catalogues,
-    unless the district tables already carried them (Item 67's runner writes them)."""
-    if frame.empty or not group_types or all(c in frame.columns for c in TYPE_COLUMNS):
+    """``frame`` with the type columns after ``corridor_group``, **from the
+    catalogues**: they are the source of truth, so a class rule applied to a catalogue
+    (``extents.reclassify_catalogue``) reaches the statewide tables on a re-aggregate,
+    without re-screening. A group the catalogue doesn't type keeps what the district
+    table carried, blank if nothing."""
+    if frame.empty or not group_types:
         return frame
     out = frame.copy()
     keys = list(zip(out["district"], out["corridor_group"]))
     at = list(out.columns).index("corridor_group") + 1
     for i, col in enumerate(TYPE_COLUMNS):
-        if col not in out.columns:
-            out.insert(at + i, col, [group_types.get(k, {}).get(col, "") for k in keys])
+        old = out[col] if col in out.columns else pd.Series("", index=out.index)
+        new = [group_types.get(k, {}).get(col) for k in keys]
+        values = [o if n is None else n for o, n in zip(old.fillna("").tolist(), new)]
+        if col in out.columns:
+            out[col] = values
+        else:
+            out.insert(at + i, col, values)
     return out
 
 

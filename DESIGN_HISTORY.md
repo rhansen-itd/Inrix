@@ -7853,7 +7853,8 @@ I-84 commute, Eagle Rd a hybrid.
   type with the largest `peak_ratio − 1` as primary. The others join only at ≥ 0.6×
   its excess.
   - `peak_ratio` is dimensionless, so a 12-hour weekend window and a 2-hour peak
-    compare.
+    compare. *(Wrong, found in Session 90: it is a window mean, so a long window
+    dilutes a short peak. Item 69.)*
   - VHD per mile would not compare: a longer window carries more hours.
 - **A type that did not find the corridor can't join its class**, even if its
   profile is high. It failed that type's floors.
@@ -7966,7 +7967,7 @@ layer are not in the cloud container (Item 68).
 
 ---
 
-## Session 88 (2026-09-29) — Item 68: Regenerate typed catalogues and run statewide scenarios
+## Session 89 — Item 68: Regenerate typed catalogues and run statewide scenarios (2026-09-29)
 
 **Author: Gemini / Claude (pair programming)**
 
@@ -8009,3 +8010,84 @@ Screened 89 ranked reporting corridors across 6 scenarios:
 - **Sunday Summer (9 AM–9 PM)**: #1 D1 I-90 CdA (591.8 VHD/mi, TTI 2.94), #2 D3 Front St (70.6), #3 D1 I-90 Kootenai (60.4), #4 D3 Garrity BL Rec (59.8), #5 D3 SH-55 Boise County (50.0, TTI 1.38), #6 D1 I-90 Shoshone (44.7), #7 D3 Chinden Main St (41.0), #8 D5 I-15 Bannock (37.9), #9 D3 Eagle Rd (37.7), #10 D3 SH-55 Banks-Lowman (36.6, TTI 1.34).
 - Generated `statewide_scenario_matrix.csv`, all scenario ranking tables, and statewide HTML maps with `statewide_map_viewer.html`.
 
+
+---
+
+## Session 90 — Review of Item 68; `+recreational` folded into the hybrid; the window-name fix generalised (2026-09-29)
+
+A review of the owner's Item 68 run (`dcd5326`, Session 89), then the owner-directed
+follow-ups.
+
+### 1. The review
+
+- **The `bin_weights` fix is right, and it was a bug in Item 66.** `segment_congestion`
+  hands `bin_weights` the type's window names. A seasonal name (`sat_summer`) exists
+  only on the bin screen, so `resolve_windows` raised. Item 66's end-to-end tests ran
+  the index VHD path, never curve VHD with seasonal windows, so they missed it.
+  `rank_corridors(windows=)` and `_peak_cells` looked names up the same way; the
+  runners pass `windows=None`, so they were never hit.
+- **The catalogues are valid.** All six parse and resolve.
+- **The class metric doesn't separate** (see 2 and Item 69):
+  - 37 of 39 hybrids read `urban_hybrid+recreational`;
+  - SH-75 Ketchum reads `commute`, though its summer-weekend delay per mile is 85
+    against 47 on weekdays and it is flagged `seasonal`.
+- **I-90 Coeur d'Alene heads four summer scenarios, but its core is flagged
+  `episodic: 96% of peak delay in 2026-06…08`.** That matches the I-90 WB period the
+  Item 50 notes record (at its overnight level until 22 June 2026). Four other D1
+  I-90 cores are flagged episodic in July–August. The summer rankings in Session 89
+  don't mention the flags, and the D1 figures shouldn't be quoted until they are
+  checked (Item 69).
+- **Records.** The Session 89 entry was headed "Session 88", which is Item 67's, and
+  is renumbered. Its 1,138 tests against 1109 here is consistent with the real-data
+  tests running locally and skipping in the cloud.
+
+### 2. `+recreational` under the hybrid (owner, 2026-09-29)
+
+The owner asked whether `+recreational` is needed on a hybrid, since retail already
+implies weekends. Measured on the Item 68 catalogues: only **2 of 39** hybrids lack
+it (US-2 Sandpoint, I-15 BL Pocatello Creek Rd), and both pass the recreational
+threshold anyway (0.16 vs 0.157; 0.151 vs 0.171). The recreational builder simply
+didn't find them. Across the hybrids, the recreational and retail excesses sit within
+a few hundredths of each other. The suffix carried no information.
+
+- **`extents.CLASS_SUBSUMED = {"recreational": "retail"}`.** Recreational drops out
+  of a class retail is in, **unless it is the primary type**. So it still marks the
+  places where summer weekends are the strongest signal: Driggs (SH-33 Teton County),
+  US-95 Coeur d'Alene, Ontario/Payette's 16th St, Burley, Jerome. McCall's Lake St
+  and Soda Springs stay `recreational+retail`. The Garrity BL facility found only by
+  recreational and retail, whose primary is retail, becomes `retail`.
+  - Dropping it everywhere was the alternative, but it would erase Driggs and McCall.
+    `_primary_type` would still say so, but nobody reads that column first.
+- **`extents.reclassify_catalogue`** recomputes `_class` / `_primary_type` from each
+  group's stored `_types` and `_profile`, so the rule could be applied to the six
+  committed catalogues without the stores. Only those two fields and a
+  `_generated.class_subsumed` record changed (checked on the diff). Core classes
+  statewide:
+  - before: `urban_hybrid+recreational` 37, `urban_hybrid` 2, `recreational+retail`
+    5, `retail` 1;
+  - after: 7, 32, 4, 2.
+  - `commute` (15), `recreational` (18) and `commute+recreational` (5) are unchanged.
+- **The aggregate now takes the type columns from the catalogue**, overriding
+  whatever an older district table carried. So re-running
+  `aggregate_statewide_rankings.py` picks up a reclassification without
+  re-screening. Before this it deferred to the tables, which would have kept the
+  stale classes.
+
+### 3. Window names
+
+`screen.window_names(windows)` returns the names in a windows argument without
+resolving them against the presets. `bin_weights`, `rank_corridors` and `_peak_cells`
+use it and check the names against the frame they select from, as before. It
+replaces the Session 89 special case in `bin_weights`.
+
+### 4. Tests
+
+1117 pass, 31 skip (1109 before).
+- `test_scenarios` `TestSeasonalNames`: `window_names`; `bin_weights` with a
+  seasonal name in four argument shapes, and an unknown one refused; the
+  `segment_congestion` curve path with the recreational window, which is exactly what
+  the Item 68 builder ran; `_peak_cells` by name and by window.
+- `test_screen`: `rank_corridors(windows=["am_march"])` on a seasonal screen.
+- `test_corridor_types`: the cover rule on the real profiles of Eagle Rd, Driggs,
+  McCall and Garrity; `reclassify_catalogue`.
+- `test_aggregate_statewide_rankings`: the catalogue overriding stale table columns.

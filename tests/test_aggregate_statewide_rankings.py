@@ -119,7 +119,7 @@ def test_scenarios_come_from_the_flag_the_registries_or_the_historic_pair(tmp_pa
     assert got[2]["label"] == "SUN"
 
 
-def test_the_type_columns_come_from_the_catalogue_unless_present(tmp_path):
+def test_the_type_columns_come_from_the_catalogue(tmp_path):
     path = _catalogue(tmp_path)
     cat = json.loads((tmp_path / "d1_corridors.json").read_text())
     cat["reporting_corridors"][0].update({"_types": ["commute", "retail"],
@@ -135,8 +135,12 @@ def test_the_type_columns_come_from_the_catalogue_unless_present(tmp_path):
     got = agg.attach_types(full, types)
     assert list(got.columns[:5]) == ["district", "corridor_group", *agg.TYPE_COLUMNS]
     assert got["corridor_class"].tolist() == ["urban_hybrid", ""]
-    already = full.assign(corridor_types="x", corridor_class="y", primary_type="z")
-    assert agg.attach_types(already, types) is already
+    # A district table screened before a reclassification carries stale columns: the
+    # catalogue wins where it types the group; elsewhere the table's value stays.
+    stale = full.assign(corridor_types="x", corridor_class="y", primary_type="z")
+    got = agg.attach_types(stale, types)
+    assert got["corridor_class"].tolist() == ["urban_hybrid", "y"]
+    assert list(got.columns) == list(stale.columns)
 
 
 def test_the_matrix_joins_every_scenario_on_the_corridor():
