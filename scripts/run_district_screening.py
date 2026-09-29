@@ -1685,7 +1685,7 @@ def run(args) -> dict:
 
         win_names = list((windows or screen.PEAK_WINDOWS).keys())
         is_7day = win_names == ["day_7d"]
-        is_rec = any(n in screen.RECREATIONAL_WINDOWS for n in win_names)
+        is_rec = any(n in screen.WEEKEND_WINDOWS for n in win_names)
         if getattr(args, "window_tag", None):
             window_tag = args.window_tag
         elif is_7day:

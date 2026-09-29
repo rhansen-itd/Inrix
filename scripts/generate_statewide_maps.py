@@ -452,8 +452,8 @@ def main():
 
     # Map 5: Statewide Recreational Peak TTI
     if scr_rec is not None:
-        rec_windows = {n: screen.RECREATIONAL_WINDOWS[n] for n in ["fri", "sat", "sun"]
-                       if n in screen.RECREATIONAL_WINDOWS}
+        rec_windows = {n: screen.WEEKEND_WINDOWS[n] for n in ["fri", "sat", "sun"]
+                       if n in screen.WEEKEND_WINDOWS}
         print("Rendering Statewide Recreational Peak TTI Map...")
         rec_path = generate_statewide_map(
             base_dir,
@@ -511,7 +511,7 @@ def main():
             day_ranks = df_day.set_index("corridor_group").to_dict(orient="index")
         attach_direction_totals(day_ranks, _breakouts(f"corridor_{tag}_breakout.csv"))
 
-        day_windows = {tag: screen.RECREATIONAL_WINDOWS[tag]}
+        day_windows = {tag: screen.WEEKEND_WINDOWS[tag]}
         print(f"Rendering Statewide {day_name} Peak TTI Map...")
         day_path = generate_statewide_map(
             base_dir,

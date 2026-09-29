@@ -3680,40 +3680,47 @@ the owner's real-data run.
 
 ---
 
-## 65 — Season-gated windows, named scenarios, and the window-overlap guard
+## 65 — Season-gated windows, named scenarios, and the window-overlap guard ✅ (Session 86)
 
 **Target: Opus.** Core (`screen`, `volume_profiles`, `aadt`) + tests. No script changes.
 
 Scope:
 
-- [ ] **`PeakWindow.season`**: an optional `("MM-DD", "MM-DD")` inclusive
+- [x] **`PeakWindow.season`**: an optional `("MM-DD", "MM-DD")` inclusive
       recurring date range, which may wrap the year end. Honour it everywhere a
       window is: `sql_predicate` (every `tagged` CTE carries an `mmdd` column), the
       pandas `filter`, `to_dict`, and `volume_profiles._window_spec` /
       `_window_mask` / `window_days`. A seasonal window's VHD is then per average
       in-season day. Its `vhd_annual` counts in-season days only (review S8).
-- [ ] **`screen.SEASONS`** (`"summer"`: Friday before Memorial Day ≈ 22 May through
+- [x] **`screen.SEASONS`** (`"summer"`: Friday before Memorial Day ≈ 22 May through
       Labor Day ≈ 7 Sep, as fixed month-days). The owner can move it.
-- [ ] **Weekend presets** (review S2): `fri`, `sat`, `sun`, `weekend` (Sat–Sun),
+- [x] **Weekend presets** (review S2): `fri`, `sat`, `sun`, `weekend` (Sat–Sun),
       `fri_sun`, all 9 AM–9 PM. The duplicate `weekend_rec` / `fri_sun` pair and
       `sat_sun` go.
-- [ ] **`screen.Scenario` + `SCENARIOS` + `resolve_scenario`**: a named window set
+- [x] **`screen.Scenario` + `SCENARIOS` + `resolve_scenario`**: a named window set
       ranked as one table. `peak` (am+pm), `day_7d`, `fri`, `sat`, `sun`, `weekend`,
       `fri_sun`. `"sat:summer"` or `"sat:05-22..09-07"` applies a season. The file
       tag and label come from the name (`sat_summer`); `peak` and `day_7d` keep
       their historic file names.
-- [ ] **Window-overlap guard** (review F7): `segment_bin_screen` / `frame_bin_screen`
+- [x] **Window-overlap guard** (review F7): `segment_bin_screen` / `frame_bin_screen`
       refuse windows that share a delay cell (month × day type × bin) but cover
       different days in it (`pm` + `fri`, `sat` + `sat:summer`). Same-coverage
       overlaps (`am` inside `day_7d`) stay legal.
-- [ ] **`segment_recurrence`** (review F8): keep the gated-day fix and document the
+- [x] **`segment_recurrence`** (review F8): keep the gated-day fix and document the
       contract as the share of the window's own days (weekdays for the commute
       pair, every day for an ungated window).
-- [ ] pytest: season SQL = pandas parity, including a wrapping season;
+- [x] pytest: season SQL = pandas parity, including a wrapping season;
       volume-weight day counts; the guard (raises and passes); scenario resolution;
       weekend recurrence. DESIGN_HISTORY.
 
-*Suggested prompt:* "Do Item 65 of ROADMAP.md — season-gated windows, named
+*Delivered: `timebins.parse_season` / `season_contains` / `season_days_per_year`;
+`PeakWindow.season` + `with_season` through SQL (`mmdd`), pandas, `to_dict`, the volume
+weights and `vhd_annual`; `screen.WEEKEND_WINDOWS`, `SAT_MIDDAY_WINDOW`, `SEASONS`,
+`Scenario` / `SCENARIO_PRESETS` / `resolve_scenario(s)`; `screen.check_window_cells`
+in both bin screens; `segment_recurrence` documented (its duplicate day filter
+dropped). `tests/test_scenarios.py` (38). Session 86.*
+
+*Suggested prompt (done):* "Do Item 65 of ROADMAP.md — season-gated windows, named
 scenarios, and the window-overlap guard."
 
 ---

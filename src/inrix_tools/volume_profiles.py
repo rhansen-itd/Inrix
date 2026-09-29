@@ -292,26 +292,28 @@ def bin_volume_factor(profile: VolumeProfile, local_ts, *, bin_minutes: int = 5)
 WEIGHT_COLUMNS = ("curve_id", "window", "month", "day_type", "tod_min", "volume_days")
 
 
-def _window_spec(w) -> tuple[str, str, frozenset | None]:
-    """``(name, clock range, gated dayofweek set or None)`` from a ``screen.PeakWindow``
-    or its ``to_dict`` form (what a screen's ``attrs['windows']`` holds). Duck-typed so
-    this module does not import ``screen``."""
-    from .timebins import parse_day_of_week
+def _window_spec(w) -> tuple[str, str, frozenset | None, tuple | None]:
+    """``(name, clock range, gated dayofweek set or None, season or None)`` from a
+    ``screen.PeakWindow`` or its ``to_dict`` form (what a screen's ``attrs['windows']``
+    holds). Duck-typed so this module does not import ``screen``. The season is
+    :func:`timebins.parse_season`'s ``(start, end)`` month-day ints (Item 65)."""
+    from .timebins import parse_day_of_week, parse_season
     if isinstance(w, Mapping):
-        name, clock, days = w["name"], w["window"], w.get("days")
+        name, clock, days, season = w["name"], w["window"], w.get("days"), w.get("season")
     else:
-        name, clock, days = w.name, w.window, w.days
+        name, clock, days, season = w.name, w.window, w.days, getattr(w, "season", None)
+    season = None if season is None else parse_season(tuple(season))
     if days is None:
-        return name, clock, None
+        return name, clock, None, season
     dows = frozenset(parse_day_of_week(d) for d in days)
-    return name, clock, (None if not dows or dows == frozenset(range(7)) else dows)
+    return name, clock, (None if not dows or dows == frozenset(range(7)) else dows), season
 
 
-def _window_mask(ts: pd.DatetimeIndex, clock: str, dows) -> np.ndarray:
+def _window_mask(ts: pd.DatetimeIndex, clock: str, dows, season=None) -> np.ndarray:
     """``PeakWindow.filter`` semantics on bin-start timestamps: half-open clock range
-    read on the local wall clock (overnight ranges wrap), then the day gate on the
-    bin's own date."""
-    from .timebins import parse_time_bin
+    read on the local wall clock (overnight ranges wrap), then the day gate and the
+    season gate on the bin's own date."""
+    from .timebins import parse_time_bin, season_contains
     _, start, end, overnight = parse_time_bin(clock)
     tod = ts.hour.to_numpy() * 3600 + ts.minute.to_numpy() * 60 + ts.second.to_numpy()
     if start == end:
@@ -322,20 +324,26 @@ def _window_mask(ts: pd.DatetimeIndex, clock: str, dows) -> np.ndarray:
         mask = (tod >= start) & (tod < end)
     if dows is not None:
         mask &= np.isin(ts.dayofweek.to_numpy(), sorted(dows))
+    if season is not None:
+        mask &= season_contains(ts.month.to_numpy() * 100 + ts.day.to_numpy(), season)
     return mask
 
 
-def day_basis(dows) -> str:
+def day_basis(dows, season=None) -> str:
     """What a window's VHD is *per*: ``"day"`` (ungated), ``"weekday"`` (Mon–Fri),
-    ``"weekend day"`` (Sat–Sun), else ``"gated day"``."""
+    ``"weekend day"`` (Sat–Sun), else ``"gated day"``; with ``" in season"`` appended
+    for a seasonal window (Item 65)."""
     if dows is None:
-        return "day"
-    dows = frozenset(dows)
-    if dows == frozenset(range(5)):
-        return "weekday"
-    if dows == frozenset({5, 6}):
-        return "weekend day"
-    return "gated day"
+        out = "day"
+    else:
+        dows = frozenset(dows)
+        if dows == frozenset(range(5)):
+            out = "weekday"
+        elif dows == frozenset({5, 6}):
+            out = "weekend day"
+        else:
+            out = "gated day"
+    return out if season is None else f"{out} in season"
 
 
 def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
@@ -411,8 +419,8 @@ def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
     frames = []
     for curve_id, prof in profiles.items():
         factor = bin_volume_factor(prof, ts, bin_minutes=bin_minutes).to_numpy()
-        for name, clock, dows in specs:
-            mask = _window_mask(ts, clock, dows)
+        for name, clock, dows, season in specs:
+            mask = _window_mask(ts, clock, dows, season)
             if not mask.any():
                 continue
             part = pd.DataFrame({"month": month[mask], "day_type": day_type[mask],
@@ -428,9 +436,9 @@ def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
     days = pd.date_range(first, last, freq="D")
     months = pd.Series(days.strftime("%Y-%m"))
     window_days, window_days_by_month = {}, {}
-    for name, _, dows in specs:
-        gate = (np.ones(len(days), dtype=bool) if dows is None
-                else np.isin(days.dayofweek, sorted(dows)))
+    for name, clock, dows, season in specs:
+        # The day and season gates on whole days (the clock does not matter here).
+        gate = _window_mask(days, "12:00AM-12:00AM", dows, season)
         window_days[name] = int(gate.sum())
         window_days_by_month[name] = {k: int(v) for k, v in
                                       months[gate].value_counts().sort_index().items()}
@@ -442,10 +450,11 @@ def window_volume_weights(profiles, windows, period_start, period_end, tz, *,
                           months.value_counts().sort_index().items()},
         "window_days": window_days,
         "window_days_by_month": window_days_by_month,
-        "window_per": {name: day_basis(dows) for name, _, dows in specs},
+        "window_per": {name: day_basis(dows, season) for name, _, dows, season in specs},
         "tz": str(tz),
         "bin_minutes": int(bin_minutes),
-        "windows": {name: {"window": clock, "days": None if dows is None else sorted(dows)}
-                    for name, clock, dows in specs},
+        "windows": {name: {"window": clock, "days": None if dows is None else sorted(dows),
+                           "season": None if season is None else list(season)}
+                    for name, clock, dows, season in specs},
     }
     return out[list(WEIGHT_COLUMNS)]

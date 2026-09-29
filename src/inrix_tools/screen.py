@@ -90,12 +90,29 @@ class PeakWindow:
         peak: whether this window is a *peak* for ranking purposes — only peak
             windows compete for a corridor's ``worst_peak``. The off-peak windows
             (midday, night) are carried for context, not ranked.
+        season: an optional recurring date range, ``("MM-DD", "MM-DD")`` inclusive
+            (or ``"MM-DD..MM-DD"``; a start after the end wraps the year end) —
+            :func:`timebins.parse_season`. ``None`` (the default) is all year
+            (ROADMAP Item 65). The gate reads the local date of the row, like the
+            day gate.
     """
 
     name: str
     window: str
     days: tuple | None = None
     peak: bool = False
+    season: tuple[str, str] | None = None
+
+    def __post_init__(self):
+        if self.season is not None:
+            start, end = _timebins.parse_season(self.season)
+            object.__setattr__(self, "season",
+                               (f"{start // 100:02d}-{start % 100:02d}",
+                                f"{end // 100:02d}-{end % 100:02d}"))
+
+    def with_season(self, season, name: str | None = None) -> "PeakWindow":
+        """This window gated to ``season`` (``None`` lifts the gate), renamed."""
+        return PeakWindow(name or self.name, self.window, self.days, self.peak, season)
 
     @property
     def dows(self) -> tuple[int, ...] | None:
@@ -115,14 +132,25 @@ class PeakWindow:
         :func:`io.to_local` first). This is the reference semantics the SQL path in
         :func:`segment_screen` is derived from and tested against."""
         out = _timebins.filter_time_window(df, self.window, datetime_col=datetime_col)
-        return _timebins.filter_day_of_week(out, self.days, datetime_col=datetime_col)
+        out = _timebins.filter_day_of_week(out, self.days, datetime_col=datetime_col)
+        if self.season is None:
+            return out
+        t = out[datetime_col]
+        keep = _timebins.season_contains((t.dt.month * 100 + t.dt.day).to_numpy(),
+                                         self.season)
+        res = out[keep].copy()
+        res.attrs = dict(out.attrs)
+        return res
 
-    def sql_predicate(self, tod_expr: str = "tod", dow_expr: str = "dow") -> str:
+    def sql_predicate(self, tod_expr: str = "tod", dow_expr: str = "dow",
+                      mmdd_expr: str = "mmdd") -> str:
         """The same window as a SQL boolean, **derived from the timebins parse** —
         never hand-written.
 
-        ``tod_expr`` must evaluate to seconds since *local* midnight and ``dow_expr``
-        to DuckDB's ``isodow`` (1=Mon..7=Sun); :func:`segment_screen` builds both.
+        ``tod_expr`` must evaluate to seconds since *local* midnight, ``dow_expr``
+        to DuckDB's ``isodow`` (1=Mon..7=Sun) and ``mmdd_expr`` (read only by a
+        seasonal window) to the local ``month * 100 + day``; :func:`segment_screen`
+        builds all three.
         """
         _, start, end, overnight = _timebins.parse_time_bin(self.window)
         if start == end:                       # full day — a no-op, as in filter_time_window
@@ -132,17 +160,25 @@ class PeakWindow:
         else:
             time_pred = f"({tod_expr} >= {start} AND {tod_expr} < {end})"
         dows = self.dows
-        if dows is None:
+        if dows is not None:
+            # pandas dayofweek 0=Mon maps onto DuckDB isodow 1=Mon.
+            days = ", ".join(str(d + 1) for d in dows)
+            time_pred = f"({time_pred} AND {dow_expr} IN ({days}))"
+        if self.season is None:
             return time_pred
-        # pandas dayofweek 0=Mon maps onto DuckDB isodow 1=Mon.
-        days = ", ".join(str(d + 1) for d in dows)
-        return f"({time_pred} AND {dow_expr} IN ({days}))"
+        start, end = _timebins.parse_season(self.season)
+        join = "AND" if start <= end else "OR"
+        return (f"({time_pred} AND ({mmdd_expr} >= {start} {join} "
+                f"{mmdd_expr} <= {end}))")
 
     def to_dict(self) -> dict:
         """Plain-dict form for ``attrs`` (what a report must be able to restate)."""
-        return {"name": self.name, "window": self.window,
-                "days": None if self.days is None else list(self.days),
-                "peak": bool(self.peak)}
+        out = {"name": self.name, "window": self.window,
+               "days": None if self.days is None else list(self.days),
+               "peak": bool(self.peak)}
+        if self.season is not None:
+            out["season"] = list(self.season)
+        return out
 
 
 # The presets. They are **presets, not constants** — pass your own mapping/sequence to
@@ -162,24 +198,39 @@ PEAK_WINDOWS: dict[str, PeakWindow] = {
 # Friday-Sunday travel costs. ``peak=True`` so it ranks in ``corridor_peak_totals``.
 ALL_DAY_7D_WINDOW = PeakWindow("day_7d", "6:00AM-9:00PM", days=None, peak=True)
 
-# Recreational windows: Friday, Saturday, and Sunday 9:00 AM to 9:00 PM.
-# Captures peak recreational travel on tourist, mountain, resort and outdoor
-# corridors (e.g. SH-55, US-95, US-20, SH-75, US-2).
-RECREATIONAL_WINDOWS: dict[str, PeakWindow] = {
-    "fri":         PeakWindow("fri", "9:00AM-9:00PM", ("Fri",), peak=True),
-    "sat":         PeakWindow("sat", "9:00AM-9:00PM", ("Sat",), peak=True),
-    "sun":         PeakWindow("sun", "9:00AM-9:00PM", ("Sun",), peak=True),
-    "weekend_rec": PeakWindow("weekend_rec", "9:00AM-9:00PM", ("Fri", "Sat", "Sun"), peak=True),
-    "fri_sun":     PeakWindow("fri_sun", "9:00AM-9:00PM", ("Fri", "Sat", "Sun"), peak=True),
-    "sat_sun":     PeakWindow("sat_sun", "9:00AM-9:00PM", ("Sat", "Sun"), peak=True),
+# Weekend-day windows (ROADMAP Item 65, from the 2026-09-29 recreational branch):
+# 9:00 AM to 9:00 PM on each day, and on the two combined weekends. All year — a
+# season is added per use (:data:`SEASONS`, :func:`resolve_scenario`), so a summer
+# Saturday and an all-year Saturday never share a name.
+WEEKEND_DAY_CLOCK = "9:00AM-9:00PM"
+WEEKEND_WINDOWS: dict[str, PeakWindow] = {
+    "fri":     PeakWindow("fri", WEEKEND_DAY_CLOCK, ("Fri",), peak=True),
+    "sat":     PeakWindow("sat", WEEKEND_DAY_CLOCK, ("Sat",), peak=True),
+    "sun":     PeakWindow("sun", WEEKEND_DAY_CLOCK, ("Sun",), peak=True),
+    "weekend": PeakWindow("weekend", WEEKEND_DAY_CLOCK, ("Sat", "Sun"), peak=True),
+    "fri_sun": PeakWindow("fri_sun", WEEKEND_DAY_CLOCK, ("Fri", "Sat", "Sun"), peak=True),
 }
+
+# Retail/all-day windows (Item 66's ``retail`` corridor type): the weekday middle of
+# the day and Saturday daytime, when a shopping corridor is busy and a commute one
+# is not.
+SAT_MIDDAY_WINDOW = PeakWindow("sat_midday", "11:00AM-5:00PM", ("Sat",), peak=True)
+
+SEASONS: dict[str, tuple[str, str]] = {
+    "summer": ("05-22", "09-07"),
+}
+"""Named recurring seasons (``PeakWindow.season``). ``summer`` runs from the earliest
+Friday of Memorial Day weekend (22 May) to the latest Labor Day (7 Sep), as fixed
+month-days: the recreation season in Idaho, a few days wide at each end in most
+years. Holidays themselves are not modelled (ROADMAP Future)."""
 
 # Convenience: every defined preset in one dict. ``resolve_windows`` looks here when
 # resolving a string name, so ``--windows day_7d`` works out of the box.
 ALL_WINDOWS: dict[str, PeakWindow] = {
     **PEAK_WINDOWS,
     "day_7d": ALL_DAY_7D_WINDOW,
-    **RECREATIONAL_WINDOWS,
+    **WEEKEND_WINDOWS,
+    "sat_midday": SAT_MIDDAY_WINDOW,
 }
 
 # The windows a corridor core is judged on (ROADMAP Item 50): the two commute peaks,
@@ -231,6 +282,100 @@ def resolve_windows(windows) -> dict[str, PeakWindow]:
         if w.name in out:
             raise ValueError(f"Duplicate window name {w.name!r}.")
         out[w.name] = w
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Named scenarios: a window set ranked as one table (ROADMAP Item 65)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Scenario:
+    """One ranking scenario: the windows a district screening runs and totals as a
+    single table (``corridor_peak_totals`` sums a corridor's delay over them).
+
+    ``tag`` names the scenario's output files (``corridor_<tag>_totals.csv``);
+    ``None`` is the historic un-tagged peak set (``corridor_peak_totals.csv``).
+    """
+
+    name: str
+    label: str
+    windows: tuple[PeakWindow, ...]
+    tag: str | None = None
+    season: tuple[str, str] | None = None
+
+    @property
+    def window_map(self) -> dict[str, PeakWindow]:
+        return {w.name: w for w in self.windows}
+
+    @property
+    def file_tag(self) -> str:
+        """The tag the scenario's files carry; ``"peak"`` for the un-tagged peak set."""
+        return self.tag or "peak"
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "label": self.label, "tag": self.tag,
+                "season": None if self.season is None else list(self.season),
+                "windows": {w.name: w.to_dict() for w in self.windows}}
+
+
+SCENARIO_PRESETS: dict[str, tuple[str, tuple[str, ...], str | None]] = {
+    "peak":    ("Weekday peaks (AM 7–9 + PM 4–6:30)", ("am", "pm"), None),
+    "day_7d":  ("7-day all-day (6 AM – 9 PM)", ("day_7d",), "7day"),
+    "fri":     ("Friday (9 AM – 9 PM)", ("fri",), "fri"),
+    "sat":     ("Saturday (9 AM – 9 PM)", ("sat",), "sat"),
+    "sun":     ("Sunday (9 AM – 9 PM)", ("sun",), "sun"),
+    "weekend": ("Weekend, Sat–Sun (9 AM – 9 PM)", ("weekend",), "weekend"),
+    "fri_sun": ("Friday–Sunday (9 AM – 9 PM)", ("fri_sun",), "fri_sun"),
+}
+"""``name -> (label, window preset names, file tag)``. ``peak`` and ``day_7d`` keep the
+file names they had before scenarios existed; every other tag is the name."""
+
+DEFAULT_SCENARIOS = ("peak", "day_7d")
+
+
+def _season_suffix(season: str) -> tuple[str, tuple[str, str]]:
+    """``("summer", bounds)`` for a named season, ``("0522_0907", bounds)`` for bounds."""
+    if season in SEASONS:
+        return season, SEASONS[season]
+    start, end = _timebins.parse_season(season)
+    return f"{start:04d}_{end:04d}", (f"{start // 100:02d}-{start % 100:02d}",
+                                      f"{end // 100:02d}-{end % 100:02d}")
+
+
+def resolve_scenario(spec) -> Scenario:
+    """A :class:`Scenario` from a preset name, optionally season-gated.
+
+    ``"sat"`` is every Saturday; ``"sat:summer"`` is Saturdays in :data:`SEASONS`
+    ``["summer"]``; ``"sat:06-01..08-31"`` names its own season. A seasonal scenario's
+    windows, tag and name all carry the season (``sat_summer``), so its columns and
+    files never collide with the all-year one's. A :class:`Scenario` passes through.
+    """
+    if isinstance(spec, Scenario):
+        return spec
+    base, _, season = str(spec).strip().partition(":")
+    if base not in SCENARIO_PRESETS:
+        raise KeyError(f"Unknown scenario {base!r}; presets: {sorted(SCENARIO_PRESETS)}.")
+    label, names, tag = SCENARIO_PRESETS[base]
+    windows = tuple(ALL_WINDOWS[n] for n in names)
+    if not season:
+        return Scenario(base, label, windows, tag)
+    suffix, bounds = _season_suffix(season.strip())
+    windows = tuple(w.with_season(bounds, name=f"{w.name}_{suffix}") for w in windows)
+    what = season if season in SEASONS else "season"
+    return Scenario(f"{base}_{suffix}", f"{label}, {what} {bounds[0]}..{bounds[1]}",
+                    windows, f"{tag or base}_{suffix}", bounds)
+
+
+def resolve_scenarios(specs) -> list[Scenario]:
+    """:func:`resolve_scenario` over a comma-separated string or a sequence, refusing
+    two scenarios with one file tag (they would overwrite each other's outputs)."""
+    if isinstance(specs, str):
+        specs = [x for x in (p.strip() for p in specs.split(",")) if x]
+    out = [resolve_scenario(x) for x in specs]
+    tags = [sc.file_tag for sc in out]
+    dup = sorted({t for t in tags if tags.count(t) > 1})
+    if dup:
+        raise ValueError(f"Scenarios share an output tag: {dup}.")
     return out
 
 
@@ -382,7 +527,8 @@ def segment_screen(con, area_key: str, windows=PEAK_WINDOWS,
         "SELECT sid, speed, tt, ref, rt, kept,\n"
         "  date_part('hour', local_dt) * 3600 + date_part('minute', local_dt) * 60"
         " + date_part('second', local_dt) AS tod,\n"
-        "  isodow(local_dt) AS dow\n"
+        "  isodow(local_dt) AS dow,\n"
+        "  month(local_dt) * 100 + day(local_dt) AS mmdd\n"
         "FROM src\n)\nSELECT\n" + ",\n".join(agg) +
         "\nFROM tagged GROUP BY sid ORDER BY sid"
     )
@@ -476,7 +622,8 @@ def segment_monthly_screen(con, area_key: str, windows=None,
         "SELECT sid, tt, kept, local_dt,\n"
         "  date_part('hour', local_dt) * 3600 + date_part('minute', local_dt) * 60"
         " + date_part('second', local_dt) AS tod,\n"
-        "  isodow(local_dt) AS dow FROM src)\nSELECT\n" + ",\n".join(agg) +
+        "  isodow(local_dt) AS dow,\n"
+        "  month(local_dt) * 100 + day(local_dt) AS mmdd FROM src)\nSELECT\n" + ",\n".join(agg) +
         "\nFROM tagged GROUP BY 1, 2 ORDER BY 1, 2"
     )
     out = con.execute(sql, params).df()
@@ -526,6 +673,54 @@ DAY_TYPE_SQL = "CASE dow WHEN 6 THEN 'sat' WHEN 7 THEN 'sun' ELSE 'weekday' END"
 """DuckDB ``isodow`` -> ``volume_profiles.DAY_TYPES``."""
 
 
+def check_window_cells(windows, bin_minutes: int = 5) -> None:
+    """Refuse windows whose delay cells would pool across them (ROADMAP Item 65).
+
+    :func:`segment_bin_screen` keys its cells by **month × day type × bin of the
+    day**, not by window, and ``aadt.curve_vehicle_hours_of_delay`` joins every window
+    to those cells. Two windows covering one cell on **different days** would each
+    read the other's travel times: ``pm`` (Mon–Fri) and ``fri`` share the 4 PM
+    ``weekday`` cell, so Friday's delay would be the Monday–Friday mean. A seasonal and
+    an all-year window on the same day and clock pool the same way. Windows covering a
+    cell on the **same** days (``am`` inside ``day_7d``) read the same rows and are
+    fine.
+
+    Checked on one leap calendar year, so every month, day type and month-day occurs.
+
+    Raises:
+        ValueError: naming the first conflicting pair.
+    """
+    from . import volume_profiles as _vp
+    wins = resolve_windows(windows)
+    if len(wins) < 2:
+        return
+    ts = pd.date_range("2024-01-01", "2025-01-01", freq=f"{int(bin_minutes)}min",
+                       inclusive="left")
+    cell = pd.MultiIndex.from_arrays([
+        ts.month, _vp.day_type_index(ts.dayofweek),
+        ts.hour * 60 + ts.minute]).codes
+    cell_id = np.ravel_multi_index(cell, [c.max() + 1 for c in cell])
+    masks = {}
+    for name, w in wins.items():
+        _, clock, dows, season = _vp._window_spec(w)
+        masks[name] = _vp._window_mask(ts, clock, dows, season)
+    names = list(masks)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            ma, mb = masks[a], masks[b]
+            if not (ma & mb).any() and not (np.isin(cell_id[ma], cell_id[mb])).any():
+                continue
+            frame = pd.DataFrame({"cell": cell_id, "a": ma, "b": mb, "ab": ma & mb})
+            per = frame.groupby("cell")[["a", "b", "ab"]].sum()
+            shared = per[(per["a"] > 0) & (per["b"] > 0)]
+            bad = shared[(shared["ab"] != shared["a"]) | (shared["ab"] != shared["b"])]
+            if len(bad):
+                raise ValueError(
+                    f"Windows {a!r} and {b!r} share delay cells (month x day type x bin) "
+                    f"but cover different days in them, so each would read the other's "
+                    f"travel times. Screen them in separate runs (one scenario each).")
+
+
 def segment_bin_screen(con, area_key: str, windows=PEAK_WINDOWS,
                        cvalue_threshold: int | float | None = DEFAULT_CVALUE_THRESHOLD, *,
                        bin_minutes: int | None = None, tz=DEFAULT_TZ,
@@ -563,6 +758,7 @@ def segment_bin_screen(con, area_key: str, windows=PEAK_WINDOWS,
     wins = resolve_windows(windows)
     zone = _validated_tz(tz)
     bin_minutes = _store._resolve_bin(con, area_key, bin_minutes)
+    check_window_cells(wins, bin_minutes)
     obs = _store._obs_table(area_key)
     cols = _table_columns(con, obs)
     m = _metric_columns(cols)
@@ -597,7 +793,8 @@ def segment_bin_screen(con, area_key: str, windows=PEAK_WINDOWS,
         "SELECT sid, tt, local_dt,\n"
         "  date_part('hour', local_dt) * 3600 + date_part('minute', local_dt) * 60"
         " + date_part('second', local_dt) AS tod,\n"
-        "  isodow(local_dt) AS dow FROM src)\n"
+        "  isodow(local_dt) AS dow,\n"
+        "  month(local_dt) * 100 + day(local_dt) AS mmdd FROM src)\n"
         f'SELECT sid AS "{SEGMENT_COL}", strftime(local_dt, \'%Y-%m\') AS month,\n'
         f"  {DAY_TYPE_SQL} AS day_type,\n"
         f"  CAST(floor(tod / {60 * bin_minutes}) * {bin_minutes} AS BIGINT) AS tod_min,\n"
@@ -721,6 +918,7 @@ def frame_bin_screen(df: pd.DataFrame, windows, *, bin_minutes: int,
     wins = resolve_windows(windows)
     if bin_minutes <= 0 or 60 % bin_minutes:
         raise ValueError(f"bin_minutes must divide 60, got {bin_minutes}")
+    check_window_cells(wins, bin_minutes)
     tt_col = _speed.metric_columns(df)["travel_time"]
     if tt_col is None:
         raise ValueError("The frame carries no 'Travel Time(...)' column.")
@@ -1733,13 +1931,19 @@ def segment_recurrence(con, area_key: str, windows=PEAK_WINDOWS,
                        tti_threshold: float = DEFAULT_TTI_THRESHOLD,
                        bin_minutes: int | None = None, tz=DEFAULT_TZ,
                        date_start=None, date_end=None) -> pd.DataFrame:
-    """Per-segment **recurrence**: share of weekdays that exceed a TTI threshold.
+    """Per-segment **recurrence**: share of the window's days that exceed a TTI threshold.
 
     This is the reduction :func:`segment_screen` does not do: it averages over
     the whole date range, so a fortnight of construction and a daily queue look
     alike.  Here the average is taken **per segment × window × local calendar
-    day**, and recurrence is the share of *weekdays* whose daily mean TTI
-    (``Travel Time / (Length / Ref Speed × 60)``) exceeds ``tti_threshold``.
+    day**, and recurrence is the share of the window's own observed days whose
+    daily mean TTI (``Travel Time / (Length / Ref Speed × 60)``) exceeds
+    ``tti_threshold``. The days are those the window's gates admit: the weekdays for
+    the commute pair, Saturdays for ``sat``, every day for an ungated window, and
+    only in-season days for a seasonal one. (Before ROADMAP Item 65 every window
+    counted weekdays only, so a Saturday window had none and an ungated one skipped
+    its weekends; the ``<name>_n_weekdays`` column keeps its name for callers but
+    counts the window's days.)
 
     Args:
         con: an open :func:`store.connect` connection.
@@ -1754,8 +1958,8 @@ def segment_recurrence(con, area_key: str, windows=PEAK_WINDOWS,
 
         - ``<name>_recurrence`` — share of observed weekdays the threshold is
           exceeded (0.0–1.0).
-        - ``<name>_n_weekdays`` — weekdays observed.
-        - ``<name>_n_congested`` — weekdays over the threshold.
+        - ``<name>_n_weekdays`` — the window's days observed (see above).
+        - ``<name>_n_congested`` — those days over the threshold.
         - ``<name>_mean_tti`` — overall (all-day) mean TTI in that window.
 
         Plus overall ``ref_speed``, ``n_weekdays_total`` (across all windows).
@@ -1804,11 +2008,6 @@ def segment_recurrence(con, area_key: str, windows=PEAK_WINDOWS,
     per_window_dfs = []
     for name, w in wins.items():
         pred = w.sql_predicate()
-        dows = w.dows
-        if dows is not None:
-            days_expr = f"date_dow IN ({', '.join(str(d + 1) for d in dows)})"
-        else:
-            days_expr = "TRUE"
         sql = f"""
         WITH src AS (
             SELECT
@@ -1824,7 +2023,8 @@ def segment_recurrence(con, area_key: str, windows=PEAK_WINDOWS,
                 CAST(local_dt AS DATE) AS local_date,
                 date_part('hour', local_dt) * 3600 + date_part('minute', local_dt) * 60
                     + date_part('second', local_dt) AS tod,
-                isodow(local_dt) AS dow
+                isodow(local_dt) AS dow,
+                month(local_dt) * 100 + day(local_dt) AS mmdd
             FROM src
         ), daily AS (
             SELECT
@@ -1842,9 +2042,8 @@ def segment_recurrence(con, area_key: str, windows=PEAK_WINDOWS,
         SELECT
             sid AS "{SEGMENT_COL}",
             COUNT(*)                               AS n_days,
-            COUNT(*) FILTER (WHERE {days_expr})    AS n_weekdays,
-            COUNT(*) FILTER (WHERE {days_expr}
-                AND day_speed > 0
+            COUNT(*)                               AS n_weekdays,
+            COUNT(*) FILTER (WHERE day_speed > 0
                 AND (day_ref / day_speed) > {float(tti_threshold)})
                                                    AS n_congested,
             AVG(CASE WHEN day_speed > 0 THEN day_ref / day_speed END) AS mean_tti,

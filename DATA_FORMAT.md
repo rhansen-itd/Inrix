@@ -1121,7 +1121,41 @@ assert the two paths agree row for row. The presets:
 | `night` | 22:00–05:00 | every day | no (the closest thing to an observed free-flow window) |
 
 Only `peak` windows compete for a corridor's `worst_peak`. They are **presets, not
-constants** — pass your own.
+constants** — pass your own. Item 65 added the weekend presets `fri`, `sat`, `sun`,
+`weekend` (Sat–Sun) and `fri_sun`, all **09:00–21:00**, and `sat_midday` (Sat
+11:00–17:00, the retail type's).
+
+**Seasons (Item 65).** `PeakWindow.season` is an optional recurring `("MM-DD",
+"MM-DD")` range, inclusive at both ends, that may wrap the year end. It is read on the
+row's **local** date, like the day gate. The SQL predicate reads a `mmdd = month × 100
++ day` column that every screen query computes. `screen.SEASONS["summer"]` is
+**05-22..09-07**: the earliest Friday of Memorial Day weekend to the latest Labor Day,
+as fixed month-days, so a few days wide at each end in most years. A seasonal window's
+VHD is per average **in-season** day of its gate, and `vhd_annual` counts only the
+season's days (109 for summer). Holidays are not modelled.
+
+**Scenarios (Item 65).** A `screen.Scenario` is a window set ranked as one table:
+
+| scenario | windows | file tag |
+|---|---|---|
+| `peak` | `am` + `pm` | *(none — `corridor_peak_totals.csv`)* |
+| `day_7d` | `day_7d` | `7day` |
+| `fri` / `sat` / `sun` | that day, 09:00–21:00 | the name |
+| `weekend` | Sat–Sun as **one** window (per average weekend day) | `weekend` |
+| `fri_sun` | Fri–Sun as one window | `fri_sun` |
+
+`resolve_scenario("sat:summer")` or `("sat:06-01..08-31")` gates every window to a
+season and suffixes the season onto the window names, the tag and the scenario name
+(`sat_summer`). So a summer Saturday and an all-year Saturday never share a column or
+a file.
+
+**Windows that would pool delay cells are refused (Item 65).** The bin screen keys its
+cells by month × day type × bin, not by window. So two windows covering one cell on
+different days (`pm` Mon–Fri and `fri` at 4 PM; `sat` and `sat:summer` in May) would
+each read the other's travel times. `screen.check_window_cells` raises on such a pair
+in `segment_bin_screen` and `frame_bin_screen`. Same-coverage overlaps (`am` inside
+`day_7d`; `weekend` beside `sat`, whose cells are the Saturday type) pass. Run such
+windows as separate scenarios.
 
 **The CValue gate is applied, recorded, and costed.** `CValue > 80` by default (the
 strict comparison `io.filter_cvalue` uses), recorded on `attrs['cvalue_threshold']`,
@@ -1198,6 +1232,11 @@ as a commuter facility congested every single weekday at TTI = 1.30.
    (`DEFAULT_TTI_THRESHOLD = 1.25`, 25% longer than free-flow).
 3. **Recurrence rate**: Share of observed weekdays meeting the congestion criterion
    (`am_recurrence = n_congested / n_weekdays`).
+
+   Since Item 65 the days are **the window's own**: its day gate and season. That is
+   the weekdays for `am`/`pm`, Saturdays for `sat`, every day for an ungated window.
+   Before, every window counted weekdays only, so `sat` had none and `night` skipped
+   its weekends. The column keeps the name `<w>_n_weekdays`.
 
 Under `DEFAULT_RECURRENCE_THRESHOLD = 0.50` ("congested most days"):
 - The construction fortnight segment: 3/20 days = 0.15 recurrence → **rejected**.
@@ -1957,16 +1996,18 @@ volume_days(c, W, cell) = Σ over the period's days d in the cell and in W  bin_
 - `volume_days` (`volume_profiles.window_volume_weights`) sums the curve's bin factor
   over each real day of the cell, so each day carries its own DOW factor and day-type
   shape, and the DST days their 23/25 hours. The cell's mean delay stands for every
-  day of the cell. Within the weekday type the delay is pooled over Mon–Fri; a window
-  gated to part of a day type gets the type's pooled delay with only its own days'
-  volume.
+  day of the cell. Within the weekday type the delay is pooled over the weekdays the
+  run's windows cover. Since Item 65, windows that would pool **different** days into
+  one cell (`pm` + `fri`) are refused (`screen.check_window_cells`), so a
+  Friday-only window reads Friday rows.
 - **`N_W` counts the days the window's gate covers** (owner, 2026-09-25: weekday for
   the peaks). So windows with the **same gate** add up as VHD: AM + PM is their union,
   per weekday, which is all the peak totals sum. Windows with **different gates** add
   only as totals, `vhd × N_W`: a weekday AM (per weekday) + its weekend twin (per
   weekend day) is not the ungated AM (per day). Don't add a peak to `night` or
   `day_7d`, or compare their shares of the day. `vhd_annual = vhd × 365 × gate
-  days / 7` (about 261 weekdays). The period is the area's first to last local date
+  days / 7` (about 261 weekdays), times the season's share of the year for a seasonal
+  window (Item 65). The period is the area's first to last local date
   (`screen.data_period`), the same for every segment.
   - The alternative considered and dropped was dividing every window by all the
     period's days. All windows then add up, but a weekday peak is shrunk by 5/7

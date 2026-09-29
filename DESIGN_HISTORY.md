@@ -7718,3 +7718,63 @@ Decisions taken in scoping:
    recreational and retail (weekday midday + Saturday daytime). A corridor found by
    both commute and retail is classed `urban_hybrid`. This answers the owner's Eagle
    Rd / US-95 CdA example without a builder that must itself detect "both".
+
+---
+
+## Session 86 — Item 65: season-gated windows, named scenarios, the window-overlap guard (2026-09-29)
+
+- **`PeakWindow.season`**: recurring `("MM-DD", "MM-DD")` bounds, normalised on
+  construction, inclusive, and wrapping the year end when start > end. The parsing
+  lives in `timebins` (`parse_season`, `season_contains`, `season_days_per_year`) so
+  `volume_profiles` can read a season without importing `screen`.
+  - Every screen query's `tagged` CTE now carries `mmdd = month(local_dt) * 100 +
+    day(local_dt)`. The predicate reads it only for a seasonal window, so the SQL of
+    every existing window is unchanged apart from parenthesisation.
+  - `volume_profiles._window_spec` returns the season as a fourth element.
+    `_window_mask` gates on it, `window_days` counts in-season days (the same mask on
+    whole days), and `window_per` says `"… in season"`.
+  - `aadt.curve_vehicle_hours_of_delay` scales `vhd_annual` by the season's share of
+    the year (review S8). A season covering the whole data period leaves the per-day
+    VHD unchanged; its annual figure is 109/365 of the all-year one (tested).
+- **Summer = 05-22..09-07.** As fixed month-days, this covers every year's Memorial Day
+  weekend and Labor Day, at the cost of a few days at each end in most years. A
+  floating holiday calendar would need a per-year date list in every predicate and
+  in the weights, which is more than the ranking needs. It is recorded as a constant
+  the owner can move, and holidays go to Future.
+- **Weekend presets.** `fri`, `sat`, `sun`, `weekend`, `fri_sun`: all 09:00–21:00, as
+  on the branch. The duplicate pair (`weekend_rec` = `fri_sun`) and `sat_sun` went;
+  `weekend` is Sat–Sun. The combined weekends are **one** gated window, so their VHD is
+  per average day of the set and compares directly with a single day's.
+  `sat_midday` (Sat 11:00–17:00) is for Item 66's retail type.
+- **Scenarios.** `Scenario(name, label, windows, tag, season)`, with presets `peak`,
+  `day_7d`, `fri`, `sat`, `sun`, `weekend`, `fri_sun`. `resolve_scenario("x:summer")`
+  or `("x:MM-DD..MM-DD")` suffixes the season onto the window names, the tag and the
+  name, so seasonal and all-year runs never share a column or a file.
+  `resolve_scenarios` refuses two with one tag. `peak` and `day_7d` keep their historic
+  file names (no tag, `7day`).
+- **The overlap guard** (review F7). `check_window_cells` lays every window over a
+  leap calendar year at the bin width and finds each (month × day type × bin) cell
+  both windows touch. It raises if their timestamp sets differ inside any such cell.
+  - That is exactly the pooling condition: same-coverage overlaps (`am` ⊂ `day_7d`,
+    the baseline set, `weekend` vs `sat`) pass, and `pm` + `fri` or `sat` + `sat:summer`
+    raise.
+  - It runs in `segment_bin_screen` and `frame_bin_screen`, in about 0.3 s for a
+    handful of windows at 5-minute bins.
+- **`segment_recurrence`** (review F8). The branch's `date_dow IN (...)` filter was
+  redundant: the `daily` CTE already keeps only rows passing the window predicate, so
+  every counted day is a window day. It is dropped, and `n_weekdays` is `COUNT(*)`.
+  The behaviour is the branch's (a window's own days), and the docstring and
+  DATA_FORMAT now say so.
+- **Scripts.** Only the renamed constant (`RECREATIONAL_WINDOWS` → `WEEKEND_WINDOWS`)
+  was touched, so the branch's scripts still import. Item 67 replaces them.
+- **Tests.** `tests/test_scenarios.py` (38):
+  - season parsing, containment and year length;
+  - PeakWindow normalisation, `with_season` and the predicate;
+  - SQL = pandas parity over a store spanning 26 Dec – 6 Jan: three seasons (one
+    wrapping) × three day gates;
+  - the bin screen's in-season row counts;
+  - volume-weight day counts and the annual scaling;
+  - the guard (six passing sets, two raising, both bin screens refusing);
+  - scenario resolution.
+
+  `test_recurrence`'s weekend test is renamed onto `fri_sun`.
