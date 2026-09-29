@@ -54,7 +54,8 @@ from scripts.run_district_screening import (  # noqa: E402
 
 
 def load_statewide_data(districts: list[int], base_dir: Path, *,
-                        catalogue_overrides: dict | None = None):
+                        catalogue_overrides: dict | None = None,
+                        catalogue_pattern: str | None = None):
     """Load combined networks, catalogues, resolved chains, screen frames and the
     per-segment curve VHD each district run saved (Item 58).
 
@@ -65,10 +66,19 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
     net_parts = []
     all_cat_entries = []
     all_chains = {}
-    parts = {"scr_peak": [], "scr_7d": [], "vhd_peak": [], "vhd_7d": []}
+    parts = {"scr_peak": [], "scr_7d": [], "scr_rec": [],
+             "vhd_peak": [], "vhd_7d": [], "vhd_rec": [],
+             "scr_fri": [], "vhd_fri": [],
+             "scr_sat": [], "vhd_sat": [],
+             "scr_sun": [], "vhd_sun": []}
     files = {"scr_peak": "segment_peak_screen.parquet",
              "scr_7d": "segment_7day_screen.parquet",
-             "vhd_peak": SEGMENT_VHD_PEAK, "vhd_7d": SEGMENT_VHD_7DAY}
+             "scr_rec": "segment_rec_screen.parquet",
+             "vhd_peak": SEGMENT_VHD_PEAK, "vhd_7d": SEGMENT_VHD_7DAY,
+             "vhd_rec": "segment_vhd_rec.parquet",
+             "scr_fri": "segment_fri_screen.parquet", "vhd_fri": "segment_vhd_fri.parquet",
+             "scr_sat": "segment_sat_screen.parquet", "vhd_sat": "segment_vhd_sat.parquet",
+             "scr_sun": "segment_sun_screen.parquet", "vhd_sun": "segment_vhd_sun.parquet"}
 
     for d in districts:
         net_cache = Path(f"geometry_cache/d{d}_network.geoparquet")
@@ -78,7 +88,14 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
         net_d = gpd.read_parquet(net_cache)
         net_parts.append(net_d)
 
-        cat_path = Path((catalogue_overrides or {}).get(d) or f"scripts/d{d}_corridors.json")
+        if catalogue_overrides and d in catalogue_overrides:
+            cat_path = Path(catalogue_overrides[d])
+        elif catalogue_pattern:
+            cat_path = Path(catalogue_pattern.format(district=d))
+        elif "rec" in str(base_dir) and Path(f"scripts/d{d}_rec_corridors.json").exists():
+            cat_path = Path(f"scripts/d{d}_rec_corridors.json")
+        else:
+            cat_path = Path(f"scripts/d{d}_corridors.json")
         repairs_path = Path(f"scripts/d{d}_link_repairs.csv")
         if cat_path.exists():
             entries = corridors.load_catalogue(cat_path)
@@ -121,7 +138,11 @@ def load_statewide_data(districts: list[int], base_dir: Path, *,
 
     return (combined_net, all_cat_entries, all_chains,
             _combine("scr_peak"), _combine("scr_7d"),
-            _combine("vhd_peak"), _combine("vhd_7d"))
+            _combine("vhd_peak"), _combine("vhd_7d"),
+            _combine("scr_rec"), _combine("vhd_rec"),
+            _combine("scr_fri"), _combine("vhd_fri"),
+            _combine("scr_sat"), _combine("vhd_sat"),
+            _combine("scr_sun"), _combine("vhd_sun"))
 
 
 def generate_statewide_map(
@@ -279,6 +300,8 @@ def main():
     parser.add_argument("--dir", default="out/statewide_screening",
                         help="Base output directory")
     parser.add_argument("--districts", nargs="*", type=int, default=[1, 2, 3, 4, 5, 6])
+    parser.add_argument("--catalogue-pattern", default=None,
+                        help="template for catalogue path (e.g. 'scripts/d{district}_rec_corridors.json')")
     parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
                         help="district D's catalogue is PATH (repeatable)")
     args = parser.parse_args()
@@ -289,12 +312,16 @@ def main():
 
     print("Loading statewide network geometries, screening frames and curve VHD...")
     (net, cat_entries, chains, scr_peak, scr_7d,
-     vhd_peak, vhd_7d) = load_statewide_data(args.districts, base_dir,
-                                             catalogue_overrides=overrides)
-    for label, frame in (("peak", vhd_peak), ("7-day", vhd_7d)):
+     vhd_peak, vhd_7d, scr_rec, vhd_rec,
+     scr_fri, vhd_fri, scr_sat, vhd_sat, scr_sun, vhd_sun) = load_statewide_data(
+        args.districts, base_dir, catalogue_overrides=overrides,
+        catalogue_pattern=args.catalogue_pattern)
+    for label, frame in (("peak", vhd_peak), ("7-day", vhd_7d), ("recreational", vhd_rec),
+                         ("fri", vhd_fri), ("sat", vhd_sat), ("sun", vhd_sun)):
         if frame is None:
-            print(f"  WARNING: no district saved a {label} curve VHD — that VHD/mile "
-                  f"map is skipped.")
+            if label in ("peak", "7-day", "recreational"):
+                print(f"  WARNING: no district saved a {label} curve VHD — that VHD/mile "
+                      f"map is skipped.")
         else:
             n = frame.drop_duplicates("Segment ID")["AADT"].notna().sum()
             print(f"  {label} curve VHD for {n:,} volumed segments.")
@@ -304,6 +331,7 @@ def main():
     # Load statewide rankings
     p_rank_csv = base_dir / "statewide_peak_corridor_rankings.csv"
     d7_rank_csv = base_dir / "statewide_7day_corridor_rankings.csv"
+    rec_rank_csv = base_dir / "statewide_rec_corridor_rankings.csv"
 
     peak_ranks = {}
     if p_rank_csv.exists():
@@ -317,6 +345,12 @@ def main():
         df_7d["rank"] = df_7d["statewide_rank"]
         d7_ranks = df_7d.set_index("corridor_group").to_dict(orient="index")
 
+    rec_ranks = {}
+    if rec_rank_csv.exists():
+        df_rec = pd.read_csv(rec_rank_csv)
+        df_rec["rank"] = df_rec["statewide_rank"]
+        rec_ranks = df_rec.set_index("corridor_group").to_dict(orient="index")
+
     # Per-direction figures for the corridor tooltips, from each district's breakout.
     def _breakouts(fname):
         parts = [load_district_table(base_dir / f"d{d}" / fname, d) for d in args.districts]
@@ -325,6 +359,7 @@ def main():
 
     attach_direction_totals(peak_ranks, _breakouts("corridor_breakout.csv"))
     attach_direction_totals(d7_ranks, _breakouts("corridor_7day_breakout.csv"))
+    attach_direction_totals(rec_ranks, _breakouts("corridor_rec_breakout.csv"))
 
     map_files = []
 
@@ -414,6 +449,108 @@ def main():
             )
             print(f"  -> Written {d7_vhd_path}")
             map_files.append(("Statewide 7-Day (VHD / Mile)", d7_vhd_path.name))
+
+    # Map 5: Statewide Recreational Peak TTI
+    if scr_rec is not None:
+        rec_windows = {n: screen.RECREATIONAL_WINDOWS[n] for n in ["fri", "sat", "sun"]
+                       if n in screen.RECREATIONAL_WINDOWS}
+        print("Rendering Statewide Recreational Peak TTI Map...")
+        rec_path = generate_statewide_map(
+            base_dir,
+            scr_rec,
+            net,
+            cat_entries,
+            chains,
+            rec_ranks,
+            windows=rec_windows,
+            window_label="Recreational Peak (Fri–Sun 9 AM – 9 PM)",
+            title="ITD Statewide Corridor Screening — Recreational Peak Congestion (TTI)",
+            subtitle="Recreational Travel Period (Friday, Saturday, Sunday 9:00 AM – 9:00 PM)",
+            delay_label="Total Recreational Delay",
+            map_filename="statewide_rec_map.html",
+            metric="tti",
+        )
+        print(f"  -> Written {rec_path}")
+        map_files.append(("Statewide Recreational (TTI)", rec_path.name))
+
+        # Map 6: Statewide Recreational Delay Density (VHD / Mile)
+        if vhd_rec is not None:
+            print("Rendering Statewide Recreational Delay Density (VHD / Mile) Map...")
+            rec_vhd_path = generate_statewide_map(
+                base_dir,
+                scr_rec,
+                net,
+                cat_entries,
+                chains,
+                rec_ranks,
+                windows=rec_windows,
+                window_label="Recreational Peak (Fri–Sun 9 AM – 9 PM)",
+                title="ITD Statewide Corridor Screening — Recreational Delay Density (VHD / Mile)",
+                subtitle="Recreational Period Delay Density Across Idaho Highways (May–August)",
+                delay_label="Total Recreational Delay",
+                map_filename="statewide_rec_vhd_map.html",
+                metric="vhd_per_mile",
+                segment_vhd=vhd_rec,
+            )
+            print(f"  -> Written {rec_vhd_path}")
+            map_files.append(("Statewide Recreational (VHD / Mile)", rec_vhd_path.name))
+
+    # Daily Recreational Maps: Friday, Saturday, Sunday
+    for tag, day_name, scr_day, vhd_day in [
+        ("fri", "Friday", scr_fri, vhd_fri),
+        ("sat", "Saturday", scr_sat, vhd_sat),
+        ("sun", "Sunday", scr_sun, vhd_sun),
+    ]:
+        if scr_day is None:
+            continue
+        day_rank_csv = base_dir / f"statewide_{tag}_corridor_rankings.csv"
+        day_ranks = {}
+        if day_rank_csv.exists():
+            df_day = pd.read_csv(day_rank_csv)
+            df_day["rank"] = df_day["statewide_rank"]
+            day_ranks = df_day.set_index("corridor_group").to_dict(orient="index")
+        attach_direction_totals(day_ranks, _breakouts(f"corridor_{tag}_breakout.csv"))
+
+        day_windows = {tag: screen.RECREATIONAL_WINDOWS[tag]}
+        print(f"Rendering Statewide {day_name} Peak TTI Map...")
+        day_path = generate_statewide_map(
+            base_dir,
+            scr_day,
+            net,
+            cat_entries,
+            chains,
+            day_ranks,
+            windows=day_windows,
+            window_label=f"{day_name} Recreational Peak (9 AM – 9 PM)",
+            title=f"ITD Statewide Corridor Screening — {day_name} Peak Congestion (TTI)",
+            subtitle=f"{day_name} Recreational Travel Period (9:00 AM – 9:00 PM, May–August)",
+            delay_label=f"Total {day_name} Delay",
+            map_filename=f"statewide_{tag}_map.html",
+            metric="tti",
+        )
+        print(f"  -> Written {day_path}")
+        map_files.append((f"Statewide {day_name} (TTI)", day_path.name))
+
+        if vhd_day is not None:
+            print(f"Rendering Statewide {day_name} Delay Density (VHD / Mile) Map...")
+            day_vhd_path = generate_statewide_map(
+                base_dir,
+                scr_day,
+                net,
+                cat_entries,
+                chains,
+                day_ranks,
+                windows=day_windows,
+                window_label=f"{day_name} Recreational Peak (9 AM – 9 PM)",
+                title=f"ITD Statewide Corridor Screening — {day_name} Delay Density (VHD / Mile)",
+                subtitle=f"{day_name} Recreational Delay Density Across Idaho Highways (May–August)",
+                delay_label=f"Total {day_name} Delay",
+                map_filename=f"statewide_{tag}_vhd_map.html",
+                metric="vhd_per_mile",
+                segment_vhd=vhd_day,
+            )
+            print(f"  -> Written {day_vhd_path}")
+            map_files.append((f"Statewide {day_name} (VHD / Mile)", day_vhd_path.name))
 
     if map_files:
         viewer_path = base_dir / "statewide_map_viewer.html"

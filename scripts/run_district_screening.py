@@ -461,28 +461,30 @@ def provenance(args, area_key, con, screen_frame, resolution, repairs, aadt) -> 
 
 
 def write_outputs(out_dir, ranking, resolution, prov, geo, *, grouped=None,
-                  totals=None, breakout=None, write_kml=True, is_7day: bool = False) -> dict:
+                  totals=None, breakout=None, write_kml=True, is_7day: bool = False,
+                  window_tag: str | None = None) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written = {}
 
-    prov_fname = "screening_7day_provenance.json" if is_7day else "screening_provenance.json"
+    tag = window_tag or ("7day" if is_7day else None)
+    prov_fname = f"screening_{tag}_provenance.json" if tag else "screening_provenance.json"
     prov_path = out_dir / prov_fname
     prov_path.write_text(json.dumps(prov, indent=2, default=str) + "\n")
     written["provenance"] = prov_path
 
     header = "".join(f"# {k}: {json.dumps(v, default=str)}\n" for k, v in prov.items())
-    ranking_fname = "corridor_7day_rankings.csv" if is_7day else "corridor_rankings.csv"
+    ranking_fname = f"corridor_{tag}_rankings.csv" if tag else "corridor_rankings.csv"
     tables = [(ranking_fname, ranking, False),
               ("corridor_resolution.csv", resolution, False)]
     if grouped is not None:
-        grouped_fname = "reporting_corridor_7day_rankings.csv" if is_7day else "reporting_corridor_rankings.csv"
+        grouped_fname = f"reporting_corridor_{tag}_rankings.csv" if tag else "reporting_corridor_rankings.csv"
         tables.insert(0, (grouped_fname, grouped, False))
     if breakout is not None:
-        breakout_fname = "corridor_7day_breakout.csv" if is_7day else "corridor_breakout.csv"
+        breakout_fname = f"corridor_{tag}_breakout.csv" if tag else "corridor_breakout.csv"
         tables.insert(0, (breakout_fname, breakout, True))
     if totals is not None:
-        totals_fname = "corridor_7day_totals.csv" if is_7day else "corridor_peak_totals.csv"
+        totals_fname = f"corridor_{tag}_totals.csv" if tag else "corridor_peak_totals.csv"
         tables.insert(0, (totals_fname, totals, False))
     for name, frame, with_index in tables:
         path = out_dir / name
@@ -1683,6 +1685,17 @@ def run(args) -> dict:
 
         win_names = list((windows or screen.PEAK_WINDOWS).keys())
         is_7day = win_names == ["day_7d"]
+        is_rec = any(n in screen.RECREATIONAL_WINDOWS for n in win_names)
+        if getattr(args, "window_tag", None):
+            window_tag = args.window_tag
+        elif is_7day:
+            window_tag = "7day"
+        elif len(win_names) == 1 and win_names[0] in ("fri", "sat", "sun"):
+            window_tag = win_names[0]
+        elif is_rec:
+            window_tag = "rec"
+        else:
+            window_tag = None
 
         prov = provenance(args, area_key, con, scr, resolution, repairs, aadt)
         prov["vhd"] = {"basis": ranking.attrs.get("vhd_basis"),
@@ -1715,7 +1728,8 @@ def run(args) -> dict:
             }
         written = write_outputs(args.out_dir, ranking, resolution, prov, geo,
                                 grouped=grouped, totals=totals, breakout=breakout,
-                                write_kml=not args.no_kml, is_7day=is_7day)
+                                write_kml=not args.no_kml, is_7day=is_7day,
+                                window_tag=window_tag)
         vp_name = (f"d{args.district}_volume_profiles.csv" if args.district
                    else "volume_profiles.csv")
         written["volume_profiles"] = profiles_mod.write_assignment(
@@ -1729,13 +1743,13 @@ def run(args) -> dict:
             written[name] = path
 
         # Save segment screen results for fast statewide vector map aggregation
-        scr_fname = "segment_7day_screen.parquet" if is_7day else "segment_peak_screen.parquet"
+        scr_fname = f"segment_{window_tag}_screen.parquet" if window_tag else "segment_peak_screen.parquet"
         scr_path = Path(args.out_dir) / scr_fname
         scr.to_parquet(scr_path)
         written["segment_screen"] = scr_path
         if seg_vhd is not None:
-            vhd_path = Path(args.out_dir) / (SEGMENT_VHD_7DAY if is_7day
-                                             else SEGMENT_VHD_PEAK)
+            vhd_fname_pq = f"segment_vhd_{window_tag}.parquet" if window_tag else SEGMENT_VHD_PEAK
+            vhd_path = Path(args.out_dir) / vhd_fname_pq
             seg_vhd.to_parquet(vhd_path)
             written["segment_vhd"] = vhd_path
 
@@ -1752,6 +1766,14 @@ def run(args) -> dict:
                 window_label = "7-Day All-Day (6 AM – 9 PM)"
                 delay_label = "Total 7-Day Delay"
                 map_fname = "screening_7day_map.html"
+                vhd_fname = "screening_7day_vhd_map.html"
+            elif is_rec:
+                win_desc = " / ".join(n.upper() for n in win_names)
+                window_label = f"Recreational Peak (9 AM – 9 PM, {win_desc})"
+                delay_label = "Total Recreational Delay"
+                map_tag = window_tag or "rec"
+                map_fname = f"screening_{map_tag}_map.html"
+                vhd_fname = f"screening_{map_tag}_vhd_map.html"
             else:
                 peak_names = [n for n, w in (windows or screen.PEAK_WINDOWS).items()
                               if w.peak]
@@ -1759,6 +1781,7 @@ def run(args) -> dict:
                                 + " / ".join(n.upper() for n in peak_names) + ")")
                 delay_label = "Total Peak Delay"
                 map_fname = "screening_peak_map.html"
+                vhd_fname = "screening_vhd_map.html"
 
             map_path = generate_maps(
                 args.out_dir, scr, net, cat_entries, chains, corridor_ranks,
@@ -1770,8 +1793,6 @@ def run(args) -> dict:
             written["map"] = map_path
 
             if aadt is not None:
-                vhd_fname = ("screening_7day_vhd_map.html" if is_7day
-                             else "screening_vhd_map.html")
                 vhd_path = generate_maps(
                     args.out_dir, scr, net, cat_entries, chains, corridor_ranks,
                     windows=windows or screen.PEAK_WINDOWS,
@@ -1789,6 +1810,8 @@ def run(args) -> dict:
                 ("Typical Peak (VHD / Mile)", "screening_vhd_map.html"),
                 ("7-Day All-Day (TTI)", "screening_7day_map.html"),
                 ("7-Day All-Day (VHD / Mile)", "screening_7day_vhd_map.html"),
+                ("Recreational Peak (TTI)", "screening_rec_map.html"),
+                ("Recreational Peak (VHD / Mile)", "screening_rec_vhd_map.html"),
             ]
             available_maps = [
                 (lbl, fn) for lbl, fn in candidates
@@ -1870,6 +1893,8 @@ def build_parser() -> argparse.ArgumentParser:
                         + " (default: am,pm,midday,night)")
     p.add_argument("--date-start", default=None)
     p.add_argument("--date-end", default=None)
+    p.add_argument("--window-tag", default=None,
+                   help="filename tag for output files (e.g. 'fri', 'sat', 'sun', 'rec')")
     p.add_argument("--tz", default=DEFAULT_TZ)
     p.add_argument("--min-coverage", type=float, default=corridors.DEFAULT_MIN_COVERAGE)
     p.add_argument("--out-dir", default="out/district_screening")

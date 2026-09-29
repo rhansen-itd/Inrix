@@ -43,8 +43,11 @@ District 3 catalogue, ``legacy/d3_curated/d3_corridors.json``, instead of the ge
 one, which is the default since Item 63)."""
 
 
+CATALOGUE_PATTERN = "scripts/d{district}_corridors.json"
+
+
 def catalogue_path(district: int) -> str:
-    return CATALOGUE_OVERRIDES.get(district, f"scripts/d{district}_corridors.json")
+    return CATALOGUE_OVERRIDES.get(district, CATALOGUE_PATTERN.format(district=district))
 
 
 def parse_overrides(values) -> dict[int, str]:
@@ -127,15 +130,23 @@ def main():
                         help="'triage-only' runs candidate discovery; 'full' runs complete screening")
     parser.add_argument("--out-dir", default="out/statewide_screening")
     parser.add_argument("--windows", default="both",
-                        help="'both' runs both am,pm and day_7d; or specify e.g. 'am,pm' or 'day_7d'")
+                        help="'both' runs am,pm and day_7d; 'rec' or 'recreational' runs fri,sat,sun; "
+                             "or specify e.g. 'am,pm', 'day_7d', 'fri,sat,sun', 'weekend_rec'")
+    parser.add_argument("--date-start", default=None, help="Inclusive local start date YYYY-MM-DD")
+    parser.add_argument("--date-end", default=None, help="Inclusive local end date YYYY-MM-DD")
     parser.add_argument("--aadt", default="AADT_2025.zip")
     parser.add_argument("--aadt-year", type=int, default=2025)
     parser.add_argument("--maps", action="store_true")
+    parser.add_argument("--catalogue-pattern", default=None,
+                        help="template for catalogue path (e.g. 'scripts/d{district}_rec_corridors.json')")
     parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
                         help="screen district D on catalogue PATH instead of "
                              "scripts/dD_corridors.json (repeatable); passed on to the "
                              "aggregation and the statewide maps")
     args, extra = parser.parse_known_args()
+    if args.catalogue_pattern:
+        global CATALOGUE_PATTERN
+        CATALOGUE_PATTERN = args.catalogue_pattern
     CATALOGUE_OVERRIDES.update(parse_overrides(args.catalogue_override))
 
     out_dir = Path(args.out_dir)
@@ -153,7 +164,14 @@ def main():
             results[f"d{d}_triage"] = run_triage(d, out_dir)
     else:
         # Full screening mode
-        windows_to_run = ["am,pm", "day_7d"] if args.windows == "both" else [args.windows]
+        if args.windows == "both":
+            windows_to_run = ["am,pm", "day_7d"]
+        elif args.windows in ("recreational", "rec"):
+            windows_to_run = ["fri,sat,sun"]
+        elif args.windows in ("recreational-separate", "rec-separate", "rec-days", "separate-rec"):
+            windows_to_run = ["fri", "sat", "sun"]
+        else:
+            windows_to_run = [args.windows]
 
         for d in args.districts:
             db = Path(store_path(d))
@@ -166,8 +184,14 @@ def main():
                 pass_through = list(extra)
                 if args.aadt and "--aadt" not in pass_through:
                     pass_through.extend(["--aadt", args.aadt, "--aadt-year", str(args.aadt_year)])
+                if args.date_start and "--date-start" not in pass_through:
+                    pass_through.extend(["--date-start", args.date_start])
+                if args.date_end and "--date-end" not in pass_through:
+                    pass_through.extend(["--date-end", args.date_end])
                 if args.maps and "--maps" not in pass_through:
                     pass_through.append("--maps")
+                if "--window-tag" not in pass_through and win in ("fri", "sat", "sun"):
+                    pass_through.extend(["--window-tag", win])
 
                 rc = run_screening(d, out_dir, win, pass_through)
                 results[f"d{d}_{win}"] = rc

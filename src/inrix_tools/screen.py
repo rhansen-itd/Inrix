@@ -162,11 +162,24 @@ PEAK_WINDOWS: dict[str, PeakWindow] = {
 # Friday-Sunday travel costs. ``peak=True`` so it ranks in ``corridor_peak_totals``.
 ALL_DAY_7D_WINDOW = PeakWindow("day_7d", "6:00AM-9:00PM", days=None, peak=True)
 
+# Recreational windows: Friday, Saturday, and Sunday 9:00 AM to 9:00 PM.
+# Captures peak recreational travel on tourist, mountain, resort and outdoor
+# corridors (e.g. SH-55, US-95, US-20, SH-75, US-2).
+RECREATIONAL_WINDOWS: dict[str, PeakWindow] = {
+    "fri":         PeakWindow("fri", "9:00AM-9:00PM", ("Fri",), peak=True),
+    "sat":         PeakWindow("sat", "9:00AM-9:00PM", ("Sat",), peak=True),
+    "sun":         PeakWindow("sun", "9:00AM-9:00PM", ("Sun",), peak=True),
+    "weekend_rec": PeakWindow("weekend_rec", "9:00AM-9:00PM", ("Fri", "Sat", "Sun"), peak=True),
+    "fri_sun":     PeakWindow("fri_sun", "9:00AM-9:00PM", ("Fri", "Sat", "Sun"), peak=True),
+    "sat_sun":     PeakWindow("sat_sun", "9:00AM-9:00PM", ("Sat", "Sun"), peak=True),
+}
+
 # Convenience: every defined preset in one dict. ``resolve_windows`` looks here when
 # resolving a string name, so ``--windows day_7d`` works out of the box.
 ALL_WINDOWS: dict[str, PeakWindow] = {
     **PEAK_WINDOWS,
     "day_7d": ALL_DAY_7D_WINDOW,
+    **RECREATIONAL_WINDOWS,
 }
 
 # The windows a corridor core is judged on (ROADMAP Item 50): the two commute peaks,
@@ -1791,6 +1804,11 @@ def segment_recurrence(con, area_key: str, windows=PEAK_WINDOWS,
     per_window_dfs = []
     for name, w in wins.items():
         pred = w.sql_predicate()
+        dows = w.dows
+        if dows is not None:
+            days_expr = f"date_dow IN ({', '.join(str(d + 1) for d in dows)})"
+        else:
+            days_expr = "TRUE"
         sql = f"""
         WITH src AS (
             SELECT
@@ -1824,8 +1842,8 @@ def segment_recurrence(con, area_key: str, windows=PEAK_WINDOWS,
         SELECT
             sid AS "{SEGMENT_COL}",
             COUNT(*)                               AS n_days,
-            COUNT(*) FILTER (WHERE date_dow <= 5)  AS n_weekdays,
-            COUNT(*) FILTER (WHERE date_dow <= 5
+            COUNT(*) FILTER (WHERE {days_expr})    AS n_weekdays,
+            COUNT(*) FILTER (WHERE {days_expr}
                 AND day_speed > 0
                 AND (day_ref / day_speed) > {float(tti_threshold)})
                                                    AS n_congested,

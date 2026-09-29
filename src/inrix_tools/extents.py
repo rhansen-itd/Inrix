@@ -1140,30 +1140,36 @@ def _turn(a: float | None, b: float | None) -> float:
     return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
-def _join_candidate(cg: _ChainGeometry, tail: int, head: int) -> dict | None:
+def _join_candidate(cg: _ChainGeometry, tail: int, head: int,
+                    *, join_tol_m: float = ROUTE_JOIN_TOL_M,
+                    max_turn_deg: float = ROUTE_JOIN_MAX_TURN_DEG,
+                    min_fraction: float = ROUTE_JOIN_MIN_FRACTION,
+                    mp_tol: float = ROUTE_JOIN_MP_TOL) -> dict | None:
     """Does ``head`` continue the route from ``tail``'s last segment? ``None``, or
     ``{gap_m, turn_deg, at}`` — ``at`` is how far along ``tail`` the head leaves."""
     g, s = cg.geom.get(tail), cg.start.get(head)
     if g is None or s is None or g.length <= 0:
         return None
     gap = float(g.distance(s))
-    if gap > ROUTE_JOIN_TOL_M:
+    if gap > join_tol_m:
         return None
     at = float(g.project(s))
-    if at < ROUTE_JOIN_MIN_FRACTION * g.length:
+    if at < min_fraction * g.length:
         return None
     turn = _turn(cg.bearing_at(tail, at), cg.in_brg.get(head))
-    if turn > ROUTE_JOIN_MAX_TURN_DEG:
+    if turn > max_turn_deg:
         return None
     rid_t, rid_h = cg.route_id.get(tail), cg.route_id.get(head)
     if rid_t and rid_t == rid_h and tail in cg.mp0 and tail in cg.mp1 and head in cg.mp0:
         mp_at = cg.mp0[tail] + (cg.mp1[tail] - cg.mp0[tail]) * (at / g.length)
-        if abs(cg.mp0[head] - mp_at) > ROUTE_JOIN_MP_TOL:
+        if abs(cg.mp0[head] - mp_at) > mp_tol:
             return None
     return {"gap_m": round(gap, 1), "turn_deg": round(turn, 0), "at": at}
 
 
-def _returns_to_line(cg: _ChainGeometry, a: int, run: Sequence[int]) -> float | None:
+def _returns_to_line(cg: _ChainGeometry, a: int, run: Sequence[int],
+                     *, bridge_max_miles: float = ROUTE_BRIDGE_MAX_MILES,
+                     mp_tol: float = ROUTE_JOIN_MP_TOL) -> float | None:
     """Mileposts past ``a`` on ``a``'s own SHS line, reached within the bridge limit.
 
     The milepost evidence for a stub join: SH-8 eastbound leaves its line at mp 1.79
@@ -1177,11 +1183,11 @@ def _returns_to_line(cg: _ChainGeometry, a: int, run: Sequence[int]) -> float | 
         return None
     walked = 0.0
     for s in run:
-        if walked > ROUTE_BRIDGE_MAX_MILES:
+        if walked > bridge_max_miles:
             return None
         if cg.route_id.get(s) == rid and s in cg.mp0:
             ahead = (cg.mp0[s] - cg.mp1[a]) * sense
-            return cg.mp0[s] if ahead >= -ROUTE_JOIN_MP_TOL else None
+            return cg.mp0[s] if ahead >= -mp_tol else None
         walked += cg.miles.get(s, 0.0)
     return None
 
@@ -1213,7 +1219,12 @@ def _walk_route(members: set[int], nxt_raw: dict[int, int]) -> list[list[int]]:
 
 def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
                       linked_into: set[int],
-                      blocked: Collection[tuple[int, int]] = ()
+                      blocked: Collection[tuple[int, int]] = (),
+                      *, join_tol_m: float = ROUTE_JOIN_TOL_M,
+                      max_turn_deg: float = ROUTE_JOIN_MAX_TURN_DEG,
+                      stub_miles: float = ROUTE_STUB_MILES,
+                      bridge_max_miles: float = ROUTE_BRIDGE_MAX_MILES,
+                      mp_tol: float = ROUTE_JOIN_MP_TOL
                       ) -> list[tuple[list[int], list[dict]]]:
     """Join one route's walks where the route turns off the link (see the section note).
 
@@ -1238,7 +1249,8 @@ def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
             for j, head in _heads(i):
                 if head in walk or (tail, head) in blocked:
                     continue
-                c = _join_candidate(cg, tail, head)
+                c = _join_candidate(cg, tail, head, join_tol_m=join_tol_m,
+                                    max_turn_deg=max_turn_deg, mp_tol=mp_tol)
                 if c is not None and (best is None or (c["gap_m"], c["turn_deg"])
                                       < (best[1]["gap_m"], best[1]["turn_deg"])):
                     best = (j, c)
@@ -1261,17 +1273,19 @@ def _join_route_walks(route: str, walks: list[list[int]], cg: _ChainGeometry,
                 continue
             for k in range(len(walk) - 2, -1, -1):
                 stub = walk[k + 1:]
-                if cg.run_miles(stub) > ROUTE_STUB_MILES:
+                if cg.run_miles(stub) > stub_miles:
                     break
                 a = walk[k]
                 best = None
                 for j, head in _heads(i):
                     if head in walk or (a, head) in blocked:
                         continue
-                    c = _join_candidate(cg, a, head)
+                    c = _join_candidate(cg, a, head, join_tol_m=join_tol_m,
+                                        max_turn_deg=max_turn_deg, mp_tol=mp_tol)
                     if c is None:
                         continue
-                    mp = _returns_to_line(cg, a, items[j][0])
+                    mp = _returns_to_line(cg, a, items[j][0], bridge_max_miles=bridge_max_miles,
+                                          mp_tol=mp_tol)
                     if mp is None:
                         continue
                     if best is None or (c["gap_m"], c["turn_deg"]) < (best[1]["gap_m"],
@@ -1442,6 +1456,11 @@ def enumerate_mainline_chains(
     route_numbers: Sequence[str] | None = None,
     join: bool = True,
     hard_stops: Mapping[tuple[int, int], str] | None = None,
+    join_tol_m: float = ROUTE_JOIN_TOL_M,
+    max_turn_deg: float = ROUTE_JOIN_MAX_TURN_DEG,
+    stub_miles: float = ROUTE_STUB_MILES,
+    bridge_max_miles: float = ROUTE_BRIDGE_MAX_MILES,
+    mp_tol: float = ROUTE_JOIN_MP_TOL,
 ) -> list[MainlineChain]:
     """Walk every state route in ``network`` into maximal directional chains.
 
@@ -1523,7 +1542,11 @@ def enumerate_mainline_chains(
         walks = _walk_route(members, nxt_walk)
         if join and cg is not None and cg.geom:
             linked_into = {n for s in members if (n := nxt_raw.get(s)) in members}
-            joined = _join_route_walks(route, walks, cg, linked_into, blocked)
+            joined = _join_route_walks(
+                route, walks, cg, linked_into, blocked,
+                join_tol_m=join_tol_m, max_turn_deg=max_turn_deg,
+                stub_miles=stub_miles, bridge_max_miles=bridge_max_miles,
+                mp_tol=mp_tol)
         else:
             joined = [(w, []) for w in walks]
         raw.extend({"route": route, "ids": w, "joins": log} for w, log in joined)
@@ -2306,6 +2329,7 @@ def segment_congestion(
     bins: pd.DataFrame | None = None,
     curves=None,
     profiles=None,
+    curve_vhd: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Each segment's peak congestion **against its own baseline**, one row per segment.
 
@@ -2387,7 +2411,16 @@ def segment_congestion(
     out["vhd"] = out["vhd_index"]
     out["vhd_coverage"] = float("nan")
     out.attrs["vhd_basis"] = "index"
-    if bins is not None:
+    if curve_vhd is not None:
+        at = pd.MultiIndex.from_arrays([out.index.astype("int64"),
+                                        out["peak_window"].fillna("")])
+        cv = curve_vhd.set_index(["Segment ID", "window"])
+        out["vhd"] = cv["vhd"].reindex(at).to_numpy()
+        out["vhd_coverage"] = cv["coverage"].reindex(at).to_numpy() if "coverage" in cv.columns else float("nan")
+        out.attrs["vhd_basis"] = "curve"
+        out.attrs["aadt_caveat"] = None
+        out.attrs["curve_vhd"] = True
+    elif bins is not None:
         from . import aadt as _aadt
         from . import screen as _screen
         if curves is None:
@@ -2513,22 +2546,33 @@ def _run_metrics(seg: pd.DataFrame, ids: Sequence[int]) -> dict:
     }
 
 
-def core_fails(m: dict) -> tuple[str, ...]:
+def core_fails(m: dict, *,
+               min_effective_miles: float = MIN_EFFECTIVE_CORE_MILES,
+               min_core_vhd_per_mile: float = MIN_CORE_VHD_PER_MILE,
+               min_core_vhd: float = MIN_CORE_VHD,
+               min_realtime_share: float = MIN_REALTIME_SHARE) -> tuple[str, ...]:
     """Which floors a run's metrics (:func:`_run_metrics`) miss."""
     fails = []
-    if m["effective_miles"] < MIN_EFFECTIVE_CORE_MILES:
+    if m["effective_miles"] < min_effective_miles:
         fails.append(FAIL_EFFECTIVE_MILES)
-    if m["vhd_per_mile"] < MIN_CORE_VHD_PER_MILE:
+    if m["vhd_per_mile"] < min_core_vhd_per_mile:
         fails.append(FAIL_VHD_PER_MILE)
-    if m["vhd"] < MIN_CORE_VHD:
+    if m["vhd"] < min_core_vhd:
         fails.append(FAIL_VHD)
-    if not (m["realtime_share"] >= MIN_REALTIME_SHARE):     # NaN fails too
+    if not (m["realtime_share"] >= min_realtime_share):     # NaN fails too
         fails.append(FAIL_REALTIME)
     return tuple(fails)
 
 
 def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame, *,
-               exclude: set[int] | frozenset[int] = frozenset()) -> list[CoreCandidate]:
+               exclude: set[int] | frozenset[int] = frozenset(),
+               core_seed_ratio: float = CORE_SEED_RATIO,
+               core_gap_segments: int = CORE_GAP_SEGMENTS,
+               core_gap_miles: float = CORE_GAP_MILES,
+               min_effective_miles: float = MIN_EFFECTIVE_CORE_MILES,
+               min_core_vhd_per_mile: float = MIN_CORE_VHD_PER_MILE,
+               min_core_vhd: float = MIN_CORE_VHD,
+               min_realtime_share: float = MIN_REALTIME_SHARE) -> list[CoreCandidate]:
     """Every congested run on a chain, scored — qualifying or not.
 
     A run starts and ends on a segment at :data:`CORE_SEED_RATIO` or worse and bridges
@@ -2545,14 +2589,14 @@ def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame, *,
     ratio = seg["ratio"].reindex(ids)
     miles = seg["miles"].reindex(ids).fillna(0.0)
     seeds = [i for i, r in enumerate(ratio)
-             if pd.notna(r) and r >= CORE_SEED_RATIO and ids[i] not in exclude]
+             if pd.notna(r) and r >= core_seed_ratio and ids[i] not in exclude]
     runs: list[tuple[int, int]] = []
     for i in seeds:
         if runs:
             lo, hi = runs[-1]
             gap = range(hi, i)
-            if (len(gap) <= CORE_GAP_SEGMENTS
-                    and float(miles.iloc[list(gap)].sum()) <= CORE_GAP_MILES
+            if (len(gap) <= core_gap_segments
+                    and float(miles.iloc[list(gap)].sum()) <= core_gap_miles
                     and not any(ids[g] in exclude for g in gap)):
                 runs[-1] = (lo, i + 1)
                 continue
@@ -2569,7 +2613,11 @@ def find_cores(chain_segments: Sequence[int], seg: pd.DataFrame, *,
             realtime_share=m["realtime_share"], peak_ratio=m["peak_ratio"],
             ref_tti=m["ref_tti"], unknown_miles=m["unknown_miles"],
             n_aadt_missing=m["n_aadt_missing"],
-            baseline_sources=m["baseline_sources"], fails=core_fails(m),
+            baseline_sources=m["baseline_sources"],
+            fails=core_fails(m, min_effective_miles=min_effective_miles,
+                             min_core_vhd_per_mile=min_core_vhd_per_mile,
+                             min_core_vhd=min_core_vhd,
+                             min_realtime_share=min_realtime_share),
             vhd_index=m["vhd_index"],
         ))
     out.sort(key=lambda c: (-c.vhd, -c.effective_miles))
@@ -2662,6 +2710,12 @@ def grow_congested_extent(
     seg: pd.DataFrame,
     core: CoreCandidate,
     split_points: Sequence[SplitPoint] = (),
+    *,
+    core_gap_segments: int = CORE_GAP_SEGMENTS,
+    core_gap_miles: float = CORE_GAP_MILES,
+    spill_retention: float = SPILL_RETENTION,
+    ratio_onset: float = RATIO_ONSET,
+    urban_share_inside: float = URBAN_SHARE_INSIDE,
 ) -> tuple[int, int, SplitPoint | None, SplitPoint | None]:
     """Tier 2: grow outward from a core while the congestion continues.
 
@@ -2711,8 +2765,8 @@ def grow_congested_extent(
                 return (lo if step < 0 else hi), split
             r = ratio.iloc[i]
             outside = (core_urban and pd.notna(urban.iloc[i])
-                       and urban.iloc[i] < URBAN_SHARE_INSIDE)
-            congested = pd.notna(r) and r >= RATIO_ONSET
+                       and urban.iloc[i] < urban_share_inside)
+            congested = pd.notna(r) and r >= ratio_onset
             if not congested:
                 if outside:
                     return (lo if step < 0 else hi), _stop(
@@ -2720,21 +2774,21 @@ def grow_congested_extent(
                         f"leaving {area or 'the urban area'}; ratio "
                         f"{'unknown' if pd.isna(r) else f'{r:.2f}'} beyond it")
                 pending.append(i)
-                if len(pending) > CORE_GAP_SEGMENTS or \
-                        float(miles.iloc[pending].sum()) > CORE_GAP_MILES:
+                if len(pending) > core_gap_segments or \
+                        float(miles.iloc[pending].sum()) > core_gap_miles:
                     return (lo if step < 0 else hi), _stop(
                         SplitKind.CONGESTION_END, ids, pending[0],
-                        f"peak/baseline under {RATIO_ONSET} for "
+                        f"peak/baseline under {ratio_onset} for "
                         f"{float(miles.iloc[pending].sum()):.2f} mi")
                 i += step
                 continue
             new_lo, new_hi = (i, hi) if step < 0 else (lo, i + 1)
             m = _run_metrics(seg, ids[new_lo:new_hi])
-            if m["vhd_per_mile"] < SPILL_RETENTION * core_rate:
+            if m["vhd_per_mile"] < spill_retention * core_rate:
                 return (lo if step < 0 else hi), _stop(
                     SplitKind.DILUTION, ids, i,
                     f"extending would fall to {m['vhd_per_mile']:.0f} VHD/mi, under "
-                    f"{SPILL_RETENTION:.0%} of the core's {core_rate:.0f}")
+                    f"{spill_retention:.0%} of the core's {core_rate:.0f}")
             lo, hi = new_lo, new_hi
             pending = []
             i += step
@@ -2841,8 +2895,16 @@ def _chain_end(chain: MainlineChain, split: SplitPoint | None, at: str) -> Split
 
 
 def _tiers_for(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
-               splits: Sequence[SplitPoint], net_idx) -> dict[ExtentTier, ExtentAlternative]:
-    tiers = _tiers_within(chain, core, seg, splits, net_idx)
+               splits: Sequence[SplitPoint], net_idx, *,
+               core_gap_segments: int = CORE_GAP_SEGMENTS,
+               core_gap_miles: float = CORE_GAP_MILES,
+               spill_retention: float = SPILL_RETENTION,
+               pad_miles: float = CONTEXT_PAD_MILES) -> dict[ExtentTier, ExtentAlternative]:
+    tiers = _tiers_within(chain, core, seg, splits, net_idx,
+                          core_gap_segments=core_gap_segments,
+                          core_gap_miles=core_gap_miles,
+                          spill_retention=spill_retention,
+                          pad_miles=pad_miles)
     if not chain.stops:
         return tiers
     return {t: dataclasses.replace(alt, bounding_splits=(
@@ -2852,7 +2914,11 @@ def _tiers_for(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
 
 
 def _tiers_within(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
-                  splits: Sequence[SplitPoint], net_idx) -> dict[ExtentTier, ExtentAlternative]:
+                  splits: Sequence[SplitPoint], net_idx, *,
+                  core_gap_segments: int = CORE_GAP_SEGMENTS,
+                  core_gap_miles: float = CORE_GAP_MILES,
+                  spill_retention: float = SPILL_RETENTION,
+                  pad_miles: float = CONTEXT_PAD_MILES) -> dict[ExtentTier, ExtentAlternative]:
     ids = list(chain.segment_ids)
     core_alt = _alternative(
         ExtentTier.CORE, ids, net_idx, core.start, core.stop,
@@ -2866,7 +2932,11 @@ def _tiers_within(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
               f"no segment at peak/baseline >= {CORE_SEED_RATIO} downstream")
         if core.stop < len(ids) else None,
     )
-    lo, hi, up, down = grow_congested_extent(ids, seg, core, splits)
+    lo, hi, up, down = grow_congested_extent(
+        ids, seg, core, splits,
+        core_gap_segments=core_gap_segments,
+        core_gap_miles=core_gap_miles,
+        spill_retention=spill_retention)
     m = _run_metrics(seg, ids[lo:hi])
     commuter = _alternative(
         ExtentTier.COMMUTER, ids, net_idx, lo, hi,
@@ -2876,7 +2946,8 @@ def _tiers_within(chain: MainlineChain, core: CoreCandidate, seg: pd.DataFrame,
          if core.vhd_per_mile > 0 else f"Congested extent ({m['miles']:.2f} mi)"),
         up, down)
     c_lo, c_hi, c_up, c_down = context_extent(
-        ids, seg, lo, hi, splits, urban=_core_is_urban(seg, core.segment_ids))
+        ids, seg, lo, hi, splits, urban=_core_is_urban(seg, core.segment_ids),
+        pad_miles=pad_miles)
     cm = _run_metrics(seg, ids[c_lo:c_hi])
     context = _alternative(
         ExtentTier.REGIONAL, ids, net_idx, c_lo, c_hi,
@@ -3042,8 +3113,22 @@ def generate_catalogue(
     bins: pd.DataFrame | None = None,
     curves=None,
     profiles=None,
+    curve_vhd: pd.DataFrame | None = None,
     hard_stops: Mapping[tuple[int, int], str] | None = None,
     couplet_legs: Mapping[str, tuple[Sequence[int], Sequence[int]]] | None = None,
+    join_tol_m: float = ROUTE_JOIN_TOL_M,
+    max_turn_deg: float = ROUTE_JOIN_MAX_TURN_DEG,
+    stub_miles: float = ROUTE_STUB_MILES,
+    bridge_max_miles: float = ROUTE_BRIDGE_MAX_MILES,
+    mp_tol: float = ROUTE_JOIN_MP_TOL,
+    core_seed_ratio: float = CORE_SEED_RATIO,
+    core_gap_segments: int = CORE_GAP_SEGMENTS,
+    core_gap_miles: float = CORE_GAP_MILES,
+    min_effective_miles: float = MIN_EFFECTIVE_CORE_MILES,
+    min_core_vhd_per_mile: float = MIN_CORE_VHD_PER_MILE,
+    min_core_vhd: float = MIN_CORE_VHD,
+    min_realtime_share: float = MIN_REALTIME_SHARE,
+    spill_retention: float = SPILL_RETENTION,
 ) -> dict:
     """Build a whole corridor catalogue from a district network (Items 46, 50).
 
@@ -3104,7 +3189,7 @@ def generate_catalogue(
         metric_crs = "EPSG:3857"
 
     seg = segment_congestion(baseline, network, peak_windows=peak_windows, bins=bins,
-                             curves=curves, profiles=profiles)
+                             curves=curves, profiles=profiles, curve_vhd=curve_vhd)
     if bins is not None:
         from . import aadt as _aadt
         from . import screen as _screen
@@ -3112,14 +3197,25 @@ def generate_catalogue(
             bins, seg["baseline_tt"], net_idx, curves,
             _screen.bin_weights(bins, profiles, windows=list(peak_windows)),
             by_month=True)
-    chains = enumerate_mainline_chains(network, min_miles=min_chain_miles,
-                                       hard_stops=hard_stops)
+    chains = enumerate_mainline_chains(
+        network, min_miles=min_chain_miles, hard_stops=hard_stops,
+        join_tol_m=join_tol_m, max_turn_deg=max_turn_deg,
+        stub_miles=stub_miles, bridge_max_miles=bridge_max_miles,
+        mp_tol=mp_tol)
     route_sets = segment_route_sets(network)
     pairs = pair_chains(chains, network, metric_crs=metric_crs)
     junctions = incoming_route_map(network)
 
     def _analyse(chain: MainlineChain) -> DirectionAnalysis:
-        cands = find_cores(chain.segment_ids, seg)
+        cands = find_cores(
+            chain.segment_ids, seg,
+            core_seed_ratio=core_seed_ratio,
+            core_gap_segments=core_gap_segments,
+            core_gap_miles=core_gap_miles,
+            min_effective_miles=min_effective_miles,
+            min_core_vhd_per_mile=min_core_vhd_per_mile,
+            min_core_vhd=min_core_vhd,
+            min_realtime_share=min_realtime_share)
         if observed is not None:
             cands = [c if any(s in observed for s in c.segment_ids)
                      else dataclasses.replace(c, fails=c.fails + (FAIL_UNOBSERVED,))
@@ -3238,7 +3334,15 @@ def generate_catalogue(
         ids = d.chain.segment_ids
         held = {ids[i] for lo, hi in claimed[id(d)] + mirrored[id(d)] for i in range(lo, hi)}
         taken = set(core_owner) | set(t2_owner) | held
-        pieces = [c for c in find_cores(ids, seg, exclude=taken)
+        pieces = [c for c in find_cores(
+            ids, seg, exclude=taken,
+            core_seed_ratio=core_seed_ratio,
+            core_gap_segments=core_gap_segments,
+            core_gap_miles=core_gap_miles,
+            min_effective_miles=min_effective_miles,
+            min_core_vhd_per_mile=min_core_vhd_per_mile,
+            min_core_vhd=min_core_vhd,
+            min_realtime_share=min_realtime_share)
                   if c.qualifies and c.start < core.stop and c.stop > core.start]
         if observed is not None:
             pieces = [c for c in pieces if any(s in observed for s in c.segment_ids)]
@@ -3268,7 +3372,11 @@ def generate_catalogue(
         splits = detect_split_points(list(d.chain.segment_ids), network,
                                      incoming_routes=junctions)
         lead = DirectionAnalysis(d.chain, d.candidates, core)
-        lead.tiers = _tiers_for(d.chain, core, seg, splits, net_idx)
+        lead.tiers = _tiers_for(
+            d.chain, core, seg, splits, net_idx,
+            core_gap_segments=core_gap_segments,
+            core_gap_miles=core_gap_miles,
+            spill_retention=spill_retention)
         t2 = lead.tiers[ExtentTier.COMMUTER]
         pos = {s: i for i, s in enumerate(d.chain.segment_ids)}
         claimed[id(d)].append((pos[t2.segment_ids[0]], pos[t2.segment_ids[-1]] + 1))
@@ -3324,7 +3432,10 @@ def generate_catalogue(
             companion.tiers = _tiers_for(
                 companion.chain, companion.core, seg,
                 detect_split_points(list(companion.chain.segment_ids), network,
-                                    incoming_routes=junctions), net_idx)
+                                    incoming_routes=junctions), net_idx,
+                core_gap_segments=core_gap_segments,
+                core_gap_miles=core_gap_miles,
+                spill_retention=spill_retention)
             c2 = companion.tiers[ExtentTier.COMMUTER]
             opos = {s: i for i, s in enumerate(companion.chain.segment_ids)}
             claimed[id(other)].append((opos[c2.segment_ids[0]], opos[c2.segment_ids[-1]] + 1))
@@ -3518,18 +3629,25 @@ def generate_catalogue(
                 "baseline": f"night mean with >= {BASELINE_MIN_OBS} gated obs, else "
                             f"{BASELINE_FALLBACK_COL}",
                 "ratio_onset": RATIO_ONSET, "ratio_full": RATIO_FULL,
-                "core_seed_ratio": CORE_SEED_RATIO,
-                "core_gap": [CORE_GAP_SEGMENTS, CORE_GAP_MILES],
+                "core_seed_ratio": core_seed_ratio,
+                "core_gap": [core_gap_segments, core_gap_miles],
                 "segment_miles_cap": SEGMENT_MILES_CAP,
-                "min_effective_core_miles": MIN_EFFECTIVE_CORE_MILES,
-                "min_core_vhd_per_mile": MIN_CORE_VHD_PER_MILE,
-                "min_core_vhd": MIN_CORE_VHD,
-                "min_realtime_share": MIN_REALTIME_SHARE,
-                "spill_retention": SPILL_RETENTION,
+                "min_effective_core_miles": min_effective_miles,
+                "min_core_vhd_per_mile": min_core_vhd_per_mile,
+                "min_core_vhd": min_core_vhd,
+                "min_realtime_share": min_realtime_share,
+                "spill_retention": spill_retention,
                 "episodic": {"top_fraction_of_months": round(EPISODIC_TOP_FRACTION, 3),
                              "share": EPISODIC_SHARE, "seasonal_share": SEASONAL_SHARE,
                              "min_months": EPISODIC_MIN_MONTHS},
                 "context_pad_miles": CONTEXT_PAD_MILES,
+                "route_stitching": {
+                    "join_tol_m": join_tol_m,
+                    "max_turn_deg": max_turn_deg,
+                    "stub_miles": stub_miles,
+                    "bridge_max_miles": bridge_max_miles,
+                    "mp_tol": mp_tol,
+                },
             },
         },
         "corridors": entries,

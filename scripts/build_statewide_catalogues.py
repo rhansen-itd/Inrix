@@ -362,6 +362,30 @@ def main() -> int:
                         help="manual hard stops (Item 60); '' = none")
     parser.add_argument("--audit-dir", default=None,
                         help="where dN/core_audit.csv goes (default: --screening-dir)")
+    parser.add_argument("--relaxed", action="store_true",
+                        help="relax route stitching and core bridging thresholds (longer chains, larger gap tolerance)")
+    parser.add_argument("--join-tol-m", type=float, default=None,
+                        help="route stitching join tolerance in meters (default: 50m, relaxed: 100m)")
+    parser.add_argument("--max-turn-deg", type=float, default=None,
+                        help="route stitching max turn degrees (default: 90 deg, relaxed: 110 deg)")
+    parser.add_argument("--bridge-max-miles", type=float, default=None,
+                        help="max bridge miles for route stitch (default: 0.35 mi, relaxed: 0.75 mi)")
+    parser.add_argument("--core-gap-segments", type=int, default=None,
+                        help="max segments bridged across a congestion gap (default: 2, relaxed: 4)")
+    parser.add_argument("--core-gap-miles", type=float, default=None,
+                        help="max miles bridged across a congestion gap (default: 0.5 mi, relaxed: 1.0 mi)")
+    parser.add_argument("--min-core-vhd", type=float, default=None,
+                        help="minimum core VHD threshold (default: 0.8, relaxed: 0.5)")
+    parser.add_argument("--windows", default="am,pm",
+                        help="comma-separated peak windows to evaluate congestion across (default: am,pm)")
+    parser.add_argument("--rec-screen", action="store_true",
+                        help="build catalogue from summer recreational screening data (segment_rec_screen.parquet + night baseline)")
+    parser.add_argument("--rec-screening-dir", default="out/recreational_screening",
+                        help="directory holding recreational screening results (default: out/recreational_screening)")
+    parser.add_argument("--filename-pattern", default="d{district}_corridors.json",
+                        help="output filename pattern (default: d{district}_corridors.json, e.g. d{district}_rec_corridors.json)")
+    parser.add_argument("--min-effective-miles", type=float, default=None,
+                        help="minimum effective miles for a core (default: 0.6, relaxed: 0.2)")
     parser.add_argument("--no-couplets", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
                         help="generate and verify, but write nothing")
@@ -371,8 +395,18 @@ def main() -> int:
     report_dir = Path(args.report_dir)
     stop_table = (hard_stops_mod.read_hard_stops(args.hard_stops)
                   if args.hard_stops else None)
-    all_pairs, all_ok = [], True
+    # Stitching and core parameters
+    join_tol_m = args.join_tol_m if args.join_tol_m is not None else (150.0 if args.relaxed else extents.ROUTE_JOIN_TOL_M)
+    max_turn_deg = args.max_turn_deg if args.max_turn_deg is not None else (110.0 if args.relaxed else extents.ROUTE_JOIN_MAX_TURN_DEG)
+    bridge_max_miles = args.bridge_max_miles if args.bridge_max_miles is not None else (1.5 if args.relaxed else extents.ROUTE_BRIDGE_MAX_MILES)
+    core_gap_segments = args.core_gap_segments if args.core_gap_segments is not None else (6 if args.relaxed else extents.CORE_GAP_SEGMENTS)
+    core_gap_miles = args.core_gap_miles if args.core_gap_miles is not None else (2.0 if args.relaxed else extents.CORE_GAP_MILES)
+    min_core_vhd = args.min_core_vhd if args.min_core_vhd is not None else (0.2 if args.relaxed else extents.MIN_CORE_VHD)
+    min_effective_miles = args.min_effective_miles if args.min_effective_miles is not None else (0.2 if args.relaxed else extents.MIN_EFFECTIVE_CORE_MILES)
+
     couplet_review: list[dict] = []
+    all_pairs: list = []
+    all_ok = True
 
     for d in args.districts:
         print(f"\n{'=' * 70}\n  DISTRICT {d}\n{'=' * 70}")
@@ -405,9 +439,32 @@ def main() -> int:
         c_entries, c_groups, pairs, legs = ([], [], [], {}) if args.no_couplets else \
             couplet_block(net, d, observed, couplet_review)
 
+        peak_windows = [w.strip() for w in args.windows.split(",") if w.strip()]
+        if args.rec_screen and args.windows == "am,pm":
+            peak_windows = ["fri", "sat", "sun"]
+
+        curve_vhd = None
+        if args.rec_screen:
+            rec_dir = Path(args.rec_screening_dir) / f"d{d}"
+            rec_path = rec_dir / "segment_rec_screen.parquet"
+            if not rec_path.exists():
+                raise SystemExit(f"{rec_path} missing — run recreational screening first.")
+            rec_scr = pd.read_parquet(rec_path)
+            for col in ["night_travel_time", "night_speed", "night_n_obs", "night_n_obs_ungated",
+                        "weekday_travel_time", "weekday_speed", "weekday_n_obs", "weekday_n_obs_ungated",
+                        "weekday_tt_p15", "weekday_tt_p50", "weekday_tt_p85", "weekday_tt_p95"]:
+                if col in baseline.columns and col not in rec_scr.columns:
+                    rec_scr[col] = baseline[col]
+            baseline = rec_scr
+            vhd_rec_path = rec_dir / "segment_vhd_rec.parquet"
+            if vhd_rec_path.exists():
+                curve_vhd = pd.read_parquet(vhd_rec_path)
+            bins = curves = monthly = None
+
         audit: list[dict] = []
         cat = extents.generate_catalogue(
             net, baseline,
+            peak_windows=peak_windows,
             max_facilities=args.max_facilities,
             observed=observed,
             audit=audit,
@@ -415,9 +472,16 @@ def main() -> int:
             bins=bins,
             curves=curves,
             profiles=None if curves is None else curves.attrs["library"],
+            curve_vhd=curve_vhd,
             hard_stops=stops,
             couplet_legs=legs,
-            note=(f"ITD District {d} screening catalogue, generated by "
+            join_tol_m=join_tol_m,
+            max_turn_deg=max_turn_deg,
+            bridge_max_miles=bridge_max_miles,
+            core_gap_segments=core_gap_segments,
+            core_gap_miles=core_gap_miles,
+            min_core_vhd=min_core_vhd,
+            note=(f"ITD District {d} {'recreational ' if args.rec_screen else ''}screening catalogue, generated by "
                   f"inrix_tools.extents.generate_catalogue (cores on recurring peak "
                   f"congestion against each segment's own baseline, ROADMAP Item 50) "
                   f"and inrix_tools.couplets.detect_couplets. Item 46/49 predecessor in "
@@ -447,7 +511,7 @@ def main() -> int:
         passed = bool(res["reached_target"].all())
         all_ok &= passed
 
-        out_path = out_dir / catalogue_name(d)
+        out_path = out_dir / args.filename_pattern.format(district=d)
         if args.dry_run:
             print(f"  --dry-run: not writing {out_path}")
         elif passed:

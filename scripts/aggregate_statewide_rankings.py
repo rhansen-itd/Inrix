@@ -405,6 +405,10 @@ def main():
 
     peak_rankings = _write("peak", "corridor_peak_totals.csv", "peak")
     day7_rankings = _write("7-day all-day", "corridor_7day_totals.csv", "7day")
+    rec_rankings = _write("recreational (combined)", "corridor_rec_totals.csv", "rec")
+    fri_rankings = _write("Friday recreational", "corridor_fri_totals.csv", "fri")
+    sat_rankings = _write("Saturday recreational", "corridor_sat_totals.csv", "sat")
+    sun_rankings = _write("Sunday recreational", "corridor_sun_totals.csv", "sun")
 
     if not peak_rankings.empty:
         print("Generating statewide couplet synthesis...")
