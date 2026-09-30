@@ -202,7 +202,11 @@ recreational from summer weekends, and a retail type whose overlap with commute 
 an urban hybrid), each type discovered on its own days but on the same chains and
 floors, then ranked together under selectable scenarios. **65** adds season-gated
 windows and named scenarios; **66** adds the typed catalogue; **67** adds the scenario
-rankings; **68** is the owner's real-data regeneration. **65–68 are done** (Sessions 86–89); **69**, from the review of the real run (Session 90), is next.
+rankings; **68** is the owner's real-data regeneration. **65–68 are done** (Sessions 86–89); **69**, from the review of the real run (Session 90), is done (Session 91).
+
+**Status (2026-09-30):** every item through 69 is closed; no item is open. The full
+text of Items 19–69 moved verbatim to [ROADMAP_ARCHIVE.md](ROADMAP_ARCHIVE.md),
+leaving the one-line index under *Archived items 19–69* below.
 
 ---
 
