@@ -8,12 +8,18 @@ of the sibling `iprj_designer` project.
   not an execution order.
 - **File order is priority order**, read top to bottom; dependencies are noted
   inline.
-- Each item carries a **Target** model and a **Suggested prompt**. Default is
-  **Opus, end-to-end in one session** (plan + implement + tests + docs, no
-  cross-model hand-off); an item marked *Sonnet-eligible* is small and
-  mechanical enough to hand to Sonnet whole if you'd rather not spend an Opus
-  session on it. The rule of thumb the owner set (2026-07-16) is *math-heavy →
-  Fable, everything else → Opus*.
+- Each item carries a **Target** model and a **Suggested prompt**. **Since
+  2026-09-30 the owner's aim is to spend fewer *Claude* tokens** (Gemini is not
+  usage-constrained), so the default is **Opus plans, Gemini executes**:
+  - Opus writes the spec and golden tests;
+  - Gemini implements and re-runs via `delegate`
+    (see `~/.claude/CLAUDE.md`, *Hybrid Claude + Gemini workflow*);
+  - Opus reviews the report and closes the item (DESIGN_HISTORY, boxes).
+
+  Item 69 was the first done this way. Math, statistics and class/threshold calls
+  stay with Opus. This replaces the earlier "Opus end-to-end, no cross-model
+  hand-off" default (and its *math-heavy → Fable* rule of 2026-07-16); older items'
+  *Sonnet-eligible* tags now read as *Gemini-eligible*.
 - Tell the agent "do Item N of ROADMAP.md" to run a scope. Check off boxes and
   add a session entry to [DESIGN_HISTORY.md](DESIGN_HISTORY.md) as items land.
 
