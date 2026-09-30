@@ -3759,6 +3759,15 @@ def corridor_class(types: Sequence[str]) -> str:
 PEAK_K_HOURS = 2.0
 PEAK_K_MIN_COVERAGE = 0.9
 
+CLASS_INTENSITY_DAY_TYPES: dict[str, tuple[str, ...]] = {"recreational": ("sat", "sun")}
+"""``{type: day types}``: the bins a type's ``peak_ratio_k`` is taken over, where that
+is narrower than its windows. The recreational windows include summer **Fridays**, and
+a Friday afternoon is the weekday PM commute: on the first Item 69 run the worst
+recreational 2 hours of Eagle Rd, I-84 and SH-75 Ketchum all fell on a Friday (from
+13:00, 15:30 and 14:45), so every commute corridor read as recreational. Friday still
+counts toward *finding* a recreational corridor; it is not evidence for the class.
+SH-55 north's worst run, a Sunday from 14:00, is the signal the class is after."""
+
 
 def peak_intensity(core_ids: Sequence[int], seg: pd.DataFrame, bins: pd.DataFrame,
                    *, k_hours: float = PEAK_K_HOURS,
@@ -3858,14 +3867,18 @@ def type_profile(core_ids: Sequence[int],
                  bins: Mapping[str, pd.DataFrame] | None = None) -> dict[str, dict]:
     """A corridor core's congestion under **every** type's windows: ``{type:
     {peak_ratio, vhd_per_mile, delay_per_mile, vhd, peak_ratio_k}}`` from each type's
-    :func:`segment_congestion` frame, over the core's segments (both directions)."""
+    :func:`segment_congestion` frame, over the core's segments (both directions).
+    ``peak_ratio_k`` is over the type's :data:`CLASS_INTENSITY_DAY_TYPES` only."""
     out = {}
     for t, seg in congestion.items():
         m = _run_metrics(seg, list(core_ids))
         entry = {k: (None if pd.isna(m[k]) else round(float(m[k]), 3))
                  for k in ("peak_ratio", "vhd_per_mile", "delay_per_mile", "vhd")}
         if bins is not None and t in bins and bins[t] is not None:
-            pk = peak_intensity(core_ids, seg, bins[t])
+            b = bins[t]
+            if t in CLASS_INTENSITY_DAY_TYPES:
+                b = b[b["day_type"].isin(CLASS_INTENSITY_DAY_TYPES[t])]
+            pk = peak_intensity(core_ids, seg, b)
             entry["peak_ratio_k"] = None if (pk is None or np.isnan(pk)) else round(float(pk), 3)
         else:
             entry["peak_ratio_k"] = None

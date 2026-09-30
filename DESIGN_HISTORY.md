@@ -8091,3 +8091,67 @@ replaces the Session 89 special case in `bin_weights`.
 - `test_corridor_types`: the cover rule on the real profiles of Eagle Rd, Driggs,
   McCall and Garrity; `reclassify_catalogue`.
 - `test_aggregate_statewide_rankings`: the catalogue overriding stale table columns.
+
+## Session 91 — Item 69: classify corridor types on a 2-hour peak intensity; the I-90 summer check (2026-09-30)
+
+The first Item 69 run under the hybrid workflow: Opus wrote the seam and the golden
+tests (`tests/test_peak_intensity.py`); Gemini/Antigravity implemented, re-ran all
+six districts and reported (`9dbb52e`); Opus reviewed and corrected the class rule.
+
+### 1. The metric
+
+- **`extents.peak_intensity`** — a core's worst **2 contiguous hours** (`PEAK_K_HOURS`)
+  of Σ travel time / Σ baseline, from the bin cache the builder already loads
+  (`segment_peak_bins_<type>.parquet`). Corridor-level (a sum over the core per bin,
+  never the worst segment); months pooled by `n_obs`; a bin counts when ≥ 90% of the
+  core's known miles are in it (`PEAK_K_MIN_COVERAGE`); a run never spans day types or
+  a time gap. `type_profile` records it as `peak_ratio_k` beside `peak_ratio`.
+- **`profile_class`** compares on `peak_ratio_k` only when every finding type has one,
+  otherwise on `peak_ratio` for all — never a mix, so pre-Item-69 catalogues reclassify
+  as before. The seasonal-lift alternative was not built.
+
+### 2. The review correction: Friday is the commute
+
+The first run turned 26 corridors' primary to `recreational`, Eagle Rd and I-84 among
+them. The recreational windows include **summer Fridays**, and every commute
+corridor's worst recreational 2 hours fell there: Eagle Rd from 13:00 (1.71 against
+Sat 1.38 / Sun 1.29), I-84 from 15:30 (1.54 against 1.03 / 1.01), SH-75 Ketchum from
+14:45. SH-55 north's fell on Sunday from 14:00 — the signal the class is after.
+**`CLASS_INTENSITY_DAY_TYPES = {"recreational": ("sat", "sun")}`**: the class
+comparison drops Friday; finding recreational corridors still uses it.
+
+### 3. Results (re-run with the correction, against `7349c7d`)
+
+16 of 83 facilities changed class or primary. The sanity list: I-84 `commute`; Eagle Rd
+`urban_hybrid`; SH-55 north (all four cores) `recreational`; US-20 Island Park still
+has no qualifying core (every candidate fails `effective_miles` < 0.5 mi, and the
+US-20-BR ones `realtime_share` too). SH-53, SH-16 and SH-44 Nampa lose a
+Friday-driven `+recreational`; US-20 Front St and SH-44 Star gain retail
+(`urban_hybrid`). `urban_hybrid+recreational` is now 6 of 41 hybrids (US-95 Moscow
+1.51 on weekends, US-20 Broadway Idaho Falls). Some primaries rest on near-ties
+(SH-41 5th Ave 1.196 vs 1.194) — recorded in DATA_FORMAT.
+
+- **SH-75 Ketchum stays `commute` (owner, 2026-09-30).** On like-for-like 2-hour
+  windows its weekday AM (1.57) is worse than any summer weekend (1.13). The Item 68
+  "summer-weekend VHD nearly double" is volume, not congestion. `_class` means
+  congestion intensity; a burden-based class is an unscoped ROADMAP option.
+
+### 4. I-90 in summer (evidence from the D1 store, which ends 2026-08-31)
+
+- **I-90 Coeur d'Alene WB: a work zone.** Free-flow in April–May, then window TT /
+  baseline 1.49 in June and 2.6–3.0 in July in the commute **and** weekend windows;
+  weekly night TT steps from 1.70 to 1.78 min the week of 22 June (2.08 the week
+  after) and stays about 5% up through August. That matches the Item 50 note. Its
+  weekend `peak_ratio_k` of 3.95 is the work zone. Keep the row; any summer scenario
+  quoting it must say so.
+- **I-90 at the SH-97 junction EB: possibly a second, August one** (1.19 / 1.15 in
+  August, nights 3.27–3.33 against about 3.1). Not settled.
+- **Kootenai County WB, Beck Rd WB, Shoshone County WB: summer traffic** — July
+  weekend peaks only, nights flat.
+
+### Tests
+
+`tests/test_peak_intensity.py` (16): the sharp peak in a 12-hour window, corridor-level
+not worst-segment, day-type and time-gap breaks, coverage, month pooling, the class
+fallback, and Friday excluded from recreational. `test_corridor_types`' key-set
+assertion gains `peak_ratio_k`.

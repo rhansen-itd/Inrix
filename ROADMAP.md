@@ -3847,7 +3847,7 @@ flag carry into **Item 69**.*
 
 ---
 
-## 69 — Compare corridor types on equal-length windows; check the summer I-90 work zone
+## 69 — Compare corridor types on equal-length windows; check the summer I-90 work zone ✅ (Session 91)
 
 **Target: Opus.** Core (`extents`) + a re-run on the owner's machine. Depends on 68.
 
@@ -3859,7 +3859,7 @@ one, while arterials busy all day keep high weekend means.
 
 Scope:
 
-- [ ] **An equal-length intensity per type** for `type_profile`. For example, the
+- [x] **An equal-length intensity per type** for `type_profile`. For example, the
       worst *k*-hour mean (k = 2) within each type's windows, from the bin screens
       the builder already caches (`segment_peak_bins_<type>.parquet`). Record it
       beside the window mean and classify on it. Keep `CLASS_SECONDARY_SHARE` and
@@ -3867,16 +3867,16 @@ Scope:
       - Alternative to weigh: a *seasonal lift* for recreational (summer-weekend
         vs all-year-weekend ratio), which isolates tourism from general weekend
         traffic.
-- [ ] Re-check the Item 68 sanity list: I-84 → `commute`, Eagle Rd →
+- [x] Re-check the Item 68 sanity list: I-84 → `commute`, Eagle Rd →
       `urban_hybrid`, SH-75 Ketchum and SH-55 north → `recreational`. US-20
       Island Park: confirm it really has no qualifying core under any type, or say
       which floor it fails (core audit).
-- [ ] **I-90 Coeur d'Alene in summer.** Its core is flagged `episodic: 96% of peak
+- [x] **I-90 Coeur d'Alene in summer.** Its core is flagged `episodic: 96% of peak
       delay in 2026-06…08`, and four more D1 I-90 cores are flagged episodic in
       July–August. Confirm or rule out the work zone (the Item 50 notes put I-90 WB
       at its overnight level until 22 June 2026). If it is a work zone, the summer
       scenario tables should say so beside the row; don't drop the row.
-- [ ] pytest on the new intensity (a toy segment with a sharp 2-hour peak inside a
+- [x] pytest on the new intensity (a toy segment with a sharp 2-hour peak inside a
       12-hour window), DESIGN_HISTORY, DATA_FORMAT.
 
 *Suggested prompt:* "Do Item 69 of ROADMAP.md — compare corridor types on
@@ -3886,6 +3886,16 @@ equal-length windows, and check the summer I-90 work zone."
 
 ## Future (not yet scoped — need a planning pass before they're actionable)
 
+- **Class by delay burden, not only by congestion intensity (option).** Item 69
+  classifies on `peak_ratio_k`, the worst 2-hour travel time over baseline. That
+  measures how *congested* a corridor gets in each type's windows, and the owner
+  (2026-09-30) accepts it as the meaning of `_class`. It is not *when the delay
+  burden falls*: SH-75 Ketchum stays `commute` (weekday AM 1.57 vs 1.13 on summer
+  weekends) although its summer-weekend VHD per mile is nearly double its weekday
+  one, because weekend volume is higher. If a burden-based class is ever wanted, it
+  needs a VHD measure normalised for window length (VHD per window-hour, or the
+  worst k hours of curve-weighted VHD). Keep `_class` as intensity and add it
+  beside it rather than replacing it.
 - **Directional AADT (direction-aware *volume* + a time-of-day directional
   factor)** — *scoped as Items 55–59 (2026-09-24).* The layer carries no direction
   field. The per-direction count is Item 54, and the time-of-day directional split

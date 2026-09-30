@@ -2716,6 +2716,8 @@ Each district has **one** catalogue. Every corridor in it is tagged with the
   not that type found it. `peak_ratio_k` (Item 69) is the core's worst 2-hour contiguous
   peak intensity from `screen.segment_bin_screen` (`extents.peak_intensity`); `profile_class`
   classifies on it when every finding type has one, removing window-length dilution.
+  Recreational's is over **Saturday and Sunday only** (`CLASS_INTENSITY_DAY_TYPES`): a
+  summer Friday afternoon is the weekday PM commute.
   `_generated` gains `types` (each type's windows plus
   `n_facilities` / `n_merged` / `n_standalone`), `type_order`, `type_merge_share`,
   `class_secondary_share` and `classes`. `peak_windows` becomes `{type:
@@ -2732,8 +2734,8 @@ Each district has **one** catalogue. Every corridor in it is tagged with the
     Retail's windows include Saturday daytime, so a retail corridor is busy on
     weekends. Recreational drops out of a class that has retail unless it is the
     **primary** type. On the Item 68 catalogues, 37 of 39 hybrids had read
-    `urban_hybrid+recreational`; now 7 do, the places where summer weekends are the
-    strongest signal (Driggs, US-95 CdA). `extents.reclassify_catalogue` re-applies
+    `urban_hybrid+recreational`; after Item 69, 6 of 41 do, the places where summer
+    weekends are the strongest signal (US-95 Moscow, US-20 Broadway Idaho Falls). `extents.reclassify_catalogue` re-applies
     the rule to a catalogue from its stored `_types` / `_profile`, and the
     statewide aggregate takes the class from the catalogue, not the district tables.
   - **`peak_ratio` depends on the window's length** (Item 68): it is a window mean,
@@ -2742,6 +2744,14 @@ Each district has **one** catalogue. Every corridor in it is tagged with the
     contiguous peak intensity, `extents.peak_intensity`) when available, falling
     back to `peak_ratio` only when bins are missing. The 0.6 and the summer bounds
     are still starting values.
+  - **`_class` is congestion intensity, not delay burden** (owner, 2026-09-30). It
+    says in which windows the corridor gets *most congested*, not when most
+    vehicle-hours are lost. SH-75 Ketchum reads `commute` (weekday AM 1.57 against
+    1.13 on summer weekends) although its summer-weekend VHD per mile is higher,
+    because weekend volume is. A burden-based class is an unscoped ROADMAP option.
+  - **Near-ties decide the primary.** Where two types' `peak_ratio_k` are within a
+    few thousandths (SH-41 5th Ave: recreational 1.196, commute 1.194), the primary
+    is not meaningful; read the class, not the primary.
 - **The monthly flags** (`seasonal` / `episodic`) come from each facility's own
   type. For a summer-only type they describe the distribution **within** the
   season, over its 4–5 months. So a `seasonal` flag on a recreational-only facility

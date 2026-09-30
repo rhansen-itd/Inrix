@@ -638,7 +638,7 @@
           "vhd_per_mile": 52.192,
           "delay_per_mile": 0.314,
           "vhd": 173.818,
-          "peak_ratio_k": 1.22
+          "peak_ratio_k": 1.186
         },
         "retail": {
           "peak_ratio": 1.179,
@@ -777,7 +777,7 @@
           "vhd_per_mile": 52.192,
           "delay_per_mile": 0.314,
           "vhd": 173.818,
-          "peak_ratio_k": 1.22
+          "peak_ratio_k": 1.186
         },
         "retail": {
           "peak_ratio": 1.179,
@@ -1012,7 +1012,7 @@
           "vhd_per_mile": 14.856,
           "delay_per_mile": 0.377,
           "vhd": 19.105,
-          "peak_ratio_k": 1.519
+          "peak_ratio_k": 1.279
         },
         "retail": {
           "peak_ratio": 1.105,
@@ -1105,7 +1105,7 @@
           "vhd_per_mile": 14.856,
           "delay_per_mile": 0.377,
           "vhd": 19.105,
-          "peak_ratio_k": 1.519
+          "peak_ratio_k": 1.279
         },
         "retail": {
           "peak_ratio": 1.105,
@@ -1198,7 +1198,7 @@
           "vhd_per_mile": 14.856,
           "delay_per_mile": 0.377,
           "vhd": 19.105,
-          "peak_ratio_k": 1.519
+          "peak_ratio_k": 1.279
         },
         "retail": {
           "peak_ratio": 1.105,

@@ -168,3 +168,17 @@ def test_type_profile_records_both_ratios():
     assert prof["recreational"]["peak_ratio_k"] == pytest.approx(2.0)
     no_bins = extents.type_profile([1], {"recreational": seg})
     assert no_bins["recreational"]["peak_ratio_k"] is None
+
+
+def test_recreational_intensity_ignores_friday():
+    # A summer Friday afternoon is the PM commute, not recreation (Item 69 re-run).
+    seg = _seg({1: (1.0, 1.0)})
+    seg = seg.assign(peak_tt=[1.2], delay_min=[0.2], vhd=[1.0], vhd_index=[1.0],
+                     realtime_share=[1.0], ref_tti=[1.0], aadt=[100.0], weight=[1.0],
+                     baseline_source=["night"])
+    bins = _bins(_flat(1, lambda i: 3.0 if 24 <= i < 32 else 1.0, day="weekday")
+                 + _flat(1, lambda i: 1.5 if 20 <= i < 28 else 1.0, day="sun"))
+    prof = extents.type_profile([1], {"recreational": seg, "commute": seg},
+                                bins={"recreational": bins, "commute": bins})
+    assert prof["recreational"]["peak_ratio_k"] == pytest.approx(1.5)
+    assert prof["commute"]["peak_ratio_k"] == pytest.approx(3.0)
