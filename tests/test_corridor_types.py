@@ -361,8 +361,8 @@ class TestEndToEnd:
         prof = extents.type_profile([1002], cong)
         assert prof["commute"]["peak_ratio"] == pytest.approx(1.5)
         assert prof["weekend"]["peak_ratio"] == pytest.approx(1.25)
-        assert set(prof["commute"]) == {"peak_ratio", "vhd_per_mile", "delay_per_mile",
-                                        "vhd"}
+        assert set(prof["commute"]) == {"peak_ratio", "peak_ratio_k", "vhd_per_mile",
+                                        "delay_per_mile", "vhd"}
 
 
 class TestReclassify:

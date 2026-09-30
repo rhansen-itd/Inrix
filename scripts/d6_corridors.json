@@ -223,8 +223,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-main-st-2nd-st-e-rexburg-core-eb",
@@ -268,8 +268,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-main-st-2nd-st-e-rexburg-regional-wb",
@@ -314,8 +314,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-main-st-2nd-st-e-rexburg-regional-eb",
@@ -360,8 +360,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-main-st-teton-county-core-wb",
@@ -391,7 +391,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational"
     },
     {
@@ -422,7 +422,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational"
     },
     {
@@ -454,7 +454,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational"
     },
     {
@@ -486,7 +486,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational"
     },
     {
@@ -525,7 +525,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational"
     },
     {
@@ -565,7 +565,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational"
     },
     {
@@ -601,8 +601,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-20-broadway-st-idaho-falls-core-eb",
@@ -634,8 +634,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-20-broadway-st-idaho-falls-commuter-wb",
@@ -671,8 +671,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-20-broadway-st-idaho-falls-commuter-eb",
@@ -706,8 +706,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-20-broadway-st-idaho-falls-regional-wb",
@@ -743,8 +743,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-20-broadway-st-idaho-falls-regional-eb",
@@ -779,8 +779,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-core-eb",
@@ -822,8 +822,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-core-sb",
@@ -855,8 +855,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-commuter-eb",
@@ -899,8 +899,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-commuter-sb",
@@ -934,8 +934,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-regional-eb",
@@ -984,8 +984,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-regional-sb",
@@ -1028,8 +1028,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-teton-county-core-wb",
@@ -1059,7 +1059,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-teton-county-core-eb",
@@ -1090,7 +1090,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-teton-county-commuter-wb",
@@ -1121,7 +1121,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-teton-county-commuter-eb",
@@ -1152,7 +1152,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-teton-county-regional-wb",
@@ -1191,7 +1191,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-33-teton-county-regional-eb",
@@ -1230,7 +1230,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-25th-e-rd-hitt-rd-core-wb",
@@ -1259,8 +1259,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-25th-e-rd-hitt-rd-commuter-wb",
@@ -1292,8 +1292,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-25th-e-rd-hitt-rd-regional-wb",
@@ -1327,8 +1327,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "i-15-bl-sunnyside-rd-idaho-falls-core-sb",
@@ -1446,8 +1446,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -1517,19 +1517,22 @@
           "peak_ratio": 1.304,
           "vhd_per_mile": 18.379,
           "delay_per_mile": 0.677,
-          "vhd": 112.749
+          "vhd": 112.749,
+          "peak_ratio_k": 1.322
         },
         "recreational": {
           "peak_ratio": 1.286,
           "vhd_per_mile": 92.211,
           "delay_per_mile": 0.637,
-          "vhd": 565.691
+          "vhd": 565.691,
+          "peak_ratio_k": 1.393
         },
         "retail": {
           "peak_ratio": 1.285,
           "vhd_per_mile": 24.409,
           "delay_per_mile": 0.634,
-          "vhd": 149.741
+          "vhd": 149.741,
+          "peak_ratio_k": 1.321
         }
       }
     },
@@ -1582,8 +1585,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -1653,19 +1656,22 @@
           "peak_ratio": 1.304,
           "vhd_per_mile": 18.379,
           "delay_per_mile": 0.677,
-          "vhd": 112.749
+          "vhd": 112.749,
+          "peak_ratio_k": 1.322
         },
         "recreational": {
           "peak_ratio": 1.286,
           "vhd_per_mile": 92.211,
           "delay_per_mile": 0.637,
-          "vhd": 565.691
+          "vhd": 565.691,
+          "peak_ratio_k": 1.393
         },
         "retail": {
           "peak_ratio": 1.285,
           "vhd_per_mile": 24.409,
           "delay_per_mile": 0.634,
-          "vhd": 149.741
+          "vhd": 149.741,
+          "peak_ratio_k": 1.321
         }
       }
     },
@@ -1720,7 +1726,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
@@ -1791,19 +1797,22 @@
           "peak_ratio": 1.307,
           "vhd_per_mile": 11.044,
           "delay_per_mile": 0.55,
-          "vhd": 45.964
+          "vhd": 45.964,
+          "peak_ratio_k": 1.318
         },
         "recreational": {
           "peak_ratio": 1.343,
           "vhd_per_mile": 46.826,
           "delay_per_mile": 0.615,
-          "vhd": 194.889
+          "vhd": 194.889,
+          "peak_ratio_k": 1.422
         },
         "retail": {
           "peak_ratio": 1.225,
           "vhd_per_mile": 9.136,
           "delay_per_mile": 0.404,
-          "vhd": 38.026
+          "vhd": 38.026,
+          "peak_ratio_k": 1.238
         }
       }
     },
@@ -1858,7 +1867,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
@@ -1929,19 +1938,22 @@
           "peak_ratio": 1.307,
           "vhd_per_mile": 11.044,
           "delay_per_mile": 0.55,
-          "vhd": 45.964
+          "vhd": 45.964,
+          "peak_ratio_k": 1.318
         },
         "recreational": {
           "peak_ratio": 1.343,
           "vhd_per_mile": 46.826,
           "delay_per_mile": 0.615,
-          "vhd": 194.889
+          "vhd": 194.889,
+          "peak_ratio_k": 1.422
         },
         "retail": {
           "peak_ratio": 1.225,
           "vhd_per_mile": 9.136,
           "delay_per_mile": 0.404,
-          "vhd": 38.026
+          "vhd": 38.026,
+          "peak_ratio_k": 1.238
         }
       }
     },
@@ -1996,7 +2008,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid+recreational",
+      "_class": "commute+recreational",
       "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
@@ -2067,19 +2079,22 @@
           "peak_ratio": 1.307,
           "vhd_per_mile": 11.044,
           "delay_per_mile": 0.55,
-          "vhd": 45.964
+          "vhd": 45.964,
+          "peak_ratio_k": 1.318
         },
         "recreational": {
           "peak_ratio": 1.343,
           "vhd_per_mile": 46.826,
           "delay_per_mile": 0.615,
-          "vhd": 194.889
+          "vhd": 194.889,
+          "peak_ratio_k": 1.422
         },
         "retail": {
           "peak_ratio": 1.225,
           "vhd_per_mile": 9.136,
           "delay_per_mile": 0.404,
-          "vhd": 38.026
+          "vhd": 38.026,
+          "peak_ratio_k": 1.238
         }
       }
     },
@@ -2132,8 +2147,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -2203,19 +2218,22 @@
           "peak_ratio": 1.224,
           "vhd_per_mile": 10.552,
           "delay_per_mile": 0.478,
-          "vhd": 43.296
+          "vhd": 43.296,
+          "peak_ratio_k": 1.235
         },
         "recreational": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 64.013,
           "delay_per_mile": 0.599,
-          "vhd": 262.653
+          "vhd": 262.653,
+          "peak_ratio_k": 1.335
         },
         "retail": {
           "peak_ratio": 1.292,
           "vhd_per_mile": 31.565,
           "delay_per_mile": 0.623,
-          "vhd": 129.515
+          "vhd": 129.515,
+          "peak_ratio_k": 1.305
         }
       }
     },
@@ -2268,8 +2286,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -2339,19 +2357,22 @@
           "peak_ratio": 1.224,
           "vhd_per_mile": 10.552,
           "delay_per_mile": 0.478,
-          "vhd": 43.296
+          "vhd": 43.296,
+          "peak_ratio_k": 1.235
         },
         "recreational": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 64.013,
           "delay_per_mile": 0.599,
-          "vhd": 262.653
+          "vhd": 262.653,
+          "peak_ratio_k": 1.335
         },
         "retail": {
           "peak_ratio": 1.292,
           "vhd_per_mile": 31.565,
           "delay_per_mile": 0.623,
-          "vhd": 129.515
+          "vhd": 129.515,
+          "peak_ratio_k": 1.305
         }
       }
     },
@@ -2404,8 +2425,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -2475,19 +2496,22 @@
           "peak_ratio": 1.224,
           "vhd_per_mile": 10.552,
           "delay_per_mile": 0.478,
-          "vhd": 43.296
+          "vhd": 43.296,
+          "peak_ratio_k": 1.235
         },
         "recreational": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 64.013,
           "delay_per_mile": 0.599,
-          "vhd": 262.653
+          "vhd": 262.653,
+          "peak_ratio_k": 1.335
         },
         "retail": {
           "peak_ratio": 1.292,
           "vhd_per_mile": 31.565,
           "delay_per_mile": 0.623,
-          "vhd": 129.515
+          "vhd": 129.515,
+          "peak_ratio_k": 1.305
         }
       }
     },
@@ -2540,8 +2564,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -2630,19 +2654,22 @@
           "peak_ratio": 1.186,
           "vhd_per_mile": 6.222,
           "delay_per_mile": 0.397,
-          "vhd": 29.513
+          "vhd": 29.513,
+          "peak_ratio_k": 1.198
         },
         "recreational": {
           "peak_ratio": 1.163,
           "vhd_per_mile": 29.799,
           "delay_per_mile": 0.349,
-          "vhd": 141.346
+          "vhd": 141.346,
+          "peak_ratio_k": 1.241
         },
         "retail": {
           "peak_ratio": 1.158,
           "vhd_per_mile": 8.127,
           "delay_per_mile": 0.339,
-          "vhd": 38.548
+          "vhd": 38.548,
+          "peak_ratio_k": 1.179
         }
       }
     },
@@ -2695,8 +2722,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -2785,19 +2812,22 @@
           "peak_ratio": 1.186,
           "vhd_per_mile": 6.222,
           "delay_per_mile": 0.397,
-          "vhd": 29.513
+          "vhd": 29.513,
+          "peak_ratio_k": 1.198
         },
         "recreational": {
           "peak_ratio": 1.163,
           "vhd_per_mile": 29.799,
           "delay_per_mile": 0.349,
-          "vhd": 141.346
+          "vhd": 141.346,
+          "peak_ratio_k": 1.241
         },
         "retail": {
           "peak_ratio": 1.158,
           "vhd_per_mile": 8.127,
           "delay_per_mile": 0.339,
-          "vhd": 38.548
+          "vhd": 38.548,
+          "peak_ratio_k": 1.179
         }
       }
     },
@@ -2850,8 +2880,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -2940,19 +2970,22 @@
           "peak_ratio": 1.186,
           "vhd_per_mile": 6.222,
           "delay_per_mile": 0.397,
-          "vhd": 29.513
+          "vhd": 29.513,
+          "peak_ratio_k": 1.198
         },
         "recreational": {
           "peak_ratio": 1.163,
           "vhd_per_mile": 29.799,
           "delay_per_mile": 0.349,
-          "vhd": 141.346
+          "vhd": 141.346,
+          "peak_ratio_k": 1.241
         },
         "retail": {
           "peak_ratio": 1.158,
           "vhd_per_mile": 8.127,
           "delay_per_mile": 0.339,
-          "vhd": 38.548
+          "vhd": 38.548,
+          "peak_ratio_k": 1.179
         }
       }
     },
@@ -3008,7 +3041,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -3078,19 +3111,22 @@
           "peak_ratio": 1.273,
           "vhd_per_mile": 9.464,
           "delay_per_mile": 0.437,
-          "vhd": 30.322
+          "vhd": 30.322,
+          "peak_ratio_k": 1.234
         },
         "recreational": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 29.779,
           "delay_per_mile": 0.317,
-          "vhd": 95.412
+          "vhd": 95.412,
+          "peak_ratio_k": 1.258
         },
         "retail": {
           "peak_ratio": 1.127,
           "vhd_per_mile": 6.659,
           "delay_per_mile": 0.203,
-          "vhd": 21.336
+          "vhd": 21.336,
+          "peak_ratio_k": 1.129
         }
       }
     },
@@ -3146,7 +3182,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -3216,19 +3252,22 @@
           "peak_ratio": 1.273,
           "vhd_per_mile": 9.464,
           "delay_per_mile": 0.437,
-          "vhd": 30.322
+          "vhd": 30.322,
+          "peak_ratio_k": 1.234
         },
         "recreational": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 29.779,
           "delay_per_mile": 0.317,
-          "vhd": 95.412
+          "vhd": 95.412,
+          "peak_ratio_k": 1.258
         },
         "retail": {
           "peak_ratio": 1.127,
           "vhd_per_mile": 6.659,
           "delay_per_mile": 0.203,
-          "vhd": 21.336
+          "vhd": 21.336,
+          "peak_ratio_k": 1.129
         }
       }
     },
@@ -3284,7 +3323,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -3354,19 +3393,22 @@
           "peak_ratio": 1.273,
           "vhd_per_mile": 9.464,
           "delay_per_mile": 0.437,
-          "vhd": 30.322
+          "vhd": 30.322,
+          "peak_ratio_k": 1.234
         },
         "recreational": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 29.779,
           "delay_per_mile": 0.317,
-          "vhd": 95.412
+          "vhd": 95.412,
+          "peak_ratio_k": 1.258
         },
         "retail": {
           "peak_ratio": 1.127,
           "vhd_per_mile": 6.659,
           "delay_per_mile": 0.203,
-          "vhd": 21.336
+          "vhd": 21.336,
+          "peak_ratio_k": 1.129
         }
       }
     },
@@ -3419,8 +3461,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -3490,19 +3532,22 @@
           "peak_ratio": 1.207,
           "vhd_per_mile": 4.68,
           "delay_per_mile": 0.263,
-          "vhd": 4.21
+          "vhd": 4.21,
+          "peak_ratio_k": 1.217
         },
         "recreational": {
           "peak_ratio": 1.167,
           "vhd_per_mile": 20.951,
           "delay_per_mile": 0.213,
-          "vhd": 18.846
+          "vhd": 18.846,
+          "peak_ratio_k": 1.228
         },
         "retail": {
           "peak_ratio": 1.158,
           "vhd_per_mile": 5.439,
           "delay_per_mile": 0.201,
-          "vhd": 4.893
+          "vhd": 4.893,
+          "peak_ratio_k": 1.17
         }
       }
     },
@@ -3555,8 +3600,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -3626,19 +3671,22 @@
           "peak_ratio": 1.207,
           "vhd_per_mile": 4.68,
           "delay_per_mile": 0.263,
-          "vhd": 4.21
+          "vhd": 4.21,
+          "peak_ratio_k": 1.217
         },
         "recreational": {
           "peak_ratio": 1.167,
           "vhd_per_mile": 20.951,
           "delay_per_mile": 0.213,
-          "vhd": 18.846
+          "vhd": 18.846,
+          "peak_ratio_k": 1.228
         },
         "retail": {
           "peak_ratio": 1.158,
           "vhd_per_mile": 5.439,
           "delay_per_mile": 0.201,
-          "vhd": 4.893
+          "vhd": 4.893,
+          "peak_ratio_k": 1.17
         }
       }
     },
@@ -3691,8 +3739,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -3762,19 +3810,22 @@
           "peak_ratio": 1.207,
           "vhd_per_mile": 4.68,
           "delay_per_mile": 0.263,
-          "vhd": 4.21
+          "vhd": 4.21,
+          "peak_ratio_k": 1.217
         },
         "recreational": {
           "peak_ratio": 1.167,
           "vhd_per_mile": 20.951,
           "delay_per_mile": 0.213,
-          "vhd": 18.846
+          "vhd": 18.846,
+          "peak_ratio_k": 1.228
         },
         "retail": {
           "peak_ratio": 1.158,
           "vhd_per_mile": 5.439,
           "delay_per_mile": 0.201,
-          "vhd": 4.893
+          "vhd": 4.893,
+          "peak_ratio_k": 1.17
         }
       }
     },
@@ -3852,19 +3903,22 @@
           "peak_ratio": 1.122,
           "vhd_per_mile": 4.773,
           "delay_per_mile": 0.184,
-          "vhd": 7.507
+          "vhd": 7.507,
+          "peak_ratio_k": 1.133
         },
         "recreational": {
           "peak_ratio": 1.13,
           "vhd_per_mile": 21.099,
           "delay_per_mile": 0.196,
-          "vhd": 33.184
+          "vhd": 33.184,
+          "peak_ratio_k": 1.158
         },
         "retail": {
           "peak_ratio": 1.109,
           "vhd_per_mile": 5.518,
           "delay_per_mile": 0.165,
-          "vhd": 8.678
+          "vhd": 8.678,
+          "peak_ratio_k": 1.116
         }
       }
     },
@@ -3942,19 +3996,22 @@
           "peak_ratio": 1.122,
           "vhd_per_mile": 4.773,
           "delay_per_mile": 0.184,
-          "vhd": 7.507
+          "vhd": 7.507,
+          "peak_ratio_k": 1.133
         },
         "recreational": {
           "peak_ratio": 1.13,
           "vhd_per_mile": 21.099,
           "delay_per_mile": 0.196,
-          "vhd": 33.184
+          "vhd": 33.184,
+          "peak_ratio_k": 1.158
         },
         "retail": {
           "peak_ratio": 1.109,
           "vhd_per_mile": 5.518,
           "delay_per_mile": 0.165,
-          "vhd": 8.678
+          "vhd": 8.678,
+          "peak_ratio_k": 1.116
         }
       }
     }

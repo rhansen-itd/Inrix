@@ -350,8 +350,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-95-washington-st-moscow-core-sb",
@@ -381,8 +381,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-95-nez-perce-county-core-sb",
@@ -630,19 +630,22 @@
           "peak_ratio": 1.211,
           "vhd_per_mile": 16.06,
           "delay_per_mile": 0.44,
-          "vhd": 53.484
+          "vhd": 53.484,
+          "peak_ratio_k": 1.226
         },
         "recreational": {
           "peak_ratio": 1.151,
           "vhd_per_mile": 52.192,
           "delay_per_mile": 0.314,
-          "vhd": 173.818
+          "vhd": 173.818,
+          "peak_ratio_k": 1.22
         },
         "retail": {
           "peak_ratio": 1.179,
           "vhd_per_mile": 23.866,
           "delay_per_mile": 0.373,
-          "vhd": 79.481
+          "vhd": 79.481,
+          "peak_ratio_k": 1.208
         }
       }
     },
@@ -766,19 +769,22 @@
           "peak_ratio": 1.211,
           "vhd_per_mile": 16.06,
           "delay_per_mile": 0.44,
-          "vhd": 53.484
+          "vhd": 53.484,
+          "peak_ratio_k": 1.226
         },
         "recreational": {
           "peak_ratio": 1.151,
           "vhd_per_mile": 52.192,
           "delay_per_mile": 0.314,
-          "vhd": 173.818
+          "vhd": 173.818,
+          "peak_ratio_k": 1.22
         },
         "retail": {
           "peak_ratio": 1.179,
           "vhd_per_mile": 23.866,
           "delay_per_mile": 0.373,
-          "vhd": 79.481
+          "vhd": 79.481,
+          "peak_ratio_k": 1.208
         }
       }
     },
@@ -834,8 +840,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -905,19 +911,22 @@
           "peak_ratio": 1.308,
           "vhd_per_mile": 22.742,
           "delay_per_mile": 0.796,
-          "vhd": 29.084
+          "vhd": 29.084,
+          "peak_ratio_k": 1.317
         },
         "recreational": {
           "peak_ratio": 1.307,
           "vhd_per_mile": 118.682,
           "delay_per_mile": 0.793,
-          "vhd": 151.779
+          "vhd": 151.779,
+          "peak_ratio_k": 1.507
         },
         "retail": {
           "peak_ratio": 1.343,
           "vhd_per_mile": 46.534,
           "delay_per_mile": 0.888,
-          "vhd": 59.511
+          "vhd": 59.511,
+          "peak_ratio_k": 1.386
         }
       }
     },
@@ -995,19 +1004,22 @@
           "peak_ratio": 1.081,
           "vhd_per_mile": 0.844,
           "delay_per_mile": 0.091,
-          "vhd": 1.085
+          "vhd": 1.085,
+          "peak_ratio_k": 1.08
         },
         "recreational": {
           "peak_ratio": 1.337,
           "vhd_per_mile": 14.856,
           "delay_per_mile": 0.377,
-          "vhd": 19.105
+          "vhd": 19.105,
+          "peak_ratio_k": 1.519
         },
         "retail": {
           "peak_ratio": 1.105,
           "vhd_per_mile": 1.929,
           "delay_per_mile": 0.117,
-          "vhd": 2.481
+          "vhd": 2.481,
+          "peak_ratio_k": 1.11
         }
       }
     },
@@ -1085,19 +1097,22 @@
           "peak_ratio": 1.081,
           "vhd_per_mile": 0.844,
           "delay_per_mile": 0.091,
-          "vhd": 1.085
+          "vhd": 1.085,
+          "peak_ratio_k": 1.08
         },
         "recreational": {
           "peak_ratio": 1.337,
           "vhd_per_mile": 14.856,
           "delay_per_mile": 0.377,
-          "vhd": 19.105
+          "vhd": 19.105,
+          "peak_ratio_k": 1.519
         },
         "retail": {
           "peak_ratio": 1.105,
           "vhd_per_mile": 1.929,
           "delay_per_mile": 0.117,
-          "vhd": 2.481
+          "vhd": 2.481,
+          "peak_ratio_k": 1.11
         }
       }
     },
@@ -1175,19 +1190,22 @@
           "peak_ratio": 1.081,
           "vhd_per_mile": 0.844,
           "delay_per_mile": 0.091,
-          "vhd": 1.085
+          "vhd": 1.085,
+          "peak_ratio_k": 1.08
         },
         "recreational": {
           "peak_ratio": 1.337,
           "vhd_per_mile": 14.856,
           "delay_per_mile": 0.377,
-          "vhd": 19.105
+          "vhd": 19.105,
+          "peak_ratio_k": 1.519
         },
         "retail": {
           "peak_ratio": 1.105,
           "vhd_per_mile": 1.929,
           "delay_per_mile": 0.117,
-          "vhd": 2.481
+          "vhd": 2.481,
+          "peak_ratio_k": 1.11
         }
       }
     },

@@ -3698,12 +3698,10 @@ recreational. The intent: a freeway whose summer-weekend excess is a fraction of
 weekday one (I-84 in the Treasure Valley) stays ``commute``, and an arterial whose
 midday/Saturday excess is close to its peak one (Eagle Rd) is ``urban_hybrid``.
 
-**Known limitation (Item 68, ROADMAP Item 69).** ``peak_ratio`` is a window's
-*mean* travel time over the baseline, so it depends on the window's length. A 12-hour
-summer-weekend window averages a sharp afternoon peak away that a 2-hour commute peak
-keeps. SH-75 Ketchum reads ``commute`` (excess 0.73 vs 0.27) although its
-summer-weekend delay per mile is nearly double its weekday one. The comparison needs
-equal-length windows before this threshold means what it says."""
+**Window-length bias (Item 68, 69).** When every finding type has a finite 2-hour
+intensity (``peak_ratio_k``), :func:`profile_class` compares those instead of the
+window-mean ``peak_ratio`` to remove window-length dilution. If any type lacks one,
+the comparison falls back to ``peak_ratio`` for all of them."""
 
 CLASS_SUBSUMED: dict[str, str] = {"recreational": "retail"}
 """``{type: covering type}``: a type that drops out of a class the covering type is in,
@@ -3758,16 +3756,120 @@ def corridor_class(types: Sequence[str]) -> str:
     return "+".join(parts + left)
 
 
+PEAK_K_HOURS = 2.0
+PEAK_K_MIN_COVERAGE = 0.9
+
+
+def peak_intensity(core_ids: Sequence[int], seg: pd.DataFrame, bins: pd.DataFrame,
+                   *, k_hours: float = PEAK_K_HOURS,
+                   min_coverage: float = PEAK_K_MIN_COVERAGE) -> float:
+    """The worst contiguous k-hour peak intensity across a core's segments (Item 69).
+
+    Pools months by n_obs, requires >= min_coverage of known core miles in each
+    bin, and returns the max k-hour run mean across day types, or nan if no full
+    run exists.
+    """
+    if bins is None or len(bins) == 0:
+        return float("nan")
+
+    core_set = set(core_ids)
+    if not core_set:
+        return float("nan")
+
+    known_idx = list(dict.fromkeys(
+        sid for sid in seg.index
+        if sid in core_set and pd.notna(seg.at[sid, "baseline_tt"]) and np.isfinite(seg.at[sid, "baseline_tt"])
+    ))
+    if not known_idx:
+        return float("nan")
+
+    known_seg = seg.loc[known_idx]
+    known_miles = float(known_seg["miles"].fillna(0.0).sum())
+    if known_miles <= 0:
+        return float("nan")
+
+    u_tod = np.sort(bins["tod_min"].dropna().unique())
+    if len(u_tod) < 2:
+        return float("nan")
+    diffs = np.diff(u_tod)
+    pos_diffs = diffs[diffs > 0]
+    if len(pos_diffs) == 0:
+        return float("nan")
+    step = float(pos_diffs.min())
+
+    k_float = k_hours * 60.0 / step
+    k = round(k_float)
+    if abs(k_float - k) > 1e-9:
+        raise ValueError(f"k_hours ({k_hours}) is not a whole number of bins of length {step} min (k={k_float})")
+    k = int(k)
+    if k <= 0:
+        return float("nan")
+
+    sub_bins = bins[bins["Segment ID"].isin(known_idx)]
+    if sub_bins.empty:
+        return float("nan")
+
+    sub = sub_bins[["Segment ID", "day_type", "tod_min", "travel_time", "n_obs"]].copy()
+    sub["w_tt"] = sub["travel_time"] * sub["n_obs"]
+    pooled = sub.groupby(["day_type", "tod_min", "Segment ID"], as_index=False)[["w_tt", "n_obs"]].sum()
+    pooled["pooled_tt"] = pooled["w_tt"] / pooled["n_obs"]
+
+    seg_miles = known_seg["miles"].to_dict()
+    seg_base = known_seg["baseline_tt"].to_dict()
+    pooled["miles"] = pooled["Segment ID"].map(seg_miles).fillna(0.0)
+    pooled["baseline_tt"] = pooled["Segment ID"].map(seg_base)
+
+    bin_agg = pooled.groupby(["day_type", "tod_min"]).agg(
+        present_miles=("miles", "sum"),
+        sum_tt=("pooled_tt", "sum"),
+        sum_base=("baseline_tt", "sum"),
+    ).reset_index()
+
+    bin_agg["valid"] = (bin_agg["present_miles"] >= min_coverage * known_miles - 1e-9) & (bin_agg["sum_base"] > 0)
+    bin_agg["ratio"] = bin_agg["sum_tt"] / bin_agg["sum_base"]
+
+    step_int = int(round(step)) if abs(step - round(step)) < 1e-9 else None
+    runs = []
+    for day_type, group in bin_agg.groupby("day_type"):
+        if step_int is not None:
+            valid_bins = {int(round(row.tod_min)): float(row.ratio) for row in group.itertuples() if row.valid}
+            if len(valid_bins) < k:
+                continue
+            for t in sorted(valid_bins):
+                candidate = [valid_bins.get(t + j * step_int) for j in range(k)]
+                if all(v is not None for v in candidate):
+                    runs.append(float(np.mean(candidate)))
+        else:
+            valid_bins = {float(row.tod_min): float(row.ratio) for row in group.itertuples() if row.valid}
+            if len(valid_bins) < k:
+                continue
+            for t in sorted(valid_bins):
+                candidate = [valid_bins.get(round(t + j * step, 6)) for j in range(k)]
+                if all(v is not None for v in candidate):
+                    runs.append(float(np.mean(candidate)))
+
+    if not runs:
+        return float("nan")
+    return float(max(runs))
+
+
 def type_profile(core_ids: Sequence[int],
-                 congestion: Mapping[str, pd.DataFrame]) -> dict[str, dict]:
+                 congestion: Mapping[str, pd.DataFrame],
+                 bins: Mapping[str, pd.DataFrame] | None = None) -> dict[str, dict]:
     """A corridor core's congestion under **every** type's windows: ``{type:
-    {peak_ratio, vhd_per_mile, delay_per_mile, vhd}}`` from each type's
+    {peak_ratio, vhd_per_mile, delay_per_mile, vhd, peak_ratio_k}}`` from each type's
     :func:`segment_congestion` frame, over the core's segments (both directions)."""
     out = {}
     for t, seg in congestion.items():
         m = _run_metrics(seg, list(core_ids))
-        out[t] = {k: (None if pd.isna(m[k]) else round(float(m[k]), 3))
-                  for k in ("peak_ratio", "vhd_per_mile", "delay_per_mile", "vhd")}
+        entry = {k: (None if pd.isna(m[k]) else round(float(m[k]), 3))
+                 for k in ("peak_ratio", "vhd_per_mile", "delay_per_mile", "vhd")}
+        if bins is not None and t in bins and bins[t] is not None:
+            pk = peak_intensity(core_ids, seg, bins[t])
+            entry["peak_ratio_k"] = None if (pk is None or np.isnan(pk)) else round(float(pk), 3)
+        else:
+            entry["peak_ratio_k"] = None
+        out[t] = entry
     return out
 
 
@@ -3776,16 +3878,31 @@ def profile_class(found: Sequence[str], profile: Mapping[str, Mapping] | None,
     """``(primary type, class)`` for a corridor ``found`` by these types (priority
     order), given its :func:`type_profile`.
 
-    The primary is the found type with the largest peak/baseline excess. The others
-    join the class when their excess is at least ``share`` of the primary's
-    (:data:`CLASS_SECONDARY_SHARE`), except a type another member covers
+    The primary is the found type with the largest peak/baseline excess. When every
+    type in ``found`` has a finite ``peak_ratio_k`` in ``profile``, the excess is
+    computed from ``peak_ratio_k``; otherwise it falls back to ``peak_ratio`` for
+    all of them. The others join the class when their excess is at least ``share`` of
+    the primary's (:data:`CLASS_SECONDARY_SHARE`), except a type another member covers
     (:data:`CLASS_SUBSUMED`: recreational under retail) unless it is the primary.
     With no profile (or no finite ratio) every finding type is in the class, subject
     to the same cover, and the first is primary."""
     found = list(dict.fromkeys(found))
+    if not found:
+        return "", ""
+
+    has_all_k = (
+        profile is not None
+        and all(
+            (profile.get(t) or {}).get("peak_ratio_k") is not None
+            and np.isfinite((profile.get(t) or {}).get("peak_ratio_k"))
+            for t in found
+        )
+    )
+    metric = "peak_ratio_k" if has_all_k else "peak_ratio"
+
     excess = {}
     for t in found:
-        r = (profile or {}).get(t, {}).get("peak_ratio")
+        r = (profile or {}).get(t, {}).get(metric)
         if r is not None and np.isfinite(r):
             excess[t] = max(float(r) - 1.0, 0.0)
     if not excess:
@@ -3881,6 +3998,7 @@ def merge_typed_catalogues(
     types: Sequence[CorridorType] | None = None,
     merge_share: float = TYPE_MERGE_SHARE,
     congestion: Mapping[str, pd.DataFrame] | None = None,
+    bins: Mapping[str, pd.DataFrame] | None = None,
     class_share: float = CLASS_SECONDARY_SHARE,
     note: str = "",
 ) -> dict:
@@ -3987,7 +4105,7 @@ def merge_typed_catalogues(
             return new + text[len(old):] if old != new and text.startswith(old) else text
 
         types_now = list(k["types"])
-        profile = type_profile(sorted(k["core"]), congestion) if congestion else None
+        profile = type_profile(sorted(k["core"]), congestion, bins=bins) if congestion else None
         primary, cls = profile_class(types_now, profile, share=class_share)
         for g in k["groups"]:
             g = dict(g)

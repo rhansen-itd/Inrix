@@ -448,10 +448,13 @@ def main() -> int:
         audit: list[dict] = []
         per_type: dict[str, dict] = {}
         congestion: dict[str, pd.DataFrame] = {}
+        bins_by_type: dict[str, pd.DataFrame] = {}
         for t in ctypes:
             bins = monthly = None
             if curves is not None:
                 bins = load_bins(d, sdir, refresh=args.refresh_baseline, ctype=t)
+                if bins is not None:
+                    bins_by_type[t.name] = bins
             else:
                 monthly = load_monthly(d, sdir, refresh=args.refresh_baseline, ctype=t)
             congestion[t.name] = extents.segment_congestion(
@@ -479,6 +482,7 @@ def main() -> int:
         cat = extents.merge_typed_catalogues(
             per_type, miles=net.set_index("XDSegID")["Miles"].astype(float).to_dict(),
             types=ctypes, congestion=congestion,
+            bins=bins_by_type if bins_by_type else None,
             note=(f"ITD District {d} screening catalogue: corridor types "
                   f"{', '.join(t.name for t in ctypes)} (ROADMAP Item 66), each generated "
                   f"by inrix_tools.extents.generate_catalogue on its own windows (cores on "

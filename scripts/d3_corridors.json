@@ -246,7 +246,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -302,7 +302,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -362,7 +362,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -420,7 +420,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -490,7 +490,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -554,7 +554,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -668,8 +668,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-55-eagle-rd-boise-city-core-sb",
@@ -713,8 +713,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-20-chinden-blvd-boise-city-core-wb",
@@ -758,7 +758,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -819,7 +819,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -874,7 +874,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -946,7 +946,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -1006,7 +1006,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -1078,7 +1078,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute"
     },
     {
@@ -1413,8 +1413,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "i-84-bl-garrity-blvd-nampa-core-sb",
@@ -1450,8 +1450,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "i-84-bl-garrity-blvd-nampa-commuter-wb",
@@ -1505,8 +1505,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "i-84-bl-garrity-blvd-nampa-commuter-sb",
@@ -1552,8 +1552,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "i-84-bl-garrity-blvd-nampa-regional-wb",
@@ -1607,8 +1607,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "i-84-bl-garrity-blvd-nampa-regional-sb",
@@ -1658,8 +1658,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-55-nampa-core-wb",
@@ -1700,8 +1700,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-55-nampa-core-eb",
@@ -1741,8 +1741,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-55-nampa-commuter-wb",
@@ -1784,8 +1784,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-55-nampa-commuter-eb",
@@ -1826,8 +1826,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-44-state-st-boise-city-state-st-ext-core-wb",
@@ -2083,7 +2083,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -2120,7 +2120,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -2155,7 +2155,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-boise-city-core-sb",
@@ -2193,7 +2193,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-boise-city-commuter-nb",
@@ -2231,7 +2231,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-boise-city-commuter-sb",
@@ -2269,7 +2269,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-boise-city-regional-nb",
@@ -2308,7 +2308,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-boise-city-regional-sb",
@@ -2346,7 +2346,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "us-20-chinden-blvd-boise-city-wb-conn-at-main-st-op-core-wb",
@@ -2487,8 +2487,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-69-meridian-rd-boise-city-core-sb",
@@ -2520,8 +2520,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-69-meridian-rd-boise-city-commuter-nb",
@@ -2561,8 +2561,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-69-meridian-rd-boise-city-commuter-sb",
@@ -2598,8 +2598,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-69-meridian-rd-boise-city-regional-nb",
@@ -2644,8 +2644,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-69-meridian-rd-boise-city-regional-sb",
@@ -2687,8 +2687,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-44-state-st-star-core-eb",
@@ -2719,7 +2719,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -2756,7 +2756,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "urban_hybrid",
       "_primary_type": "commute"
     },
     {
@@ -3125,7 +3125,7 @@
         "commute",
         "recreational"
       ],
-      "_class": "commute+recreational",
+      "_class": "recreational",
       "_primary_type": "recreational"
     },
     {
@@ -3169,7 +3169,7 @@
         "commute",
         "recreational"
       ],
-      "_class": "commute+recreational",
+      "_class": "recreational",
       "_primary_type": "recreational"
     },
     {
@@ -3629,8 +3629,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "commute+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-21-gowen-rd-boise-city-core-wb",
@@ -3664,8 +3664,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "commute+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-21-gowen-rd-boise-city-commuter-eb",
@@ -3699,8 +3699,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "commute+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-21-gowen-rd-boise-city-commuter-wb",
@@ -3734,8 +3734,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "commute+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-21-gowen-rd-boise-city-regional-eb",
@@ -3773,8 +3773,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "commute+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-21-gowen-rd-boise-city-regional-wb",
@@ -3812,8 +3812,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "commute+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-95-16th-st-ontario-payette-core-nb",
@@ -4054,8 +4054,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "us-30-whitley-dr-ontario-payette-regional-nb",
@@ -4093,8 +4093,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-emmett-core-nb",
@@ -4125,8 +4125,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-emmett-core-sb",
@@ -4156,8 +4156,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-emmett-commuter-nb",
@@ -4188,8 +4188,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-16-emmett-commuter-sb",
@@ -4224,8 +4224,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-44-nampa-core-wb",
@@ -4255,7 +4255,7 @@
         "recreational"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-44-nampa-commuter-wb",
@@ -4286,7 +4286,7 @@
         "recreational"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-44-nampa-regional-wb",
@@ -4323,7 +4323,7 @@
         "recreational"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute"
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-52-washington-ave-emmett-core-eb",
@@ -4354,8 +4354,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-52-washington-ave-emmett-core-wb",
@@ -4386,8 +4386,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-52-washington-ave-emmett-commuter-eb",
@@ -4419,8 +4419,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-52-washington-ave-emmett-commuter-wb",
@@ -4451,8 +4451,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-52-washington-ave-emmett-regional-eb",
@@ -4486,8 +4486,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-52-washington-ave-emmett-regional-wb",
@@ -4521,8 +4521,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-51-air-base-rd-mountain-home-core-eb",
@@ -4554,8 +4554,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-51-air-base-rd-mountain-home-regional-eb",
@@ -4588,8 +4588,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute"
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-55-boise-county-core-sb",
@@ -5139,8 +5139,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "retail",
-      "_primary_type": "retail"
+      "_class": "recreational+retail",
+      "_primary_type": "recreational"
     },
     {
       "id": "i-84-bl-garrity-blvd-nampa-recreational-commuter-eb",
@@ -5176,8 +5176,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "retail",
-      "_primary_type": "retail"
+      "_class": "recreational+retail",
+      "_primary_type": "recreational"
     },
     {
       "id": "i-84-bl-garrity-blvd-nampa-recreational-regional-eb",
@@ -5219,8 +5219,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "retail",
-      "_primary_type": "retail"
+      "_class": "recreational+retail",
+      "_primary_type": "recreational"
     },
     {
       "id": "sh-55-boise-county-sh-52-horseshoe-bend-core-sb",
@@ -6045,7 +6045,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -6154,19 +6154,22 @@
           "peak_ratio": 1.955,
           "vhd_per_mile": 163.745,
           "delay_per_mile": 0.864,
-          "vhd": 5529.925
+          "vhd": 5529.925,
+          "peak_ratio_k": 1.712
         },
         "recreational": {
           "peak_ratio": 1.147,
           "vhd_per_mile": 167.065,
           "delay_per_mile": 0.14,
-          "vhd": 5642.027
+          "vhd": 5642.027,
+          "peak_ratio_k": 1.535
         },
         "retail": {
           "peak_ratio": 1.02,
           "vhd_per_mile": 14.102,
           "delay_per_mile": 0.026,
-          "vhd": 476.232
+          "vhd": 476.232,
+          "peak_ratio_k": 1.017
         }
       }
     },
@@ -6219,7 +6222,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -6328,19 +6331,22 @@
           "peak_ratio": 1.955,
           "vhd_per_mile": 163.745,
           "delay_per_mile": 0.864,
-          "vhd": 5529.925
+          "vhd": 5529.925,
+          "peak_ratio_k": 1.712
         },
         "recreational": {
           "peak_ratio": 1.147,
           "vhd_per_mile": 167.065,
           "delay_per_mile": 0.14,
-          "vhd": 5642.027
+          "vhd": 5642.027,
+          "peak_ratio_k": 1.535
         },
         "retail": {
           "peak_ratio": 1.02,
           "vhd_per_mile": 14.102,
           "delay_per_mile": 0.026,
-          "vhd": 476.232
+          "vhd": 476.232,
+          "peak_ratio_k": 1.017
         }
       }
     },
@@ -6393,7 +6399,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -6502,19 +6508,22 @@
           "peak_ratio": 1.955,
           "vhd_per_mile": 163.745,
           "delay_per_mile": 0.864,
-          "vhd": 5529.925
+          "vhd": 5529.925,
+          "peak_ratio_k": 1.712
         },
         "recreational": {
           "peak_ratio": 1.147,
           "vhd_per_mile": 167.065,
           "delay_per_mile": 0.14,
-          "vhd": 5642.027
+          "vhd": 5642.027,
+          "peak_ratio_k": 1.535
         },
         "retail": {
           "peak_ratio": 1.02,
           "vhd_per_mile": 14.102,
           "delay_per_mile": 0.026,
-          "vhd": 476.232
+          "vhd": 476.232,
+          "peak_ratio_k": 1.017
         }
       }
     },
@@ -6594,19 +6603,22 @@
           "peak_ratio": 2.423,
           "vhd_per_mile": 163.468,
           "delay_per_mile": 1.385,
-          "vhd": 507.822
+          "vhd": 507.822,
+          "peak_ratio_k": 2.694
         },
         "recreational": {
           "peak_ratio": 1.071,
           "vhd_per_mile": 63.76,
           "delay_per_mile": 0.085,
-          "vhd": 198.073
+          "vhd": 198.073,
+          "peak_ratio_k": 1.529
         },
         "retail": {
           "peak_ratio": 0.973,
           "vhd_per_mile": 0.405,
           "delay_per_mile": 0.0,
-          "vhd": 1.259
+          "vhd": 1.259,
+          "peak_ratio_k": 0.976
         }
       }
     },
@@ -6686,19 +6698,22 @@
           "peak_ratio": 2.423,
           "vhd_per_mile": 163.468,
           "delay_per_mile": 1.385,
-          "vhd": 507.822
+          "vhd": 507.822,
+          "peak_ratio_k": 2.694
         },
         "recreational": {
           "peak_ratio": 1.071,
           "vhd_per_mile": 63.76,
           "delay_per_mile": 0.085,
-          "vhd": 198.073
+          "vhd": 198.073,
+          "peak_ratio_k": 1.529
         },
         "retail": {
           "peak_ratio": 0.973,
           "vhd_per_mile": 0.405,
           "delay_per_mile": 0.0,
-          "vhd": 1.259
+          "vhd": 1.259,
+          "peak_ratio_k": 0.976
         }
       }
     },
@@ -6751,8 +6766,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -6822,19 +6837,22 @@
           "peak_ratio": 1.51,
           "vhd_per_mile": 56.145,
           "delay_per_mile": 0.726,
-          "vhd": 764.069
+          "vhd": 764.069,
+          "peak_ratio_k": 1.554
         },
         "recreational": {
           "peak_ratio": 1.459,
           "vhd_per_mile": 247.383,
           "delay_per_mile": 0.654,
-          "vhd": 3366.595
+          "vhd": 3366.595,
+          "peak_ratio_k": 1.707
         },
         "retail": {
           "peak_ratio": 1.462,
           "vhd_per_mile": 94.46,
           "delay_per_mile": 0.658,
-          "vhd": 1285.496
+          "vhd": 1285.496,
+          "peak_ratio_k": 1.495
         }
       }
     },
@@ -6887,7 +6905,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -7015,19 +7033,22 @@
           "peak_ratio": 1.386,
           "vhd_per_mile": 17.099,
           "delay_per_mile": 0.491,
-          "vhd": 447.713
+          "vhd": 447.713,
+          "peak_ratio_k": 1.28
         },
         "recreational": {
           "peak_ratio": 1.176,
           "vhd_per_mile": 41.843,
           "delay_per_mile": 0.224,
-          "vhd": 1095.577
+          "vhd": 1095.577,
+          "peak_ratio_k": 1.262
         },
         "retail": {
           "peak_ratio": 1.167,
           "vhd_per_mile": 14.881,
           "delay_per_mile": 0.212,
-          "vhd": 389.642
+          "vhd": 389.642,
+          "peak_ratio_k": 1.159
         }
       }
     },
@@ -7080,7 +7101,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -7208,19 +7229,22 @@
           "peak_ratio": 1.386,
           "vhd_per_mile": 17.099,
           "delay_per_mile": 0.491,
-          "vhd": 447.713
+          "vhd": 447.713,
+          "peak_ratio_k": 1.28
         },
         "recreational": {
           "peak_ratio": 1.176,
           "vhd_per_mile": 41.843,
           "delay_per_mile": 0.224,
-          "vhd": 1095.577
+          "vhd": 1095.577,
+          "peak_ratio_k": 1.262
         },
         "retail": {
           "peak_ratio": 1.167,
           "vhd_per_mile": 14.881,
           "delay_per_mile": 0.212,
-          "vhd": 389.642
+          "vhd": 389.642,
+          "peak_ratio_k": 1.159
         }
       }
     },
@@ -7273,7 +7297,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "commute+recreational",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -7401,19 +7425,22 @@
           "peak_ratio": 1.386,
           "vhd_per_mile": 17.099,
           "delay_per_mile": 0.491,
-          "vhd": 447.713
+          "vhd": 447.713,
+          "peak_ratio_k": 1.28
         },
         "recreational": {
           "peak_ratio": 1.176,
           "vhd_per_mile": 41.843,
           "delay_per_mile": 0.224,
-          "vhd": 1095.577
+          "vhd": 1095.577,
+          "peak_ratio_k": 1.262
         },
         "retail": {
           "peak_ratio": 1.167,
           "vhd_per_mile": 14.881,
           "delay_per_mile": 0.212,
-          "vhd": 389.642
+          "vhd": 389.642,
+          "peak_ratio_k": 1.159
         }
       }
     },
@@ -7556,19 +7583,22 @@
           "peak_ratio": 1.357,
           "vhd_per_mile": 34.496,
           "delay_per_mile": 0.549,
-          "vhd": 281.308
+          "vhd": 281.308,
+          "peak_ratio_k": 1.394
         },
         "recreational": {
           "peak_ratio": 1.271,
           "vhd_per_mile": 120.259,
           "delay_per_mile": 0.415,
-          "vhd": 980.703
+          "vhd": 980.703,
+          "peak_ratio_k": 1.394
         },
         "retail": {
           "peak_ratio": 1.269,
           "vhd_per_mile": 46.293,
           "delay_per_mile": 0.413,
-          "vhd": 377.512
+          "vhd": 377.512,
+          "peak_ratio_k": 1.292
         }
       }
     },
@@ -7711,19 +7741,22 @@
           "peak_ratio": 1.357,
           "vhd_per_mile": 34.496,
           "delay_per_mile": 0.549,
-          "vhd": 281.308
+          "vhd": 281.308,
+          "peak_ratio_k": 1.394
         },
         "recreational": {
           "peak_ratio": 1.271,
           "vhd_per_mile": 120.259,
           "delay_per_mile": 0.415,
-          "vhd": 980.703
+          "vhd": 980.703,
+          "peak_ratio_k": 1.394
         },
         "retail": {
           "peak_ratio": 1.269,
           "vhd_per_mile": 46.293,
           "delay_per_mile": 0.413,
-          "vhd": 377.512
+          "vhd": 377.512,
+          "peak_ratio_k": 1.292
         }
       }
     },
@@ -7847,19 +7880,22 @@
           "peak_ratio": 2.479,
           "vhd_per_mile": 98.199,
           "delay_per_mile": 2.01,
-          "vhd": 182.863
+          "vhd": 182.863,
+          "peak_ratio_k": 2.643
         },
         "recreational": {
           "peak_ratio": 1.377,
           "vhd_per_mile": 120.317,
           "delay_per_mile": 0.512,
-          "vhd": 224.05
+          "vhd": 224.05,
+          "peak_ratio_k": 1.916
         },
         "retail": {
           "peak_ratio": 1.223,
           "vhd_per_mile": 21.306,
           "delay_per_mile": 0.303,
-          "vhd": 39.676
+          "vhd": 39.676,
+          "peak_ratio_k": 1.276
         }
       }
     },
@@ -7983,19 +8019,22 @@
           "peak_ratio": 2.479,
           "vhd_per_mile": 98.199,
           "delay_per_mile": 2.01,
-          "vhd": 182.863
+          "vhd": 182.863,
+          "peak_ratio_k": 2.643
         },
         "recreational": {
           "peak_ratio": 1.377,
           "vhd_per_mile": 120.317,
           "delay_per_mile": 0.512,
-          "vhd": 224.05
+          "vhd": 224.05,
+          "peak_ratio_k": 1.916
         },
         "retail": {
           "peak_ratio": 1.223,
           "vhd_per_mile": 21.306,
           "delay_per_mile": 0.303,
-          "vhd": 39.676
+          "vhd": 39.676,
+          "peak_ratio_k": 1.276
         }
       }
     },
@@ -8119,19 +8158,22 @@
           "peak_ratio": 2.479,
           "vhd_per_mile": 98.199,
           "delay_per_mile": 2.01,
-          "vhd": 182.863
+          "vhd": 182.863,
+          "peak_ratio_k": 2.643
         },
         "recreational": {
           "peak_ratio": 1.377,
           "vhd_per_mile": 120.317,
           "delay_per_mile": 0.512,
-          "vhd": 224.05
+          "vhd": 224.05,
+          "peak_ratio_k": 1.916
         },
         "retail": {
           "peak_ratio": 1.223,
           "vhd_per_mile": 21.306,
           "delay_per_mile": 0.303,
-          "vhd": 39.676
+          "vhd": 39.676,
+          "peak_ratio_k": 1.276
         }
       }
     },
@@ -8187,8 +8229,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -8258,19 +8300,22 @@
           "peak_ratio": 1.286,
           "vhd_per_mile": 26.19,
           "delay_per_mile": 0.574,
-          "vhd": 234.488
+          "vhd": 234.488,
+          "peak_ratio_k": 1.306
         },
         "recreational": {
           "peak_ratio": 1.269,
           "vhd_per_mile": 120.735,
           "delay_per_mile": 0.539,
-          "vhd": 1080.963
+          "vhd": 1080.963,
+          "peak_ratio_k": 1.396
         },
         "retail": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 51.185,
           "delay_per_mile": 0.564,
-          "vhd": 458.275
+          "vhd": 458.275,
+          "peak_ratio_k": 1.3
         }
       }
     },
@@ -8326,8 +8371,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -8397,19 +8442,22 @@
           "peak_ratio": 1.286,
           "vhd_per_mile": 26.19,
           "delay_per_mile": 0.574,
-          "vhd": 234.488
+          "vhd": 234.488,
+          "peak_ratio_k": 1.306
         },
         "recreational": {
           "peak_ratio": 1.269,
           "vhd_per_mile": 120.735,
           "delay_per_mile": 0.539,
-          "vhd": 1080.963
+          "vhd": 1080.963,
+          "peak_ratio_k": 1.396
         },
         "retail": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 51.185,
           "delay_per_mile": 0.564,
-          "vhd": 458.275
+          "vhd": 458.275,
+          "peak_ratio_k": 1.3
         }
       }
     },
@@ -8465,8 +8513,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -8536,19 +8584,22 @@
           "peak_ratio": 1.286,
           "vhd_per_mile": 26.19,
           "delay_per_mile": 0.574,
-          "vhd": 234.488
+          "vhd": 234.488,
+          "peak_ratio_k": 1.306
         },
         "recreational": {
           "peak_ratio": 1.269,
           "vhd_per_mile": 120.735,
           "delay_per_mile": 0.539,
-          "vhd": 1080.963
+          "vhd": 1080.963,
+          "peak_ratio_k": 1.396
         },
         "retail": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 51.185,
           "delay_per_mile": 0.564,
-          "vhd": 458.275
+          "vhd": 458.275,
+          "peak_ratio_k": 1.3
         }
       }
     },
@@ -8601,8 +8652,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -8672,19 +8723,22 @@
           "peak_ratio": 1.36,
           "vhd_per_mile": 19.702,
           "delay_per_mile": 0.54,
-          "vhd": 238.507
+          "vhd": 238.507,
+          "peak_ratio_k": 1.347
         },
         "recreational": {
           "peak_ratio": 1.308,
           "vhd_per_mile": 82.998,
           "delay_per_mile": 0.462,
-          "vhd": 1004.761
+          "vhd": 1004.761,
+          "peak_ratio_k": 1.425
         },
         "retail": {
           "peak_ratio": 1.267,
           "vhd_per_mile": 30.993,
           "delay_per_mile": 0.4,
-          "vhd": 375.195
+          "vhd": 375.195,
+          "peak_ratio_k": 1.274
         }
       }
     },
@@ -8737,8 +8791,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -8808,19 +8862,22 @@
           "peak_ratio": 1.36,
           "vhd_per_mile": 19.702,
           "delay_per_mile": 0.54,
-          "vhd": 238.507
+          "vhd": 238.507,
+          "peak_ratio_k": 1.347
         },
         "recreational": {
           "peak_ratio": 1.308,
           "vhd_per_mile": 82.998,
           "delay_per_mile": 0.462,
-          "vhd": 1004.761
+          "vhd": 1004.761,
+          "peak_ratio_k": 1.425
         },
         "retail": {
           "peak_ratio": 1.267,
           "vhd_per_mile": 30.993,
           "delay_per_mile": 0.4,
-          "vhd": 375.195
+          "vhd": 375.195,
+          "peak_ratio_k": 1.274
         }
       }
     },
@@ -8944,19 +9001,22 @@
           "peak_ratio": 1.561,
           "vhd_per_mile": 39.955,
           "delay_per_mile": 0.674,
-          "vhd": 191.865
+          "vhd": 191.865,
+          "peak_ratio_k": 1.508
         },
         "recreational": {
           "peak_ratio": 1.201,
           "vhd_per_mile": 61.76,
           "delay_per_mile": 0.244,
-          "vhd": 296.575
+          "vhd": 296.575,
+          "peak_ratio_k": 1.286
         },
         "retail": {
           "peak_ratio": 1.237,
           "vhd_per_mile": 22.455,
           "delay_per_mile": 0.286,
-          "vhd": 107.833
+          "vhd": 107.833,
+          "peak_ratio_k": 1.229
         }
       }
     },
@@ -9080,19 +9140,22 @@
           "peak_ratio": 1.561,
           "vhd_per_mile": 39.955,
           "delay_per_mile": 0.674,
-          "vhd": 191.865
+          "vhd": 191.865,
+          "peak_ratio_k": 1.508
         },
         "recreational": {
           "peak_ratio": 1.201,
           "vhd_per_mile": 61.76,
           "delay_per_mile": 0.244,
-          "vhd": 296.575
+          "vhd": 296.575,
+          "peak_ratio_k": 1.286
         },
         "retail": {
           "peak_ratio": 1.237,
           "vhd_per_mile": 22.455,
           "delay_per_mile": 0.286,
-          "vhd": 107.833
+          "vhd": 107.833,
+          "peak_ratio_k": 1.229
         }
       }
     },
@@ -9216,19 +9279,22 @@
           "peak_ratio": 1.561,
           "vhd_per_mile": 39.955,
           "delay_per_mile": 0.674,
-          "vhd": 191.865
+          "vhd": 191.865,
+          "peak_ratio_k": 1.508
         },
         "recreational": {
           "peak_ratio": 1.201,
           "vhd_per_mile": 61.76,
           "delay_per_mile": 0.244,
-          "vhd": 296.575
+          "vhd": 296.575,
+          "peak_ratio_k": 1.286
         },
         "retail": {
           "peak_ratio": 1.237,
           "vhd_per_mile": 22.455,
           "delay_per_mile": 0.286,
-          "vhd": 107.833
+          "vhd": 107.833,
+          "peak_ratio_k": 1.229
         }
       }
     },
@@ -9284,7 +9350,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -9355,19 +9421,22 @@
           "peak_ratio": 1.45,
           "vhd_per_mile": 64.759,
           "delay_per_mile": 0.927,
-          "vhd": 175.351
+          "vhd": 175.351,
+          "peak_ratio_k": 1.432
         },
         "recreational": {
           "peak_ratio": 1.229,
           "vhd_per_mile": 168.791,
           "delay_per_mile": 0.471,
-          "vhd": 457.045
+          "vhd": 457.045,
+          "peak_ratio_k": 1.292
         },
         "retail": {
           "peak_ratio": 1.262,
           "vhd_per_mile": 80.888,
           "delay_per_mile": 0.539,
-          "vhd": 219.024
+          "vhd": 219.024,
+          "peak_ratio_k": 1.284
         }
       }
     },
@@ -9421,7 +9490,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -9491,19 +9560,22 @@
           "peak_ratio": 1.462,
           "vhd_per_mile": 17.386,
           "delay_per_mile": 0.573,
-          "vhd": 127.941
+          "vhd": 127.941,
+          "peak_ratio_k": 1.479
         },
         "recreational": {
           "peak_ratio": 1.283,
           "vhd_per_mile": 49.036,
           "delay_per_mile": 0.353,
-          "vhd": 360.847
+          "vhd": 360.847,
+          "peak_ratio_k": 1.513
         },
         "retail": {
           "peak_ratio": 1.173,
           "vhd_per_mile": 7.865,
           "delay_per_mile": 0.217,
-          "vhd": 57.877
+          "vhd": 57.877,
+          "peak_ratio_k": 1.202
         }
       }
     },
@@ -9557,7 +9629,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -9627,19 +9699,22 @@
           "peak_ratio": 1.462,
           "vhd_per_mile": 17.386,
           "delay_per_mile": 0.573,
-          "vhd": 127.941
+          "vhd": 127.941,
+          "peak_ratio_k": 1.479
         },
         "recreational": {
           "peak_ratio": 1.283,
           "vhd_per_mile": 49.036,
           "delay_per_mile": 0.353,
-          "vhd": 360.847
+          "vhd": 360.847,
+          "peak_ratio_k": 1.513
         },
         "retail": {
           "peak_ratio": 1.173,
           "vhd_per_mile": 7.865,
           "delay_per_mile": 0.217,
-          "vhd": 57.877
+          "vhd": 57.877,
+          "peak_ratio_k": 1.202
         }
       }
     },
@@ -9693,7 +9768,7 @@
         "retail"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -9763,19 +9838,22 @@
           "peak_ratio": 1.462,
           "vhd_per_mile": 17.386,
           "delay_per_mile": 0.573,
-          "vhd": 127.941
+          "vhd": 127.941,
+          "peak_ratio_k": 1.479
         },
         "recreational": {
           "peak_ratio": 1.283,
           "vhd_per_mile": 49.036,
           "delay_per_mile": 0.353,
-          "vhd": 360.847
+          "vhd": 360.847,
+          "peak_ratio_k": 1.513
         },
         "retail": {
           "peak_ratio": 1.173,
           "vhd_per_mile": 7.865,
           "delay_per_mile": 0.217,
-          "vhd": 57.877
+          "vhd": 57.877,
+          "peak_ratio_k": 1.202
         }
       }
     },
@@ -9855,19 +9933,22 @@
           "peak_ratio": 1.633,
           "vhd_per_mile": 79.231,
           "delay_per_mile": 1.154,
-          "vhd": 90.33
+          "vhd": 90.33,
+          "peak_ratio_k": 1.717
         },
         "recreational": {
           "peak_ratio": 1.266,
           "vhd_per_mile": 152.838,
           "delay_per_mile": 0.486,
-          "vhd": 174.25
+          "vhd": 174.25,
+          "peak_ratio_k": 1.413
         },
         "retail": {
           "peak_ratio": 1.212,
           "vhd_per_mile": 37.159,
           "delay_per_mile": 0.386,
-          "vhd": 42.364
+          "vhd": 42.364,
+          "peak_ratio_k": 1.255
         }
       }
     },
@@ -9947,19 +10028,22 @@
           "peak_ratio": 1.633,
           "vhd_per_mile": 79.231,
           "delay_per_mile": 1.154,
-          "vhd": 90.33
+          "vhd": 90.33,
+          "peak_ratio_k": 1.717
         },
         "recreational": {
           "peak_ratio": 1.266,
           "vhd_per_mile": 152.838,
           "delay_per_mile": 0.486,
-          "vhd": 174.25
+          "vhd": 174.25,
+          "peak_ratio_k": 1.413
         },
         "retail": {
           "peak_ratio": 1.212,
           "vhd_per_mile": 37.159,
           "delay_per_mile": 0.386,
-          "vhd": 42.364
+          "vhd": 42.364,
+          "peak_ratio_k": 1.255
         }
       }
     },
@@ -10039,19 +10123,22 @@
           "peak_ratio": 1.633,
           "vhd_per_mile": 79.231,
           "delay_per_mile": 1.154,
-          "vhd": 90.33
+          "vhd": 90.33,
+          "peak_ratio_k": 1.717
         },
         "recreational": {
           "peak_ratio": 1.266,
           "vhd_per_mile": 152.838,
           "delay_per_mile": 0.486,
-          "vhd": 174.25
+          "vhd": 174.25,
+          "peak_ratio_k": 1.413
         },
         "retail": {
           "peak_ratio": 1.212,
           "vhd_per_mile": 37.159,
           "delay_per_mile": 0.386,
-          "vhd": 42.364
+          "vhd": 42.364,
+          "peak_ratio_k": 1.255
         }
       }
     },
@@ -10104,8 +10191,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -10175,19 +10262,22 @@
           "peak_ratio": 1.265,
           "vhd_per_mile": 21.305,
           "delay_per_mile": 0.351,
-          "vhd": 127.806
+          "vhd": 127.806,
+          "peak_ratio_k": 1.226
         },
         "recreational": {
           "peak_ratio": 1.228,
           "vhd_per_mile": 88.918,
           "delay_per_mile": 0.302,
-          "vhd": 533.413
+          "vhd": 533.413,
+          "peak_ratio_k": 1.319
         },
         "retail": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 30.902,
           "delay_per_mile": 0.263,
-          "vhd": 185.376
+          "vhd": 185.376,
+          "peak_ratio_k": 1.198
         }
       }
     },
@@ -10240,8 +10330,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -10311,19 +10401,22 @@
           "peak_ratio": 1.265,
           "vhd_per_mile": 21.305,
           "delay_per_mile": 0.351,
-          "vhd": 127.806
+          "vhd": 127.806,
+          "peak_ratio_k": 1.226
         },
         "recreational": {
           "peak_ratio": 1.228,
           "vhd_per_mile": 88.918,
           "delay_per_mile": 0.302,
-          "vhd": 533.413
+          "vhd": 533.413,
+          "peak_ratio_k": 1.319
         },
         "retail": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 30.902,
           "delay_per_mile": 0.263,
-          "vhd": 185.376
+          "vhd": 185.376,
+          "peak_ratio_k": 1.198
         }
       }
     },
@@ -10376,8 +10469,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -10447,19 +10540,22 @@
           "peak_ratio": 1.265,
           "vhd_per_mile": 21.305,
           "delay_per_mile": 0.351,
-          "vhd": 127.806
+          "vhd": 127.806,
+          "peak_ratio_k": 1.226
         },
         "recreational": {
           "peak_ratio": 1.228,
           "vhd_per_mile": 88.918,
           "delay_per_mile": 0.302,
-          "vhd": 533.413
+          "vhd": 533.413,
+          "peak_ratio_k": 1.319
         },
         "retail": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 30.902,
           "delay_per_mile": 0.263,
-          "vhd": 185.376
+          "vhd": 185.376,
+          "peak_ratio_k": 1.198
         }
       }
     },
@@ -10512,7 +10608,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -10583,19 +10679,22 @@
           "peak_ratio": 1.534,
           "vhd_per_mile": 25.26,
           "delay_per_mile": 0.973,
-          "vhd": 67.082
+          "vhd": 67.082,
+          "peak_ratio_k": 1.534
         },
         "recreational": {
           "peak_ratio": 1.299,
           "vhd_per_mile": 60.74,
           "delay_per_mile": 0.544,
-          "vhd": 161.302
+          "vhd": 161.302,
+          "peak_ratio_k": 1.425
         },
         "retail": {
           "peak_ratio": 1.311,
           "vhd_per_mile": 21.217,
           "delay_per_mile": 0.566,
-          "vhd": 56.345
+          "vhd": 56.345,
+          "peak_ratio_k": 1.327
         }
       }
     },
@@ -10648,7 +10747,7 @@
         "recreational",
         "retail"
       ],
-      "_class": "commute",
+      "_class": "urban_hybrid",
       "_primary_type": "commute",
       "_type_cores": {
         "commute": [
@@ -10719,19 +10818,22 @@
           "peak_ratio": 1.534,
           "vhd_per_mile": 25.26,
           "delay_per_mile": 0.973,
-          "vhd": 67.082
+          "vhd": 67.082,
+          "peak_ratio_k": 1.534
         },
         "recreational": {
           "peak_ratio": 1.299,
           "vhd_per_mile": 60.74,
           "delay_per_mile": 0.544,
-          "vhd": 161.302
+          "vhd": 161.302,
+          "peak_ratio_k": 1.425
         },
         "retail": {
           "peak_ratio": 1.311,
           "vhd_per_mile": 21.217,
           "delay_per_mile": 0.566,
-          "vhd": 56.345
+          "vhd": 56.345,
+          "peak_ratio_k": 1.327
         }
       }
     },
@@ -10855,19 +10957,22 @@
           "peak_ratio": 1.277,
           "vhd_per_mile": 22.647,
           "delay_per_mile": 0.526,
-          "vhd": 99.224
+          "vhd": 99.224,
+          "peak_ratio_k": 1.292
         },
         "recreational": {
           "peak_ratio": 1.204,
           "vhd_per_mile": 70.807,
           "delay_per_mile": 0.387,
-          "vhd": 310.23
+          "vhd": 310.23,
+          "peak_ratio_k": 1.256
         },
         "retail": {
           "peak_ratio": 1.201,
           "vhd_per_mile": 25.935,
           "delay_per_mile": 0.382,
-          "vhd": 113.629
+          "vhd": 113.629,
+          "peak_ratio_k": 1.219
         }
       }
     },
@@ -10991,19 +11096,22 @@
           "peak_ratio": 1.277,
           "vhd_per_mile": 22.647,
           "delay_per_mile": 0.526,
-          "vhd": 99.224
+          "vhd": 99.224,
+          "peak_ratio_k": 1.292
         },
         "recreational": {
           "peak_ratio": 1.204,
           "vhd_per_mile": 70.807,
           "delay_per_mile": 0.387,
-          "vhd": 310.23
+          "vhd": 310.23,
+          "peak_ratio_k": 1.256
         },
         "retail": {
           "peak_ratio": 1.201,
           "vhd_per_mile": 25.935,
           "delay_per_mile": 0.382,
-          "vhd": 113.629
+          "vhd": 113.629,
+          "peak_ratio_k": 1.219
         }
       }
     },
@@ -11127,19 +11235,22 @@
           "peak_ratio": 1.277,
           "vhd_per_mile": 22.647,
           "delay_per_mile": 0.526,
-          "vhd": 99.224
+          "vhd": 99.224,
+          "peak_ratio_k": 1.292
         },
         "recreational": {
           "peak_ratio": 1.204,
           "vhd_per_mile": 70.807,
           "delay_per_mile": 0.387,
-          "vhd": 310.23
+          "vhd": 310.23,
+          "peak_ratio_k": 1.256
         },
         "retail": {
           "peak_ratio": 1.201,
           "vhd_per_mile": 25.935,
           "delay_per_mile": 0.382,
-          "vhd": 113.629
+          "vhd": 113.629,
+          "peak_ratio_k": 1.219
         }
       }
     },
@@ -11263,19 +11374,22 @@
           "peak_ratio": 1.239,
           "vhd_per_mile": 16.982,
           "delay_per_mile": 0.486,
-          "vhd": 47.262
+          "vhd": 47.262,
+          "peak_ratio_k": 1.256
         },
         "recreational": {
           "peak_ratio": 1.241,
           "vhd_per_mile": 80.985,
           "delay_per_mile": 0.492,
-          "vhd": 225.391
+          "vhd": 225.391,
+          "peak_ratio_k": 1.302
         },
         "retail": {
           "peak_ratio": 1.24,
           "vhd_per_mile": 26.483,
           "delay_per_mile": 0.49,
-          "vhd": 73.705
+          "vhd": 73.705,
+          "peak_ratio_k": 1.249
         }
       }
     },
@@ -11399,19 +11513,22 @@
           "peak_ratio": 1.239,
           "vhd_per_mile": 16.982,
           "delay_per_mile": 0.486,
-          "vhd": 47.262
+          "vhd": 47.262,
+          "peak_ratio_k": 1.256
         },
         "recreational": {
           "peak_ratio": 1.241,
           "vhd_per_mile": 80.985,
           "delay_per_mile": 0.492,
-          "vhd": 225.391
+          "vhd": 225.391,
+          "peak_ratio_k": 1.302
         },
         "retail": {
           "peak_ratio": 1.24,
           "vhd_per_mile": 26.483,
           "delay_per_mile": 0.49,
-          "vhd": 73.705
+          "vhd": 73.705,
+          "peak_ratio_k": 1.249
         }
       }
     },
@@ -11463,7 +11580,7 @@
         "commute",
         "recreational"
       ],
-      "_class": "commute+recreational",
+      "_class": "recreational",
       "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
@@ -11513,19 +11630,22 @@
           "peak_ratio": 1.149,
           "vhd_per_mile": 6.516,
           "delay_per_mile": 0.176,
-          "vhd": 33.484
+          "vhd": 33.484,
+          "peak_ratio_k": 1.151
         },
         "recreational": {
           "peak_ratio": 1.207,
           "vhd_per_mile": 44.98,
           "delay_per_mile": 0.245,
-          "vhd": 231.128
+          "vhd": 231.128,
+          "peak_ratio_k": 1.318
         },
         "retail": {
           "peak_ratio": 1.163,
           "vhd_per_mile": 11.868,
           "delay_per_mile": 0.192,
-          "vhd": 60.982
+          "vhd": 60.982,
+          "peak_ratio_k": 1.175
         }
       }
     },
@@ -11577,7 +11697,7 @@
         "commute",
         "recreational"
       ],
-      "_class": "commute+recreational",
+      "_class": "recreational",
       "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
@@ -11627,19 +11747,22 @@
           "peak_ratio": 1.149,
           "vhd_per_mile": 6.516,
           "delay_per_mile": 0.176,
-          "vhd": 33.484
+          "vhd": 33.484,
+          "peak_ratio_k": 1.151
         },
         "recreational": {
           "peak_ratio": 1.207,
           "vhd_per_mile": 44.98,
           "delay_per_mile": 0.245,
-          "vhd": 231.128
+          "vhd": 231.128,
+          "peak_ratio_k": 1.318
         },
         "retail": {
           "peak_ratio": 1.163,
           "vhd_per_mile": 11.868,
           "delay_per_mile": 0.192,
-          "vhd": 60.982
+          "vhd": 60.982,
+          "peak_ratio_k": 1.175
         }
       }
     },
@@ -11763,19 +11886,22 @@
           "peak_ratio": 1.305,
           "vhd_per_mile": 14.16,
           "delay_per_mile": 0.594,
-          "vhd": 57.304
+          "vhd": 57.304,
+          "peak_ratio_k": 1.294
         },
         "recreational": {
           "peak_ratio": 1.192,
           "vhd_per_mile": 41.596,
           "delay_per_mile": 0.373,
-          "vhd": 168.331
+          "vhd": 168.331,
+          "peak_ratio_k": 1.239
         },
         "retail": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 14.398,
           "delay_per_mile": 0.405,
-          "vhd": 58.266
+          "vhd": 58.266,
+          "peak_ratio_k": 1.221
         }
       }
     },
@@ -11899,19 +12025,22 @@
           "peak_ratio": 1.305,
           "vhd_per_mile": 14.16,
           "delay_per_mile": 0.594,
-          "vhd": 57.304
+          "vhd": 57.304,
+          "peak_ratio_k": 1.294
         },
         "recreational": {
           "peak_ratio": 1.192,
           "vhd_per_mile": 41.596,
           "delay_per_mile": 0.373,
-          "vhd": 168.331
+          "vhd": 168.331,
+          "peak_ratio_k": 1.239
         },
         "retail": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 14.398,
           "delay_per_mile": 0.405,
-          "vhd": 58.266
+          "vhd": 58.266,
+          "peak_ratio_k": 1.221
         }
       }
     },
@@ -12035,19 +12164,22 @@
           "peak_ratio": 1.305,
           "vhd_per_mile": 14.16,
           "delay_per_mile": 0.594,
-          "vhd": 57.304
+          "vhd": 57.304,
+          "peak_ratio_k": 1.294
         },
         "recreational": {
           "peak_ratio": 1.192,
           "vhd_per_mile": 41.596,
           "delay_per_mile": 0.373,
-          "vhd": 168.331
+          "vhd": 168.331,
+          "peak_ratio_k": 1.239
         },
         "retail": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 14.398,
           "delay_per_mile": 0.405,
-          "vhd": 58.266
+          "vhd": 58.266,
+          "peak_ratio_k": 1.221
         }
       }
     },
@@ -12173,19 +12305,22 @@
           "peak_ratio": 1.153,
           "vhd_per_mile": 6.444,
           "delay_per_mile": 0.374,
-          "vhd": 34.465
+          "vhd": 34.465,
+          "peak_ratio_k": 1.164
         },
         "recreational": {
           "peak_ratio": 1.264,
           "vhd_per_mile": 56.523,
           "delay_per_mile": 0.643,
-          "vhd": 302.3
+          "vhd": 302.3,
+          "peak_ratio_k": 1.353
         },
         "retail": {
           "peak_ratio": 1.225,
           "vhd_per_mile": 17.663,
           "delay_per_mile": 0.547,
-          "vhd": 94.465
+          "vhd": 94.465,
+          "peak_ratio_k": 1.238
         }
       }
     },
@@ -12311,19 +12446,22 @@
           "peak_ratio": 1.153,
           "vhd_per_mile": 6.444,
           "delay_per_mile": 0.374,
-          "vhd": 34.465
+          "vhd": 34.465,
+          "peak_ratio_k": 1.164
         },
         "recreational": {
           "peak_ratio": 1.264,
           "vhd_per_mile": 56.523,
           "delay_per_mile": 0.643,
-          "vhd": 302.3
+          "vhd": 302.3,
+          "peak_ratio_k": 1.353
         },
         "retail": {
           "peak_ratio": 1.225,
           "vhd_per_mile": 17.663,
           "delay_per_mile": 0.547,
-          "vhd": 94.465
+          "vhd": 94.465,
+          "peak_ratio_k": 1.238
         }
       }
     },
@@ -12449,19 +12587,22 @@
           "peak_ratio": 1.153,
           "vhd_per_mile": 6.444,
           "delay_per_mile": 0.374,
-          "vhd": 34.465
+          "vhd": 34.465,
+          "peak_ratio_k": 1.164
         },
         "recreational": {
           "peak_ratio": 1.264,
           "vhd_per_mile": 56.523,
           "delay_per_mile": 0.643,
-          "vhd": 302.3
+          "vhd": 302.3,
+          "peak_ratio_k": 1.353
         },
         "retail": {
           "peak_ratio": 1.225,
           "vhd_per_mile": 17.663,
           "delay_per_mile": 0.547,
-          "vhd": 94.465
+          "vhd": 94.465,
+          "peak_ratio_k": 1.238
         }
       }
     },
@@ -12514,8 +12655,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "commute+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -12585,19 +12726,22 @@
           "peak_ratio": 1.301,
           "vhd_per_mile": 15.558,
           "delay_per_mile": 0.5,
-          "vhd": 32.471
+          "vhd": 32.471,
+          "peak_ratio_k": 1.317
         },
         "recreational": {
           "peak_ratio": 1.203,
           "vhd_per_mile": 60.485,
           "delay_per_mile": 0.337,
-          "vhd": 126.235
+          "vhd": 126.235,
+          "peak_ratio_k": 1.356
         },
         "retail": {
           "peak_ratio": 1.184,
           "vhd_per_mile": 11.949,
           "delay_per_mile": 0.306,
-          "vhd": 24.937
+          "vhd": 24.937,
+          "peak_ratio_k": 1.191
         }
       }
     },
@@ -12650,8 +12794,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "commute+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -12721,19 +12865,22 @@
           "peak_ratio": 1.301,
           "vhd_per_mile": 15.558,
           "delay_per_mile": 0.5,
-          "vhd": 32.471
+          "vhd": 32.471,
+          "peak_ratio_k": 1.317
         },
         "recreational": {
           "peak_ratio": 1.203,
           "vhd_per_mile": 60.485,
           "delay_per_mile": 0.337,
-          "vhd": 126.235
+          "vhd": 126.235,
+          "peak_ratio_k": 1.356
         },
         "retail": {
           "peak_ratio": 1.184,
           "vhd_per_mile": 11.949,
           "delay_per_mile": 0.306,
-          "vhd": 24.937
+          "vhd": 24.937,
+          "peak_ratio_k": 1.191
         }
       }
     },
@@ -12786,8 +12933,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "commute+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -12857,19 +13004,22 @@
           "peak_ratio": 1.301,
           "vhd_per_mile": 15.558,
           "delay_per_mile": 0.5,
-          "vhd": 32.471
+          "vhd": 32.471,
+          "peak_ratio_k": 1.317
         },
         "recreational": {
           "peak_ratio": 1.203,
           "vhd_per_mile": 60.485,
           "delay_per_mile": 0.337,
-          "vhd": 126.235
+          "vhd": 126.235,
+          "peak_ratio_k": 1.356
         },
         "retail": {
           "peak_ratio": 1.184,
           "vhd_per_mile": 11.949,
           "delay_per_mile": 0.306,
-          "vhd": 24.937
+          "vhd": 24.937,
+          "peak_ratio_k": 1.191
         }
       }
     },
@@ -12993,19 +13143,22 @@
           "peak_ratio": 1.259,
           "vhd_per_mile": 9.255,
           "delay_per_mile": 0.43,
-          "vhd": 31.8
+          "vhd": 31.8,
+          "peak_ratio_k": 1.277
         },
         "recreational": {
           "peak_ratio": 1.304,
           "vhd_per_mile": 45.566,
           "delay_per_mile": 0.504,
-          "vhd": 156.569
+          "vhd": 156.569,
+          "peak_ratio_k": 1.407
         },
         "retail": {
           "peak_ratio": 1.26,
           "vhd_per_mile": 11.714,
           "delay_per_mile": 0.431,
-          "vhd": 40.25
+          "vhd": 40.25,
+          "peak_ratio_k": 1.273
         }
       }
     },
@@ -13129,19 +13282,22 @@
           "peak_ratio": 1.259,
           "vhd_per_mile": 9.255,
           "delay_per_mile": 0.43,
-          "vhd": 31.8
+          "vhd": 31.8,
+          "peak_ratio_k": 1.277
         },
         "recreational": {
           "peak_ratio": 1.304,
           "vhd_per_mile": 45.566,
           "delay_per_mile": 0.504,
-          "vhd": 156.569
+          "vhd": 156.569,
+          "peak_ratio_k": 1.407
         },
         "retail": {
           "peak_ratio": 1.26,
           "vhd_per_mile": 11.714,
           "delay_per_mile": 0.431,
-          "vhd": 40.25
+          "vhd": 40.25,
+          "peak_ratio_k": 1.273
         }
       }
     },
@@ -13265,19 +13421,22 @@
           "peak_ratio": 1.259,
           "vhd_per_mile": 9.255,
           "delay_per_mile": 0.43,
-          "vhd": 31.8
+          "vhd": 31.8,
+          "peak_ratio_k": 1.277
         },
         "recreational": {
           "peak_ratio": 1.304,
           "vhd_per_mile": 45.566,
           "delay_per_mile": 0.504,
-          "vhd": 156.569
+          "vhd": 156.569,
+          "peak_ratio_k": 1.407
         },
         "retail": {
           "peak_ratio": 1.26,
           "vhd_per_mile": 11.714,
           "delay_per_mile": 0.431,
-          "vhd": 40.25
+          "vhd": 40.25,
+          "peak_ratio_k": 1.273
         }
       }
     },
@@ -13330,8 +13489,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -13401,19 +13560,22 @@
           "peak_ratio": 1.168,
           "vhd_per_mile": 10.411,
           "delay_per_mile": 0.313,
-          "vhd": 12.168
+          "vhd": 12.168,
+          "peak_ratio_k": 1.184
         },
         "recreational": {
           "peak_ratio": 1.171,
           "vhd_per_mile": 49.883,
           "delay_per_mile": 0.318,
-          "vhd": 58.302
+          "vhd": 58.302,
+          "peak_ratio_k": 1.257
         },
         "retail": {
           "peak_ratio": 1.184,
           "vhd_per_mile": 15.548,
           "delay_per_mile": 0.343,
-          "vhd": 18.172
+          "vhd": 18.172,
+          "peak_ratio_k": 1.208
         }
       }
     },
@@ -13466,8 +13628,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -13537,19 +13699,22 @@
           "peak_ratio": 1.168,
           "vhd_per_mile": 10.411,
           "delay_per_mile": 0.313,
-          "vhd": 12.168
+          "vhd": 12.168,
+          "peak_ratio_k": 1.184
         },
         "recreational": {
           "peak_ratio": 1.171,
           "vhd_per_mile": 49.883,
           "delay_per_mile": 0.318,
-          "vhd": 58.302
+          "vhd": 58.302,
+          "peak_ratio_k": 1.257
         },
         "retail": {
           "peak_ratio": 1.184,
           "vhd_per_mile": 15.548,
           "delay_per_mile": 0.343,
-          "vhd": 18.172
+          "vhd": 18.172,
+          "peak_ratio_k": 1.208
         }
       }
     },
@@ -13602,8 +13767,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -13673,19 +13838,22 @@
           "peak_ratio": 1.171,
           "vhd_per_mile": 3.585,
           "delay_per_mile": 0.264,
-          "vhd": 11.795
+          "vhd": 11.795,
+          "peak_ratio_k": 1.165
         },
         "recreational": {
           "peak_ratio": 1.145,
           "vhd_per_mile": 15.878,
           "delay_per_mile": 0.225,
-          "vhd": 52.239
+          "vhd": 52.239,
+          "peak_ratio_k": 1.191
         },
         "retail": {
           "peak_ratio": 1.176,
           "vhd_per_mile": 5.812,
           "delay_per_mile": 0.271,
-          "vhd": 19.121
+          "vhd": 19.121,
+          "peak_ratio_k": 1.185
         }
       }
     },
@@ -13738,8 +13906,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -13809,19 +13977,22 @@
           "peak_ratio": 1.171,
           "vhd_per_mile": 3.585,
           "delay_per_mile": 0.264,
-          "vhd": 11.795
+          "vhd": 11.795,
+          "peak_ratio_k": 1.165
         },
         "recreational": {
           "peak_ratio": 1.145,
           "vhd_per_mile": 15.878,
           "delay_per_mile": 0.225,
-          "vhd": 52.239
+          "vhd": 52.239,
+          "peak_ratio_k": 1.191
         },
         "retail": {
           "peak_ratio": 1.176,
           "vhd_per_mile": 5.812,
           "delay_per_mile": 0.271,
-          "vhd": 19.121
+          "vhd": 19.121,
+          "peak_ratio_k": 1.185
         }
       }
     },
@@ -13876,7 +14047,7 @@
         "recreational"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -13925,19 +14096,22 @@
           "peak_ratio": 1.427,
           "vhd_per_mile": 7.635,
           "delay_per_mile": 0.579,
-          "vhd": 8.407
+          "vhd": 8.407,
+          "peak_ratio_k": 1.427
         },
         "recreational": {
           "peak_ratio": 1.355,
           "vhd_per_mile": 59.964,
           "delay_per_mile": 0.482,
-          "vhd": 66.024
+          "vhd": 66.024,
+          "peak_ratio_k": 1.574
         },
         "retail": {
           "peak_ratio": 1.202,
           "vhd_per_mile": 9.873,
           "delay_per_mile": 0.274,
-          "vhd": 10.871
+          "vhd": 10.871,
+          "peak_ratio_k": 1.206
         }
       }
     },
@@ -13992,7 +14166,7 @@
         "recreational"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -14041,19 +14215,22 @@
           "peak_ratio": 1.427,
           "vhd_per_mile": 7.635,
           "delay_per_mile": 0.579,
-          "vhd": 8.407
+          "vhd": 8.407,
+          "peak_ratio_k": 1.427
         },
         "recreational": {
           "peak_ratio": 1.355,
           "vhd_per_mile": 59.964,
           "delay_per_mile": 0.482,
-          "vhd": 66.024
+          "vhd": 66.024,
+          "peak_ratio_k": 1.574
         },
         "retail": {
           "peak_ratio": 1.202,
           "vhd_per_mile": 9.873,
           "delay_per_mile": 0.274,
-          "vhd": 10.871
+          "vhd": 10.871,
+          "peak_ratio_k": 1.206
         }
       }
     },
@@ -14108,7 +14285,7 @@
         "recreational"
       ],
       "_class": "commute+recreational",
-      "_primary_type": "commute",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -14157,19 +14334,22 @@
           "peak_ratio": 1.427,
           "vhd_per_mile": 7.635,
           "delay_per_mile": 0.579,
-          "vhd": 8.407
+          "vhd": 8.407,
+          "peak_ratio_k": 1.427
         },
         "recreational": {
           "peak_ratio": 1.355,
           "vhd_per_mile": 59.964,
           "delay_per_mile": 0.482,
-          "vhd": 66.024
+          "vhd": 66.024,
+          "peak_ratio_k": 1.574
         },
         "retail": {
           "peak_ratio": 1.202,
           "vhd_per_mile": 9.873,
           "delay_per_mile": 0.274,
-          "vhd": 10.871
+          "vhd": 10.871,
+          "peak_ratio_k": 1.206
         }
       }
     },
@@ -14222,8 +14402,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -14293,19 +14473,22 @@
           "peak_ratio": 1.144,
           "vhd_per_mile": 3.773,
           "delay_per_mile": 0.324,
-          "vhd": 16.231
+          "vhd": 16.231,
+          "peak_ratio_k": 1.153
         },
         "recreational": {
           "peak_ratio": 1.146,
           "vhd_per_mile": 18.658,
           "delay_per_mile": 0.328,
-          "vhd": 80.267
+          "vhd": 80.267,
+          "peak_ratio_k": 1.193
         },
         "retail": {
           "peak_ratio": 1.155,
           "vhd_per_mile": 6.279,
           "delay_per_mile": 0.349,
-          "vhd": 27.013
+          "vhd": 27.013,
+          "peak_ratio_k": 1.168
         }
       }
     },
@@ -14358,8 +14541,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -14429,19 +14612,22 @@
           "peak_ratio": 1.144,
           "vhd_per_mile": 3.773,
           "delay_per_mile": 0.324,
-          "vhd": 16.231
+          "vhd": 16.231,
+          "peak_ratio_k": 1.153
         },
         "recreational": {
           "peak_ratio": 1.146,
           "vhd_per_mile": 18.658,
           "delay_per_mile": 0.328,
-          "vhd": 80.267
+          "vhd": 80.267,
+          "peak_ratio_k": 1.193
         },
         "retail": {
           "peak_ratio": 1.155,
           "vhd_per_mile": 6.279,
           "delay_per_mile": 0.349,
-          "vhd": 27.013
+          "vhd": 27.013,
+          "peak_ratio_k": 1.168
         }
       }
     },
@@ -14494,8 +14680,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "retail",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -14565,19 +14751,22 @@
           "peak_ratio": 1.144,
           "vhd_per_mile": 3.773,
           "delay_per_mile": 0.324,
-          "vhd": 16.231
+          "vhd": 16.231,
+          "peak_ratio_k": 1.153
         },
         "recreational": {
           "peak_ratio": 1.146,
           "vhd_per_mile": 18.658,
           "delay_per_mile": 0.328,
-          "vhd": 80.267
+          "vhd": 80.267,
+          "peak_ratio_k": 1.193
         },
         "retail": {
           "peak_ratio": 1.155,
           "vhd_per_mile": 6.279,
           "delay_per_mile": 0.349,
-          "vhd": 27.013
+          "vhd": 27.013,
+          "peak_ratio_k": 1.168
         }
       }
     },
@@ -14630,8 +14819,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -14701,19 +14890,22 @@
           "peak_ratio": 1.221,
           "vhd_per_mile": 9.718,
           "delay_per_mile": 0.505,
-          "vhd": 8.045
+          "vhd": 8.045,
+          "peak_ratio_k": 1.237
         },
         "recreational": {
           "peak_ratio": 1.199,
           "vhd_per_mile": 42.98,
           "delay_per_mile": 0.456,
-          "vhd": 35.581
+          "vhd": 35.581,
+          "peak_ratio_k": 1.256
         },
         "retail": {
           "peak_ratio": 1.202,
           "vhd_per_mile": 12.844,
           "delay_per_mile": 0.461,
-          "vhd": 10.633
+          "vhd": 10.633,
+          "peak_ratio_k": 1.216
         }
       }
     },
@@ -14766,8 +14958,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "urban_hybrid",
-      "_primary_type": "commute",
+      "_class": "urban_hybrid+recreational",
+      "_primary_type": "recreational",
       "_type_cores": {
         "commute": [
           {
@@ -14837,19 +15029,22 @@
           "peak_ratio": 1.221,
           "vhd_per_mile": 9.718,
           "delay_per_mile": 0.505,
-          "vhd": 8.045
+          "vhd": 8.045,
+          "peak_ratio_k": 1.237
         },
         "recreational": {
           "peak_ratio": 1.199,
           "vhd_per_mile": 42.98,
           "delay_per_mile": 0.456,
-          "vhd": 35.581
+          "vhd": 35.581,
+          "peak_ratio_k": 1.256
         },
         "retail": {
           "peak_ratio": 1.202,
           "vhd_per_mile": 12.844,
           "delay_per_mile": 0.461,
-          "vhd": 10.633
+          "vhd": 10.633,
+          "peak_ratio_k": 1.216
         }
       }
     },
@@ -14927,19 +15122,22 @@
           "peak_ratio": 1.009,
           "vhd_per_mile": 0.678,
           "delay_per_mile": 0.037,
-          "vhd": 4.64
+          "vhd": 4.64,
+          "peak_ratio_k": 1.013
         },
         "recreational": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 43.449,
           "delay_per_mile": 0.361,
-          "vhd": 297.538
+          "vhd": 297.538,
+          "peak_ratio_k": 1.406
         },
         "retail": {
           "peak_ratio": 1.03,
           "vhd_per_mile": 2.333,
           "delay_per_mile": 0.063,
-          "vhd": 15.979
+          "vhd": 15.979,
+          "peak_ratio_k": 1.029
         }
       }
     },
@@ -15017,19 +15215,22 @@
           "peak_ratio": 1.009,
           "vhd_per_mile": 0.678,
           "delay_per_mile": 0.037,
-          "vhd": 4.64
+          "vhd": 4.64,
+          "peak_ratio_k": 1.013
         },
         "recreational": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 43.449,
           "delay_per_mile": 0.361,
-          "vhd": 297.538
+          "vhd": 297.538,
+          "peak_ratio_k": 1.406
         },
         "retail": {
           "peak_ratio": 1.03,
           "vhd_per_mile": 2.333,
           "delay_per_mile": 0.063,
-          "vhd": 15.979
+          "vhd": 15.979,
+          "peak_ratio_k": 1.029
         }
       }
     },
@@ -15107,19 +15308,22 @@
           "peak_ratio": 1.009,
           "vhd_per_mile": 0.678,
           "delay_per_mile": 0.037,
-          "vhd": 4.64
+          "vhd": 4.64,
+          "peak_ratio_k": 1.013
         },
         "recreational": {
           "peak_ratio": 1.281,
           "vhd_per_mile": 43.449,
           "delay_per_mile": 0.361,
-          "vhd": 297.538
+          "vhd": 297.538,
+          "peak_ratio_k": 1.406
         },
         "retail": {
           "peak_ratio": 1.03,
           "vhd_per_mile": 2.333,
           "delay_per_mile": 0.063,
-          "vhd": 15.979
+          "vhd": 15.979,
+          "peak_ratio_k": 1.029
         }
       }
     },
@@ -15197,19 +15401,22 @@
           "peak_ratio": 0.964,
           "vhd_per_mile": 0.009,
           "delay_per_mile": 0.0,
-          "vhd": 0.057
+          "vhd": 0.057,
+          "peak_ratio_k": 0.963
         },
         "recreational": {
           "peak_ratio": 1.246,
           "vhd_per_mile": 31.759,
           "delay_per_mile": 0.292,
-          "vhd": 204.342
+          "vhd": 204.342,
+          "peak_ratio_k": 1.548
         },
         "retail": {
           "peak_ratio": 0.964,
           "vhd_per_mile": 0.049,
           "delay_per_mile": 0.0,
-          "vhd": 0.314
+          "vhd": 0.314,
+          "peak_ratio_k": 0.966
         }
       }
     },
@@ -15287,19 +15494,22 @@
           "peak_ratio": 0.964,
           "vhd_per_mile": 0.009,
           "delay_per_mile": 0.0,
-          "vhd": 0.057
+          "vhd": 0.057,
+          "peak_ratio_k": 0.963
         },
         "recreational": {
           "peak_ratio": 1.246,
           "vhd_per_mile": 31.759,
           "delay_per_mile": 0.292,
-          "vhd": 204.342
+          "vhd": 204.342,
+          "peak_ratio_k": 1.548
         },
         "retail": {
           "peak_ratio": 0.964,
           "vhd_per_mile": 0.049,
           "delay_per_mile": 0.0,
-          "vhd": 0.314
+          "vhd": 0.314,
+          "peak_ratio_k": 0.966
         }
       }
     },
@@ -15377,19 +15587,22 @@
           "peak_ratio": 0.964,
           "vhd_per_mile": 0.009,
           "delay_per_mile": 0.0,
-          "vhd": 0.057
+          "vhd": 0.057,
+          "peak_ratio_k": 0.963
         },
         "recreational": {
           "peak_ratio": 1.246,
           "vhd_per_mile": 31.759,
           "delay_per_mile": 0.292,
-          "vhd": 204.342
+          "vhd": 204.342,
+          "peak_ratio_k": 1.548
         },
         "retail": {
           "peak_ratio": 0.964,
           "vhd_per_mile": 0.049,
           "delay_per_mile": 0.0,
-          "vhd": 0.314
+          "vhd": 0.314,
+          "peak_ratio_k": 0.966
         }
       }
     },
@@ -15489,19 +15702,22 @@
           "peak_ratio": 1.453,
           "vhd_per_mile": 46.837,
           "delay_per_mile": 0.84,
-          "vhd": 136.025
+          "vhd": 136.025,
+          "peak_ratio_k": 1.411
         },
         "recreational": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 104.755,
           "delay_per_mile": 0.385,
-          "vhd": 304.232
+          "vhd": 304.232,
+          "peak_ratio_k": 1.313
         },
         "retail": {
           "peak_ratio": 1.2,
           "vhd_per_mile": 35.074,
           "delay_per_mile": 0.37,
-          "vhd": 101.862
+          "vhd": 101.862,
+          "peak_ratio_k": 1.209
         }
       }
     },
@@ -15599,19 +15815,22 @@
           "peak_ratio": 1.453,
           "vhd_per_mile": 46.837,
           "delay_per_mile": 0.84,
-          "vhd": 136.025
+          "vhd": 136.025,
+          "peak_ratio_k": 1.411
         },
         "recreational": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 104.755,
           "delay_per_mile": 0.385,
-          "vhd": 304.232
+          "vhd": 304.232,
+          "peak_ratio_k": 1.313
         },
         "retail": {
           "peak_ratio": 1.2,
           "vhd_per_mile": 35.074,
           "delay_per_mile": 0.37,
-          "vhd": 101.862
+          "vhd": 101.862,
+          "peak_ratio_k": 1.209
         }
       }
     },
@@ -15709,19 +15928,22 @@
           "peak_ratio": 1.453,
           "vhd_per_mile": 46.837,
           "delay_per_mile": 0.84,
-          "vhd": 136.025
+          "vhd": 136.025,
+          "peak_ratio_k": 1.411
         },
         "recreational": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 104.755,
           "delay_per_mile": 0.385,
-          "vhd": 304.232
+          "vhd": 304.232,
+          "peak_ratio_k": 1.313
         },
         "retail": {
           "peak_ratio": 1.2,
           "vhd_per_mile": 35.074,
           "delay_per_mile": 0.37,
-          "vhd": 101.862
+          "vhd": 101.862,
+          "peak_ratio_k": 1.209
         }
       }
     },
@@ -15771,8 +15993,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "retail",
-      "_primary_type": "retail",
+      "_class": "recreational+retail",
+      "_primary_type": "recreational",
       "_type_cores": {
         "recreational": [
           {
@@ -15821,19 +16043,22 @@
           "peak_ratio": 1.394,
           "vhd_per_mile": 34.28,
           "delay_per_mile": 0.848,
-          "vhd": 27.827
+          "vhd": 27.827,
+          "peak_ratio_k": 1.399
         },
         "recreational": {
           "peak_ratio": 1.466,
           "vhd_per_mile": 206.831,
           "delay_per_mile": 1.004,
-          "vhd": 167.893
+          "vhd": 167.893,
+          "peak_ratio_k": 1.695
         },
         "retail": {
           "peak_ratio": 1.544,
           "vhd_per_mile": 101.853,
           "delay_per_mile": 1.171,
-          "vhd": 82.679
+          "vhd": 82.679,
+          "peak_ratio_k": 1.586
         }
       }
     },
@@ -15883,8 +16108,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "retail",
-      "_primary_type": "retail",
+      "_class": "recreational+retail",
+      "_primary_type": "recreational",
       "_type_cores": {
         "recreational": [
           {
@@ -15933,19 +16158,22 @@
           "peak_ratio": 1.394,
           "vhd_per_mile": 34.28,
           "delay_per_mile": 0.848,
-          "vhd": 27.827
+          "vhd": 27.827,
+          "peak_ratio_k": 1.399
         },
         "recreational": {
           "peak_ratio": 1.466,
           "vhd_per_mile": 206.831,
           "delay_per_mile": 1.004,
-          "vhd": 167.893
+          "vhd": 167.893,
+          "peak_ratio_k": 1.695
         },
         "retail": {
           "peak_ratio": 1.544,
           "vhd_per_mile": 101.853,
           "delay_per_mile": 1.171,
-          "vhd": 82.679
+          "vhd": 82.679,
+          "peak_ratio_k": 1.586
         }
       }
     },
@@ -15995,8 +16223,8 @@
         "recreational",
         "retail"
       ],
-      "_class": "retail",
-      "_primary_type": "retail",
+      "_class": "recreational+retail",
+      "_primary_type": "recreational",
       "_type_cores": {
         "recreational": [
           {
@@ -16045,19 +16273,22 @@
           "peak_ratio": 1.394,
           "vhd_per_mile": 34.28,
           "delay_per_mile": 0.848,
-          "vhd": 27.827
+          "vhd": 27.827,
+          "peak_ratio_k": 1.399
         },
         "recreational": {
           "peak_ratio": 1.466,
           "vhd_per_mile": 206.831,
           "delay_per_mile": 1.004,
-          "vhd": 167.893
+          "vhd": 167.893,
+          "peak_ratio_k": 1.695
         },
         "retail": {
           "peak_ratio": 1.544,
           "vhd_per_mile": 101.853,
           "delay_per_mile": 1.171,
-          "vhd": 82.679
+          "vhd": 82.679,
+          "peak_ratio_k": 1.586
         }
       }
     },
@@ -16135,19 +16366,22 @@
           "peak_ratio": 1.068,
           "vhd_per_mile": 1.695,
           "delay_per_mile": 0.114,
-          "vhd": 8.599
+          "vhd": 8.599,
+          "peak_ratio_k": 1.067
         },
         "recreational": {
           "peak_ratio": 1.174,
           "vhd_per_mile": 31.841,
           "delay_per_mile": 0.275,
-          "vhd": 161.512
+          "vhd": 161.512,
+          "peak_ratio_k": 1.308
         },
         "retail": {
           "peak_ratio": 1.069,
           "vhd_per_mile": 3.505,
           "delay_per_mile": 0.118,
-          "vhd": 17.778
+          "vhd": 17.778,
+          "peak_ratio_k": 1.07
         }
       }
     },
@@ -16225,19 +16459,22 @@
           "peak_ratio": 1.068,
           "vhd_per_mile": 1.695,
           "delay_per_mile": 0.114,
-          "vhd": 8.599
+          "vhd": 8.599,
+          "peak_ratio_k": 1.067
         },
         "recreational": {
           "peak_ratio": 1.174,
           "vhd_per_mile": 31.841,
           "delay_per_mile": 0.275,
-          "vhd": 161.512
+          "vhd": 161.512,
+          "peak_ratio_k": 1.308
         },
         "retail": {
           "peak_ratio": 1.069,
           "vhd_per_mile": 3.505,
           "delay_per_mile": 0.118,
-          "vhd": 17.778
+          "vhd": 17.778,
+          "peak_ratio_k": 1.07
         }
       }
     },
@@ -16315,19 +16552,22 @@
           "peak_ratio": 1.068,
           "vhd_per_mile": 1.695,
           "delay_per_mile": 0.114,
-          "vhd": 8.599
+          "vhd": 8.599,
+          "peak_ratio_k": 1.067
         },
         "recreational": {
           "peak_ratio": 1.174,
           "vhd_per_mile": 31.841,
           "delay_per_mile": 0.275,
-          "vhd": 161.512
+          "vhd": 161.512,
+          "peak_ratio_k": 1.308
         },
         "retail": {
           "peak_ratio": 1.069,
           "vhd_per_mile": 3.505,
           "delay_per_mile": 0.118,
-          "vhd": 17.778
+          "vhd": 17.778,
+          "peak_ratio_k": 1.07
         }
       }
     },
@@ -16405,19 +16645,22 @@
           "peak_ratio": 1.063,
           "vhd_per_mile": 1.396,
           "delay_per_mile": 0.081,
-          "vhd": 6.464
+          "vhd": 6.464,
+          "peak_ratio_k": 1.054
         },
         "recreational": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 23.924,
           "delay_per_mile": 0.253,
-          "vhd": 110.808
+          "vhd": 110.808,
+          "peak_ratio_k": 1.487
         },
         "retail": {
           "peak_ratio": 1.067,
           "vhd_per_mile": 2.862,
           "delay_per_mile": 0.096,
-          "vhd": 13.254
+          "vhd": 13.254,
+          "peak_ratio_k": 1.062
         }
       }
     },
@@ -16495,19 +16738,22 @@
           "peak_ratio": 1.063,
           "vhd_per_mile": 1.396,
           "delay_per_mile": 0.081,
-          "vhd": 6.464
+          "vhd": 6.464,
+          "peak_ratio_k": 1.054
         },
         "recreational": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 23.924,
           "delay_per_mile": 0.253,
-          "vhd": 110.808
+          "vhd": 110.808,
+          "peak_ratio_k": 1.487
         },
         "retail": {
           "peak_ratio": 1.067,
           "vhd_per_mile": 2.862,
           "delay_per_mile": 0.096,
-          "vhd": 13.254
+          "vhd": 13.254,
+          "peak_ratio_k": 1.062
         }
       }
     },
@@ -16585,19 +16831,22 @@
           "peak_ratio": 1.063,
           "vhd_per_mile": 1.396,
           "delay_per_mile": 0.081,
-          "vhd": 6.464
+          "vhd": 6.464,
+          "peak_ratio_k": 1.054
         },
         "recreational": {
           "peak_ratio": 1.198,
           "vhd_per_mile": 23.924,
           "delay_per_mile": 0.253,
-          "vhd": 110.808
+          "vhd": 110.808,
+          "peak_ratio_k": 1.487
         },
         "retail": {
           "peak_ratio": 1.067,
           "vhd_per_mile": 2.862,
           "delay_per_mile": 0.096,
-          "vhd": 13.254
+          "vhd": 13.254,
+          "peak_ratio_k": 1.062
         }
       }
     },
@@ -16675,19 +16924,22 @@
           "peak_ratio": 1.041,
           "vhd_per_mile": 5.626,
           "delay_per_mile": 0.041,
-          "vhd": 8.568
+          "vhd": 8.568,
+          "peak_ratio_k": 1.041
         },
         "recreational": {
           "peak_ratio": 1.126,
           "vhd_per_mile": 67.308,
           "delay_per_mile": 0.125,
-          "vhd": 102.503
+          "vhd": 102.503,
+          "peak_ratio_k": 1.588
         },
         "retail": {
           "peak_ratio": 1.004,
           "vhd_per_mile": 2.594,
           "delay_per_mile": 0.006,
-          "vhd": 3.951
+          "vhd": 3.951,
+          "peak_ratio_k": 1.019
         }
       }
     },
@@ -16765,19 +17017,22 @@
           "peak_ratio": 1.041,
           "vhd_per_mile": 5.626,
           "delay_per_mile": 0.041,
-          "vhd": 8.568
+          "vhd": 8.568,
+          "peak_ratio_k": 1.041
         },
         "recreational": {
           "peak_ratio": 1.126,
           "vhd_per_mile": 67.308,
           "delay_per_mile": 0.125,
-          "vhd": 102.503
+          "vhd": 102.503,
+          "peak_ratio_k": 1.588
         },
         "retail": {
           "peak_ratio": 1.004,
           "vhd_per_mile": 2.594,
           "delay_per_mile": 0.006,
-          "vhd": 3.951
+          "vhd": 3.951,
+          "peak_ratio_k": 1.019
         }
       }
     },
@@ -16856,19 +17111,22 @@
           "peak_ratio": 1.161,
           "vhd_per_mile": 11.051,
           "delay_per_mile": 0.278,
-          "vhd": 21.942
+          "vhd": 21.942,
+          "peak_ratio_k": 1.181
         },
         "recreational": {
           "peak_ratio": 1.258,
           "vhd_per_mile": 70.918,
           "delay_per_mile": 0.444,
-          "vhd": 140.808
+          "vhd": 140.808,
+          "peak_ratio_k": 1.401
         },
         "retail": {
           "peak_ratio": 1.194,
           "vhd_per_mile": 16.511,
           "delay_per_mile": 0.335,
-          "vhd": 32.783
+          "vhd": 32.783,
+          "peak_ratio_k": 1.206
         }
       }
     },
@@ -16946,19 +17204,22 @@
           "peak_ratio": 1.161,
           "vhd_per_mile": 11.051,
           "delay_per_mile": 0.278,
-          "vhd": 21.942
+          "vhd": 21.942,
+          "peak_ratio_k": 1.181
         },
         "recreational": {
           "peak_ratio": 1.258,
           "vhd_per_mile": 70.918,
           "delay_per_mile": 0.444,
-          "vhd": 140.808
+          "vhd": 140.808,
+          "peak_ratio_k": 1.401
         },
         "retail": {
           "peak_ratio": 1.194,
           "vhd_per_mile": 16.511,
           "delay_per_mile": 0.335,
-          "vhd": 32.783
+          "vhd": 32.783,
+          "peak_ratio_k": 1.206
         }
       }
     },
@@ -17036,19 +17297,22 @@
           "peak_ratio": 1.161,
           "vhd_per_mile": 11.051,
           "delay_per_mile": 0.278,
-          "vhd": 21.942
+          "vhd": 21.942,
+          "peak_ratio_k": 1.181
         },
         "recreational": {
           "peak_ratio": 1.258,
           "vhd_per_mile": 70.918,
           "delay_per_mile": 0.444,
-          "vhd": 140.808
+          "vhd": 140.808,
+          "peak_ratio_k": 1.401
         },
         "retail": {
           "peak_ratio": 1.194,
           "vhd_per_mile": 16.511,
           "delay_per_mile": 0.335,
-          "vhd": 32.783
+          "vhd": 32.783,
+          "peak_ratio_k": 1.206
         }
       }
     },
@@ -17126,19 +17390,22 @@
           "peak_ratio": 1.1,
           "vhd_per_mile": 2.893,
           "delay_per_mile": 0.189,
-          "vhd": 5.719
+          "vhd": 5.719,
+          "peak_ratio_k": 1.107
         },
         "recreational": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 40.556,
           "delay_per_mile": 0.394,
-          "vhd": 80.18
+          "vhd": 80.18,
+          "peak_ratio_k": 1.352
         },
         "retail": {
           "peak_ratio": 1.12,
           "vhd_per_mile": 7.264,
           "delay_per_mile": 0.228,
-          "vhd": 14.36
+          "vhd": 14.36,
+          "peak_ratio_k": 1.138
         }
       }
     },
@@ -17216,19 +17483,22 @@
           "peak_ratio": 1.1,
           "vhd_per_mile": 2.893,
           "delay_per_mile": 0.189,
-          "vhd": 5.719
+          "vhd": 5.719,
+          "peak_ratio_k": 1.107
         },
         "recreational": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 40.556,
           "delay_per_mile": 0.394,
-          "vhd": 80.18
+          "vhd": 80.18,
+          "peak_ratio_k": 1.352
         },
         "retail": {
           "peak_ratio": 1.12,
           "vhd_per_mile": 7.264,
           "delay_per_mile": 0.228,
-          "vhd": 14.36
+          "vhd": 14.36,
+          "peak_ratio_k": 1.138
         }
       }
     },
@@ -17306,19 +17576,22 @@
           "peak_ratio": 1.1,
           "vhd_per_mile": 2.893,
           "delay_per_mile": 0.189,
-          "vhd": 5.719
+          "vhd": 5.719,
+          "peak_ratio_k": 1.107
         },
         "recreational": {
           "peak_ratio": 1.208,
           "vhd_per_mile": 40.556,
           "delay_per_mile": 0.394,
-          "vhd": 80.18
+          "vhd": 80.18,
+          "peak_ratio_k": 1.352
         },
         "retail": {
           "peak_ratio": 1.12,
           "vhd_per_mile": 7.264,
           "delay_per_mile": 0.228,
-          "vhd": 14.36
+          "vhd": 14.36,
+          "peak_ratio_k": 1.138
         }
       }
     },

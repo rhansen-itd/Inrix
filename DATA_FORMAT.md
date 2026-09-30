@@ -2711,15 +2711,18 @@ Each district has **one** catalogue. Every corridor in it is tagged with the
 - **Fields.** Every entry and reporting group carries `_types` (the finding types,
   in priority order), `_class` and `_primary_type`. Groups also carry `_type_cores`
   (`{type: [core metrics]}`, one per finding facility, with `share_in` for a merged
-  one) and `_profile`. `_profile` is the core's `peak_ratio`, `vhd_per_mile`,
-  `delay_per_mile` and `vhd` under **every** type's windows, whether or not that
-  type found it. `_generated` gains `types` (each type's windows plus
+  one) and `_profile`. `_profile` is the core's `peak_ratio`, `peak_ratio_k`,
+  `vhd_per_mile`, `delay_per_mile` and `vhd` under **every** type's windows, whether or
+  not that type found it. `peak_ratio_k` (Item 69) is the core's worst 2-hour contiguous
+  peak intensity from `screen.segment_bin_screen` (`extents.peak_intensity`); `profile_class`
+  classifies on it when every finding type has one, removing window-length dilution.
+  `_generated` gains `types` (each type's windows plus
   `n_facilities` / `n_merged` / `n_standalone`), `type_order`, `type_merge_share`,
   `class_secondary_share` and `classes`. `peak_windows` becomes `{type:
   [windows]}`.
 - **`_types` vs `_class`.** `_types` says which builders found the corridor.
   `_class` says what it is: the found type with the largest peak/baseline excess
-  (`peak_ratio − 1`) is primary. Another found type joins the class only if its
+  (`peak_ratio_k − 1` if available, else `peak_ratio − 1`) is primary. Another found type joins the class only if its
   excess is ≥ **0.6×** the primary's (`CLASS_SECONDARY_SHARE`). `commute` + `retail`
   reads as **`urban_hybrid`** (`CORRIDOR_CLASSES`), and the rest join with `+`.
   - This matters because busy urban arterials also queue on summer Saturdays. On
@@ -2735,10 +2738,10 @@ Each district has **one** catalogue. Every corridor in it is tagged with the
     statewide aggregate takes the class from the catalogue, not the district tables.
   - **`peak_ratio` depends on the window's length** (Item 68): it is a window mean,
     so a 12-hour weekend window dilutes a sharp peak that a 2-hour commute window
-    keeps. SH-75 Ketchum reads `commute` although its summer-weekend delay per mile
-    is nearly double its weekday one. Until Item 69 compares equal-length windows,
-    read `_class` as indicative. The 0.6 and the summer bounds are still starting
-    values.
+    keeps. `extents.profile_class` now compares `peak_ratio_k` (worst 2-hour
+    contiguous peak intensity, `extents.peak_intensity`) when available, falling
+    back to `peak_ratio` only when bins are missing. The 0.6 and the summer bounds
+    are still starting values.
 - **The monthly flags** (`seasonal` / `episodic`) come from each facility's own
   type. For a summer-only type they describe the distribution **within** the
   season, over its 4–5 months. So a `seasonal` flag on a recreational-only facility
