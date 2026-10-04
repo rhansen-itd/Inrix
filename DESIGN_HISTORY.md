@@ -8155,3 +8155,53 @@ Friday-driven `+recreational`; US-20 Front St and SH-44 Star gain retail
 not worst-segment, day-type and time-gap breaks, coverage, month pooling, the class
 fallback, and Friday excluded from recreational. `test_corridor_types`' key-set
 assertion gains `peak_ratio_k`.
+
+---
+
+## Session 92 — Item 70: local↔archive data sync, and the district stores moved to SSD (2026-10-04)
+
+Owner request: port the `sync` feature just added to the sibling `pyatspm`
+project, then move the heavy DuckDB stores off the Chromebook's internal disk
+(89% full, 7.6 GB free) onto the external SSD to reclaim space.
+
+**Why a sync tool at all.** DuckDB stores can't be queried over the 9p ChromeOS
+removable-media share, and the six district stores are ~13 GB — too much to keep
+on the internal disk alongside everything else. So the workflow is: pull a store
+to local disk, run the screening tools against it, push it back, and release the
+local copy. Same design as `pyatspm`'s.
+
+Done:
+- [x] `src/inrix_tools/sync.py` — the copy→verify→release engine, a straight port
+      of `pyatspm`'s `src/atspm/data/sync.py`. Project-agnostic (imports only the
+      stdlib, takes paths as parameters, no global state — fits the pure-core
+      rule; it does file I/O only, the same shell role `io.py`/`store.py` play).
+      Copies land in a `.synctmp` sidecar and are renamed in only after a
+      size + SHA-256 match; a local source is deleted on `release` **only** after
+      its archive copy verifies by checksum; a dir sync is additive and never
+      prunes the archive.
+- [x] `scripts/sync_data.py` — the Inrix adapter + CLI (`status`/`pull`/`push`).
+      Where `pyatspm` iterates `intersections/<id>/`, Inrix's heavy data is flat
+      at the repo root, so the adapter globs the repo into groups —
+      `db` (`*.duckdb`, `.wal` sidecar as a companion), `geometry`
+      (`geometry_cache/`), `outputs` (`out/`), `raw` (`data/` + top-level
+      `*.zip`). Archive root resolves flag > `INRIX_SYNC_ARCHIVE_ROOT` env >
+      `.inrix_sync.json` (gitignored, per-host, `--save` to persist) and mirrors
+      the repo root. `--release` is confirmation-gated and refuses a
+      non-interactive stdin without `--yes`.
+- [x] Tests: `tests/test_sync.py` (15 — engine: verify-before-trust, no corrupt
+      file left on a bad copy, release-needs-checksum, companions, additive dir,
+      dry-run) and `tests/test_sync_data.py` (20 — parser, archive-root
+      precedence + `--save`, component parsing, the repo→item globbing/
+      classification, the release gate). 35 pass; ruff clean.
+- [x] `.gitignore`: `.inrix_sync.json`.
+- [x] **Moved the 6 district stores** (`d1`–`d6_store.duckdb`, ~13 GB) to
+      `/mnt/chromeos/removable/Lexar/Inrix` (owner-chosen location) and freed the
+      local copies, each only after a checksum-verified archive copy. Left
+      `inrix_store.duckdb` (26 MB) local on purpose — it's the Dash GUI's default
+      DB (`gui/app.py`), so the explorer still opens without a pull. Re-fetch any
+      store with `python scripts/sync_data.py pull --components db`.
+
+Note for future sessions: the screening scripts (`run_district_screening.py`,
+`run_statewide_screening.py`, …) take a `--db` path and now need the relevant
+store **pulled back to local first** — querying it straight off the SSD over 9p
+is exactly what this tool exists to avoid.

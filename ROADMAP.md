@@ -204,9 +204,11 @@ floors, then ranked together under selectable scenarios. **65** adds season-gate
 windows and named scenarios; **66** adds the typed catalogue; **67** adds the scenario
 rankings; **68** is the owner's real-data regeneration. **65–68 are done** (Sessions 86–89); **69**, from the review of the real run (Session 90), is done (Session 91).
 
-**Status (2026-09-30):** every item through 69 is closed; no item is open. The full
+**Status (2026-10-04):** every item through 70 is closed; no item is open. The full
 text of Items 19–69 moved verbatim to [ROADMAP_ARCHIVE.md](ROADMAP_ARCHIVE.md),
-leaving the one-line index under *Archived items 19–69* below.
+leaving the one-line index under *Archived items 19–69* below. **Item 70** (the
+local↔archive data-sync tool, ported from the sibling `pyatspm` project) is done
+(Session 92).
 
 ---
 
@@ -248,6 +250,14 @@ sessions.
 - **23** — Area-based store (owner follow-on to Item 21): merge exports by
   **corridor set** into a persistent *area* (keep-first dedup), partition by
   auto-detected **bin length**, GUI area + bin selectors — DESIGN_HISTORY Session 27
+
+- **70** — Local↔archive data sync (`inrix_tools/sync.py` engine +
+  `scripts/sync_data.py` CLI): offload the heavy DuckDB stores to an external SSD
+  and pull them back to query, since DuckDB can't run over the 9p removable-media
+  share. Ported from the sibling `pyatspm` project's `sync` feature; engine is
+  project-agnostic (copy→verify→release), adapter enumerates this repo's heavy
+  units (`db`/`geometry`/`outputs`/`raw`). The 6 district stores (~13 GB) were
+  moved to the SSD this session. — DESIGN_HISTORY Session 92
 
 Post-batch correctness review of Items 15–18 and its fixes: Sessions 20–22.
 
