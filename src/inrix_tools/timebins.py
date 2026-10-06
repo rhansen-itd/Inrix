@@ -30,6 +30,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from typing import Iterable, Mapping
 
+import numpy as np
 import pandas as pd
 
 from .io import DATETIME_COL
@@ -324,6 +325,58 @@ def filter_day_of_week(
     out.attrs = dict(df.attrs)
     out.attrs["days_of_week"] = None if noop else sorted(wanted)
     return out
+
+
+def parse_season(season) -> tuple[int, int]:
+    """A recurring season as ``(start, end)`` month-day ints (``MM * 100 + DD``),
+    **inclusive** at both ends (ROADMAP Item 65).
+
+    Accepts a ``("MM-DD", "MM-DD")`` pair, a ``"MM-DD..MM-DD"`` string, or a pair of
+    month-day ints (this function's own output). The season
+    recurs every year, so a start after the end wraps the year end
+    (``("12-15", "01-15")`` is the holidays). Raises ``ValueError`` on a malformed or
+    impossible date (``"02-30"``)."""
+    if isinstance(season, str):
+        parts = season.split("..")
+        if len(parts) != 2:
+            raise ValueError(f"Season {season!r} is not 'MM-DD..MM-DD'.")
+        season = tuple(parts)
+    if len(season) != 2:
+        raise ValueError(f"Season {season!r} needs a start and an end.")
+    out = []
+    for s in season:
+        if isinstance(s, (int, np.integer)):           # already a month-day int
+            s = f"{int(s) // 100:02d}-{int(s) % 100:02d}"
+        text = str(s).strip()
+        try:
+            stamp = datetime.strptime(f"2000-{text}", "%Y-%m-%d")   # leap year: 02-29 ok
+        except ValueError:
+            raise ValueError(f"Season bound {s!r} is not a valid 'MM-DD'.") from None
+        out.append(stamp.month * 100 + stamp.day)
+    return out[0], out[1]
+
+
+def season_contains(mmdd, season) -> np.ndarray | bool:
+    """Whether month-day(s) ``mmdd`` (``MM * 100 + DD``) fall in ``season``
+    (:func:`parse_season` input or output), inclusive, wrapping the year end."""
+    if (not isinstance(season, str) and len(season) == 2
+            and all(isinstance(x, (int, np.integer)) for x in season)):
+        start, end = int(season[0]), int(season[1])
+    else:
+        start, end = parse_season(season)
+    mmdd = np.asarray(mmdd)
+    if start <= end:
+        out = (mmdd >= start) & (mmdd <= end)
+    else:
+        out = (mmdd >= start) | (mmdd <= end)
+    return bool(out) if out.ndim == 0 else out
+
+
+def season_days_per_year(season) -> int:
+    """The days a season covers in a (non-leap) year — what a seasonal window's
+    annual figures scale by instead of 365."""
+    days = pd.date_range("2001-01-01", "2001-12-31", freq="D")
+    return int(season_contains(days.month * 100 + days.day, season).sum())
 
 
 def filter_date_range(

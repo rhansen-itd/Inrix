@@ -149,6 +149,23 @@ class TestSegmentRecurrence:
         assert rec.at[1001, "am_recurrence"] == pytest.approx(0.0)
         assert rec.at[1005, "am_recurrence"] == pytest.approx(0.0)
 
+    def test_recurrence_weekend_window(self, area):
+        """Weekend / recreational windows (e.g. sat, fri_sun) calculate recurrence
+        accurately over weekend days rather than returning 0/NaN."""
+        con, key = area
+        rec = screen.segment_recurrence(con, key, windows=["sat", "fri_sun"],
+                                        tti_threshold=1.25)
+        # 4 Saturdays in the 28-day synthetic dataset
+        assert rec.at[1002, "sat_n_weekdays"] == 4
+        assert rec.at[1002, "sat_n_congested"] == 4
+        assert rec.at[1002, "sat_recurrence"] == pytest.approx(1.0)
+        assert rec.at[1001, "sat_recurrence"] == pytest.approx(0.0)
+
+        # 4 Fri + 4 Sat + 4 Sun = 12 weekend days in fri_sun
+        assert rec.at[1002, "fri_sun_n_weekdays"] == 12
+        assert rec.at[1002, "fri_sun_recurrence"] == pytest.approx(1.0)
+        assert rec.at[1001, "fri_sun_recurrence"] == pytest.approx(0.0)
+
     def test_recurrence_attrs_carry_threshold(self, area):
         con, key = area
         rec = screen.segment_recurrence(con, key, tti_threshold=1.50)

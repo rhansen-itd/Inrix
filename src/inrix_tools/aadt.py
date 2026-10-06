@@ -43,6 +43,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import timebins as _timebins
 from .geometry import WGS84, _resolve_shp_path
 from .io import DATETIME_COL, SEGMENT_COL
 
@@ -1856,6 +1857,8 @@ def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, 
     window_per = weights.attrs.get("window_per") or {}
     window_gate = {name: spec.get("days") for name, spec in
                    (weights.attrs.get("windows") or {}).items()}
+    window_season = {name: spec.get("season") for name, spec in
+                     (weights.attrs.get("windows") or {}).items()}
 
     # The grid every segment owes: its curve's weighted cells, per window.
     seg = pd.DataFrame({SEGMENT_COL: ids, CURVE_COL: curve.to_numpy()})
@@ -1909,7 +1912,12 @@ def curve_vehicle_hours_of_delay(bins: pd.DataFrame, ref_tt: pd.Series, volume, 
     if not by_month:
         gate_days = agg["window"].map(
             lambda w: 7 if window_gate.get(w) is None else len(window_gate[w]))
-        out["vhd_annual"] = vhd * DAYS_PER_YEAR * gate_days.to_numpy(dtype=float) / 7
+        # A seasonal window (Item 65) runs only its season's share of the year.
+        season_share = agg["window"].map(
+            lambda w: 1.0 if not window_season.get(w)
+            else _timebins.season_days_per_year(window_season[w]) / 365.0)
+        out["vhd_annual"] = (vhd * DAYS_PER_YEAR * gate_days.to_numpy(dtype=float) / 7
+                             * season_share.to_numpy(dtype=float))
     wsum = agg["_w"].where(agg["_w"] > 0)
     out["coverage"] = (agg["_wk"] / wsum).to_numpy()
     out["observed_share"] = (agg["_wo"] / wsum).to_numpy()

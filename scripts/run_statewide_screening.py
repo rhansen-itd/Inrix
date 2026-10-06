@@ -9,6 +9,13 @@ Usage:
     python scripts/run_statewide_screening.py
     python scripts/run_statewide_screening.py --districts 1 2 3
     python scripts/run_statewide_screening.py --mode full --maps
+    python scripts/run_statewide_screening.py --mode full \
+        --scenarios peak,day_7d,sat:summer,sun:summer,weekend:summer
+
+Every district is screened once per **scenario** (ROADMAP Item 67;
+``screen.SCENARIO_PRESETS``, optionally ``:summer`` or ``:MM-DD..MM-DD``) on its one
+typed catalogue (Item 66), so every scenario ranks the same corridors. The default,
+``peak,day_7d``, is the run as it was before scenarios existed.
 """
 from __future__ import annotations
 
@@ -18,6 +25,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from inrix_tools.screen import (  # noqa: E402
+    DEFAULT_SCENARIOS,
+    SCENARIO_PRESETS,
+    resolve_scenarios,
+)
 
 DISTRICT_TIMEZONES = {
     1: "America/Los_Angeles",
@@ -62,6 +75,20 @@ def override_args(overrides: dict[int, str]) -> list[str]:
     return [a for d, p in sorted(overrides.items()) for a in ("--catalogue-override", f"{d}={p}")]
 
 
+def scenario_list(scenarios: str, windows: str | None = None) -> list[str]:
+    """The scenario specs to run, validated (``screen.resolve_scenarios``) so a typo
+    fails before six districts are screened. ``--windows both``, the pre-Item 67
+    spelling of the default, still means ``peak,day_7d``."""
+    if windows is not None:
+        if windows != "both":
+            raise SystemExit(f"--windows {windows!r} is retired; use --scenarios "
+                             f"(e.g. 'peak,day_7d,sat:summer').")
+        scenarios = ",".join(DEFAULT_SCENARIOS)
+    specs = [x for x in (p.strip() for p in scenarios.split(",")) if x]
+    resolve_scenarios(specs)
+    return specs
+
+
 def network_cache_path(district: int) -> str:
     return f"geometry_cache/d{district}_network.geoparquet"
 
@@ -91,15 +118,15 @@ def run_triage(district: int, out_dir: Path) -> int:
     return subprocess.call(cmd)
 
 
-def run_screening(district: int, out_dir: Path, windows: str, extra_args: list[str]) -> int:
-    """Run run_district_screening.py for a single district."""
+def run_screening(district: int, out_dir: Path, scenario: str, extra_args: list[str]) -> int:
+    """Run run_district_screening.py for a single district and scenario."""
     dist_out = out_dir / f"d{district}"
     cmd = [
         sys.executable, "scripts/run_district_screening.py",
         "--db", store_path(district),
         "--district", str(district),
         "--out-dir", str(dist_out),
-        "--windows", windows,
+        "--scenario", scenario,
     ]
     repairs = Path(repairs_path(district))
     if repairs.exists():
@@ -115,7 +142,7 @@ def run_screening(district: int, out_dir: Path, windows: str, extra_args: list[s
     cmd.extend(extra_args)
 
     print(f"\n{'='*60}")
-    print(f"  DISTRICT {district} — SCREENING PIPELINE ({windows})")
+    print(f"  DISTRICT {district} — SCREENING PIPELINE ({scenario})")
     print(f"{'='*60}")
     return subprocess.call(cmd)
 
@@ -126,8 +153,14 @@ def main():
     parser.add_argument("--mode", choices=["triage-only", "full"], default="triage-only",
                         help="'triage-only' runs candidate discovery; 'full' runs complete screening")
     parser.add_argument("--out-dir", default="out/statewide_screening")
-    parser.add_argument("--windows", default="both",
-                        help="'both' runs both am,pm and day_7d; or specify e.g. 'am,pm' or 'day_7d'")
+    parser.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS),
+                        help="comma-separated ranking scenarios (ROADMAP Item 67): any of "
+                             + ", ".join(SCENARIO_PRESETS)
+                             + ", each optionally ':summer' or ':MM-DD..MM-DD' "
+                             "(default: %(default)s)")
+    parser.add_argument("--windows", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--date-start", default=None, help="Inclusive local start date YYYY-MM-DD")
+    parser.add_argument("--date-end", default=None, help="Inclusive local end date YYYY-MM-DD")
     parser.add_argument("--aadt", default="AADT_2025.zip")
     parser.add_argument("--aadt-year", type=int, default=2025)
     parser.add_argument("--maps", action="store_true")
@@ -137,6 +170,7 @@ def main():
                              "aggregation and the statewide maps")
     args, extra = parser.parse_known_args()
     CATALOGUE_OVERRIDES.update(parse_overrides(args.catalogue_override))
+    scenarios = scenario_list(args.scenarios, args.windows)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -152,9 +186,7 @@ def main():
                 continue
             results[f"d{d}_triage"] = run_triage(d, out_dir)
     else:
-        # Full screening mode
-        windows_to_run = ["am,pm", "day_7d"] if args.windows == "both" else [args.windows]
-
+        # Full screening mode: every district once per scenario.
         for d in args.districts:
             db = Path(store_path(d))
             if not db.exists():
@@ -162,17 +194,21 @@ def main():
                 results[f"d{d}"] = -1
                 continue
 
-            for win in windows_to_run:
+            for sc in scenarios:
                 pass_through = list(extra)
                 if args.aadt and "--aadt" not in pass_through:
                     pass_through.extend(["--aadt", args.aadt, "--aadt-year", str(args.aadt_year)])
+                if args.date_start and "--date-start" not in pass_through:
+                    pass_through.extend(["--date-start", args.date_start])
+                if args.date_end and "--date-end" not in pass_through:
+                    pass_through.extend(["--date-end", args.date_end])
                 if args.maps and "--maps" not in pass_through:
                     pass_through.append("--maps")
 
-                rc = run_screening(d, out_dir, win, pass_through)
-                results[f"d{d}_{win}"] = rc
+                rc = run_screening(d, out_dir, sc, pass_through)
+                results[f"d{d}_{sc}"] = rc
                 if rc != 0:
-                    print(f"ERROR: Screening failed for District {d} ({win})")
+                    print(f"ERROR: Screening failed for District {d} ({sc})")
 
         # Aggregate statewide rankings
         print(f"\n{'='*60}")
@@ -182,6 +218,7 @@ def main():
             sys.executable, "scripts/aggregate_statewide_rankings.py",
             "--dir", str(out_dir),
             "--districts", *[str(d) for d in args.districts],
+            "--scenarios", ",".join(scenarios),
             *override_args(CATALOGUE_OVERRIDES),
         ]
         rc_agg = subprocess.call(cmd_agg)
@@ -196,6 +233,7 @@ def main():
                 sys.executable, "scripts/generate_statewide_maps.py",
                 "--dir", str(out_dir),
                 "--districts", *[str(d) for d in args.districts],
+                "--scenarios", ",".join(scenarios),
                 *override_args(CATALOGUE_OVERRIDES),
             ]
             rc_maps = subprocess.call(cmd_maps)

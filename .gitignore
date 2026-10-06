@@ -35,6 +35,11 @@ data.csv
 # real-file tests skip when it is absent.
 /TT Logger.xlsx
 
+# --- Per-host data-sync config (archive drive path differs per machine) ---
+# Written by scripts/sync_data.py --save; points at the archive-drive mirror of
+# this repo's root. Machine-specific, so kept out of git.
+.inrix_sync.json
+
 # --- Python / packaging ---
 __pycache__/
 *.py[cod]

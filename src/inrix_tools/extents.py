@@ -42,6 +42,7 @@ import pandas as pd
 from shapely.geometry import Point
 from shapely.ops import linemerge
 
+from . import screen as _screen
 
 # ─── Constants ────────────────────────────────────────────────────────
 
@@ -3044,6 +3045,7 @@ def generate_catalogue(
     profiles=None,
     hard_stops: Mapping[tuple[int, int], str] | None = None,
     couplet_legs: Mapping[str, tuple[Sequence[int], Sequence[int]]] | None = None,
+    congestion: pd.DataFrame | None = None,
 ) -> dict:
     """Build a whole corridor catalogue from a district network (Items 46, 50).
 
@@ -3092,6 +3094,9 @@ def generate_catalogue(
             :data:`PAIR_MAX_MEAN_SEP_M`, which stays as it is for everything else.
             A facility whose core lies on a couplet leg lists it in ``_couplets``,
             so the couplet's own reporting corridor is not ranked a second time.
+        congestion: the :func:`segment_congestion` frame, when the caller already has
+            it (Item 66's builder keeps each type's for the class profile); it must
+            have been built from ``baseline`` / ``peak_windows`` / ``bins``.
 
     Returns:
         ``{"_note", "_generated", "corridors", "reporting_corridors"}``, ready for
@@ -3103,8 +3108,9 @@ def generate_catalogue(
     except Exception:
         metric_crs = "EPSG:3857"
 
-    seg = segment_congestion(baseline, network, peak_windows=peak_windows, bins=bins,
-                             curves=curves, profiles=profiles)
+    seg = congestion if congestion is not None else segment_congestion(
+        baseline, network, peak_windows=peak_windows, bins=bins, curves=curves,
+        profiles=profiles)
     if bins is not None:
         from . import aadt as _aadt
         from . import screen as _screen
@@ -3601,3 +3607,582 @@ def route_junction_repairs(network: gpd.GeoDataFrame) -> pd.DataFrame:
         out["new_next"] = out["new_next"].astype("int64")
         out["old_next"] = out["old_next"].astype("Int64")
     return out
+
+
+# ─── Corridor types: one catalogue, every corridor tagged (ROADMAP Item 66) ──
+#
+# The owner's direction (2026-09-29): one analysis, not a commute catalogue and a
+# recreational one beside it. Each **type** of corridor is discovered on its own days
+# and hours — commute on the weekday peaks, recreational on summer weekends — but on
+# the **same chains and the same floors** (review F6: a type that relaxed either would
+# rank cores admitted under a different rule, or built on a different network). The
+# per-type catalogues are then merged: a corridor two types find is one corridor
+# carrying both tags, so every scenario ranks the same set.
+
+
+@dataclass(frozen=True)
+class CorridorType:
+    """One kind of corridor and the windows it is discovered on.
+
+    A segment is judged at its worst of ``windows`` (:func:`segment_congestion`), so a
+    type with several windows finds a core congested in **any** of them — the union of
+    its days. ``windows`` are :class:`screen.PeakWindow` objects, seasons included.
+    """
+
+    name: str
+    label: str
+    windows: tuple
+    description: str = ""
+
+    @property
+    def window_names(self) -> tuple[str, ...]:
+        return tuple(w.name for w in self.windows)
+
+    def window_map(self) -> dict:
+        return {w.name: w for w in self.windows}
+
+    def baseline_windows(self) -> dict:
+        """What the type's baseline screen must carry (:func:`segment_congestion`): its
+        own windows, plus the overnight baseline and the all-weekday fallback."""
+        out = self.window_map()
+        for name in ("night", "weekday"):
+            out.setdefault(name, _screen.BASELINE_WINDOWS[name])
+        return out
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "label": self.label, "description": self.description,
+                "windows": {w.name: w.to_dict() for w in self.windows}}
+
+
+_SUMMER = _screen.SEASONS["summer"]
+
+CORRIDOR_TYPES: dict[str, CorridorType] = {
+    "commute": CorridorType(
+        "commute", "Commute",
+        (_screen.PEAK_WINDOWS["am"], _screen.PEAK_WINDOWS["pm"]),
+        "Weekday AM and PM peaks, all year: the Item 50 catalogue."),
+    "recreational": CorridorType(
+        "recreational", "Recreational",
+        tuple(_screen.WEEKEND_WINDOWS[d].with_season(_SUMMER, name=f"{d}_summer")
+              for d in ("fri", "sat", "sun")),
+        "Friday, Saturday and Sunday 9 AM - 9 PM in summer (screen.SEASONS); a segment "
+        "is judged at its worst day, so the type is the union of the recreation days."),
+    "retail": CorridorType(
+        "retail", "Retail / all-day",
+        (_screen.PEAK_WINDOWS["midday"], _screen.SAT_MIDDAY_WINDOW),
+        "Weekday midday (10 AM - 2 PM) and Saturday daytime (11 AM - 5 PM), all year: "
+        "shopping corridors busy when commute corridors are not. With commute it is an "
+        "urban hybrid."),
+}
+"""The type presets. Pass your own :class:`CorridorType` s for anything else."""
+
+DEFAULT_CORRIDOR_TYPES = ("commute", "recreational", "retail")
+
+CORRIDOR_CLASSES: tuple[tuple[frozenset, str], ...] = (
+    (frozenset({"commute", "retail"}), "urban_hybrid"),
+)
+"""Type combinations that read as one class. Eagle Rd and US-95 through Coeur d'Alene
+queue at the commute peaks **and** at midday and on Saturdays: found by both
+builders, they are an ``urban_hybrid``."""
+
+CLASS_SECONDARY_SHARE = 0.6
+"""A type that found a corridor joins its **class** only if the corridor's core is at
+least this congested in that type's windows, relative to its strongest type: the
+peak/baseline excess (``peak_ratio - 1``) at least this share of the primary's.
+
+``_types`` records every type whose builder found the corridor; ``_class`` says what
+the corridor *is*. They differ because a busy urban arterial also queues on a summer
+Saturday: on the retired 2026-09-29 catalogues, 22 of D3's 26 commute facilities had a
+summer-weekend core too, so "found by" alone would call nearly every urban road
+recreational. The intent: a freeway whose summer-weekend excess is a fraction of its
+weekday one (I-84 in the Treasure Valley) stays ``commute``, and an arterial whose
+midday/Saturday excess is close to its peak one (Eagle Rd) is ``urban_hybrid``.
+
+**Window-length bias (Item 68, 69).** When every finding type has a finite 2-hour
+intensity (``peak_ratio_k``), :func:`profile_class` compares those instead of the
+window-mean ``peak_ratio`` to remove window-length dilution. If any type lacks one,
+the comparison falls back to ``peak_ratio`` for all of them."""
+
+CLASS_SUBSUMED: dict[str, str] = {"recreational": "retail"}
+"""``{type: covering type}``: a type that drops out of a class the covering type is in,
+unless it is the corridor's **primary** type.
+
+The retail windows include Saturday daytime, so a corridor busy at retail hours is
+busy on weekends too, and the summer-weekend (recreational) builder finds it as well.
+On the Item 68 catalogues, 37 of the 39 ``urban_hybrid`` cores also read as
+recreational. The two that don't (US-2 Sandpoint, I-15 BL Pocatello Creek Rd) pass
+the recreational threshold too; the recreational builder just didn't find them.
+Across those arterials the recreational and retail excesses track each other within
+a few hundredths. ``+recreational`` therefore said nothing a hybrid didn't already
+say (owner, 2026-09-29). It stays where summer weekends are the corridor's
+**strongest** signal (primary): Driggs, McCall's Lake St, Soda Springs."""
+
+TYPE_MERGE_SHARE = 0.5
+"""A later type's facility merges into an earlier one when at least this share of its
+core's miles lies in the earlier facility's core or Tier 2 — the same majority rule
+:data:`SHARED_CORE_MAX` applies between facilities of one type."""
+
+
+def resolve_corridor_types(types) -> list[CorridorType]:
+    """Corridor types from names (``"commute,recreational"`` or a sequence), objects,
+    or a mix, in the order given — which is the merge priority."""
+    if isinstance(types, str):
+        types = [t for t in (x.strip() for x in types.split(",")) if t]
+    out = []
+    for t in types:
+        if isinstance(t, CorridorType):
+            out.append(t)
+        elif t in CORRIDOR_TYPES:
+            out.append(CORRIDOR_TYPES[t])
+        else:
+            raise KeyError(f"Unknown corridor type {t!r}; presets: {sorted(CORRIDOR_TYPES)}.")
+    names = [t.name for t in out]
+    if len(set(names)) != len(names):
+        raise ValueError(f"Duplicate corridor type in {names}.")
+    if not out:
+        raise ValueError("No corridor types given.")
+    return out
+
+
+def corridor_class(types: Sequence[str]) -> str:
+    """The class a set of types reads as: :data:`CORRIDOR_CLASSES` first (commute +
+    retail = ``urban_hybrid``), the rest joined with ``+`` in the order given."""
+    left = list(dict.fromkeys(types))
+    parts = []
+    for combo, name in CORRIDOR_CLASSES:
+        if combo <= set(left):
+            parts.append(name)
+            left = [t for t in left if t not in combo]
+    return "+".join(parts + left)
+
+
+PEAK_K_HOURS = 2.0
+PEAK_K_MIN_COVERAGE = 0.9
+
+CLASS_INTENSITY_DAY_TYPES: dict[str, tuple[str, ...]] = {"recreational": ("sat", "sun")}
+"""``{type: day types}``: the bins a type's ``peak_ratio_k`` is taken over, where that
+is narrower than its windows. The recreational windows include summer **Fridays**, and
+a Friday afternoon is the weekday PM commute: on the first Item 69 run the worst
+recreational 2 hours of Eagle Rd, I-84 and SH-75 Ketchum all fell on a Friday (from
+13:00, 15:30 and 14:45), so every commute corridor read as recreational. Friday still
+counts toward *finding* a recreational corridor; it is not evidence for the class.
+SH-55 north's worst run, a Sunday from 14:00, is the signal the class is after."""
+
+
+def peak_intensity(core_ids: Sequence[int], seg: pd.DataFrame, bins: pd.DataFrame,
+                   *, k_hours: float = PEAK_K_HOURS,
+                   min_coverage: float = PEAK_K_MIN_COVERAGE) -> float:
+    """The worst contiguous k-hour peak intensity across a core's segments (Item 69).
+
+    Pools months by n_obs, requires >= min_coverage of known core miles in each
+    bin, and returns the max k-hour run mean across day types, or nan if no full
+    run exists.
+    """
+    if bins is None or len(bins) == 0:
+        return float("nan")
+
+    core_set = set(core_ids)
+    if not core_set:
+        return float("nan")
+
+    known_idx = list(dict.fromkeys(
+        sid for sid in seg.index
+        if sid in core_set and pd.notna(seg.at[sid, "baseline_tt"]) and np.isfinite(seg.at[sid, "baseline_tt"])
+    ))
+    if not known_idx:
+        return float("nan")
+
+    known_seg = seg.loc[known_idx]
+    known_miles = float(known_seg["miles"].fillna(0.0).sum())
+    if known_miles <= 0:
+        return float("nan")
+
+    u_tod = np.sort(bins["tod_min"].dropna().unique())
+    if len(u_tod) < 2:
+        return float("nan")
+    diffs = np.diff(u_tod)
+    pos_diffs = diffs[diffs > 0]
+    if len(pos_diffs) == 0:
+        return float("nan")
+    step = float(pos_diffs.min())
+
+    k_float = k_hours * 60.0 / step
+    k = round(k_float)
+    if abs(k_float - k) > 1e-9:
+        raise ValueError(f"k_hours ({k_hours}) is not a whole number of bins of length {step} min (k={k_float})")
+    k = int(k)
+    if k <= 0:
+        return float("nan")
+
+    sub_bins = bins[bins["Segment ID"].isin(known_idx)]
+    if sub_bins.empty:
+        return float("nan")
+
+    sub = sub_bins[["Segment ID", "day_type", "tod_min", "travel_time", "n_obs"]].copy()
+    sub["w_tt"] = sub["travel_time"] * sub["n_obs"]
+    pooled = sub.groupby(["day_type", "tod_min", "Segment ID"], as_index=False)[["w_tt", "n_obs"]].sum()
+    pooled["pooled_tt"] = pooled["w_tt"] / pooled["n_obs"]
+
+    seg_miles = known_seg["miles"].to_dict()
+    seg_base = known_seg["baseline_tt"].to_dict()
+    pooled["miles"] = pooled["Segment ID"].map(seg_miles).fillna(0.0)
+    pooled["baseline_tt"] = pooled["Segment ID"].map(seg_base)
+
+    bin_agg = pooled.groupby(["day_type", "tod_min"]).agg(
+        present_miles=("miles", "sum"),
+        sum_tt=("pooled_tt", "sum"),
+        sum_base=("baseline_tt", "sum"),
+    ).reset_index()
+
+    bin_agg["valid"] = (bin_agg["present_miles"] >= min_coverage * known_miles - 1e-9) & (bin_agg["sum_base"] > 0)
+    bin_agg["ratio"] = bin_agg["sum_tt"] / bin_agg["sum_base"]
+
+    step_int = int(round(step)) if abs(step - round(step)) < 1e-9 else None
+    runs = []
+    for day_type, group in bin_agg.groupby("day_type"):
+        if step_int is not None:
+            valid_bins = {int(round(row.tod_min)): float(row.ratio) for row in group.itertuples() if row.valid}
+            if len(valid_bins) < k:
+                continue
+            for t in sorted(valid_bins):
+                candidate = [valid_bins.get(t + j * step_int) for j in range(k)]
+                if all(v is not None for v in candidate):
+                    runs.append(float(np.mean(candidate)))
+        else:
+            valid_bins = {float(row.tod_min): float(row.ratio) for row in group.itertuples() if row.valid}
+            if len(valid_bins) < k:
+                continue
+            for t in sorted(valid_bins):
+                candidate = [valid_bins.get(round(t + j * step, 6)) for j in range(k)]
+                if all(v is not None for v in candidate):
+                    runs.append(float(np.mean(candidate)))
+
+    if not runs:
+        return float("nan")
+    return float(max(runs))
+
+
+def type_profile(core_ids: Sequence[int],
+                 congestion: Mapping[str, pd.DataFrame],
+                 bins: Mapping[str, pd.DataFrame] | None = None) -> dict[str, dict]:
+    """A corridor core's congestion under **every** type's windows: ``{type:
+    {peak_ratio, vhd_per_mile, delay_per_mile, vhd, peak_ratio_k}}`` from each type's
+    :func:`segment_congestion` frame, over the core's segments (both directions).
+    ``peak_ratio_k`` is over the type's :data:`CLASS_INTENSITY_DAY_TYPES` only."""
+    out = {}
+    for t, seg in congestion.items():
+        m = _run_metrics(seg, list(core_ids))
+        entry = {k: (None if pd.isna(m[k]) else round(float(m[k]), 3))
+                 for k in ("peak_ratio", "vhd_per_mile", "delay_per_mile", "vhd")}
+        if bins is not None and t in bins and bins[t] is not None:
+            b = bins[t]
+            if t in CLASS_INTENSITY_DAY_TYPES:
+                b = b[b["day_type"].isin(CLASS_INTENSITY_DAY_TYPES[t])]
+            pk = peak_intensity(core_ids, seg, b)
+            entry["peak_ratio_k"] = None if (pk is None or np.isnan(pk)) else round(float(pk), 3)
+        else:
+            entry["peak_ratio_k"] = None
+        out[t] = entry
+    return out
+
+
+def profile_class(found: Sequence[str], profile: Mapping[str, Mapping] | None,
+                  *, share: float = CLASS_SECONDARY_SHARE) -> tuple[str, str]:
+    """``(primary type, class)`` for a corridor ``found`` by these types (priority
+    order), given its :func:`type_profile`.
+
+    The primary is the found type with the largest peak/baseline excess. When every
+    type in ``found`` has a finite ``peak_ratio_k`` in ``profile``, the excess is
+    computed from ``peak_ratio_k``; otherwise it falls back to ``peak_ratio`` for
+    all of them. The others join the class when their excess is at least ``share`` of
+    the primary's (:data:`CLASS_SECONDARY_SHARE`), except a type another member covers
+    (:data:`CLASS_SUBSUMED`: recreational under retail) unless it is the primary.
+    With no profile (or no finite ratio) every finding type is in the class, subject
+    to the same cover, and the first is primary."""
+    found = list(dict.fromkeys(found))
+    if not found:
+        return "", ""
+
+    has_all_k = (
+        profile is not None
+        and all(
+            (profile.get(t) or {}).get("peak_ratio_k") is not None
+            and np.isfinite((profile.get(t) or {}).get("peak_ratio_k"))
+            for t in found
+        )
+    )
+    metric = "peak_ratio_k" if has_all_k else "peak_ratio"
+
+    excess = {}
+    for t in found:
+        r = (profile or {}).get(t, {}).get(metric)
+        if r is not None and np.isfinite(r):
+            excess[t] = max(float(r) - 1.0, 0.0)
+    if not excess:
+        members = [t for t in found
+                   if t == found[0] or CLASS_SUBSUMED.get(t) not in found]
+        return found[0], corridor_class(members)
+    primary = max(excess, key=lambda t: (excess[t], -found.index(t)))
+    top = excess[primary]
+    members = [t for t in found
+               if t == primary or (t in excess and top > 0 and excess[t] >= share * top)]
+    members = [t for t in members
+               if t == primary or CLASS_SUBSUMED.get(t) not in members]
+    return primary, corridor_class(members)
+
+
+def reclassify_catalogue(cat: Mapping, *, share: float = CLASS_SECONDARY_SHARE) -> dict:
+    """``cat`` with ``_class`` / ``_primary_type`` recomputed (:func:`profile_class`)
+    from each facility's stored ``_types`` and ``_profile``, on its groups and its
+    entries. Nothing else changes, so a class rule can be applied to generated
+    catalogues without the stores they were built from."""
+    out = dict(cat)
+    by_facility: dict[str, tuple[str, str]] = {}
+    groups = []
+    for g in cat.get("reporting_corridors", []):
+        g = dict(g)
+        if "_types" in g:
+            primary, cls = profile_class(g["_types"], g.get("_profile"), share=share)
+            g["_primary_type"], g["_class"] = primary, cls
+            if g.get("_facility"):
+                by_facility[g["_facility"]] = (primary, cls)
+        groups.append(g)
+    entries = []
+    for e in cat.get("corridors", []):
+        e = dict(e)
+        if e.get("_facility") in by_facility:
+            e["_primary_type"], e["_class"] = by_facility[e["_facility"]]
+        entries.append(e)
+    out["reporting_corridors"], out["corridors"] = groups, entries
+    if "_generated" in cat:
+        out["_generated"] = {**cat["_generated"],
+                             "class_subsumed": dict(CLASS_SUBSUMED)}
+    return out
+
+
+_ID_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*[a-z0-9]")
+
+
+def _facilities(cat: Mapping) -> list[dict]:
+    """A generated catalogue's facilities, in catalogue order: their entries, groups,
+    and the core and reach (core ∪ Tier 2) segment sets over both directions."""
+    order: list[str] = []
+    facs: dict[str, dict] = {}
+    for g in cat.get("reporting_corridors", []):
+        fid = g.get("_facility")
+        if not fid:
+            continue
+        if fid not in facs:
+            order.append(fid)
+            facs[fid] = {"id": fid, "entries": [], "groups": [], "core": set(),
+                         "reach": set(), "meta": g}
+        facs[fid]["groups"].append(g)
+    for e in cat.get("corridors", []):
+        fid = e.get("_facility")
+        if fid not in facs:
+            continue
+        f = facs[fid]
+        f["entries"].append(e)
+        ids = {int(s) for s in e.get("_segment_ids", [])}
+        if e.get("_tier") == ExtentTier.CORE.value:
+            f["core"] |= ids
+            f["reach"] |= ids
+        elif e.get("_tier") == ExtentTier.COMMUTER.value:
+            f["reach"] |= ids
+    for f in facs.values():
+        core_groups = [g for g in f["groups"] if g.get("_tier") == ExtentTier.CORE.value]
+        if core_groups:
+            f["meta"] = core_groups[0]
+    return [facs[k] for k in order]
+
+
+def _renamed(text, id_map: Mapping[str, str]):
+    """``text`` with every catalogue id token in ``id_map`` replaced (flags and notes
+    name other facilities)."""
+    if not isinstance(text, str) or not id_map:
+        return text
+    return _ID_TOKEN.sub(lambda m: id_map.get(m.group(0), m.group(0)), text)
+
+
+def merge_typed_catalogues(
+    catalogues: Mapping[str, Mapping],
+    *,
+    miles: Mapping[int, float] | None = None,
+    types: Sequence[CorridorType] | None = None,
+    merge_share: float = TYPE_MERGE_SHARE,
+    congestion: Mapping[str, pd.DataFrame] | None = None,
+    bins: Mapping[str, pd.DataFrame] | None = None,
+    class_share: float = CLASS_SECONDARY_SHARE,
+    note: str = "",
+) -> dict:
+    """One catalogue from per-type :func:`generate_catalogue` runs (Item 66).
+
+    ``catalogues`` maps a type name to that type's catalogue, **in priority order**
+    (the first type's extents win). Each later facility is compared by miles of its
+    ranked core against every facility already kept from an **earlier** type:
+
+    - at least ``merge_share`` of it inside one facility's core or Tier 2: it is the
+      same corridor. It **merges**: the earlier extents stand, the type is added to
+      ``_types``, and its core metrics go under ``_type_cores[type]``;
+    - otherwise it is **added** as its own facility, flagged ``shares X mi with …``
+      for any core pavement it has in common with one (the Item 51 flag: its delay is
+      in both rows).
+
+    Ids are kept. A later facility whose id is already taken (same road and place,
+    a different extent) takes a ``-<type>`` suffix on its facility, group and entry
+    ids, and flags and notes naming a renamed or merged facility are rewritten.
+
+    Every entry and reporting group carries ``_types`` (the types that found the
+    corridor, in priority order), ``_class`` and ``_primary_type``
+    (:func:`profile_class`) and, on the groups, ``_type_cores`` (``{type: [core
+    metrics, ...]}``) and, given ``congestion``, ``_profile`` (:func:`type_profile`
+    under every type's windows).
+
+    Args:
+        catalogues: ``{type name: catalogue dict}``; untiered groups (a couplet block)
+            are carried from each catalogue only if not already present by id.
+        miles: segment miles for the overlap shares; each segment counts 1 without.
+        types: the :class:`CorridorType` objects, recorded in ``_generated.types``.
+        congestion: ``{type: segment_congestion frame}``, the frames each type's
+            catalogue was cored on. Without it the class is every finding type.
+        class_share: :data:`CLASS_SECONDARY_SHARE`.
+    """
+    names = list(catalogues)
+    if not names:
+        raise ValueError("No catalogues to merge.")
+    by_name = {t.name: t for t in (types or [])}
+
+    def _mi(ids) -> float:
+        return float(sum(miles.get(s, 0.0) for s in ids)) if miles is not None \
+            else float(len(ids))
+
+    kept: list[dict] = []
+    used_ids: set[str] = set()
+    counts: dict[str, dict] = {}
+    id_maps: dict[str, dict[str, str]] = {}
+    for tname in names:
+        cat = catalogues[tname]
+        n_merged = n_added = 0
+        id_map: dict[str, str] = {}
+        for f in _facilities(cat):
+            core_mi = _mi(f["core"])
+            best, best_ov = None, 0.0
+            for k in kept:
+                if k["origin"] == tname:
+                    continue
+                ov = _mi(f["core"] & (k["core"] | k["reach"]))
+                if ov > best_ov:
+                    best, best_ov = k, ov
+            meta = f["meta"].get("_core")
+            if best is not None and core_mi > 0 and best_ov >= merge_share * core_mi:
+                if tname not in best["types"]:
+                    best["types"].append(tname)
+                best["type_cores"].setdefault(tname, []).append(
+                    {"facility": f["id"], "share_in": round(best_ov / core_mi, 3),
+                     **(meta or {})})
+                id_map[f["id"]] = best["id"]
+                n_merged += 1
+                continue
+            new_id = f["id"]
+            if new_id in used_ids:
+                new_id = f"{f['id']}-{tname}"
+                n = 2
+                while new_id in used_ids:
+                    new_id = f"{f['id']}-{tname}-{n}"
+                    n += 1
+            id_map[f["id"]] = new_id
+            shares = []
+            for k in kept:
+                if k["origin"] == tname:
+                    continue
+                ov = _mi(f["core"] & k["core"])
+                if ov > 0:
+                    shares.append(f"shares {ov:.2f} mi with {k['id']} ({'+'.join(k['types'])})")
+            kept.append({"id": new_id, "old": f["id"], "origin": tname, "types": [tname],
+                         "type_cores": {tname: [{"facility": f["id"], **(meta or {})}]},
+                         "entries": f["entries"], "groups": f["groups"],
+                         "core": f["core"], "reach": f["reach"], "shares": shares})
+            used_ids.add(new_id)
+            n_added += 1
+        id_maps[tname] = id_map
+        counts[tname] = {"n_facilities": n_merged + n_added, "n_merged": n_merged,
+                         "n_standalone": n_added}
+
+    entries: list[dict] = []
+    groups: list[dict] = []
+    for k in kept:
+        id_map = id_maps[k["origin"]]
+        old, new = k["old"], k["id"]
+
+        def _swap(text: str, old: str = old, new: str = new) -> str:
+            return new + text[len(old):] if old != new and text.startswith(old) else text
+
+        types_now = list(k["types"])
+        profile = type_profile(sorted(k["core"]), congestion, bins=bins) if congestion else None
+        primary, cls = profile_class(types_now, profile, share=class_share)
+        for g in k["groups"]:
+            g = dict(g)
+            g["id"] = _swap(g["id"])
+            g["_facility"] = new
+            g["_types"] = types_now
+            g["_class"] = cls
+            g["_primary_type"] = primary
+            g["_type_cores"] = k["type_cores"]
+            if profile is not None:
+                g["_profile"] = profile
+            flags = [_renamed(x, id_map) for x in g.get("_flags", [])]
+            if k["shares"] and g.get("_tier") == ExtentTier.CORE.value:
+                flags += k["shares"]
+            if flags or "_flags" in g:
+                g["_flags"] = flags
+            if "_companion" in g:
+                g["_companion"] = _renamed(g["_companion"], id_map)
+            groups.append(g)
+        for e in k["entries"]:
+            e = dict(e)
+            e["id"] = _swap(e["id"])
+            e["corridor"] = _swap(e["corridor"])
+            e["_facility"] = new
+            e["_types"] = types_now
+            e["_class"] = cls
+            e["_primary_type"] = primary
+            entries.append(e)
+
+    # Groups without a facility (a couplet block built into a type catalogue): once.
+    seen = {g["id"] for g in groups}
+    for tname in names:
+        cat = catalogues[tname]
+        loose = [g for g in cat.get("reporting_corridors", [])
+                 if not g.get("_facility") and g["id"] not in seen]
+        loose_ids = {g["id"] for g in loose}
+        groups.extend(loose)
+        entries.extend(e for e in cat.get("corridors", []) if e.get("corridor") in loose_ids)
+        seen |= loose_ids
+
+    first = catalogues[names[0]]
+    generated = {k: v for k, v in first.get("_generated", {}).items()
+                 if k not in ("peak_windows", "n_facilities")}
+    generated["peak_windows"] = {t: list(catalogues[t].get("_generated", {})
+                                         .get("peak_windows", [])) for t in names}
+    generated["n_facilities"] = len(kept)
+    generated["type_order"] = names
+    generated["types"] = {
+        t: {**(by_name[t].to_dict() if t in by_name else {"name": t}),
+            **counts[t],
+            "vhd_basis": catalogues[t].get("_generated", {}).get("vhd_basis")}
+        for t in names}
+    generated["type_merge_share"] = merge_share
+    generated["class_secondary_share"] = class_share if congestion else None
+    generated["classes"] = {name: sorted(combo) for combo, name in CORRIDOR_CLASSES}
+    generated["class_subsumed"] = dict(CLASS_SUBSUMED)
+    return {
+        "_note": note or (
+            "Generated by inrix_tools.extents.generate_catalogue per corridor type and "
+            "merged by merge_typed_catalogues (ROADMAP Items 46, 50, 66): each type's "
+            "cores are found on its own windows, on the same chains and floors; a "
+            "corridor several types find is one corridor carrying every type in "
+            "_types. Do not hand-edit; re-run the builder."),
+        "_generated": generated,
+        "corridors": entries,
+        "reporting_corridors": groups,
+    }
