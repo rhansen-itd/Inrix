@@ -8205,3 +8205,64 @@ Note for future sessions: the screening scripts (`run_district_screening.py`,
 `run_statewide_screening.py`, …) take a `--db` path and now need the relevant
 store **pulled back to local first** — querying it straight off the SSD over 9p
 is exactly what this tool exists to avoid.
+
+## Session 93 — Ranking-output fixes from the owner's review: couplets, directions, callouts, CSV encoding (2026-10-07)
+
+Owner review of the statewide rankings. All four fixes are display and ranking
+semantics. In every district the regenerated catalogues' **segment sets are identical**
+to the previous ones.
+
+- **Couplets are a stitching aid, not a class** (owner): `build_statewide_catalogues.
+  unrank_couplets` (replaces `defer_covered_couplets`) marks **every** couplet group
+  `_ranked: false`, with `_counted_in` naming the core that runs on most of its legs (or
+  none). The aggregate makes couplet groups context, never ranked. The ranked tables
+  drop from 89 to 83. `statewide_couplet_rankings.csv`, `build_couplet_analysis` and
+  the report's couplet section are removed.
+- **Couplet facilities are named for the couplet**: when each direction's core lies at
+  least 50% (`extents.COUPLET_CORE_SHARE`) on one couplet's legs, the facility reads
+  "US-20: Front St / Myrtle St couplet" (and Moscow's "Washington St / Jackson St
+  couplet"). Nampa's Garrity Blvd cores only reach the 3rd/2nd St couplet, so its name
+  is unchanged. Ids keep the lead street.
+- **Directions oppose** (`extents.facility_bearings`): INRIX's `Bearing` follows road
+  coding, not the carriageway's heading. Front St heads about 305° but is coded `N`,
+  so the facility read NB+EB. When a facility's two labels don't oppose, both are
+  re-read from the cores' heading on one shared axis. Changed: Front St NB→WB,
+  Garrity Blvd SB→EB, SH-27 Burley EB→NB, US-26 Idaho Falls EB→NB. Entry ids follow.
+- **No "Owner, date" in callouts**: `hard_stops.public_note` strips the stop table's
+  "Owner, YYYY-MM-DD" and "(Future: …)" notes from the reason that feeds catalogue
+  descriptions. The CSV keeps them.
+- **CSV encoding**: statewide CSVs are written `utf-8-sig`, because Excel read the " — "
+  in group names as cp1252 "â€”". pandas strips the BOM on read.
+- **Re-run (same day):** the stores were pulled back from the SSD,
+  `run_statewide_screening.py --mode full --maps` was run over the six scenarios
+  (33 min), and the stores were pushed back, checksum-verified, and released.
+  Front St now ranks #5 as "US-20: Front St / Myrtle St couplet", WB/EB. No map
+  carries "Owner," any more.
+
+### VHD per mile per hour made an option (`--vhd-rate`)
+
+An earlier uncommitted pass (probably Gemini's) had normalised map VHD/mi by window
+hours behind a module constant marked `TEMP`. Reviewed and made permanent:
+
+- **`--vhd-rate {per-hour,per-mile}`**, default `per-hour`, on
+  `run_district_screening`, `run_statewide_screening` (forwarded to both),
+  `generate_statewide_maps` and `generate_district_maps`. It is passed down as a
+  `per_hour` argument, not a global. The functions default to per-mile, so the Item
+  58 tests stand unchanged.
+- **Definition.** Per hour is VHD/mi divided by the scenario's peak-window clock
+  hours: peaks 2 + 2.5 = 4.5 (a corridor's peak VHD sums both), 7-day 15, summer days
+  12. Every corridor in a scenario has the same hours, so the order within a scenario
+  is the same either way. Per hour puts the scenarios on one scale. A segment on the
+  map divides by its worst window's hours. Tier bounds are 0.6 / 3 / 10 VHD/mi/hr.
+- **Fixed in review:**
+  - A window that failed to parse divided by 1.0 and printed VHD/mi under a VHD/mi/hr
+    label. It now raises. A scenario without windows gets no per-hour figure.
+  - A test had become a tautology (`x == [t for t in x]`); it is restored.
+  - The statewide CSVs always carry both `vhd_per_mile` and `vhd_per_mi_hr`
+    (+ `window_hours`).
+- **`generate_ranking_reports.py` and `generate_district_maps.py` committed.** The
+  report read the district tables with `comment="#"`, which truncated D3's "Banks
+  Lowman Rd #2" rows. It now skips the header by counting lines
+  (`load_district_table`). Its district VHD/mi/hr column was always blank (the
+  district tables have no `vhd_per_mi_hr`); it is now computed from each row's
+  windows.

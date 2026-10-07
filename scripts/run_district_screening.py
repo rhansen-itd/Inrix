@@ -649,12 +649,83 @@ _VHD_TIER_STYLE = [("Low / Free Flow", "#4a5568", 1.8), ("Minor Delay", "#d69e2e
                    ("Moderate Delay", "#dd6b20", 4.0), ("Severe Congestion", "#e53e3e", 5.2)]
 
 
-def _vhd_tiers(per: str = "weekday") -> list:
+# VHD rate on the maps and tooltips (``--vhd-rate``). ``per-hour`` divides VHD/mi by
+# the window's clock hours, so a 4.5-hour peak, a 15-hour 7-day window and a 12-hour
+# summer day share one scale (VHD/mi/hr); ``per-mile`` is the Item 58 VHD/mi. The
+# ranking order within a scenario is the same either way: every corridor in it has
+# the same window hours.
+VHD_RATES = ("per-hour", "per-mile")
+DEFAULT_VHD_RATE = "per-hour"
+
+
+def vhd_unit(per_hour: bool, *, spaced: bool = True) -> str:
+    """``"VHD / Mile / Hr"`` or ``"VHD / Mile"`` (``spaced=False``: ``"VHD/mi/hr"``)."""
+    if spaced:
+        return "VHD / Mile / Hr" if per_hour else "VHD / Mile"
+    return "VHD/mi/hr" if per_hour else "VHD/mi"
+
+
+# Per-hour tier bounds: the _VHD_TIER_BOUNDS values divided by their typical
+# window durations (peak worst-of-AM/PM ≈ 2.5 hr, 7-day ≈ 15 hr), then rounded
+# to clean numbers that still separate the same visual bands.
+_VHD_TIER_BOUNDS_PER_HOUR = {
+    "weekday": (0.6, 3.0, 10.0),   # 1.5/2.5, 8/2.5, 25/2.5 rounded
+    "day":     (0.6, 3.0, 10.0),   # 10/15, 50/15, 150/15 rounded
+}
+
+
+def _window_clock_hours(window_str: str) -> float:
+    """Duration in hours of a ``PeakWindow.window`` clock-range string.
+
+    Parses ``"7:00AM-9:00AM"`` → 2.0, ``"4:00PM-6:30PM"`` → 2.5,
+    ``"6:00AM-9:00PM"`` → 15.0. A string it cannot parse raises: dividing by a
+    fallback 1.0 would print VHD/mi under a VHD/mi/hr label.
+    """
+    from inrix_tools.timebins import parse_time_bin
+    _, start_s, end_s, overnight = parse_time_bin(window_str)
+    span_s = (end_s - start_s) if not overnight else (86400 - start_s + end_s)
+    if span_s <= 0:
+        raise ValueError(f"window {window_str!r} has no duration")
+    return span_s / 3600.0
+
+def _scenario_window_hours(windows) -> float | None:
+    """Total clock hours of a scenario's peak windows (all its windows when none is
+    flagged peak): the peaks' 2 + 2.5 = 4.5, since a corridor's peak VHD sums both.
+
+    ``windows`` is a ``{name: PeakWindow | dict}`` mapping, a list of window names, or
+    that list's string form as a totals CSV stores it (``"('am', 'pm')"``). ``None``
+    or empty gives ``None`` (no per-hour figure); a window that cannot be resolved
+    raises rather than dividing by a made-up hour.
+    """
+    import ast
+
+    from inrix_tools.screen import PeakWindow
+
+    if windows is None or (not isinstance(windows, str) and len(windows) == 0):
+        return None
+    if isinstance(windows, str):
+        windows = ast.literal_eval(windows)
+    if isinstance(windows, (list, tuple)):
+        windows = screen.resolve_windows(list(windows))
+    items = list(windows.values())
+    is_peak = [w.peak if isinstance(w, PeakWindow) else bool(w.get("peak")) for w in items]
+    if any(is_peak):
+        items = [w for w, pk in zip(items, is_peak) if pk]
+    return sum(_window_clock_hours(w.window if isinstance(w, PeakWindow) else w["window"])
+               for w in items)
+
+
+def _vhd_tiers(per: str = "weekday", *, per_hour: bool = False) -> list:
     """``[(label, upper bound, color, width), ...]`` for a map whose VHD is per
-    ``per`` (``weekday`` for the peaks, ``day`` for the 7-day window)."""
-    b = _VHD_TIER_BOUNDS["day" if per == "day" else "weekday"]
-    labels = [f"< {b[0]:g} VHD/mi", f"{b[0]:g}–{b[1]:g} VHD/mi",
-              f"{b[1]:g}–{b[2]:g} VHD/mi", f"≥ {b[2]:g} VHD/mi"]
+    ``per`` (``weekday`` for the peaks, ``day`` for the 7-day window).
+
+    ``per_hour``: the bounds are :data:`_VHD_TIER_BOUNDS_PER_HOUR` and the labels say
+    ``VHD/mi/hr``."""
+    bounds = _VHD_TIER_BOUNDS_PER_HOUR if per_hour else _VHD_TIER_BOUNDS
+    b = bounds["day" if per == "day" else "weekday"]
+    unit = vhd_unit(per_hour, spaced=False)
+    labels = [f"< {b[0]:g} {unit}", f"{b[0]:g}–{b[1]:g} {unit}",
+              f"{b[1]:g}–{b[2]:g} {unit}", f"≥ {b[2]:g} {unit}"]
     return [(f"{name} ({text})", upper, color, width)
             for (name, color, width), text, upper in zip(_VHD_TIER_STYLE, labels,
                                                          (*b, None))]
@@ -752,6 +823,10 @@ def _segment_tti_frame(scr, net_indexed, windows, aadt=None, segment_vhd=None):
             df["worst_vhd"] = vhd
             df["worst_vhd_per_mile"] = (vhd / seg_miles).where(seg_miles > 0)
             df["vhd_per"] = sv["vhd_per"].reindex(at).to_numpy()
+            # The worst window's clock hours, for a per-hour map (``--vhd-rate``).
+            wh = best_name.reindex(df.index).map(
+                {n: _window_clock_hours(w.window) for n, w in peak_wins.items()})
+            df["worst_window_hours"] = wh.astype("float64")
 
     import geopandas as gpd
 
@@ -844,18 +919,28 @@ def _segment_header(row) -> str:
     return f"<b>{rname}</b> {route_str}<br>"
 
 
-def _build_segment_vhd_traces(merged, window_label="Peak", tiers=None):
+def _build_segment_vhd_traces(merged, window_label="Peak", tiers=None, *,
+                              per_hour: bool = False):
     """Build Plotly Scattermap traces for all segments, tiered by VHD / Mile.
 
     Segments whose ``worst_vhd_per_mile`` is NaN (no AADT joined) get their own
     ``No AADT Data`` trace instead of falling into the lowest delay tier. ``tiers``
     defaults to the set for the frame's ``vhd_per`` (:func:`_vhd_tiers`).
+
+    ``per_hour`` colours by VHD/mi over the worst window's clock hours
+    (``worst_window_hours``, from :func:`_segment_tti_frame`).
     """
+    if per_hour and "worst_window_hours" not in merged.columns:
+        raise ValueError("a per-hour VHD map needs worst_window_hours "
+                         "(_segment_tti_frame with segment_vhd)")
     rate = merged["worst_vhd_per_mile"]
+    if per_hour:
+        rate = rate / merged["worst_window_hours"]
     if tiers is None:
         per = (merged["vhd_per"].dropna() if "vhd_per" in merged.columns
                else pd.Series(dtype=object))
-        tiers = _vhd_tiers(per.mode().iloc[0] if len(per) else "weekday")
+        tiers = _vhd_tiers(per.mode().iloc[0] if len(per) else "weekday",
+                           per_hour=per_hour)
 
     # Unvolumed segments first, then the delay-density tiers over the rest.
     nd_label, nd_color, nd_width = _VHD_NO_DATA_TIER
@@ -873,15 +958,24 @@ def _build_segment_vhd_traces(merged, window_label="Peak", tiers=None):
         # "n/a", never "0" — a segment with no joined volume has no delay
         # density, and printing a zero would assert free flow it cannot know.
         aadt_val = _fmt_or_na(row.get("aadt"))
-        vhd_rate = _fmt_or_na(row.get("worst_vhd_per_mile"), ",.1f")
         per = row.get("vhd_per")
-        per = f" per {per}" if isinstance(per, str) and per else ""
+        per_label = f" per {per}" if isinstance(per, str) and per else ""
+        if per_hour:
+            raw_pm = row.get("worst_vhd_per_mile")
+            vhd_rate = _fmt_or_na(raw_pm / row["worst_window_hours"]
+                                  if pd.notna(raw_pm) else raw_pm, ",.2f")
+            density_str = (f"{vhd_rate} VHD/mi/hr "
+                           f"({_fmt_or_na(raw_pm, ',.1f')} VHD/mi, "
+                           f"{_fmt_or_na(row.get('worst_vhd'), ',.1f')} veh-hrs{per_label})")
+        else:
+            vhd_rate = _fmt_or_na(row.get("worst_vhd_per_mile"), ",.1f")
+            density_str = (f"{vhd_rate} VHD/mi "
+                           f"({_fmt_or_na(row.get('worst_vhd'), ',.1f')} veh-hrs{per_label})")
         return (
             _segment_header(row)
             + f"<b>Window:</b> {row.get('worst_window', window_label)} | "
             f"<b>Length:</b> {miles:.2f} mi<br>"
-            f"<b>Delay Density:</b> {vhd_rate} VHD/mi "
-            f"({_fmt_or_na(row.get('worst_vhd'), ',.1f')} veh-hrs{per})<br>"
+            f"<b>Delay Density:</b> {density_str}<br>"
             f"<b>AADT:</b> {aadt_val} veh/day<br>"
             f"<b>TTI:</b> {row['worst_tti']:.2f} | "
             f"<b>Delay Rate:</b> {row['worst_delay_rate']:.2f} min/mi<br>"
@@ -1144,10 +1238,19 @@ Plotly substitutes ``{plot_id}``; the triangles' centres and bearings travel in 
 termini trace's ``meta["termini"]``."""
 
 
-def _figures_line(label: str, fig: dict) -> str:
+def _figures_line(label: str, fig: dict, window_hours: float | None = None) -> str:
+    """One tooltip line of a corridor's figures; with ``window_hours`` the delay
+    density leads in VHD/mi/hr, the VHD/mi beside it."""
     prefix = f"{label} " if label else ""
+    raw_vhd_pm = fig.get("vhd_per_mile")
+    if window_hours and raw_vhd_pm is not None and not pd.isna(raw_vhd_pm):
+        vhd_pm_hr = raw_vhd_pm / window_hours
+        vhd_str = (f"{_fmt_or_na(vhd_pm_hr, ',.1f')} VHD/mi/hr "
+                   f"({_fmt_or_na(raw_vhd_pm, ',.1f')} VHD/mi)")
+    else:
+        vhd_str = f"{_fmt_or_na(raw_vhd_pm, ',.1f')} VHD/mi"
     return (f"{prefix}{_fmt_or_na(fig.get('vhd'))} veh-hrs | "
-            f"{_fmt_or_na(fig.get('vhd_per_mile'), ',.1f')} VHD/mi | "
+            f"{vhd_str} | "
             f"{_fmt_or_na(fig.get('delay_min'), ',.1f')} min delay | "
             f"TTI {_fmt_or_na(fig.get('tti'), '.2f')}")
 
@@ -1162,23 +1265,29 @@ def _window_split_line(windows: list) -> str:
     return "&nbsp;&nbsp;&nbsp;" + " · ".join(parts)
 
 
-def _corridor_figures_html(ri: dict, delay_label: str, *, hovered=None) -> str:
+def _corridor_figures_html(ri: dict, delay_label: str, *, hovered=None, windows=None,
+                           per_hour: bool = False) -> str:
     """The corridor tooltip's figures: the combined total, then — when the corridor
     has more than one direction — each direction's own line (``ri["by_direction"]``,
     from :func:`screen.direction_totals`), the hovered one in bold, each followed by
-    its per-window split (every direction's figures sum all its peak windows)."""
+    its per-window split (every direction's figures sum all its peak windows).
+
+    ``per_hour`` divides the delay density by the scenario's window hours
+    (``windows``, else the corridor's own ``windows``)."""
+    win_hours = (_scenario_window_hours(windows or ri.get("windows")) if per_hour
+                 else None)
     by_dir = ri.get("by_direction") or []
     lines = [f"<b>{delay_label}:</b>"]
     if len(by_dir) < 2:
-        lines.append(_figures_line("", ri))
+        lines.append(_figures_line("", ri, window_hours=win_hours))
         split = _window_split_line(by_dir[0].get("windows", [])) if by_dir else ""
         if split:
             lines.append(split)
     else:
-        lines.append(_figures_line("<b>Combined:</b>", ri))
+        lines.append(_figures_line("<b>Combined:</b>", ri, window_hours=win_hours))
         for d in by_dir:
             name = d.get("direction") or "?"
-            line = _figures_line(f"{name}:", d)
+            line = _figures_line(f"{name}:", d, window_hours=win_hours)
             lines.append(f"<b>{line}</b>" if name == hovered else line)
             split = _window_split_line(d.get("windows", []))
             if split:
@@ -1208,7 +1317,8 @@ def attach_direction_totals(corridor_ranks: dict, breakout) -> dict:
 
 
 def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
-                            delay_label="Total Peak Delay", zoom=9.5):
+                            delay_label="Total Peak Delay", zoom=9.5, windows=None,
+                            per_hour: bool = False):
     """Build Plotly traces for ranked corridor centerlines and termini markers.
 
     Returns ``(line_traces, marker_traces)``. Each corridor group produces:
@@ -1262,7 +1372,8 @@ def _build_corridor_overlay(cat_entries, chains, corridor_ranks, net_indexed,
                 f"<b>{_wrap_html(f'RANK {rank_str}: {entry.name}', _HOVER_WRAP_CHARS)}</b><br>"
                 f"<b>Direction:</b> {entry.direction} | "
                 f"<b>Length:</b> {ch.chain_miles:.2f} mi<br>"
-                + _corridor_figures_html(ri, delay_label, hovered=entry.direction)
+                + _corridor_figures_html(ri, delay_label, hovered=entry.direction, windows=windows,
+                                         per_hour=per_hour)
                 + f"<i>{_hover_description(entry.description)}</i>"
             )
 
@@ -1491,7 +1602,7 @@ def _map_viewer_html(map_files: list[tuple[str, str]]) -> str:
 def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
                   *, windows, window_label="Peak", title_prefix="ITD District",
                   delay_label="Total Peak Delay", map_filename="screening_map.html",
-                  metric="tti", aadt=None, segment_vhd=None):
+                  metric="tti", aadt=None, segment_vhd=None, per_hour: bool = False):
     """Generate a standalone interactive HTML map of all segments and corridors.
 
     This is **wiring**, not core computation: it reads a segment screen, looks up
@@ -1527,15 +1638,17 @@ def generate_maps(out_dir, scr, net, cat_entries, chains, corridor_ranks,
                                 segment_vhd=segment_vhd)
     c_traces, m_traces = _build_corridor_overlay(
         cat_entries, chains, corridor_ranks, net_indexed,
-        delay_label=delay_label)
+        delay_label=delay_label, windows=windows, per_hour=per_hour)
     n_groups = len(c_traces)
 
     if metric == "vhd_per_mile":
-        seg_traces = _build_segment_vhd_traces(merged, window_label=window_label)
-        map_title = f"{title_prefix} — {window_label} Delay Density (VHD / Mile)"
-        map_subtitle = (f"All {n_segs:,} State Highway Segments colored by VHD/Mile | "
+        seg_traces = _build_segment_vhd_traces(merged, window_label=window_label,
+                                               per_hour=per_hour)
+        map_title = f"{title_prefix} — {window_label} Delay Density ({vhd_unit(per_hour)})"
+        map_subtitle = (f"All {n_segs:,} State Highway Segments colored by "
+                        f"{vhd_unit(per_hour).replace(' ', '')} | "
                         f"{n_groups} Ranked Corridors with Termini (▲)")
-        seg_legend_title = "VHD / Mile"
+        seg_legend_title = vhd_unit(per_hour)
     else:
         seg_traces = _build_segment_traces(merged, window_label=window_label)
         map_title = f"{title_prefix} — {window_label} Congestion Screening"
@@ -1858,7 +1971,8 @@ def run(args) -> dict:
                 window_label=sc.label,
                 title_prefix=f"ITD {dist_label}",
                 delay_label=delay_label,
-                map_filename=map_fname)
+                map_filename=map_fname,
+                per_hour=args.vhd_rate == "per-hour")
             written["map"] = map_path
 
             if aadt is not None:
@@ -1870,7 +1984,8 @@ def run(args) -> dict:
                     delay_label=delay_label,
                     map_filename=vhd_fname,
                     metric="vhd_per_mile",
-                    aadt=aadt, segment_vhd=seg_vhd)
+                    aadt=aadt, segment_vhd=seg_vhd,
+                    per_hour=args.vhd_rate == "per-hour")
                 written["map_vhd"] = vhd_path
 
         out_files = {
@@ -1888,7 +2003,8 @@ def run(args) -> dict:
             reg = json.loads((Path(args.out_dir) / SCENARIO_REGISTRY).read_text())
             available_maps = []
             for info in reg.values():
-                for key, kind in (("map", "TTI"), ("map_vhd", "VHD / Mile")):
+                for key, kind in (("map", "TTI"),
+                                  ("map_vhd", vhd_unit(args.vhd_rate == "per-hour"))):
                     fn = info["files"].get(key)
                     if fn and (Path(args.out_dir) / fn).exists():
                         available_maps.append((f"{info['label']} ({kind})", fn))
@@ -1979,6 +2095,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-coverage", type=float, default=corridors.DEFAULT_MIN_COVERAGE)
     p.add_argument("--out-dir", default="out/district_screening")
     p.add_argument("--no-kml", action="store_true")
+    p.add_argument("--vhd-rate", choices=VHD_RATES, default=DEFAULT_VHD_RATE,
+                   help="Delay density on the maps and tooltips: VHD/mi over the "
+                        "window's clock hours (per-hour, the default; one scale "
+                        "across scenarios) or VHD/mi (per-mile).")
     p.add_argument("--maps", action="store_true",
                    help="generate standalone interactive HTML maps of all segments "
                         "and ranked corridors (opens in any browser, no GIS software)")

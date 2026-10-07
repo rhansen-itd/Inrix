@@ -783,8 +783,8 @@
       "_primary_type": "recreational"
     },
     {
-      "id": "us-26-yellowstone-hwy-idaho-falls-core-eb",
-      "name": "US-26 EB: Yellowstone Hwy \u2014 Congested Core",
+      "id": "us-26-yellowstone-hwy-idaho-falls-core-nb",
+      "name": "US-26 NB: Yellowstone Hwy \u2014 Congested Core",
       "start_latlon": [
         43.47764,
         -112.04923
@@ -793,9 +793,9 @@
         43.51131,
         -112.01581
       ],
-      "description": "Tier 1 (Congested Core) of US-26: Yellowstone Hwy, EB. Recurrent congestion core (2.91 mi): peak/baseline 1.14, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-26: Yellowstone Hwy, NB. Recurrent congestion core (2.91 mi): peak/baseline 1.14, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-26-yellowstone-hwy-idaho-falls-core",
-      "direction": "EB",
+      "direction": "NB",
       "links": [
         [
           1187656570,
@@ -859,8 +859,8 @@
       "_primary_type": "commute"
     },
     {
-      "id": "us-26-yellowstone-hwy-idaho-falls-commuter-eb",
-      "name": "US-26 EB: Yellowstone Hwy \u2014 Commuter Corridor",
+      "id": "us-26-yellowstone-hwy-idaho-falls-commuter-nb",
+      "name": "US-26 NB: Yellowstone Hwy \u2014 Commuter Corridor",
       "start_latlon": [
         43.47764,
         -112.04923
@@ -869,9 +869,9 @@
         43.51844,
         -112.00238
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-26: Yellowstone Hwy, EB. Congested extent grown from the core (3.75 mi, 6 VHD/mi, 89% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.74 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.84 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-26: Yellowstone Hwy, NB. Congested extent grown from the core (3.75 mi, 6 VHD/mi, 89% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.74 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.84 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-26-yellowstone-hwy-idaho-falls-commuter",
-      "direction": "EB",
+      "direction": "NB",
       "links": [
         [
           1187656570,
@@ -938,8 +938,8 @@
       "_primary_type": "commute"
     },
     {
-      "id": "us-26-yellowstone-hwy-idaho-falls-regional-eb",
-      "name": "US-26 EB: Yellowstone Hwy \u2014 Regional Baseline",
+      "id": "us-26-yellowstone-hwy-idaho-falls-regional-nb",
+      "name": "US-26 NB: Yellowstone Hwy \u2014 Regional Baseline",
       "start_latlon": [
         43.46827,
         -112.05644
@@ -948,9 +948,9 @@
         43.54105,
         -111.96428
       ],
-      "description": "Tier 3 (Regional Baseline) of US-26: Yellowstone Hwy, EB. Context around the congested extent (6.96 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 91); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-26: Yellowstone Hwy, NB. Context around the congested extent (6.96 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 91); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-26-yellowstone-hwy-idaho-falls-regional",
-      "direction": "EB",
+      "direction": "NB",
       "links": [
         [
           1187656570,
@@ -2518,7 +2518,7 @@
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-core",
       "name": "US-26: Yellowstone Hwy \u2014 Tier 1 Congested Core (W 23rd St/Gallatin Ave to N Holmes Ave/US-20 Bus)",
-      "description": "Tier 1 (Congested Core) of US-26: Yellowstone Hwy, EB. Recurrent congestion core (2.91 mi): peak/baseline 1.14, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-26: Yellowstone Hwy, NB. Recurrent congestion core (2.91 mi): peak/baseline 1.14, 7 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (W 23rd St/Gallatin Ave to N Holmes Ave/US-20 Bus)",
@@ -2545,7 +2545,7 @@
         "fails": []
       },
       "_directions": [
-        "EB",
+        "NB",
         "SB"
       ],
       "_flags": [],
@@ -2676,7 +2676,7 @@
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-commuter",
       "name": "US-26: Yellowstone Hwy \u2014 Tier 2 Commuter Corridor (W 23rd St/Gallatin Ave to Lincoln Rd/Anderson St)",
-      "description": "Tier 2 (Commuter Corridor) of US-26: Yellowstone Hwy, EB. Congested extent grown from the core (3.75 mi, 6 VHD/mi, 89% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.74 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.84 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-26: Yellowstone Hwy, NB. Congested extent grown from the core (3.75 mi, 6 VHD/mi, 89% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.74 mi); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.84 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (W 23rd St/Gallatin Ave to Lincoln Rd/Anderson St)",
@@ -2703,7 +2703,7 @@
         "fails": []
       },
       "_directions": [
-        "EB",
+        "NB",
         "SB"
       ],
       "_flags": [],
@@ -2834,7 +2834,7 @@
     {
       "id": "us-26-yellowstone-hwy-idaho-falls-regional",
       "name": "US-26: Yellowstone Hwy \u2014 Tier 3 Regional Baseline (Sunnyside Rd to 49th N Rd (Telford Rd))",
-      "description": "Tier 3 (Regional Baseline) of US-26: Yellowstone Hwy, EB. Context around the congested extent (6.96 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 91); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-26: Yellowstone Hwy, NB. Context around the congested extent (6.96 mi; reported, not ranked). Upstream boundary: a highway junction (crossing 91); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (Sunnyside Rd to 49th N Rd (Telford Rd))",
@@ -2861,7 +2861,7 @@
         "fails": []
       },
       "_directions": [
-        "EB",
+        "NB",
         "SB"
       ],
       "_flags": [],

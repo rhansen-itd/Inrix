@@ -22,7 +22,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import run_district_screening as rds          # noqa: E402
 
-from inrix_tools import store                 # noqa: E402
+from inrix_tools import screen, store         # noqa: E402
 
 TZ = "America/Denver"
 
@@ -891,3 +891,44 @@ def test_the_corridor_types_ride_into_every_table(district):
 def test_an_untyped_catalogue_adds_no_columns(district):
     out = rds.run(_args(district))
     assert "corridor_class" not in out["totals"].columns
+
+
+# ─── --vhd-rate per-hour: VHD/mi over the window's clock hours ─────────────────
+
+def test_scenario_window_hours_sum_the_peak_windows():
+    """The peaks' corridor VHD sums AM and PM, so the divisor is 2 + 2.5 hours; a
+    totals CSV's string form resolves the same; non-peak windows don't count."""
+    peak = screen.resolve_windows(["am", "pm", "midday", "night"])
+    assert rds._scenario_window_hours(peak) == 4.5
+    assert rds._scenario_window_hours("('am', 'pm')") == 4.5
+    assert rds._scenario_window_hours(["day_7d"]) == 15.0
+    assert rds._scenario_window_hours(None) is None
+
+
+def test_an_unreadable_window_raises_rather_than_dividing_by_one():
+    """A fallback hour would print VHD/mi under a VHD/mi/hr label."""
+    with pytest.raises(ValueError):
+        rds._window_clock_hours("sometime")
+
+
+def test_per_hour_map_tiers_and_rates():
+    """Per hour, a segment is coloured by VHD/mi over its worst window's hours: 5
+    VHD/mi over a 2.5-hour PM is 2.0 VHD/mi/hr, in the 0.6-3 band."""
+    frame = _vhd_frame([1.0, 5.0, 30.0]).assign(worst_window_hours=2.5)
+    counts = _trace_counts(rds._build_segment_vhd_traces(frame, per_hour=True))
+    assert counts["Low / Free Flow (< 0.6 VHD/mi/hr)"] == 1       # 0.4
+    assert counts["Minor Delay (0.6–3 VHD/mi/hr)"] == 1            # 2.0
+    assert counts["Severe Congestion (≥ 10 VHD/mi/hr)"] == 1       # 12.0
+    assert [t[1] for t in rds._vhd_tiers("day", per_hour=True)] == [0.6, 3.0, 10.0, None]
+
+
+def test_a_per_hour_map_without_window_hours_is_refused():
+    with pytest.raises(ValueError, match="worst_window_hours"):
+        rds._build_segment_vhd_traces(_vhd_frame([1.0]), per_hour=True)
+
+
+def test_corridor_tooltip_per_hour_leads_with_the_rate_and_keeps_vhd_per_mile():
+    line = rds._figures_line("", {"vhd": 900.0, "vhd_per_mile": 45.0, "delay_min": 3.0,
+                                  "tti": 1.4}, window_hours=4.5)
+    assert "10.0 VHD/mi/hr (45.0 VHD/mi)" in line
+    assert "45.0 VHD/mi |" in rds._figures_line("", {"vhd_per_mile": 45.0})

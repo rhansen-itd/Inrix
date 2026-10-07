@@ -4,15 +4,15 @@
     "vhd_basis": "curve",
     "n_chains": 50,
     "hard_stops": [
-      "124404144|385666846: route 95: Moscow: US-95 south | the Washington/Jackson couplet. Owner, 2026-09-25",
-      "386068712|124121437: route 95: Moscow: US-95 south | the Washington/Jackson couplet. Owner, 2026-09-25",
-      "1236886984|1236886995: route 95: Moscow: the couplet (Washington St) | US-95 north (N Main St). Owner, 2026-09-25",
-      "1236973782|386047403: route 95: Moscow: US-95 north (N Main St) | the couplet (Jackson St). Owner, 2026-09-25",
-      "124404144|1236966035: route 8: Moscow: the couplet | SH-8 east (Troy Rd). Owner, 2026-09-25",
-      "1236966046|124121437: route 8: Moscow: the couplet | SH-8 east (Troy Rd). Owner, 2026-09-25",
-      "386047415|448932363: route 8: Moscow: the couplet (Washington St) | SH-8 west (3rd St). Owner, 2026-09-25",
-      "1236903538|386047404: route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8 (Future: segment-level route overrides). Owner, 2026-09-25",
-      "1236903538|448932361: route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8 (Future: segment-level route overrides). Owner, 2026-09-25"
+      "124404144|385666846: route 95: Moscow: US-95 south | the Washington/Jackson couplet.",
+      "386068712|124121437: route 95: Moscow: US-95 south | the Washington/Jackson couplet.",
+      "1236886984|1236886995: route 95: Moscow: the couplet (Washington St) | US-95 north (N Main St).",
+      "1236973782|386047403: route 95: Moscow: US-95 north (N Main St) | the couplet (Jackson St).",
+      "124404144|1236966035: route 8: Moscow: the couplet | SH-8 east (Troy Rd).",
+      "1236966046|124121437: route 8: Moscow: the couplet | SH-8 east (Troy Rd).",
+      "386047415|448932363: route 8: Moscow: the couplet (Washington St) | SH-8 west (3rd St).",
+      "1236903538|386047404: route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8.",
+      "1236903538|448932361: route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8."
     ],
     "tiers": [
       "core",
@@ -203,7 +203,7 @@
         46.73235,
         -117.00275
       ],
-      "description": "Tier 1 (Congested Core) of SH-8: Pullman Rd, EB. Recurrent congestion core (1.67 mi): peak/baseline 1.28, 19 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8 (Future: segment-level route overrides). Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-8: Pullman Rd, EB. Recurrent congestion core (1.67 mi): peak/baseline 1.28, 19 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-8-pullman-rd-moscow-core",
       "direction": "EB",
       "_tier": "core",
@@ -267,7 +267,7 @@
         46.73235,
         -117.00275
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-8: Pullman Rd, EB. Congested extent grown from the core (1.67 mi, 19 VHD/mi, 100% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8 (Future: segment-level route overrides). Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-8: Pullman Rd, EB. Congested extent grown from the core (1.67 mi, 19 VHD/mi, 100% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-8-pullman-rd-moscow-commuter",
       "direction": "EB",
       "_tier": "commuter",
@@ -299,7 +299,7 @@
         46.73245,
         -117.03732
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-8: Pullman Rd, WB. Congested extent grown from the core (1.79 mi, 13 VHD/mi, 95% of the core's). Upstream boundary: a manual hard stop (route 8: Moscow: the couplet (Washington St) | SH-8 west (3rd St). Owner, 2026-09-25); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-8: Pullman Rd, WB. Congested extent grown from the core (1.79 mi, 13 VHD/mi, 95% of the core's). Upstream boundary: a manual hard stop (route 8: Moscow: the couplet (Washington St) | SH-8 west (3rd St).); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-8-pullman-rd-moscow-commuter",
       "direction": "WB",
       "_tier": "commuter",
@@ -324,7 +324,7 @@
     },
     {
       "id": "us-95-washington-st-moscow-core-nb",
-      "name": "US-95 NB: Washington St \u2014 Congested Core",
+      "name": "US-95 NB: Washington St / Jackson St couplet \u2014 Congested Core",
       "start_latlon": [
         46.72614,
         -117.00009
@@ -333,7 +333,7 @@
         46.73515,
         -117.00144
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Washington St, NB. Recurrent congestion core (0.65 mi): peak/baseline 1.32, 26 VHD/mi, 99% real-time data. Upstream boundary: a manual hard stop (route 95: Moscow: US-95 south | the Washington/Jackson couplet. Owner, 2026-09-25 | route 8: Moscow: the couplet | SH-8 east (Troy Rd). Owner, 2026-09-25); downstream boundary: a manual hard stop (route 95: Moscow: the couplet (Washington St) | US-95 north (N Main St). Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-95: Washington St / Jackson St couplet, NB. Recurrent congestion core (0.65 mi): peak/baseline 1.32, 26 VHD/mi, 99% real-time data. Upstream boundary: a manual hard stop (route 95: Moscow: US-95 south | the Washington/Jackson couplet. | route 8: Moscow: the couplet | SH-8 east (Troy Rd).); downstream boundary: a manual hard stop (route 95: Moscow: the couplet (Washington St) | US-95 north (N Main St).). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-washington-st-moscow-core",
       "direction": "NB",
       "_tier": "core",
@@ -355,7 +355,7 @@
     },
     {
       "id": "us-95-washington-st-moscow-core-sb",
-      "name": "US-95 SB: Washington St \u2014 Congested Core",
+      "name": "US-95 SB: Washington St / Jackson St couplet \u2014 Congested Core",
       "start_latlon": [
         46.73458,
         -117.00281
@@ -364,7 +364,7 @@
         46.72614,
         -117.00009
       ],
-      "description": "Tier 1 (Congested Core) of US-95: Washington St, SB. Recurrent congestion core (0.63 mi): peak/baseline 1.29, 19 VHD/mi, 99% real-time data. Upstream boundary: a manual hard stop (route 95: Moscow: US-95 north (N Main St) | the couplet (Jackson St). Owner, 2026-09-25); downstream boundary: a manual hard stop (route 95: Moscow: US-95 south | the Washington/Jackson couplet. Owner, 2026-09-25 | route 8: Moscow: the couplet | SH-8 east (Troy Rd). Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-95: Washington St / Jackson St couplet, SB. Recurrent congestion core (0.63 mi): peak/baseline 1.29, 19 VHD/mi, 99% real-time data. Upstream boundary: a manual hard stop (route 95: Moscow: US-95 north (N Main St) | the couplet (Jackson St).); downstream boundary: a manual hard stop (route 95: Moscow: US-95 south | the Washington/Jackson couplet. | route 8: Moscow: the couplet | SH-8 east (Troy Rd).). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-95-washington-st-moscow-core",
       "direction": "SB",
       "_tier": "core",
@@ -513,7 +513,7 @@
     {
       "id": "sh-8-pullman-rd-moscow-core",
       "name": "SH-8: Pullman Rd \u2014 Tier 1 Congested Core (Warbonnet Dr to Line St)",
-      "description": "Tier 1 (Congested Core) of SH-8: Pullman Rd, EB. Recurrent congestion core (1.67 mi): peak/baseline 1.28, 19 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8 (Future: segment-level route overrides). Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-8: Pullman Rd, EB. Recurrent congestion core (1.67 mi): peak/baseline 1.28, 19 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Warbonnet Dr to Line St)",
@@ -652,7 +652,7 @@
     {
       "id": "sh-8-pullman-rd-moscow-commuter",
       "name": "SH-8: Pullman Rd \u2014 Tier 2 Commuter Corridor (Warbonnet Dr to Line St)",
-      "description": "Tier 2 (Commuter Corridor) of SH-8: Pullman Rd, EB. Congested extent grown from the core (1.67 mi, 19 VHD/mi, 100% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8 (Future: segment-level route overrides). Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-8: Pullman Rd, EB. Congested extent grown from the core (1.67 mi, 19 VHD/mi, 100% of the core's). Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 8: Moscow: SH-8 west (3rd St) | the couplet (Jackson St). SH-8 EB turns down Jackson; the 3rd St block on to Washington is westbound-only SH-8.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Warbonnet Dr to Line St)",
@@ -790,13 +790,13 @@
     },
     {
       "id": "us-95-washington-st-moscow-core",
-      "name": "US-95: Washington St \u2014 Tier 1 Congested Core (Washington St @ SH-8 to Washington St @ 1st St)",
-      "description": "Tier 1 (Congested Core) of US-95: Washington St, NB. Recurrent congestion core (0.65 mi): peak/baseline 1.32, 26 VHD/mi, 99% real-time data. Upstream boundary: a manual hard stop (route 95: Moscow: US-95 south | the Washington/Jackson couplet. Owner, 2026-09-25 | route 8: Moscow: the couplet | SH-8 east (Troy Rd). Owner, 2026-09-25); downstream boundary: a manual hard stop (route 95: Moscow: the couplet (Washington St) | US-95 north (N Main St). Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-95: Washington St / Jackson St couplet \u2014 Tier 1 Congested Core (Washington St @ SH-8 to Washington St @ 1st St)",
+      "description": "Tier 1 (Congested Core) of US-95: Washington St / Jackson St couplet, NB. Recurrent congestion core (0.65 mi): peak/baseline 1.32, 26 VHD/mi, 99% real-time data. Upstream boundary: a manual hard stop (route 95: Moscow: US-95 south | the Washington/Jackson couplet. | route 8: Moscow: the couplet | SH-8 east (Troy Rd).); downstream boundary: a manual hard stop (route 95: Moscow: the couplet (Washington St) | US-95 north (N Main St).). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Washington St @ SH-8 to Washington St @ 1st St)",
       "_facility": "us-95-washington-st-moscow",
-      "_facility_name": "US-95: Washington St",
+      "_facility_name": "US-95: Washington St / Jackson St couplet",
       "_miles": 0.648,
       "_n_segments": 3,
       "_ranked": true,

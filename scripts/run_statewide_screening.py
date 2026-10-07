@@ -164,6 +164,9 @@ def main():
     parser.add_argument("--aadt", default="AADT_2025.zip")
     parser.add_argument("--aadt-year", type=int, default=2025)
     parser.add_argument("--maps", action="store_true")
+    parser.add_argument("--vhd-rate", choices=("per-hour", "per-mile"), default="per-hour",
+                        help="delay density on the maps: VHD/mi per window hour, or "
+                             "VHD/mi; passed to the district and statewide maps")
     parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
                         help="screen district D on catalogue PATH instead of "
                              "scripts/dD_corridors.json (repeatable); passed on to the "
@@ -204,6 +207,7 @@ def main():
                     pass_through.extend(["--date-end", args.date_end])
                 if args.maps and "--maps" not in pass_through:
                     pass_through.append("--maps")
+                pass_through.extend(["--vhd-rate", args.vhd_rate])
 
                 rc = run_screening(d, out_dir, sc, pass_through)
                 results[f"d{d}_{sc}"] = rc
@@ -234,6 +238,7 @@ def main():
                 "--dir", str(out_dir),
                 "--districts", *[str(d) for d in args.districts],
                 "--scenarios", ",".join(scenarios),
+                "--vhd-rate", args.vhd_rate,
                 *override_args(CATALOGUE_OVERRIDES),
             ]
             rc_maps = subprocess.call(cmd_maps)

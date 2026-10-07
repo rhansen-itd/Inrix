@@ -42,6 +42,7 @@ does not also cut SH-8 where SH-8 turns onto the couplet at the same corner).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -311,6 +312,20 @@ def load_hard_stops(path, network: gpd.GeoDataFrame, district: int, *,
     return resolve_hard_stops(read_hard_stops(path), network, district, snap_m=snap_m)
 
 
+# The table records who decided a stop, and when, and the follow-up it leaves
+# ("Owner, 2026-09-25", "(Future: ...)"). That is provenance for the CSV, not text for
+# a catalogue description or a map callout, which read the reason.
+_PROVENANCE = re.compile(r"\s*\(Future:[^)]*\)|\s*\bOwner,\s*\d{4}-\d{2}-\d{2}\.?",
+                         re.IGNORECASE)
+
+
+def public_note(note) -> str:
+    """A stop's note without its provenance: ``"... becomes freeway. Owner,
+    2026-09-25"`` -> ``"... becomes freeway."``."""
+    text = _PROVENANCE.sub("", str(note)).strip()
+    return re.sub(r"\s{2,}", " ", text)
+
+
 def stop_boundaries(resolved: pd.DataFrame | None, use: str = "corridors"
                     ) -> dict[tuple[int, int], str]:
     """``{(from_seg, to_seg): reason}`` — the form ``extents`` and ``route_sections``
@@ -327,7 +342,7 @@ def stop_boundaries(resolved: pd.DataFrame | None, use: str = "corridors"
         resolved = resolved[scope.isin(("both", use))]
     for r in resolved.itertuples(index=False):
         key = (int(r.from_seg), int(r.to_seg))
-        text = f"route {r.route}: {r.note}"
+        text = f"route {r.route}: {public_note(r.note)}"
         out[key] = text if key not in out or out[key] == text else f"{out[key]} | {text}"
     return out
 

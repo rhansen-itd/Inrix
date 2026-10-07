@@ -4202,9 +4202,8 @@
       "one_way_couplet": true,
       "_couplet": true,
       "_mean_lateral_sep_m": 179.0,
-      "_flags": [
-        "shares 1.64 mi with us-91-yellowstone-ave-pocatello"
-      ]
+      "_ranked": false,
+      "_counted_in": "us-91-yellowstone-ave-pocatello"
     },
     {
       "id": "couplet-15-bridge-st-judicial-st",
@@ -4213,9 +4212,8 @@
       "one_way_couplet": true,
       "_couplet": true,
       "_mean_lateral_sep_m": 77.5,
-      "_flags": [
-        "shares 0.56 mi with i-15-bl-bergener-dr-blackfoot"
-      ]
+      "_ranked": false,
+      "_counted_in": "i-15-bl-bergener-dr-blackfoot"
     }
   ]
 }

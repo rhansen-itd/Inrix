@@ -13,9 +13,9 @@ The predecessor — hand-picked lat/lon hints per corridor and hand-authored
 couplet entries — is kept in ``legacy/handbuilt_catalogues/`` for diffing, and
 District 3's hand-curated Item 44 catalogue in ``legacy/d3_curated/`` (Item 63).
 
-A detected couplet's legs pair as one facility whatever their separation, and a
-couplet whose legs a ranked facility's core runs on is not ranked again on its own
-(``_ranked: false``, ``_counted_in``; Item 63).
+A detected couplet's legs pair as one facility whatever their separation (Item 63).
+A couplet is a stitching aid, never ranked on its own (``_ranked: false``); a core
+that runs on it is named for it and lists it (``_counted_in``).
 
 A catalogue is written **only when it verifies**: a file that ships despite a
 failed verification is a broken catalogue that looks like a good one.
@@ -298,31 +298,27 @@ def couplet_block(net: gpd.GeoDataFrame, district: int,
     return entries, groups, detected, legs
 
 
-COUPLET_LEG_SHARE = 0.5
-"""A couplet is counted in a facility (Item 63) when that facility's ranked core covers at
-least this share of **each** leg's miles."""
+def unrank_couplets(cat: dict, legs: dict, miles) -> dict[str, str | None]:
+    """Mark every couplet group not ranked (``_ranked: false``), naming in
+    ``_counted_in`` the facility whose ranked core runs on most of its legs.
 
+    A couplet is a stitching aid, not a class of corridor (owner, 2026-10-07): its
+    detection lets the chain walk pair the two one-way streets as one road's two
+    directions (Item 63). Its legs are already walked into their route's chains like
+    any other segments, so a congested couplet is a core (Boise's Front St / Myrtle
+    St, Moscow's Washington St / Jackson St) and an uncongested one is not; ranking
+    the couplet group as well would rank the same pavement twice, or rank pavement
+    the cores turned down.
 
-def defer_covered_couplets(cat: dict, legs: dict, miles) -> list[str]:
-    """Mark each couplet group a ranked facility's core covers as not ranked (Item 63),
-    naming that facility in ``_counted_in``.
-
-    Covered means at least :data:`COUPLET_LEG_SHARE` of **each** leg lies in the
-    core: Moscow's and Boise's couplets are their facility's core, both directions.
-    The couplet group stays in the catalogue, because its legs are what the AADT
-    one-way fallback reads (``corridors.couplet_segments``, Items 53/54), and the
-    ranking carries it as context under the facility. Ranking both would count the
-    couplet's delay twice in a statewide table.
-
-    A couplet a core covers only in part ranks as before, and is flagged with the
-    miles it shares. One example is Twin Falls, where a westbound-only core runs on
-    the westbound legs. Dropping it would drop the other leg's delay from the ranking.
+    The group stays in the catalogue: its legs are what the AADT one-way fallback
+    reads (``corridors.couplet_segments``, Items 53/54), and the ranking carries it as
+    context under ``_counted_in``.
 
     Args:
         legs: ``{couplet group id: (leg 1 ids, leg 2 ids)}`` (:func:`couplet_block`).
         miles: segment id -> miles.
 
-    Returns the ids deferred."""
+    Returns ``{couplet group id: facility or None}``."""
     def _mi(ids) -> float:
         return float(sum(float(miles.get(s, 0.0)) for s in ids))
 
@@ -333,22 +329,20 @@ def defer_covered_couplets(cat: dict, legs: dict, miles) -> list[str]:
         if g.get("_ranked") and g.get("_couplets"):
             core_segs.setdefault(g.get("_facility", g["id"]), set()).update(
                 int(s) for s in e.get("_segment_ids", []))
-    out = []
+    out: dict[str, str | None] = {}
     for g in cat["reporting_corridors"]:
-        if not g.get("_couplet") or g["id"] not in legs:
+        if not g.get("_couplet"):
             continue
-        l1, l2 = (set(map(int, leg)) for leg in legs[g["id"]])
-        for facility, segs in core_segs.items():
-            shares = [_mi(leg & segs) / _mi(leg) if _mi(leg) > 0 else 0.0
-                      for leg in (l1, l2)]
-            if min(shares) >= COUPLET_LEG_SHARE:
-                g["_ranked"] = False
-                g["_counted_in"] = facility
-                out.append(g["id"])
-                break
-            shared = _mi((l1 | l2) & segs)
-            if shared > 0:
-                g.setdefault("_flags", []).append(f"shares {shared:.2f} mi with {facility}")
+        g["_ranked"] = False
+        on = set()
+        if g["id"] in legs:
+            l1, l2 = legs[g["id"]]
+            on = set(map(int, l1)) | set(map(int, l2))
+        shared = {f: _mi(on & segs) for f, segs in core_segs.items()}
+        best = max(shared, key=shared.get, default=None)
+        out[g["id"]] = best if best is not None and shared[best] > 0 else None
+        if out[g["id"]]:
+            g["_counted_in"] = out[g["id"]]
     return out
 
 
@@ -510,12 +504,12 @@ def main() -> int:
         if not args.no_couplets:
             all_pairs.extend(pairs)
             cat = merge_blocks(cat, c_entries, c_groups)
-            deferred = defer_covered_couplets(
+            counted = unrank_couplets(
                 cat, legs, net.set_index("XDSegID")["Miles"].to_dict())
             print(f"  + {len(pairs)} couplets detected, "
                   f"{len(c_entries) // 2} fully observed and catalogued "
-                  f"({len(c_entries)} legs); {len(deferred)} not ranked (a facility's core covers "
-                  f"both legs): {', '.join(deferred) or '-'}")
+                  f"({len(c_entries)} legs), none ranked on its own; on a core: "
+                  + (", ".join(f"{k} -> {v}" for k, v in counted.items() if v) or "-"))
 
         res = verify(cat, net, repairs, d, observed)
         passed = bool(res["reached_target"].all())

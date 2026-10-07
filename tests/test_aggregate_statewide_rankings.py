@@ -72,17 +72,22 @@ def test_a_couplet_a_core_covers_is_context_under_that_facility(tmp_path):
     assert "counted in us-95" in row["flags"]
 
 
-def test_a_partly_covered_couplet_ranks_with_its_flag(tmp_path):
+def test_a_couplet_never_ranks_on_its_own(tmp_path):
+    """A couplet is a stitching aid, not a class (owner, 2026-10-07): one no core runs
+    on (Blackfoot, Mountain Home) is context under no facility, however much delay its
+    own row carries; the old partly-covered "shares N mi" rows no longer rank."""
     path = _catalogue(tmp_path)
     cat = json.loads((tmp_path / "d1_corridors.json").read_text())
-    cat["reporting_corridors"][-1].update({"_couplet": True,
+    cat["reporting_corridors"][-1].update({"_couplet": True, "one_way_couplet": True,
                                            "_flags": ["shares 0.62 mi with us-95"]})
     (tmp_path / "d1_corridors.json").write_text(json.dumps(cat))
     full = pd.DataFrame({"district": 1, "corridor_group": ["us-95-core", "couplet-x"],
-                         "vhd_per_mile": [300.0, 200.0]})
-    ranked, _ = agg.split_ranked(full, agg.load_group_tiers([1], path))
-    assert list(ranked["corridor_group"]) == ["us-95-core", "couplet-x"]
-    assert ranked.loc[1, "flags"] == "shares 0.62 mi with us-95"
+                         "vhd_per_mile": [300.0, 900.0]})
+    ranked, context = agg.split_ranked(full, agg.load_group_tiers([1], path))
+    assert list(ranked["corridor_group"]) == ["us-95-core"]
+    row = context.set_index("corridor_group").loc["couplet-x"]
+    assert pd.isna(row["facility"]) and pd.isna(row["core_statewide_rank"])
+    assert "no congested core" in row["flags"]
 
 
 def test_districts_on_different_vhd_bases_are_refused():
@@ -200,3 +205,15 @@ def test_main_aggregates_every_registered_scenario(tmp_path, monkeypatch):
     assert m.set_index("corridor_group")[["peak_rank", "sat_summer_rank"]].to_dict("index") \
         == {"g2": {"peak_rank": 1, "sat_summer_rank": 2},
             "g1": {"peak_rank": 2, "sat_summer_rank": 1}}
+
+
+def test_per_hour_rate_divides_by_the_scenarios_window_hours(tmp_path):
+    """VHD/mi/hr sits beside VHD/mi and does not change the order within a scenario."""
+    d = tmp_path / "d1"
+    d.mkdir()
+    pd.DataFrame({"corridor_group": ["a", "b"], "vhd_per_mile": [90.0, 45.0],
+                  "vhd_per": "weekday"}).to_csv(d / "t.csv", index=False)
+    out = agg.aggregate_rankings(tmp_path, "t.csv", [1], window_hours=4.5)
+    assert out["vhd_per_mi_hr"].tolist() == [20.0, 10.0]
+    assert out["window_hours"].eq(4.5).all()
+    assert "vhd_per_mi_hr" not in agg.aggregate_rankings(tmp_path, "t.csv", [1]).columns

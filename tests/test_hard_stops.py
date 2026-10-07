@@ -333,3 +333,15 @@ def test_a_resolved_row_carries_its_scope(tmp_path):
     r = hard_stops.resolve_hard_stops(hard_stops.read_hard_stops(path), net, 1)
     assert list(r["scope"]) == ["stations"]
     assert hard_stops.stop_boundaries(r) == {}
+
+
+def test_a_stops_provenance_stays_out_of_the_reason():
+    """The table records who decided a stop and when; the catalogue description and
+    the map callout read the reason, and say only why (owner, 2026-10-07)."""
+    assert hard_stops.public_note(
+        "US-20 Front St | the Connector (I-184), where it becomes freeway. Owner, "
+        "2026-09-25") == "US-20 Front St | the Connector (I-184), where it becomes freeway."
+    assert hard_stops.public_note(
+        "the 3rd St block is westbound-only SH-8 (Future: segment-level route "
+        "overrides). Owner, 2026-09-25") == "the 3rd St block is westbound-only SH-8."
+    assert hard_stops.public_note("Ends at SH-44.") == "Ends at SH-44."
