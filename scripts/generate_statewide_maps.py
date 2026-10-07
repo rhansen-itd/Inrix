@@ -40,9 +40,12 @@ from scripts.aggregate_statewide_rankings import (  # noqa: E402
 )
 from scripts.run_district_screening import (  # noqa: E402
     SEGMENT_VHD_PEAK,
+    DEFAULT_VHD_RATE,
+    VHD_RATES,
     _build_corridor_overlay,
     _build_segment_vhd_traces,
     _build_segment_traces,
+    vhd_unit,
     _direction_menu,
     _legend_sidebar_layout,
     attach_direction_totals,
@@ -154,6 +157,7 @@ def generate_statewide_map(
     center_lat: float = 44.8,
     center_lon: float = -114.7,
     zoom: float = 6.2,
+    per_hour: bool = False,
 ) -> Path:
     """Render and write a statewide interactive HTML vector map."""
     import plotly.graph_objects as go
@@ -167,8 +171,9 @@ def generate_statewide_map(
                                 segment_vhd=segment_vhd)
 
     if metric == "vhd_per_mile":
-        seg_traces = _build_segment_vhd_traces(merged, window_label=window_label)
-        seg_legend_title = "VHD / Mile"
+        seg_traces = _build_segment_vhd_traces(merged, window_label=window_label,
+                                               per_hour=per_hour)
+        seg_legend_title = vhd_unit(per_hour)
     else:
         seg_traces = _build_segment_traces(merged, window_label=window_label)
         seg_legend_title = "TTI Tier"
@@ -178,7 +183,7 @@ def generate_statewide_map(
     # Corridor outlines and termini markers
     line_list, m_list = _build_corridor_overlay(
         cat_entries, chains, corridor_ranks, net_indexed, delay_label=delay_label,
-        zoom=zoom,
+        zoom=zoom, windows=windows, per_hour=per_hour,
     )
     n_corridors = len(line_list)
     n_markers = len(m_list)
@@ -303,7 +308,11 @@ def main():
                              "the districts' screening_scenarios.json lists)")
     parser.add_argument("--catalogue-override", action="append", default=[], metavar="D=PATH",
                         help="district D's catalogue is PATH (repeatable)")
+    parser.add_argument("--vhd-rate", choices=VHD_RATES, default=DEFAULT_VHD_RATE,
+                        help="delay density as VHD/mi per window hour (per-hour) or "
+                             "VHD/mi (per-mile)")
     args = parser.parse_args()
+    per_hour = args.vhd_rate == "per-hour"
     overrides = {int(v.partition("=")[0]): v.partition("=")[2] for v in args.catalogue_override}
 
     base_dir = Path(args.dir)
@@ -346,7 +355,7 @@ def main():
 
         tti_name, vhd_name = statewide_map_names(tag)
         for metric, fname, kind in (("tti", tti_name, "TTI"),
-                                    ("vhd_per_mile", vhd_name, "VHD / Mile")):
+                                    ("vhd_per_mile", vhd_name, vhd_unit(per_hour))):
             if metric == "vhd_per_mile" and vhd is None:
                 continue
             print(f"Rendering Statewide {label} ({kind}) Map...")
@@ -357,12 +366,14 @@ def main():
                 title=f"ITD Statewide Corridor Screening — {label} ({kind})",
                 subtitle=("Statewide XD network coloured by "
                           + ("travel time index" if metric == "tti"
-                             else "volume-weighted vehicle-hours of delay per mile")
+                             else "volume-weighted vehicle-hours of delay per mile"
+                             + (" per hour" if per_hour else ""))
                           + ", with the ranked corridors"),
                 delay_label=f"Total delay, {label}",
                 map_filename=fname,
                 metric=metric,
                 segment_vhd=vhd if metric == "vhd_per_mile" else None,
+                per_hour=per_hour,
             )
             print(f"  -> Written {path}")
             map_files.append((f"{label} ({kind})", path.name))

@@ -205,3 +205,15 @@ def test_main_aggregates_every_registered_scenario(tmp_path, monkeypatch):
     assert m.set_index("corridor_group")[["peak_rank", "sat_summer_rank"]].to_dict("index") \
         == {"g2": {"peak_rank": 1, "sat_summer_rank": 2},
             "g1": {"peak_rank": 2, "sat_summer_rank": 1}}
+
+
+def test_per_hour_rate_divides_by_the_scenarios_window_hours(tmp_path):
+    """VHD/mi/hr sits beside VHD/mi and does not change the order within a scenario."""
+    d = tmp_path / "d1"
+    d.mkdir()
+    pd.DataFrame({"corridor_group": ["a", "b"], "vhd_per_mile": [90.0, 45.0],
+                  "vhd_per": "weekday"}).to_csv(d / "t.csv", index=False)
+    out = agg.aggregate_rankings(tmp_path, "t.csv", [1], window_hours=4.5)
+    assert out["vhd_per_mi_hr"].tolist() == [20.0, 10.0]
+    assert out["window_hours"].eq(4.5).all()
+    assert "vhd_per_mi_hr" not in agg.aggregate_rankings(tmp_path, "t.csv", [1]).columns

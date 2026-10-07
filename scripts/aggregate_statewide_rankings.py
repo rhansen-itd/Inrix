@@ -47,6 +47,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from inrix_tools import screen  # noqa: E402
+from scripts.run_district_screening import _scenario_window_hours  # noqa: E402
 
 DEFAULT_CATALOGUE = "scripts/d{district}_corridors.json"
 # UTF-8 with a byte-order mark: Excel on Windows reads a CSV without one as cp1252, so
@@ -230,7 +231,9 @@ def scenario_matrix(ranked: dict[str, pd.DataFrame]) -> pd.DataFrame:
     for tag, df in ranked.items():
         if df.empty:
             continue
-        cols = {"statewide_rank": f"{tag}_rank", "vhd_per_mile": f"{tag}_vhd_per_mile",
+        cols = {"statewide_rank": f"{tag}_rank",
+                "vhd_per_mi_hr": f"{tag}_vhd_per_mi_hr",
+                "vhd_per_mile": f"{tag}_vhd_per_mile",
                 "vhd": f"{tag}_vhd", "tti": f"{tag}_tti"}
         part = df[key + [c for c in cols if c in df.columns]].rename(columns=cols)
         out = out.merge(part, on=key, how="left")
@@ -323,6 +326,7 @@ def aggregate_rankings(
     filename: str,
     districts: list[int],
     rank_col: str = "vhd_per_mile",
+    window_hours: float | None = None,
 ) -> pd.DataFrame:
     """Combine district totals into a single statewide ranked DataFrame."""
     frames = []
@@ -337,6 +341,11 @@ def aggregate_rankings(
     check_vhd_basis(frames)
 
     combined = pd.concat(frames, ignore_index=True)
+
+    if window_hours is not None:
+        # VHD/mi over the scenario's clock hours: one scale across scenarios.
+        combined["window_hours"] = window_hours
+        combined["vhd_per_mi_hr"] = combined["vhd_per_mile"] / window_hours
 
     # Sort descending by ranking metric (nulls last)
     combined = combined.sort_values(
@@ -388,11 +397,13 @@ def build_extent_tiers_analysis(
                 "tier_scale": tier_label,
                 "miles": miles,
                 "peak_rank": p_row.get("statewide_rank"),
+                "peak_vhd_per_mi_hr": p_row.get("vhd_per_mi_hr"),
                 "peak_vhd_per_mile": vhd_rate,
                 "vhd_density_retention_pct": round(retention_pct, 1),
                 "peak_vhd": p_row.get("vhd", 0.0),
                 "peak_tti": p_row.get("tti", 1.0),
                 "peak_speed_mph": p_row.get("speed", p_row.get("mean_speed", 0.0)),
+                "day7_vhd_per_mi_hr": d7_row.get("vhd_per_mi_hr") if d7_row is not None else None,
                 "day7_vhd_per_mile": d7_row.get("vhd_per_mile", 0.0) if d7_row is not None else None,
                 "day7_tti": d7_row.get("tti", 1.0) if d7_row is not None else None,
             })
@@ -433,9 +444,11 @@ def build_district_summary(
             "peak_vhd_per": peak_per,
             "day7_vhd_per": day7_per,
             "top_peak_corridor": top_peak.get("group_name", top_peak.get("corridor_group")),
+            "top_peak_vhd_per_mi_hr": (round(top_peak.get("vhd_per_mi_hr", 0.0), 1) if pd.notna(top_peak.get("vhd_per_mi_hr")) else None),
             "top_peak_vhd_per_mile": round(top_peak.get("vhd_per_mile", 0.0), 1),
             "top_peak_tti": round(top_peak.get("tti", 1.0), 2),
             "top_7day_corridor": (top_7day.get("group_name", top_7day.get("corridor_group")) if top_7day is not None else "—"),
+            "top_7day_vhd_per_mi_hr": (round(top_7day.get("vhd_per_mi_hr", 0.0), 1) if top_7day is not None and pd.notna(top_7day.get("vhd_per_mi_hr")) else None),
             "top_7day_vhd_per_mile": (round(top_7day.get("vhd_per_mile", 0.0), 1) if top_7day is not None else None),
             "top_7day_tti": (round(top_7day.get("tti", 1.0), 2) if top_7day is not None else None),
         })
@@ -465,11 +478,15 @@ def main():
     group_tiers = load_group_tiers(args.districts, args.catalogue, overrides)
     group_types = load_group_types(args.districts, args.catalogue, overrides)
 
-    def _write(label: str, filename: str, stem: str) -> pd.DataFrame:
+    def _write(label: str, filename: str, stem: str, windows=None) -> pd.DataFrame:
         """Aggregate, split ranked/context, write both; return the **full** table
         (the tier comparison reads every tier)."""
         print(f"Aggregating statewide {label} rankings...")
-        full = aggregate_rankings(base_dir, filename, args.districts, rank_col="vhd_per_mile")
+        # VHD/mi over the window's clock hours, beside VHD/mi (``vhd_per_mi_hr``): one
+        # scale across scenarios. A scenario without windows gets no per-hour figure.
+        win_hours = _scenario_window_hours(windows)
+        full = aggregate_rankings(base_dir, filename, args.districts, rank_col="vhd_per_mile",
+                                  window_hours=win_hours)
         if full.empty:
             return full
         full = attach_types(full, group_types)
@@ -486,7 +503,7 @@ def main():
                           suffixes=("_all", ""))
 
     ranked_by_tag: dict[str, pd.DataFrame] = {}
-    written = {e["tag"]: _write(e["label"], e["totals"], e["tag"])
+    written = {e["tag"]: _write(e["label"], e["totals"], e["tag"], windows=e.get("windows"))
                for e in scenario_tables(base_dir, args.districts, args.scenarios)}
     peak_rankings = written.get("peak", pd.DataFrame())
     day7_rankings = written.get("7day", pd.DataFrame())
