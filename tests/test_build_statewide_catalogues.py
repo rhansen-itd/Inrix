@@ -79,30 +79,31 @@ def _cat_with_couplet(core_segments, tier2_segments=()):
     ]}
 
 
-def test_a_couplet_a_ranked_core_covers_is_not_ranked_again():
+def test_a_couplet_a_ranked_core_covers_is_counted_in_it():
     """Moscow: the core is both legs."""
     cat = _cat_with_couplet([1, 2, 3, 4], tier2_segments=[5, 6, 7, 8])
-    assert bsc.defer_covered_couplets(cat, LEGS, MILES) == ["couplet-a"]
+    assert bsc.unrank_couplets(cat, LEGS, MILES) == {"couplet-a": "us-95-moscow",
+                                                     "couplet-b": None}
     a, b = cat["reporting_corridors"][2:]
     assert a["_ranked"] is False and a["_counted_in"] == "us-95-moscow"
     assert a["one_way_couplet"]          # still the AADT one-way fallback's legs
     # only a *ranked* core counts: a Tier 2 running over a couplet does not
-    assert "_ranked" not in b and "_flags" not in b
+    assert b["_ranked"] is False and "_counted_in" not in b and "_flags" not in b
 
 
-def test_a_couplet_a_core_runs_on_one_leg_of_still_ranks_flagged():
-    """Twin Falls: a westbound-only core on the westbound leg."""
+def test_a_couplet_a_core_runs_on_one_leg_of_is_not_ranked_either():
+    """Twin Falls: a westbound-only core on the westbound leg. The couplet is a
+    stitching aid (owner, 2026-10-07): it goes to context under that core, unflagged."""
     cat = _cat_with_couplet([1, 2])
-    assert bsc.defer_covered_couplets(cat, LEGS, MILES) == []
+    assert bsc.unrank_couplets(cat, LEGS, MILES)["couplet-a"] == "us-95-moscow"
     a = cat["reporting_corridors"][2]
-    assert "_ranked" not in a
-    assert a["_flags"] == ["shares 0.50 mi with us-95-moscow"]
+    assert a["_ranked"] is False and "_flags" not in a
 
 
-def test_a_couplet_no_core_runs_on_ranks_as_before():
+def test_a_couplet_no_core_runs_on_is_not_ranked():
     cat = _cat_with_couplet([9, 10])
-    assert bsc.defer_covered_couplets(cat, LEGS, MILES) == []
-    assert all("_ranked" not in g and "_flags" not in g
+    assert bsc.unrank_couplets(cat, LEGS, MILES) == {"couplet-a": None, "couplet-b": None}
+    assert all(g["_ranked"] is False and "_counted_in" not in g
                for g in cat["reporting_corridors"][2:])
 
 

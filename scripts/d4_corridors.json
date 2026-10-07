@@ -1159,8 +1159,8 @@
       "_primary_type": "recreational"
     },
     {
-      "id": "sh-27-overland-ave-burley-core-eb",
-      "name": "SH-27 EB: Overland Ave \u2014 Congested Core",
+      "id": "sh-27-overland-ave-burley-core-nb",
+      "name": "SH-27 NB: Overland Ave \u2014 Congested Core",
       "start_latlon": [
         42.5381,
         -113.78936
@@ -1169,9 +1169,9 @@
         42.54799,
         -113.79326
       ],
-      "description": "Tier 1 (Congested Core) of SH-27: Overland Ave, EB. Recurrent congestion core (0.88 mi): peak/baseline 1.21, 12 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-27: Overland Ave, NB. Recurrent congestion core (0.88 mi): peak/baseline 1.21, 12 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-core",
-      "direction": "EB",
+      "direction": "NB",
       "_tier": "core",
       "_facility": "sh-27-overland-ave-burley",
       "_split_rationale": "Recurrent congestion core (0.88 mi): peak/baseline 1.21, 12 VHD/mi, 99% real-time data",
@@ -1241,8 +1241,8 @@
       "_primary_type": "recreational"
     },
     {
-      "id": "sh-27-overland-ave-burley-commuter-eb",
-      "name": "SH-27 EB: Overland Ave \u2014 Commuter Corridor",
+      "id": "sh-27-overland-ave-burley-commuter-nb",
+      "name": "SH-27 NB: Overland Ave \u2014 Commuter Corridor",
       "start_latlon": [
         42.53706,
         -113.76893
@@ -1251,9 +1251,9 @@
         42.54799,
         -113.79326
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-27: Overland Ave, EB. Congested extent grown from the core (1.92 mi, 7 VHD/mi, 59% of the core's). Upstream boundary: the dilution limit (extending would fall to 6 VHD/mi, under 50% of the core's 12); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-27: Overland Ave, NB. Congested extent grown from the core (1.92 mi, 7 VHD/mi, 59% of the core's). Upstream boundary: the dilution limit (extending would fall to 6 VHD/mi, under 50% of the core's 12); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.55 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-commuter",
-      "direction": "EB",
+      "direction": "NB",
       "_tier": "commuter",
       "_facility": "sh-27-overland-ave-burley",
       "_split_rationale": "Congested extent grown from the core (1.92 mi, 7 VHD/mi, 59% of the core's)",
@@ -1334,8 +1334,8 @@
       "_primary_type": "recreational"
     },
     {
-      "id": "sh-27-overland-ave-burley-regional-eb",
-      "name": "SH-27 EB: Overland Ave \u2014 Regional Baseline",
+      "id": "sh-27-overland-ave-burley-regional-nb",
+      "name": "SH-27 NB: Overland Ave \u2014 Regional Baseline",
       "start_latlon": [
         42.56727,
         -113.73887
@@ -1344,9 +1344,9 @@
         42.556,
         -113.79322
       ],
-      "description": "Tier 3 (Regional Baseline) of SH-27: Overland Ave, EB. Context around the congested extent (5.12 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: a highway junction (crossing 84). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of SH-27: Overland Ave, NB. Context around the congested extent (5.12 mi; reported, not ranked). Upstream boundary: the context-length limit (3 mi past Tier 2); downstream boundary: a highway junction (crossing 84). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-27-overland-ave-burley-regional",
-      "direction": "EB",
+      "direction": "NB",
       "_tier": "regional",
       "_facility": "sh-27-overland-ave-burley",
       "_split_rationale": "Context around the congested extent (5.12 mi; reported, not ranked)",
@@ -3753,7 +3753,7 @@
       },
       "_directions": [
         "SB",
-        "EB"
+        "NB"
       ],
       "_flags": [
         "seasonal: 67% of peak delay in 2026-05, 2026-06, 2026-07 (3 of 8 months)"
@@ -3894,7 +3894,7 @@
       },
       "_directions": [
         "SB",
-        "EB"
+        "NB"
       ],
       "_flags": [
         "seasonal: 67% of peak delay in 2026-05, 2026-06, 2026-07 (3 of 8 months)"
@@ -4035,7 +4035,7 @@
       },
       "_directions": [
         "SB",
-        "EB"
+        "NB"
       ],
       "_flags": [
         "seasonal: 67% of peak delay in 2026-05, 2026-06, 2026-07 (3 of 8 months)"
@@ -5188,9 +5188,8 @@
       "one_way_couplet": true,
       "_couplet": true,
       "_mean_lateral_sep_m": 214.8,
-      "_flags": [
-        "shares 0.62 mi with us-30-kimberly-rd-twin-falls"
-      ]
+      "_ranked": false,
+      "_counted_in": "us-30-kimberly-rd-twin-falls"
     },
     {
       "id": "couplet-30-2nd-ave-n-2nd-ave-w",
@@ -5199,9 +5198,8 @@
       "one_way_couplet": true,
       "_couplet": true,
       "_mean_lateral_sep_m": 231.6,
-      "_flags": [
-        "shares 0.66 mi with us-30-kimberly-rd-twin-falls"
-      ]
+      "_ranked": false,
+      "_counted_in": "us-30-kimberly-rd-twin-falls"
     }
   ]
 }

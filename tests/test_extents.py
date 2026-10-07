@@ -1105,6 +1105,16 @@ class TestCoupletLegPairing:
         assert len(cores) == 1
         assert cores[0]["_directions"] == ["NB", "SB"]
         assert cores[0]["_couplets"] == ["couplet-95"]
+        # named for the couplet, both streets (owner, 2026-10-07); the id keeps the
+        # lead's street so it stays stable
+        assert cores[0]["_facility_name"].endswith(": Washington St / Jackson St couplet")
+        assert cores[0]["_facility"].endswith("-95-washington-st-moscow")
+
+    def test_cores_that_only_reach_a_couplet_are_not_named_for_it(self):
+        """Nampa: the Garrity Blvd cores run onto one block of each downtown leg."""
+        cores = self._cores(0.0027, {"couplet-95": ((103,), (200,))})
+        assert len(cores) == 1 and cores[0]["_couplets"] == ["couplet-95"]
+        assert "couplet" not in cores[0]["_facility_name"]
 
     def test_same_route_chains_5_km_apart_still_do_not_pair(self):
         """The separation limit still guards everything that is not a detected couplet:
@@ -1112,6 +1122,40 @@ class TestCoupletLegPairing:
         cores = self._cores(0.065, {"couplet-95": ((999,), (998,))})
         assert sorted(g["_directions"] for g in cores) == [["NB"], ["SB"]]
         assert not any("_couplets" in g for g in cores)
+
+
+def _front_myrtle_network():
+    """Boise's US-20 couplet: Front St heads WNW (~300 deg) but INRIX codes it ``N``;
+    Myrtle St, a block south, heads ESE and is coded ``E``."""
+    rows = []
+    for i in range(4):
+        x0, y0 = -116.19 - i * 0.006, 43.60 + i * 0.002
+        rows.append(_seg_row(100 + i, 101 + i if i < 3 else None, "20", "W Front St",
+                             (x0, y0), (x0 - 0.006, y0 + 0.002), bearing="N", group=1))
+        x1, y1 = -116.214 + i * 0.006, 43.6064 - i * 0.002
+        rows.append(_seg_row(200 + i, 201 + i if i < 3 else None, "20", "W Myrtle St",
+                             (x1, y1), (x1 + 0.006, y1 - 0.002), bearing="E", group=2))
+    net = gpd.GeoDataFrame(rows, crs="EPSG:4326")
+    net["urban_area"] = "Boise City, ID"
+    net["urban_share"] = 1.0
+    return net
+
+
+def test_a_facilitys_directions_oppose_where_inrix_codes_do_not():
+    """INRIX's ``Bearing`` follows the road's coding: Front St read NB beside Myrtle's
+    EB. The two are re-read from the cores' heading on one axis: WB and EB."""
+    net = _front_myrtle_network()
+    ids = list(net["XDSegID"])
+    legs = {"couplet-20": ((100, 101, 102, 103), (200, 201, 202, 203))}
+    cat = extents.generate_catalogue(net, _baseline(ids, {s: 2.5 for s in ids}),
+                                     observed=set(ids), min_chain_miles=0.5,
+                                     couplet_legs=legs)
+    core = next(g for g in cat["reporting_corridors"] if g["_tier"] == "core")
+    assert sorted(core["_directions"]) == ["EB", "WB"]
+    entries = [e for e in cat["corridors"] if e["corridor"] == core["id"]]
+    assert {e["direction"] for e in entries} == {"WB", "EB"}
+    assert all(e["id"].endswith(("-wb", "-eb")) for e in entries)
+    assert core["_facility_name"].endswith(": Front St / Myrtle St couplet")
 
 
 # ─── Owner, 2026-09-25: a companion core must face the lead core ─────

@@ -8205,3 +8205,35 @@ Note for future sessions: the screening scripts (`run_district_screening.py`,
 `run_statewide_screening.py`, …) take a `--db` path and now need the relevant
 store **pulled back to local first** — querying it straight off the SSD over 9p
 is exactly what this tool exists to avoid.
+
+## Session 93 — Ranking-output fixes from the owner's review: couplets, directions, callouts, CSV encoding (2026-10-07)
+
+Owner review of the statewide rankings. All four fixes are display and ranking
+semantics. In every district the regenerated catalogues' **segment sets are identical**
+to the previous ones.
+
+- **Couplets are a stitching aid, not a class** (owner): `build_statewide_catalogues.
+  unrank_couplets` (replaces `defer_covered_couplets`) marks **every** couplet group
+  `_ranked: false`, with `_counted_in` naming the core that runs on most of its legs (or
+  none). The aggregate makes couplet groups context, never ranked. The ranked tables
+  drop from 89 to 83. `statewide_couplet_rankings.csv`, `build_couplet_analysis` and
+  the report's couplet section are removed.
+- **Couplet facilities are named for the couplet**: when each direction's core lies at
+  least 50% (`extents.COUPLET_CORE_SHARE`) on one couplet's legs, the facility reads
+  "US-20: Front St / Myrtle St couplet" (and Moscow's "Washington St / Jackson St
+  couplet"). Nampa's Garrity Blvd cores only reach the 3rd/2nd St couplet, so its name
+  is unchanged. Ids keep the lead street.
+- **Directions oppose** (`extents.facility_bearings`): INRIX's `Bearing` follows road
+  coding, not the carriageway's heading. Front St heads about 305° but is coded `N`,
+  so the facility read NB+EB. When a facility's two labels don't oppose, both are
+  re-read from the cores' heading on one shared axis. Changed: Front St NB→WB,
+  Garrity Blvd SB→EB, SH-27 Burley EB→NB, US-26 Idaho Falls EB→NB. Entry ids follow.
+- **No "Owner, date" in callouts**: `hard_stops.public_note` strips the stop table's
+  "Owner, YYYY-MM-DD" and "(Future: …)" notes from the reason that feeds catalogue
+  descriptions. The CSV keeps them.
+- **CSV encoding**: statewide CSVs are written `utf-8-sig`, because Excel read the " — "
+  in group names as cp1252 "â€”". pandas strips the BOM on read.
+- **Pending:** the district screening re-run (`run_statewide_screening.py --mode full
+  --maps`) needs the district stores pulled from the SSD, which was not mounted. Until
+  then, group names and directions in the statewide CSVs and maps come from the old
+  district tables.

@@ -4,12 +4,12 @@
     "vhd_basis": "curve",
     "n_chains": 69,
     "hard_stops": [
-      "448695754|474858973: route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north. Owner, 2026-09-25",
-      "474858976|448695751: route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north. Owner, 2026-09-25",
-      "1187516231|448697675: route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25",
-      "448697683|440882513: route 20: US-20 Front St | the Connector (I-184), where it becomes freeway. Owner, 2026-09-25",
-      "448697683|1187569970: route 20: US-20 Front St | the Connector (I-184), where it becomes freeway. Owner, 2026-09-25",
-      "1187558503|1187347115: route 20: The EB Connector's last segment goes with the couplet: still on the divided facility, but it queues from the first signal on Myrtle. Owner, 2026-09-25"
+      "448695754|474858973: route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north.",
+      "474858976|448695751: route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north.",
+      "1187516231|448697675: route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.",
+      "448697683|440882513: route 20: US-20 Front St | the Connector (I-184), where it becomes freeway.",
+      "448697683|1187569970: route 20: US-20 Front St | the Connector (I-184), where it becomes freeway.",
+      "1187558503|1187347115: route 20: The EB Connector's last segment goes with the couplet: still on the divided facility, but it queues from the first signal on Myrtle."
     ],
     "tiers": [
       "core",
@@ -601,7 +601,7 @@
         43.59744,
         -116.2928
       ],
-      "description": "Tier 3 (Regional Baseline) of I-184: from Curtis Rd IC No. 2, WB. Context around the congested extent (4.63 mi; reported, not ranked). Upstream boundary: a manual hard stop (route 20: US-20 Front St | the Connector (I-184), where it becomes freeway. Owner, 2026-09-25); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of I-184: from Curtis Rd IC No. 2, WB. Context around the congested extent (4.63 mi; reported, not ranked). Upstream boundary: a manual hard stop (route 20: US-20 Front St | the Connector (I-184), where it becomes freeway.); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-184-boise-city-regional",
       "direction": "WB",
       "_tier": "regional",
@@ -637,7 +637,7 @@
         43.69094,
         -116.35407
       ],
-      "description": "Tier 1 (Congested Core) of SH-55: Eagle Rd, NB. Recurrent congestion core (6.79 mi): peak/baseline 1.58, 66 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-55: Eagle Rd, NB. Recurrent congestion core (6.79 mi): peak/baseline 1.58, 66 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-55-eagle-rd-boise-city-core",
       "direction": "NB",
       "_tier": "core",
@@ -682,7 +682,7 @@
         43.59229,
         -116.35454
       ],
-      "description": "Tier 1 (Congested Core) of SH-55: Eagle Rd, SB. Recurrent congestion core (6.82 mi): peak/baseline 1.44, 47 VHD/mi, 100% real-time data. Upstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north. Owner, 2026-09-25); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-55: Eagle Rd, SB. Recurrent congestion core (6.82 mi): peak/baseline 1.44, 47 VHD/mi, 100% real-time data. Upstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north.); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-55-eagle-rd-boise-city-core",
       "direction": "SB",
       "_tier": "core",
@@ -1417,8 +1417,8 @@
       "_primary_type": "commute"
     },
     {
-      "id": "i-84-bl-garrity-blvd-nampa-core-sb",
-      "name": "I-84 BL SB: Garrity Blvd \u2014 Congested Core",
+      "id": "i-84-bl-garrity-blvd-nampa-core-eb",
+      "name": "I-84 BL EB: Garrity Blvd \u2014 Congested Core",
       "start_latlon": [
         43.60538,
         -116.60307
@@ -1427,9 +1427,9 @@
         43.57424,
         -116.56569
       ],
-      "description": "Tier 1 (Congested Core) of I-84 BL: Garrity Blvd, SB. Recurrent congestion core (3.12 mi): peak/baseline 1.23, 18 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of I-84 BL: Garrity Blvd, EB. Recurrent congestion core (3.12 mi): peak/baseline 1.23, 18 VHD/mi, 99% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 downstream). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-84-bl-garrity-blvd-nampa-core",
-      "direction": "SB",
+      "direction": "EB",
       "_tier": "core",
       "_facility": "i-84-bl-garrity-blvd-nampa",
       "_split_rationale": "Recurrent congestion core (3.12 mi): peak/baseline 1.23, 18 VHD/mi, 99% real-time data",
@@ -1509,8 +1509,8 @@
       "_primary_type": "commute"
     },
     {
-      "id": "i-84-bl-garrity-blvd-nampa-commuter-sb",
-      "name": "I-84 BL SB: Garrity Blvd \u2014 Commuter Corridor",
+      "id": "i-84-bl-garrity-blvd-nampa-commuter-eb",
+      "name": "I-84 BL EB: Garrity Blvd \u2014 Commuter Corridor",
       "start_latlon": [
         43.60538,
         -116.60307
@@ -1519,9 +1519,9 @@
         43.54226,
         -116.57275
       ],
-      "description": "Tier 2 (Commuter Corridor) of I-84 BL: Garrity Blvd, SB. Congested extent grown from the core (5.48 mi, 19 VHD/mi, 104% of the core's). Upstream boundary: an urban/rural FRC transition (FRC 4 -> 3); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.72 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of I-84 BL: Garrity Blvd, EB. Congested extent grown from the core (5.48 mi, 19 VHD/mi, 104% of the core's). Upstream boundary: an urban/rural FRC transition (FRC 4 -> 3); downstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.72 mi). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-84-bl-garrity-blvd-nampa-commuter",
-      "direction": "SB",
+      "direction": "EB",
       "_tier": "commuter",
       "_facility": "i-84-bl-garrity-blvd-nampa",
       "_split_rationale": "Congested extent grown from the core (5.48 mi, 19 VHD/mi, 104% of the core's)",
@@ -1611,8 +1611,8 @@
       "_primary_type": "commute"
     },
     {
-      "id": "i-84-bl-garrity-blvd-nampa-regional-sb",
-      "name": "I-84 BL SB: Garrity Blvd \u2014 Regional Baseline",
+      "id": "i-84-bl-garrity-blvd-nampa-regional-eb",
+      "name": "I-84 BL EB: Garrity Blvd \u2014 Regional Baseline",
       "start_latlon": [
         43.60538,
         -116.60307
@@ -1621,9 +1621,9 @@
         43.51013,
         -116.57297
       ],
-      "description": "Tier 3 (Regional Baseline) of I-84 BL: Garrity Blvd, SB. Context around the congested extent (7.70 mi; reported, not ranked). Upstream boundary: an urban/rural FRC transition (FRC 4 -> 3); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of I-84 BL: Garrity Blvd, EB. Context around the congested extent (7.70 mi; reported, not ranked). Upstream boundary: an urban/rural FRC transition (FRC 4 -> 3); downstream boundary: the urban-area boundary (the edge of the urban area). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "i-84-bl-garrity-blvd-nampa-regional",
-      "direction": "SB",
+      "direction": "EB",
       "_tier": "regional",
       "_facility": "i-84-bl-garrity-blvd-nampa",
       "_split_rationale": "Context around the congested extent (7.70 mi; reported, not ranked)",
@@ -2050,8 +2050,8 @@
       "_primary_type": "commute"
     },
     {
-      "id": "us-20-front-st-boise-city-core-nb",
-      "name": "US-20 NB: Front St \u2014 Congested Core",
+      "id": "us-20-front-st-boise-city-core-wb",
+      "name": "US-20 WB: Front St / Myrtle St couplet \u2014 Congested Core",
       "start_latlon": [
         43.60797,
         -116.19336
@@ -2060,9 +2060,9 @@
         43.61704,
         -116.21076
       ],
-      "description": "Tier 1 (Congested Core) of US-20: Front St, NB. Recurrent congestion core (1.07 mi): peak/baseline 1.71, 111 VHD/mi, 100% real-time data. Upstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25); downstream boundary: a manual hard stop (route 20: US-20 Front St | the Connector (I-184), where it becomes freeway. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-20: Front St / Myrtle St couplet, WB. Recurrent congestion core (1.07 mi): peak/baseline 1.71, 111 VHD/mi, 100% real-time data. Upstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.); downstream boundary: a manual hard stop (route 20: US-20 Front St | the Connector (I-184), where it becomes freeway.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-20-front-st-boise-city-core",
-      "direction": "NB",
+      "direction": "WB",
       "_tier": "core",
       "_facility": "us-20-front-st-boise-city",
       "_split_rationale": "Recurrent congestion core (1.07 mi): peak/baseline 1.71, 111 VHD/mi, 100% real-time data",
@@ -2088,7 +2088,7 @@
     },
     {
       "id": "us-20-front-st-boise-city-core-eb",
-      "name": "US-20 EB: Front St \u2014 Congested Core",
+      "name": "US-20 EB: Front St / Myrtle St couplet \u2014 Congested Core",
       "start_latlon": [
         43.61904,
         -116.21947
@@ -2097,7 +2097,7 @@
         43.60598,
         -116.19341
       ],
-      "description": "Tier 1 (Congested Core) of US-20: Front St, EB. Recurrent congestion core (1.64 mi): peak/baseline 1.26, 34 VHD/mi, 100% real-time data. Upstream boundary: a manual hard stop (route 20: The EB Connector's last segment goes with the couplet: still on the divided facility, but it queues from the first signal on Myrtle. Owner, 2026-09-25); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-20: Front St / Myrtle St couplet, EB. Recurrent congestion core (1.64 mi): peak/baseline 1.26, 34 VHD/mi, 100% real-time data. Upstream boundary: a manual hard stop (route 20: The EB Connector's last segment goes with the couplet: still on the divided facility, but it queues from the first signal on Myrtle.); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-20-front-st-boise-city-core",
       "direction": "EB",
       "_tier": "core",
@@ -2770,7 +2770,7 @@
         43.60797,
         -116.19336
       ],
-      "description": "Tier 1 (Congested Core) of US-20: Broadway Ave, NB. Recurrent congestion core (2.38 mi): peak/baseline 1.34, 27 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-20: Broadway Ave, NB. Recurrent congestion core (2.38 mi): peak/baseline 1.34, 27 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-20-broadway-ave-boise-city-core",
       "direction": "NB",
       "_tier": "core",
@@ -2845,7 +2845,7 @@
         43.60797,
         -116.19336
       ],
-      "description": "Tier 2 (Commuter Corridor) of US-20: Broadway Ave, NB. Congested extent grown from the core (2.85 mi, 23 VHD/mi, 84% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.13 mi); downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-20: Broadway Ave, NB. Congested extent grown from the core (2.85 mi, 23 VHD/mi, 84% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.13 mi); downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-20-broadway-ave-boise-city-commuter",
       "direction": "NB",
       "_tier": "commuter",
@@ -2923,7 +2923,7 @@
         43.60797,
         -116.19336
       ],
-      "description": "Tier 3 (Regional Baseline) of US-20: Broadway Ave, NB. Context around the congested extent (2.99 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-20: Broadway Ave, NB. Context around the congested extent (2.99 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "us-20-broadway-ave-boise-city-regional",
       "direction": "NB",
       "_tier": "regional",
@@ -3139,7 +3139,7 @@
         43.74643,
         -116.29589
       ],
-      "description": "Tier 2 (Commuter Corridor) of SH-55: from Eagle Rd (SH-55), NB. Congested extent grown from the core (6.52 mi, 6 VHD/mi, 88% of the core's). Upstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north. Owner, 2026-09-25); downstream boundary: the urban-area boundary (leaving Boise City, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-55: from Eagle Rd (SH-55), NB. Congested extent grown from the core (6.52 mi, 6 VHD/mi, 88% of the core's). Upstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north.); downstream boundary: the urban-area boundary (leaving Boise City, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "corridor": "sh-55-boise-city-commuter",
       "direction": "NB",
       "links": [
@@ -6625,7 +6625,7 @@
     {
       "id": "i-184-boise-city-regional",
       "name": "I-184: from Curtis Rd IC No. 2 \u2014 Tier 3 Regional Baseline (US-20 Spur to JCT I-84 Flying Wye IC)",
-      "description": "Tier 3 (Regional Baseline) of I-184: from Curtis Rd IC No. 2, WB. Context around the congested extent (4.63 mi; reported, not ranked). Upstream boundary: a manual hard stop (route 20: US-20 Front St | the Connector (I-184), where it becomes freeway. Owner, 2026-09-25); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of I-184: from Curtis Rd IC No. 2, WB. Context around the congested extent (4.63 mi; reported, not ranked). Upstream boundary: a manual hard stop (route 20: US-20 Front St | the Connector (I-184), where it becomes freeway.); downstream boundary: the end of the mainline chain. Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (US-20 Spur to JCT I-84 Flying Wye IC)",
@@ -6720,7 +6720,7 @@
     {
       "id": "sh-55-eagle-rd-boise-city-core",
       "name": "SH-55: Eagle Rd \u2014 Tier 1 Congested Core (I-84 EB Ramps IC No. 46 to Island Wood Dr)",
-      "description": "Tier 1 (Congested Core) of SH-55: Eagle Rd, NB. Recurrent congestion core (6.79 mi): peak/baseline 1.58, 66 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of SH-55: Eagle Rd, NB. Recurrent congestion core (6.79 mi): peak/baseline 1.58, 66 VHD/mi, 100% real-time data. Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (I-84 EB Ramps IC No. 46 to Island Wood Dr)",
@@ -8208,7 +8208,7 @@
       },
       "_directions": [
         "WB",
-        "SB"
+        "EB"
       ],
       "_flags": [],
       "_monthly_vhd": {
@@ -8350,7 +8350,7 @@
       },
       "_directions": [
         "WB",
-        "SB"
+        "EB"
       ],
       "_flags": [],
       "_monthly_vhd": {
@@ -8492,7 +8492,7 @@
       },
       "_directions": [
         "WB",
-        "SB"
+        "EB"
       ],
       "_flags": [],
       "_monthly_vhd": {
@@ -9300,13 +9300,13 @@
     },
     {
       "id": "us-20-front-st-boise-city-core",
-      "name": "US-20: Front St \u2014 Tier 1 Congested Core (S 6th St to 13th St)",
-      "description": "Tier 1 (Congested Core) of US-20: Front St, NB. Recurrent congestion core (1.07 mi): peak/baseline 1.71, 111 VHD/mi, 100% real-time data. Upstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25); downstream boundary: a manual hard stop (route 20: US-20 Front St | the Connector (I-184), where it becomes freeway. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "name": "US-20: Front St / Myrtle St couplet \u2014 Tier 1 Congested Core (S 6th St to 13th St)",
+      "description": "Tier 1 (Congested Core) of US-20: Front St / Myrtle St couplet, WB. Recurrent congestion core (1.07 mi): peak/baseline 1.71, 111 VHD/mi, 100% real-time data. Upstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.); downstream boundary: a manual hard stop (route 20: US-20 Front St | the Connector (I-184), where it becomes freeway.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (S 6th St to 13th St)",
       "_facility": "us-20-front-st-boise-city",
-      "_facility_name": "US-20: Front St",
+      "_facility_name": "US-20: Front St / Myrtle St couplet",
       "_miles": 1.072,
       "_n_segments": 9,
       "_ranked": true,
@@ -9328,7 +9328,7 @@
         "fails": []
       },
       "_directions": [
-        "NB",
+        "WB",
         "EB"
       ],
       "_flags": [],
@@ -10840,7 +10840,7 @@
     {
       "id": "us-20-broadway-ave-boise-city-core",
       "name": "US-20: Broadway Ave \u2014 Tier 1 Congested Core (Linden St to Myrtle St/Park Blvd)",
-      "description": "Tier 1 (Congested Core) of US-20: Broadway Ave, NB. Recurrent congestion core (2.38 mi): peak/baseline 1.34, 27 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 1 (Congested Core) of US-20: Broadway Ave, NB. Recurrent congestion core (2.38 mi): peak/baseline 1.34, 27 VHD/mi, 100% real-time data. Upstream boundary: the end of the congestion (no segment at peak/baseline >= 1.1 upstream); downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "core",
       "_tier_number": 1,
       "_tier_label": "Tier 1 Congested Core (Linden St to Myrtle St/Park Blvd)",
@@ -10979,7 +10979,7 @@
     {
       "id": "us-20-broadway-ave-boise-city-commuter",
       "name": "US-20: Broadway Ave \u2014 Tier 2 Commuter Corridor (Federal Way NB Off Ramp to Myrtle St/Park Blvd)",
-      "description": "Tier 2 (Commuter Corridor) of US-20: Broadway Ave, NB. Congested extent grown from the core (2.85 mi, 23 VHD/mi, 84% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.13 mi); downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of US-20: Broadway Ave, NB. Congested extent grown from the core (2.85 mi, 23 VHD/mi, 84% of the core's). Upstream boundary: the end of the congestion (peak/baseline under 1.05 for 0.13 mi); downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Federal Way NB Off Ramp to Myrtle St/Park Blvd)",
@@ -11118,7 +11118,7 @@
     {
       "id": "us-20-broadway-ave-boise-city-regional",
       "name": "US-20: Broadway Ave \u2014 Tier 3 Regional Baseline (I-84 WB Ramps IC No. 54 to Myrtle St/Park Blvd)",
-      "description": "Tier 3 (Regional Baseline) of US-20: Broadway Ave, NB. Context around the congested extent (2.99 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet. Owner, 2026-09-25). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 3 (Regional Baseline) of US-20: Broadway Ave, NB. Context around the congested extent (2.99 mi; reported, not ranked). Upstream boundary: the start of the mainline chain; downstream boundary: a manual hard stop (route 20: US-20 Broadway | the Front/Myrtle couplet: the two-way arterial feeding the downtown couplet.). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "regional",
       "_tier_number": 3,
       "_tier_label": "Tier 3 Regional Baseline (I-84 WB Ramps IC No. 54 to Myrtle St/Park Blvd)",
@@ -11652,7 +11652,7 @@
     {
       "id": "sh-55-boise-city-commuter",
       "name": "SH-55: from Eagle Rd (SH-55) \u2014 Tier 2 Commuter Corridor (Eagle Rd (SH-55) to W Dry Creek Rd)",
-      "description": "Tier 2 (Commuter Corridor) of SH-55: from Eagle Rd (SH-55), NB. Congested extent grown from the core (6.52 mi, 6 VHD/mi, 88% of the core's). Upstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north. Owner, 2026-09-25); downstream boundary: the urban-area boundary (leaving Boise City, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
+      "description": "Tier 2 (Commuter Corridor) of SH-55: from Eagle Rd (SH-55), NB. Congested extent grown from the core (6.52 mi, 6 VHD/mi, 88% of the core's). Upstream boundary: a manual hard stop (route 55: Eagle Rd (SH-55) ends at SH-44; it does not run on along SH-44 and up SH-55 north.); downstream boundary: the urban-area boundary (leaving Boise City, ID; ratio 1.03 beyond it). Generated from the XD topology by inrix_tools.extents (ROADMAP Items 46, 50).",
       "_tier": "commuter",
       "_tier_number": 2,
       "_tier_label": "Tier 2 Commuter Corridor (Eagle Rd (SH-55) to W Dry Creek Rd)",
@@ -17621,7 +17621,8 @@
       "description": "One-way couplet carrying I-84 BL across Main St (SB) and 2nd St E (NB) in Mountain Home (ZIP 83647); 0.73 mi per leg, mean lateral separation 36 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,
-      "_mean_lateral_sep_m": 35.5
+      "_mean_lateral_sep_m": 35.5,
+      "_ranked": false
     },
     {
       "id": "couplet-95-main-st-idaho-st",
@@ -17629,7 +17630,8 @@
       "description": "One-way couplet carrying US-95 Spur across Main St (WB) and Idaho St (EB) in Weiser (ZIP 83672); 0.57 mi per leg, mean lateral separation 289 m. Detected by inrix_tools.couplets.detect_couplets (ROADMAP Item 46).",
       "one_way_couplet": true,
       "_couplet": true,
-      "_mean_lateral_sep_m": 288.6
+      "_mean_lateral_sep_m": 288.6,
+      "_ranked": false
     }
   ]
 }

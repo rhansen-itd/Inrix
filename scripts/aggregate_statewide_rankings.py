@@ -8,15 +8,14 @@ Reads the per-district peak and 7-day screening outputs from:
 Produces:
 1. out/statewide_screening/statewide_peak_corridor_rankings.csv
    - Statewide ranking of the **ranked** corridors by Peak Delay Density (VHD / Mile):
-     Tier 1 cores and the couplets no core runs on. Tier 2 and Tier 3 extents, and a
-     couplet a facility's core covers (Item 63), are context, not peers (ROADMAP
+     the Tier 1 cores. Tier 2 and Tier 3 extents, and the detected couplets (a
+     stitching aid, never ranked on their own), are context, not peers (ROADMAP
      Item 50), and go to
    ``statewide_peak_context_extents.csv`` with their facility's core rank.
 2. out/statewide_screening/statewide_7day_corridor_rankings.csv
    - The same for the 7-day all-day window (context in
      ``statewide_7day_context_extents.csv``).
-3. out/statewide_screening/statewide_couplet_rankings.csv
-   - Synthesis and comparison of all one-way couplet facilities statewide.
+3. (retired 2026-10-07: the statewide couplet table — couplets are not a class.)
 4. out/statewide_screening/statewide_extent_tiers_comparison.csv
    - Multi-scale extent tier comparison (Core Bottleneck vs Commuter Extent).
 5. out/statewide_screening/statewide_district_summary.csv
@@ -50,6 +49,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from inrix_tools import screen  # noqa: E402
 
 DEFAULT_CATALOGUE = "scripts/d{district}_corridors.json"
+# UTF-8 with a byte-order mark: Excel on Windows reads a CSV without one as cp1252, so
+# the " — " in every group name arrives as "â€”". pandas strips the mark on read.
+CSV_ENCODING = "utf-8-sig"
 SCENARIO_REGISTRY = "screening_scenarios.json"
 """Written by ``run_district_screening.py`` in each district's directory (Item 67)."""
 TYPE_COLUMNS = ("corridor_types", "corridor_class", "primary_type")
@@ -102,10 +104,10 @@ def load_extent_tier_groups(districts, pattern: str = DEFAULT_CATALOGUE,
 def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE,
                      overrides: dict | None = None) -> dict:
     """``(district, corridor_group) -> (tier_number, ranked, facility, flags)`` from the
-    generated catalogues. A group with no tier metadata (a couplet) is absent and ranks
-    as before, unless it is marked ``_ranked: false`` because a facility's core covers
-    it (Item 63): then it is context under that facility (``_counted_in``). One a core
-    covers only in part ranks, and carries its ``_flags``."""
+    generated catalogues. A detected couplet (no tier metadata) is never ranked: a couplet is a stitching aid, not a class of corridor (owner,
+    2026-10-07). Its legs are walked into their route's chains like any others, so its
+    delay is in whichever core runs on it. It is context under that facility
+    (``_counted_in``), or under none."""
     out = {}
     for d in districts:
         path = catalogue_file(pattern, d, overrides)
@@ -114,14 +116,12 @@ def load_group_tiers(districts, pattern: str = DEFAULT_CATALOGUE,
         cat = json.loads(path.read_text())
         for grp in cat.get("reporting_corridors", []):
             if "_tier_number" not in grp:
-                # A couplet whose legs a facility's core runs on (Item 63) is context
-                # under that facility, not a second ranked row for the same delay.
-                # A couplet a core runs on only in part ranks, with the overlap flagged.
-                if grp.get("_ranked") is False:
-                    out[(d, grp["id"])] = (pd.NA, False, grp.get("_counted_in"),
-                                           f"counted in {grp.get('_counted_in')}")
-                elif grp.get("_flags"):
-                    out[(d, grp["id"])] = (pd.NA, True, None, "; ".join(grp["_flags"]))
+                if not (grp.get("_couplet") or grp.get("one_way_couplet")):
+                    continue        # an untiered (hand-built) group ranks as before
+                on = grp.get("_counted_in")
+                out[(d, grp["id"])] = (pd.NA, False, on,
+                                       f"couplet legs, counted in {on}" if on else
+                                       "couplet legs; no congested core runs on them")
                 continue
             ranked = grp.get("_ranked", grp["_tier_number"] == 1)
             out[(d, grp["id"])] = (grp["_tier_number"], bool(ranked), grp.get("_facility"),
@@ -348,57 +348,6 @@ def aggregate_rankings(
     return combined
 
 
-def build_couplet_analysis(
-    peak_df: pd.DataFrame, day7_df: pd.DataFrame
-) -> pd.DataFrame:
-    """Synthesize metrics for all one-way couplets statewide."""
-    # Look for couplet indicators (either one_way_couplet column or naming).
-    # ``peak_df.get(col, False)`` returns a *scalar* when the column is absent, and
-    # ``peak_df[False]`` raises KeyError rather than falling through — so test for
-    # the column explicitly before using it as a mask.
-    if "one_way_couplet" in peak_df.columns:
-        p_couplets = peak_df[peak_df["one_way_couplet"].fillna(False).astype(bool)].copy()
-    else:
-        p_couplets = peak_df.iloc[0:0].copy()
-    if p_couplets.empty and "group_name" in peak_df.columns:
-        # Fallback to name pattern
-        p_couplets = peak_df[
-            peak_df["group_name"].astype(str).str.lower().str.contains("couplet")
-        ].copy()
-
-    if p_couplets.empty:
-        return pd.DataFrame()
-
-    d7_indexed = day7_df.set_index("corridor_group") if not day7_df.empty else None
-
-    rows = []
-    for _, r in p_couplets.iterrows():
-        cid = r["corridor_group"]
-        d7_row = d7_indexed.loc[cid] if (d7_indexed is not None and cid in d7_indexed.index) else None
-
-        rows.append({
-            "district": r["district"],
-            "corridor_group": cid,
-            "group_name": r.get("group_name", cid),
-            "miles": r.get("miles", 0.0),
-            "peak_rank": r.get("statewide_rank"),
-            "peak_vhd_per_mile": r.get("vhd_per_mile", 0.0),
-            "peak_vhd": r.get("vhd", 0.0),
-            "peak_tti": r.get("tti", 1.0),
-            "peak_speed_mph": r.get("speed", r.get("mean_speed", 0.0)),
-            "day7_vhd_per_mile": d7_row.get("vhd_per_mile", 0.0) if d7_row is not None else None,
-            "day7_vhd": d7_row.get("vhd", 0.0) if d7_row is not None else None,
-            "day7_tti": d7_row.get("tti", 1.0) if d7_row is not None else None,
-            "day7_speed_mph": d7_row.get("speed", d7_row.get("mean_speed", 0.0)) if d7_row is not None else None,
-        })
-
-    out = pd.DataFrame(rows)
-    if not out.empty:
-        out = out.sort_values(by="peak_vhd_per_mile", ascending=False).reset_index(drop=True)
-        out.insert(0, "couplet_rank", out.index + 1)
-    return out
-
-
 def build_extent_tiers_analysis(
     peak_df: pd.DataFrame, day7_df: pd.DataFrame, tier_groups: list[dict]
 ) -> pd.DataFrame:
@@ -527,10 +476,10 @@ def main():
         ranked, context = split_ranked(full, group_tiers)
         ranked_by_tag[stem] = ranked
         r_path = base_dir / f"statewide_{stem}_corridor_rankings.csv"
-        ranked.to_csv(r_path, index=False)
+        ranked.to_csv(r_path, index=False, encoding=CSV_ENCODING)
         print(f"  -> Written {r_path} ({len(ranked)} ranked corridors)")
         c_path = base_dir / f"statewide_{stem}_context_extents.csv"
-        context.to_csv(c_path, index=False)
+        context.to_csv(c_path, index=False, encoding=CSV_ENCODING)
         print(f"  -> Written {c_path} ({len(context)} Tier 2/3 context extents)")
         return full.merge(ranked[["district", "corridor_group", "statewide_rank"]],
                           on=["district", "corridor_group"], how="left",
@@ -546,18 +495,15 @@ def main():
         print("Generating the cross-scenario matrix...")
         matrix = scenario_matrix(ranked_by_tag)
         m_path = base_dir / "statewide_scenario_matrix.csv"
-        matrix.to_csv(m_path, index=False)
+        matrix.to_csv(m_path, index=False, encoding=CSV_ENCODING)
         print(f"  -> Written {m_path} ({len(matrix)} corridors x "
               f"{len(ranked_by_tag)} scenarios)")
 
-    if not peak_rankings.empty:
-        print("Generating statewide couplet synthesis...")
-        couplets = build_couplet_analysis(peak_rankings, day7_rankings)
-        if not couplets.empty:
-            c_path = base_dir / "statewide_couplet_rankings.csv"
-            couplets.to_csv(c_path, index=False)
-            print(f"  -> Written {c_path} ({len(couplets)} couplets)")
+    # Couplets are not a class of corridor (owner, 2026-10-07): the separate couplet
+    # table this wrote is gone, and so is a stale copy of it.
+    (base_dir / "statewide_couplet_rankings.csv").unlink(missing_ok=True)
 
+    if not peak_rankings.empty:
         print("Generating multi-scale extent tiers comparison...")
         tier_groups = load_extent_tier_groups(args.districts, args.catalogue, overrides)
         covered = sorted({g["district"] for g in tier_groups})
@@ -571,7 +517,7 @@ def main():
         tiers = build_extent_tiers_analysis(peak_rankings, day7_rankings, tier_groups)
         if not tiers.empty:
             t_path = base_dir / "statewide_extent_tiers_comparison.csv"
-            tiers.to_csv(t_path, index=False)
+            tiers.to_csv(t_path, index=False, encoding=CSV_ENCODING)
             print(f"  -> Written {t_path} ({len(tiers)} facility tiers)")
 
         print("Generating district summary roll-up...")
@@ -581,7 +527,7 @@ def main():
             if not day7_rankings.empty else day7_rankings, args.districts)
         if not dist_summary.empty:
             ds_path = base_dir / "statewide_district_summary.csv"
-            dist_summary.to_csv(ds_path, index=False)
+            dist_summary.to_csv(ds_path, index=False, encoding=CSV_ENCODING)
             print(f"  -> Written {ds_path}")
 
     print("\nStatewide aggregation complete!")

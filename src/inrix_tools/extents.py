@@ -903,6 +903,10 @@ lateral separation is under this. Beyond it they are two parts of one route
 that happen to run in opposite directions (US-95 north of Sandpoint vs. south
 of Coeur d'Alene), not a directional pair."""
 
+COUPLET_CORE_SHARE = 0.5
+"""A facility is named for a couplet (``"<a> / <b> couplet"``) when at least this share
+of each direction's core miles lies on the couplet's legs."""
+
 _DIR_LABEL = {"N": "NB", "S": "SB", "E": "EB", "W": "WB"}
 _OPPOSITE = {"N": "S", "S": "N", "E": "W", "W": "E"}
 
@@ -2050,6 +2054,46 @@ def facility_naming(chain: MainlineChain, core: CoreCandidate | None, seg: pd.Da
         county = _core_county(net_idx, core) or (chain.counties[0] if chain.counties else "")
         place = f"{county.strip()} County" if county.strip() else "Idaho"
     return band, street, place
+
+
+def _heading(ids: Sequence[int], net_idx) -> float | None:
+    """Compass heading of a run of segments, first segment's start to last's end."""
+    from shapely.geometry import LineString
+
+    from .geometry import _bearing_deg
+
+    present = [s for s in ids if s in net_idx.index]
+    if not present or "geometry" not in net_idx.columns:
+        return None
+    first, last = net_idx.at[present[0], "geometry"], net_idx.at[present[-1], "geometry"]
+    if first is None or last is None or first.is_empty or last.is_empty:
+        return None
+    return _bearing_deg(LineString([first.coords[0], last.coords[-1]]))
+
+
+def facility_bearings(lead: MainlineChain, lead_ids: Sequence[int],
+                      other: MainlineChain, other_ids: Sequence[int], net_idx
+                      ) -> tuple[str, str]:
+    """The cardinal ``Bearing`` of a facility's two directions, made to oppose.
+
+    A chain's bearing is INRIX's coded ``Bearing``, which follows the road's coding,
+    not each carriageway's heading. Boise's Front St heads ~305 deg (WNW) but is
+    coded ``N``, while its Myrtle St leg is ``E``, so the facility read NB + EB.
+    Where the two labels do not oppose, both are read from the cores' geometry on
+    one shared axis: the two headings, the other one turned round, are averaged, and
+    the lead takes the nearest cardinal (Front St / Myrtle St -> WB / EB). Labels
+    that already oppose are INRIX's and are kept.
+    """
+    a, b = lead.bearing, other.bearing
+    if _OPPOSITE.get(a) == b:
+        return a, b
+    ha, hb = _heading(lead_ids, net_idx), _heading(other_ids, net_idx)
+    if ha is None or hb is None:
+        return a, b
+    rads = (np.radians(ha), np.radians((hb + 180.0) % 360.0))
+    axis = float(np.degrees(np.arctan2(sum(np.sin(rads)), sum(np.cos(rads))))) % 360.0
+    card = "NESW"[int(((axis + 45.0) % 360.0) // 90.0)]
+    return card, _OPPOSITE[card]
 
 
 def facility_label(chain: MainlineChain) -> str:
@@ -3255,6 +3299,10 @@ def generate_catalogue(
 
     legs = {k: (frozenset(a), frozenset(b)) for k, (a, b) in (couplet_legs or {}).items()}
 
+    def _share_on(ids: Sequence[int], on: Collection[int]) -> float:
+        m = float(miles_of.reindex(list(ids)).sum())
+        return float(miles_of.reindex([s for s in ids if s in on]).sum()) / m if m else 0.0
+
     def _couplet_pair(ids_a: Sequence[int], ids_b: Sequence[int]) -> bool:
         """Whether two cores lie on opposite legs of one detected couplet (Item 63)."""
         a, b = set(ids_a), set(ids_b)
@@ -3409,7 +3457,23 @@ def generate_catalogue(
         # so ids stay stable across runs and the ranking comparison still joins.
         band, street, place = facility_naming(chain, lead.core, seg, net_idx, route_sets)
         where = _endpoint_name(net_idx, lead.core.segment_ids[0], end=False)
-        if street:
+        # A facility whose two directions are a couplet's two legs is that couplet:
+        # "US-20: Front St / Myrtle St couplet", not "US-20: Front St" (owner,
+        # 2026-10-07). Each core must lie mostly on the legs; Nampa's Garrity Blvd
+        # cores only reach the downtown 3rd St / 2nd St couplet. The id keeps the
+        # lead's street, so it stays stable.
+        couplet_street = ""
+        if other is not None and _couplet_pair(lead.core.segment_ids,
+                                               other.core.segment_ids) and any(
+                min(_share_on(m.core.segment_ids, l1 | l2) for m in (lead, other))
+                >= COUPLET_CORE_SHARE for l1, l2 in legs.values()):
+            _, o_street, _ = facility_naming(other.chain, other.core, seg, net_idx,
+                                             route_sets)
+            if street and o_street and o_street != street:
+                couplet_street = f"{street} / {o_street} couplet"
+        if couplet_street:
+            facility_name = f"{band}: {couplet_street}"
+        elif street:
             facility_name = f"{band}: {street}"
         else:
             facility_name = f"{band}: from {where}" if where else f"{band}: {place}"
@@ -3444,6 +3508,14 @@ def generate_catalogue(
             if audit is not None:
                 audit.append(audit_row)
 
+        if other is not None:
+            lead_b, other_b = facility_bearings(chain, lead.core.segment_ids, other.chain,
+                                                other.core.segment_ids, net_idx)
+            if (lead_b, other_b) != (chain.bearing, other.chain.bearing):
+                chain = dataclasses.replace(chain, bearing=lead_b)
+                lead = dataclasses.replace(lead, chain=chain)
+                other = dataclasses.replace(
+                    other, chain=dataclasses.replace(other.chain, bearing=other_b))
         members = [lead] + ([other] if other is not None else [])
         # A wider tier that cuts exactly the narrower tier's segments, in every
         # catalogued direction, is the same extent twice; the narrower (ranked) one

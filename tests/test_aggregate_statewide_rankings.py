@@ -72,17 +72,22 @@ def test_a_couplet_a_core_covers_is_context_under_that_facility(tmp_path):
     assert "counted in us-95" in row["flags"]
 
 
-def test_a_partly_covered_couplet_ranks_with_its_flag(tmp_path):
+def test_a_couplet_never_ranks_on_its_own(tmp_path):
+    """A couplet is a stitching aid, not a class (owner, 2026-10-07): one no core runs
+    on (Blackfoot, Mountain Home) is context under no facility, however much delay its
+    own row carries; the old partly-covered "shares N mi" rows no longer rank."""
     path = _catalogue(tmp_path)
     cat = json.loads((tmp_path / "d1_corridors.json").read_text())
-    cat["reporting_corridors"][-1].update({"_couplet": True,
+    cat["reporting_corridors"][-1].update({"_couplet": True, "one_way_couplet": True,
                                            "_flags": ["shares 0.62 mi with us-95"]})
     (tmp_path / "d1_corridors.json").write_text(json.dumps(cat))
     full = pd.DataFrame({"district": 1, "corridor_group": ["us-95-core", "couplet-x"],
-                         "vhd_per_mile": [300.0, 200.0]})
-    ranked, _ = agg.split_ranked(full, agg.load_group_tiers([1], path))
-    assert list(ranked["corridor_group"]) == ["us-95-core", "couplet-x"]
-    assert ranked.loc[1, "flags"] == "shares 0.62 mi with us-95"
+                         "vhd_per_mile": [300.0, 900.0]})
+    ranked, context = agg.split_ranked(full, agg.load_group_tiers([1], path))
+    assert list(ranked["corridor_group"]) == ["us-95-core"]
+    row = context.set_index("corridor_group").loc["couplet-x"]
+    assert pd.isna(row["facility"]) and pd.isna(row["core_statewide_rank"])
+    assert "no congested core" in row["flags"]
 
 
 def test_districts_on_different_vhd_bases_are_refused():
